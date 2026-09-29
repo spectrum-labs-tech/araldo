@@ -34,6 +34,8 @@ every problem in `errors`, each with its own `code` and `param`.
 - **empty**: the rendered text is empty.
 - **variable_missing**: the template uses a field the data does not have.
 - **data_invalid**: the data does not match the template's JSON Schema.
+- **example_required**: a preview without data needs the template to have
+  an example that matches its variables.
 - **template_syntax**, **body_missing**, **variables_invalid**,
   **example_invalid**: the template itself is not valid.
 - **no_channels**: the brand has no active channels in this mode.

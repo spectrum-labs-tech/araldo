@@ -303,6 +303,12 @@ func (s *Service) PreviewTemplate(ctx context.Context, a Actor, src tmpl.Source,
 		data = c.Examples()[0]
 	}
 	if err := c.Validate(data); err != nil {
+		if len(data) == 0 {
+			// Nothing to preview with: say so, rather than list every field
+			// that empty data lacks.
+			return nil, apperr.Invalid("example_required", "examples",
+				"Add example data to preview this template: its variables need fields that empty data does not have.")
+		}
 		return nil, err
 	}
 	loc := location(tz)

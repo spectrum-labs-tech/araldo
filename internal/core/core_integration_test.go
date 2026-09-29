@@ -661,3 +661,27 @@ func TestUTMTagging(t *testing.T) {
 		t.Fatalf("untagged parts %q", p2.Targets[0].Parts)
 	}
 }
+
+func TestPreviewTemplateNeedsData(t *testing.T) {
+	w := newWorld(t)
+	ctx := t.Context()
+	src := tmpl.Source{Body: "{{.name}}", Variables: json.RawMessage(`{"type":"object","required":["name"]}`)}
+
+	// No data and no example: one clear problem, not a list of missing fields.
+	_, err := w.s.PreviewTemplate(ctx, w.owner, src, nil, []platform.Provider{platform.Bluesky}, "UTC")
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code != "example_required" {
+		t.Fatalf("no data: %v", err)
+	}
+	// Explicit data that is wrong still names the fields.
+	_, err = w.s.PreviewTemplate(ctx, w.owner, src, json.RawMessage(`{"other":1}`), []platform.Provider{platform.Bluesky}, "UTC")
+	if !errors.As(err, &ae) || ae.Code != "data_invalid" {
+		t.Fatalf("bad data: %v", err)
+	}
+	// An example is used when no data is given.
+	src.Examples = []json.RawMessage{json.RawMessage(`{"name":"Aero"}`)}
+	rs, err := w.s.PreviewTemplate(ctx, w.owner, src, nil, []platform.Provider{platform.Bluesky}, "UTC")
+	if err != nil || len(rs) != 1 || rs[0].Parts[0] != "Aero" {
+		t.Fatalf("with example: %+v, %v", rs, err)
+	}
+}

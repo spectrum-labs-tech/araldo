@@ -1,0 +1,72 @@
+{{define "content"}}
+{{$d := .Data}}
+{{$base := $d.Base}}
+<div class="grid items-start gap-8 lg:grid-cols-[14rem_minmax(0,1fr)]">
+  <nav class="text-sm lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-auto" aria-label="API sections">
+    <a class="btn btn-primary mb-4 w-full text-center" href="/v1/openapi.yaml" download="araldo-openapi.yaml">Download openapi.yaml</a>
+    <a href="#introduction" class="block py-0.5 font-semibold">Introduction</a>
+    {{range $d.Tags}}
+    <div class="mt-3 mb-1 text-xs tracking-wider text-muted uppercase">{{.Name}}</div>
+    {{range .Ops}}<a href="#{{.Anchor}}" class="flex items-baseline gap-1.5 py-0.5 text-ink hover:text-accent"><span class="method method-{{.Method}}">{{.Method}}</span><span class="truncate">{{.Summary}}</span></a>{{end}}
+    {{end}}
+    <div class="mt-3 mb-1 text-xs tracking-wider text-muted uppercase">Objects</div>
+    {{range $d.Schemas}}<a href="#{{.Anchor}}" class="block py-0.5 font-mono text-xs">{{.Name}}</a>{{end}}
+  </nav>
+
+  <div class="min-w-0 max-w-4xl">
+    <section id="introduction" class="prose-doc mb-10">
+      <h1>{{$d.Title}} <span class="pill">{{$d.Version}}</span></h1>
+      {{$d.Description}}
+      <p>The machine-readable contract is <a href="/v1/openapi.yaml">/v1/openapi.yaml</a> (OpenAPI 3.0); generate a client from it in any language.</p>
+    </section>
+
+    {{range $d.Tags}}
+    <h2 class="mt-10 border-b border-line pb-2 text-xl">{{.Name}}</h2>
+    {{range .Ops}}
+    <section id="{{.Anchor}}" class="card scroll-mt-4">
+      <div class="mb-2 flex flex-wrap items-center gap-2">
+        <span class="method method-{{.Method}}">{{.Method}}</span>
+        <code class="text-base font-semibold">{{.Path}}</code>
+        {{if .Public}}<span class="pill">no key needed</span>{{end}}
+      </div>
+      <h3 class="mb-2">{{.Summary}}</h3>
+      {{if .Description}}<div class="prose-doc">{{.Description}}</div>{{end}}
+      <pre class="json my-3 whitespace-pre-wrap">curl{{if ne .Method "GET"}} -X {{.Method}}{{end}} {{$base}}{{.Path}}{{if not .Public}} \
+  -H "Authorization: Bearer $ARALDO_KEY"{{end}}{{if .Body}} \
+  -H "Content-Type: application/json" \
+  -d '{…}'{{end}}</pre>
+      {{if .Params}}
+      <h4 class="doc-h4">Parameters</h4>
+      <dl class="doc-fields">{{range .Params}}{{template "field" .}}{{end}}</dl>
+      {{end}}
+      {{if or .Body .BodyRef}}
+      <h4 class="doc-h4">Request body {{if .BodyRef}}<a class="font-mono text-xs font-normal" href="#{{.BodyRef}}">{{.BodyRef | trimSchema}}</a>{{end}}</h4>
+      {{if .Body}}<dl class="doc-fields">{{range .Body}}{{template "field" .}}{{end}}</dl>{{end}}
+      {{end}}
+      <h4 class="doc-h4">Responses</h4>
+      <ul class="space-y-1 text-sm">{{range .Responses}}<li><code>{{.Status}}</code> {{.Description}}{{if .Type}} · {{if .Ref}}<a class="font-mono text-xs" href="#{{.Ref}}">{{.Type}}</a>{{else}}<span class="font-mono text-xs">{{.Type}}</span>{{end}}{{end}}</li>{{end}}</ul>
+    </section>
+    {{end}}
+    {{end}}
+
+    <h2 class="mt-10 border-b border-line pb-2 text-xl">Objects</h2>
+    {{range $d.Schemas}}
+    <section id="{{.Anchor}}" class="card scroll-mt-4">
+      <h3 class="mb-2 font-mono">{{.Name}}</h3>
+      {{if .Description}}<div class="prose-doc">{{.Description}}</div>{{end}}
+      {{if .Enum}}<p class="text-sm">One of {{range $i, $e := .Enum}}{{if $i}}, {{end}}<code>{{$e}}</code>{{end}}.</p>{{end}}
+      {{if .Fields}}<dl class="doc-fields">{{range .Fields}}{{template "field" .}}{{end}}</dl>{{end}}
+    </section>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{define "field"}}
+<div class="doc-field">
+  <dt><code class="font-semibold">{{.Name}}</code>
+    <span class="text-xs text-muted">{{if .Ref}}<a href="#{{.Ref}}">{{.Type}}</a>{{else}}{{.Type}}{{end}}{{if .In}} · {{.In}}{{end}}</span>
+    {{if .Required}}<span class="pill warn">required</span>{{end}}</dt>
+  <dd>{{.Description}}{{if .Enum}}<div class="text-xs text-muted">One of {{range $i, $e := .Enum}}{{if $i}}, {{end}}<code>{{$e}}</code>{{end}}.</div>{{end}}</dd>
+</div>
+{{end}}

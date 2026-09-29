@@ -81,6 +81,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /webhooks/{id}/roll", s.app("developers", s.rollWebhook))
 	s.mux.HandleFunc("POST /webhooks/{id}/delete", s.app("developers", s.deleteWebhook))
 	s.mux.HandleFunc("POST /deliveries/{id}/resend", s.app("developers", s.resendDelivery))
+	s.mux.HandleFunc("GET /api-reference", s.app("reference", func(c *reqCtx) error {
+		return s.page(c, "api_reference", "reference", "API reference", struct {
+			*apiDoc
+			Base string
+		}{s.doc, baseURL(c)})
+	}))
 	s.mux.HandleFunc("GET /events", s.app("developers", s.events))
 	s.mux.HandleFunc("GET /events/{id}", s.app("developers", s.eventDetail))
 
@@ -440,12 +446,46 @@ type templateForm struct {
 	Brand     string
 	Key       string
 	Name      string
+	Approval  string
 	Body      string
 	Variables string
 	Example   string
 	Overrides map[string]string
 	Fit       map[string]string
-	Providers []platform.Provider
+	Providers []platformChoice
+	// DefaultPreview is the platforms previewed before the person picks:
+	// the brand's channels in this mode, or X, Facebook and Instagram.
+	DefaultPreview string
+	CanApprove     bool
+}
+
+// platformChoice is a platform in the editor's tabs and preview chips.
+type platformChoice struct {
+	Provider platform.Provider
+	Name     string
+	Limit    int
+	Counting string
+	Threads  bool
+}
+
+var platformChoices = func() []platformChoice {
+	var out []platformChoice
+	for _, p := range platform.Emulable() {
+		r, _ := platform.RulesFor(p)
+		out = append(out, platformChoice{Provider: p, Name: r.Name, Limit: r.MaxLength, Counting: countingLabel(r.Counting), Threads: r.Threads})
+	}
+	return out
+}()
+
+// countingLabel says in plain words how a platform measures length.
+func countingLabel(c platform.Counting) string {
+	switch c {
+	case platform.CountXWeighted:
+		return "weighted characters (links count as 23, emoji and CJK as 2)"
+	case platform.CountMastodon:
+		return "characters (links count as 23)"
+	}
+	return "characters"
 }
 
 var starterBody = "New on AR15.build: {{.name}}\n{{.url}}\n\n{{hashtags .tags}}"
@@ -462,21 +502,55 @@ const starterVariables = `{
 
 const starterExample = `{"name": "Recce build", "url": "https://example.com/builds/1", "tags": ["AR-15", "range day"]}`
 
+// withChoices fills what every render of the editor needs.
+func (s *Server) withChoices(c *reqCtx, f *templateForm, brandID uuid.UUID) {
+	f.Providers, f.CanApprove = platformChoices, c.actor.Can(core.PermPostsApprove)
+	if f.Overrides == nil {
+		f.Overrides = map[string]string{}
+	}
+	if f.Fit == nil {
+		f.Fit = map[string]string{}
+	}
+	if f.Approval == "" {
+		f.Approval = string(model.TemplateApprovalInherit)
+	}
+	f.DefaultPreview = "x,facebook,instagram"
+	if brandID == uuid.Nil && len(f.Brands) > 0 {
+		brandID = f.Brands[0].ID
+	}
+	if brandID == uuid.Nil {
+		return
+	}
+	chs, err := s.svc.Channels(c.ctx(), c.actor, &brandID)
+	if err != nil {
+		return
+	}
+	var ps []string
+	for _, ch := range chs {
+		if p := string(ch.RulesProvider()); !slices.Contains(ps, p) {
+			ps = append(ps, p)
+		}
+	}
+	if len(ps) > 0 {
+		f.DefaultPreview = strings.Join(ps, ",")
+	}
+}
+
 func (s *Server) newTemplate(c *reqCtx) error {
 	_, bs, err := s.brandNames(c)
 	if err != nil {
 		return err
 	}
-	f := templateForm{Brands: bs, Body: starterBody, Variables: starterVariables, Example: starterExample,
-		Overrides: map[string]string{}, Fit: map[string]string{}, Providers: platform.Emulable()}
+	f := templateForm{Brands: bs, Body: starterBody, Variables: starterVariables, Example: starterExample}
+	s.withChoices(c, &f, uuid.Nil)
 	return s.page(c, "template_edit", "templates", "New template", f)
 }
 
 func (s *Server) templateFromForm(c *reqCtx, f *templateForm) (tmpl.Source, error) {
 	r := c.r
 	f.Brand, f.Key, f.Name, f.Body = r.PostFormValue("brand"), r.PostFormValue("key"), r.PostFormValue("name"), r.PostFormValue("body")
-	f.Variables, f.Example = r.PostFormValue("variables"), r.PostFormValue("example")
-	f.Overrides, f.Fit, f.Providers = map[string]string{}, map[string]string{}, platform.Emulable()
+	f.Variables, f.Example, f.Approval = r.PostFormValue("variables"), r.PostFormValue("example"), r.PostFormValue("approval")
+	f.Overrides, f.Fit = map[string]string{}, map[string]string{}
 	src := tmpl.Source{Body: f.Body, Overrides: map[platform.Provider]string{}, Fit: map[platform.Provider]platform.Fit{}}
 	for _, p := range platform.Emulable() {
 		if o := strings.TrimSpace(r.PostFormValue("override_" + string(p))); o != "" {
@@ -508,14 +582,19 @@ func (s *Server) createTemplate(c *reqCtx) error {
 	}
 	f := templateForm{Brands: bs}
 	src, err := s.templateFromForm(c, &f)
+	brandID := uuid.Nil
+	if b, berr := s.svc.ResolveBrand(c.ctx(), c.actor, f.Brand); berr == nil {
+		brandID = b.ID
+	}
+	s.withChoices(c, &f, brandID)
 	if err != nil {
 		return s.formErr(c, "template_edit", "templates", "New template", f, err)
 	}
-	b, err := s.svc.ResolveBrand(c.ctx(), c.actor, f.Brand)
-	if err != nil {
+	if brandID == uuid.Nil {
 		return s.formErr(c, "template_edit", "templates", "New template", f, apperr.Invalid("brand_required", "brand", "Choose a brand."))
 	}
-	t, _, err := s.svc.CreateTemplate(c.ctx(), c.actor, core.TemplateInput{BrandID: b.ID, Key: f.Key, Name: f.Name, Source: src})
+	t, _, err := s.svc.CreateTemplate(c.ctx(), c.actor, core.TemplateInput{BrandID: brandID, Key: f.Key, Name: f.Name,
+		Approval: model.TemplateApproval(f.Approval), Source: src})
 	if err != nil {
 		return s.formErr(c, "template_edit", "templates", "New template", f, err)
 	}
@@ -532,8 +611,7 @@ func (s *Server) templateDetail(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	f := templateForm{Template: t, Version: v, Key: t.Key, Name: t.Name, Body: v.Body, Overrides: map[string]string{}, Fit: map[string]string{},
-		Providers: platform.Emulable()}
+	f := templateForm{Template: t, Version: v, Key: t.Key, Name: t.Name, Approval: string(t.Approval), Body: v.Body}
 	if len(v.Variables) > 0 {
 		var pretty any
 		if json.Unmarshal(v.Variables, &pretty) == nil {
@@ -544,6 +622,7 @@ func (s *Server) templateDetail(c *reqCtx) error {
 	if len(v.Examples) > 0 {
 		f.Example = string(v.Examples[0])
 	}
+	s.withChoices(c, &f, t.BrandID)
 	for p, o := range v.Overrides {
 		f.Overrides[string(p)] = o
 	}
@@ -551,6 +630,34 @@ func (s *Server) templateDetail(c *reqCtx) error {
 		f.Fit[string(p)] = string(fit)
 	}
 	return s.page(c, "template_edit", "templates", t.Key, f)
+}
+
+// sameSource reports whether a form's template equals a stored version,
+// ignoring JSON formatting, so saving only a setting makes no new version.
+func sameSource(a tmpl.Source, v *model.TemplateVersion) bool {
+	norm := func(src tmpl.Source) string {
+		canon := func(raw json.RawMessage) any {
+			var x any
+			if len(raw) == 0 || json.Unmarshal(raw, &x) != nil {
+				return string(raw)
+			}
+			return x
+		}
+		var ex []any
+		for _, e := range src.Examples {
+			ex = append(ex, canon(e))
+		}
+		b, _ := json.Marshal(map[string]any{"b": src.Body, "o": src.Overrides, "f": src.Fit, "v": canon(src.Variables), "e": ex})
+		return string(b)
+	}
+	stored := tmpl.Source{Body: v.Body, Overrides: v.Overrides, Fit: v.Fit, Variables: v.Variables, Examples: v.Examples}
+	if stored.Overrides == nil {
+		stored.Overrides = map[platform.Provider]string{}
+	}
+	if stored.Fit == nil {
+		stored.Fit = map[platform.Provider]platform.Fit{}
+	}
+	return norm(a) == norm(stored)
 }
 
 func (s *Server) saveTemplate(c *reqCtx) error {
@@ -564,15 +671,26 @@ func (s *Server) saveTemplate(c *reqCtx) error {
 	}
 	f := templateForm{Template: t, Version: v}
 	src, err := s.templateFromForm(c, &f)
+	f.Key = t.Key
+	s.withChoices(c, &f, t.BrandID)
 	if err != nil {
 		return s.formErr(c, "template_edit", "templates", t.Key, f, err)
 	}
-	f.Key = t.Key
-	t, v, err = s.svc.AddTemplateVersion(c.ctx(), c.actor, tid, f.Name, src)
+	settings := core.TemplateSettings{Name: &f.Name}
+	if ap := model.TemplateApproval(f.Approval); f.Approval != "" && ap != t.Approval {
+		settings.Approval = &ap
+	}
+	if _, _, err := s.svc.UpdateTemplate(c.ctx(), c.actor, tid, settings); err != nil {
+		return s.formErr(c, "template_edit", "templates", t.Key, f, err)
+	}
+	if sameSource(src, v) {
+		return redirect(c, "/templates/"+id.Format(id.Template, t.ID), "Saved.")
+	}
+	_, nv, err := s.svc.AddTemplateVersion(c.ctx(), c.actor, tid, "", src)
 	if err != nil {
 		return s.formErr(c, "template_edit", "templates", f.Key, f, err)
 	}
-	return redirect(c, "/templates/"+id.Format(id.Template, t.ID), "Saved as version "+strconv.Itoa(v.Version)+".")
+	return redirect(c, "/templates/"+id.Format(id.Template, t.ID), "Saved as version "+strconv.Itoa(nv.Version)+".")
 }
 
 func (s *Server) deleteTemplate(c *reqCtx) error {
@@ -751,11 +869,28 @@ type brandForm struct {
 	Timezone string
 	Policy   string
 	Slots    string
-	Zones    []string
+	Zones    []zoneGroup
 }
 
-var commonZones = []string{"UTC", "America/New_York", "America/Chicago", "America/Denver", "America/Phoenix", "America/Los_Angeles",
-	"Europe/London", "Europe/Berlin", "Europe/Rome", "Asia/Tokyo", "Australia/Sydney"}
+// zoneGroup is one region's time zones, for the brand form's picker.
+type zoneGroup struct {
+	Region string
+	Zones  []string
+}
+
+// zoneGroups splits timeZones by region, with UTC first.
+var zoneGroups = func() []zoneGroup {
+	groups := []zoneGroup{{Region: "UTC", Zones: []string{"UTC"}}}
+	for _, z := range timeZones {
+		region, _, _ := strings.Cut(z, "/")
+		if last := &groups[len(groups)-1]; last.Region == region {
+			last.Zones = append(last.Zones, z)
+		} else {
+			groups = append(groups, zoneGroup{Region: region, Zones: []string{z}})
+		}
+	}
+	return groups
+}()
 
 func (s *Server) brands(c *reqCtx) error {
 	bs, err := s.svc.Brands(c.ctx(), c.actor)
@@ -766,12 +901,12 @@ func (s *Server) brands(c *reqCtx) error {
 }
 
 func (s *Server) newBrand(c *reqCtx) error {
-	return s.page(c, "brand_edit", "brands", "New brand", brandForm{Timezone: "America/Denver", Policy: "none", Zones: commonZones})
+	return s.page(c, "brand_edit", "brands", "New brand", brandForm{Timezone: "America/Denver", Policy: "none", Zones: zoneGroups})
 }
 
 func (s *Server) createBrand(c *reqCtx) error {
 	f := brandForm{Name: c.r.PostFormValue("name"), Slug: c.r.PostFormValue("slug"), Timezone: c.r.PostFormValue("timezone"),
-		Policy: c.r.PostFormValue("approval_policy"), Zones: commonZones}
+		Policy: c.r.PostFormValue("approval_policy"), Zones: zoneGroups}
 	b, err := s.svc.CreateBrand(c.ctx(), c.actor, core.BrandInput{Name: f.Name, Slug: f.Slug, Timezone: f.Timezone, ApprovalPolicy: model.ApprovalPolicy(f.Policy)})
 	if err != nil {
 		return s.formErr(c, "brand_edit", "brands", "New brand", f, err)
@@ -792,7 +927,7 @@ func (s *Server) brandDetail(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	f := brandForm{Brand: b, Name: b.Name, Slug: b.Slug, Timezone: b.Timezone, Policy: string(b.ApprovalPolicy), Slots: formatSlots(slots), Zones: commonZones}
+	f := brandForm{Brand: b, Name: b.Name, Slug: b.Slug, Timezone: b.Timezone, Policy: string(b.ApprovalPolicy), Slots: formatSlots(slots), Zones: zoneGroups}
 	return s.page(c, "brand_edit", "brands", b.Name, f)
 }
 
@@ -806,7 +941,7 @@ func (s *Server) saveBrand(c *reqCtx) error {
 		return err
 	}
 	f := brandForm{Brand: b, Name: c.r.PostFormValue("name"), Slug: c.r.PostFormValue("slug"), Timezone: c.r.PostFormValue("timezone"),
-		Policy: c.r.PostFormValue("approval_policy"), Slots: c.r.PostFormValue("slots"), Zones: commonZones}
+		Policy: c.r.PostFormValue("approval_policy"), Slots: c.r.PostFormValue("slots"), Zones: zoneGroups}
 	slots, err := parseSlots(f.Slots)
 	if err != nil {
 		return s.formErr(c, "brand_edit", "brands", b.Name, f, err)

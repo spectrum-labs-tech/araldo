@@ -511,3 +511,69 @@ func TestWebhookDelivery(t *testing.T) {
 		t.Fatalf("deliveries %+v %v", ds, err)
 	}
 }
+
+func TestTemplateApprovalOverride(t *testing.T) {
+	w := newWorld(t)
+	ctx := t.Context()
+	if _, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
+		ApprovalPolicy: model.ApprovalAll}); err != nil {
+		t.Fatal(err)
+	}
+	src := tmpl.Source{Body: "Featured brand: {{.name}}"}
+	fast, _, err := w.s.CreateTemplate(ctx, w.owner, core.TemplateInput{BrandID: w.brand.ID, Key: "featured-brand",
+		Approval: model.TemplateApprovalNotRequired, Source: src})
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(a core.Actor, template string) *model.Post {
+		t.Helper()
+		in := core.PostInput{BrandID: w.brand.ID, Data: json.RawMessage(`{"name":"Aero"}`)}
+		if template != "" {
+			in.Template = template
+		} else {
+			in.Content = &model.Content{Body: "freeform"}
+		}
+		p, err := w.s.CreatePost(ctx, a, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if p := post(w.owner, "featured-brand"); p.Status != model.PostScheduled {
+		t.Errorf("not_required template under a required_for_all brand: %s, want scheduled", p.Status)
+	}
+	if p := post(w.owner, ""); p.Status != model.PostPendingApproval {
+		t.Errorf("freeform post under required_for_all: %s, want pending_approval", p.Status)
+	}
+	// And the other way: a brand without approvals, a template that requires them.
+	if _, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
+		ApprovalPolicy: model.ApprovalNone}); err != nil {
+		t.Fatal(err)
+	}
+	required := model.TemplateApprovalRequired
+	if _, _, err := w.s.UpdateTemplate(ctx, w.owner, fast.ID, core.TemplateSettings{Approval: &required}); err != nil {
+		t.Fatal(err)
+	}
+	if p := post(w.owner, "featured-brand"); p.Status != model.PostPendingApproval {
+		t.Errorf("required template under an approval-free brand: %s, want pending_approval", p.Status)
+	}
+	// Editors and API keys cannot exempt posts from review.
+	editorUser, err := w.s.AddMember(ctx, w.owner, fmt.Sprintf("ed-%s@example.com", uuid.NewString()[:8]), model.RoleEditor, "temporary password 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	editor, _, _ := w.s.MemberActor(ctx, editorUser.ID, w.org.ID, false, "")
+	notRequired := model.TemplateApprovalNotRequired
+	if _, _, err := w.s.UpdateTemplate(ctx, editor, fast.ID, core.TemplateSettings{Approval: &notRequired}); kind(err) != apperr.KindForbidden {
+		t.Errorf("editor exempting a template: %v, want forbidden", err)
+	}
+	if _, _, err := w.s.CreateTemplate(ctx, editor, core.TemplateInput{BrandID: w.brand.ID, Key: "sneaky",
+		Approval: model.TemplateApprovalNotRequired, Source: src}); kind(err) != apperr.KindForbidden {
+		t.Errorf("editor creating an exempt template: %v, want forbidden", err)
+	}
+	// Renaming needs no special role.
+	name := "Featured brand"
+	if tpl, _, err := w.s.UpdateTemplate(ctx, editor, fast.ID, core.TemplateSettings{Name: &name}); err != nil || tpl.Name != name {
+		t.Errorf("editor renaming: %v", err)
+	}
+}

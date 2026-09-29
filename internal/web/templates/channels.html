@@ -12,7 +12,7 @@
   <tr>
     <td><strong>{{.DisplayName}}</strong>{{if .Handle}} <span class="text-muted">{{.Handle}}</span>{{end}}{{if .ProfileURL}} <a href="{{safeURL .ProfileURL}}" target="_blank" rel="noopener">↗</a>{{end}}
       <div class="text-sm text-muted"><code>{{chanID .ID}}</code></div></td>
-    <td>{{.Provider}}{{if .Emulates}} → {{.Emulates}}{{end}}</td>
+    <td><span class="inline-flex items-center gap-1.5">{{icon (or .Emulates .Provider)}} {{.Provider}}{{if .Emulates}} → {{.Emulates}}{{end}}</span></td>
     <td>{{index $.Data.Brands .BrandID}}</td>
     <td><span class="pill {{statusClass .Status}}">{{.Status}}</span>{{if .StatusNote}}<div class="text-sm text-muted">{{.StatusNote}}</div>{{end}}</td>
     <td><div class="flex flex-wrap gap-1.5">

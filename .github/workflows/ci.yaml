@@ -54,11 +54,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Compiled stylesheet matches the styles and templates
+      - name: Compiled stylesheet and editor bundle match their sources
         run: |
           npm ci --no-audit --no-fund
           npm run css
-          git diff --exit-code -- internal/web/static/app.css
+          npm run js
+          git diff --exit-code -- internal/web/static/app.css internal/web/static/editor.js
       - name: Every hand-written Go file has an SPDX header
         run: |
           files=$(grep -L '^// Code generated .* DO NOT EDIT.$' $(git ls-files '*.go') || true)

@@ -78,17 +78,20 @@ func (s *Store) DeleteChannel(ctx context.Context, orgID, id uuid.UUID) error {
 
 // Templates.
 
-const templateCols = `id, org_id, brand_id, key, name, latest_version, created_at, updated_at`
+const templateCols = `id, org_id, brand_id, key, name, approval, latest_version, created_at, updated_at`
 
 func scanTemplate(r pgx.Row) (*model.Template, error) {
 	var t model.Template
-	err := r.Scan(&t.ID, &t.OrgID, &t.BrandID, &t.Key, &t.Name, &t.LatestVersion, &t.CreatedAt, &t.UpdatedAt)
+	err := r.Scan(&t.ID, &t.OrgID, &t.BrandID, &t.Key, &t.Name, &t.Approval, &t.LatestVersion, &t.CreatedAt, &t.UpdatedAt)
 	return &t, mapErr(err)
 }
 
 func (s *Store) CreateTemplate(ctx context.Context, t *model.Template) error {
-	_, err := s.q.Exec(ctx, `INSERT INTO templates (id, org_id, brand_id, key, name) VALUES ($1, $2, $3, $4, $5)`,
-		t.ID, t.OrgID, t.BrandID, t.Key, t.Name)
+	if t.Approval == "" {
+		t.Approval = model.TemplateApprovalInherit
+	}
+	_, err := s.q.Exec(ctx, `INSERT INTO templates (id, org_id, brand_id, key, name, approval) VALUES ($1, $2, $3, $4, $5, $6)`,
+		t.ID, t.OrgID, t.BrandID, t.Key, t.Name, t.Approval)
 	return mapErr(err)
 }
 
@@ -116,6 +119,10 @@ func (s *Store) Templates(ctx context.Context, orgID uuid.UUID, brandID *uuid.UU
 
 func (s *Store) SetTemplateName(ctx context.Context, orgID, id uuid.UUID, name string) error {
 	return s.execOne(ctx, `UPDATE templates SET name = $3, updated_at = now() WHERE org_id = $1 AND id = $2`, orgID, id, name)
+}
+
+func (s *Store) SetTemplateApproval(ctx context.Context, orgID, id uuid.UUID, a model.TemplateApproval) error {
+	return s.execOne(ctx, `UPDATE templates SET approval = $3, updated_at = now() WHERE org_id = $1 AND id = $2`, orgID, id, a)
 }
 
 func (s *Store) DeleteTemplate(ctx context.Context, orgID, id uuid.UUID) error {

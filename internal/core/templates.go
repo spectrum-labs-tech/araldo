@@ -27,7 +27,23 @@ type TemplateInput struct {
 	BrandID uuid.UUID
 	Key     string
 	Name    string
-	Source  tmpl.Source
+	// Approval overrides the brand's approval policy for posts made from
+	// this template; empty means inherit.
+	Approval model.TemplateApproval
+	Source   tmpl.Source
+}
+
+// checkApprovalSetting validates an approval override and who may set it:
+// only people who can approve posts (admins, owners), so an editor or an
+// API key cannot exempt its own posts from review (ADR 0004).
+func checkApprovalSetting(a Actor, ap model.TemplateApproval) error {
+	if !ap.Valid() {
+		return apperr.Invalid("approval_invalid", "approval", "Approval must be inherit, required or not_required.")
+	}
+	if ap != model.TemplateApprovalInherit && !a.Can(PermPostsApprove) {
+		return apperr.Forbidden("Only admins and owners can change whether a template's posts need approval.")
+	}
+	return nil
 }
 
 // CreateTemplate adds a template with its first version.
@@ -43,10 +59,16 @@ func (s *Service) CreateTemplate(ctx context.Context, a Actor, in TemplateInput)
 	if !templateKeyRE.MatchString(in.Key) {
 		return nil, nil, apperr.Invalid("key_invalid", "key", "Template keys use lowercase letters, digits, dashes and underscores.")
 	}
+	if in.Approval == "" {
+		in.Approval = model.TemplateApprovalInherit
+	}
+	if err := checkApprovalSetting(a, in.Approval); err != nil {
+		return nil, nil, err
+	}
 	if _, err := tmpl.Compile(in.Source); err != nil {
 		return nil, nil, err
 	}
-	t := &model.Template{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Key: in.Key, Name: strings.TrimSpace(in.Name)}
+	t := &model.Template{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Key: in.Key, Name: strings.TrimSpace(in.Name), Approval: in.Approval}
 	v := versionOf(t, in.Source, 1, a.UserID)
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.CreateTemplate(ctx, t); err != nil {
@@ -102,6 +124,55 @@ func (s *Service) AddTemplateVersion(ctx context.Context, a Actor, templateID uu
 			return err
 		}
 		return s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, "template.version_created", ViewTemplate(t, v))
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return s.reloadTemplate(ctx, a.OrgID, templateID)
+}
+
+// TemplateSettings changes a template's name or approval rule without
+// making a new version.
+type TemplateSettings struct {
+	Name     *string
+	Approval *model.TemplateApproval
+}
+
+// UpdateTemplate changes a template's settings.
+func (s *Service) UpdateTemplate(ctx context.Context, a Actor, templateID uuid.UUID, in TemplateSettings) (*model.Template, *model.TemplateVersion, error) {
+	if err := a.require(PermTemplatesWrite); err != nil {
+		return nil, nil, err
+	}
+	if in.Approval != nil {
+		if err := checkApprovalSetting(a, *in.Approval); err != nil {
+			return nil, nil, err
+		}
+	}
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		t, err := tx.TemplateForUpdate(ctx, a.OrgID, templateID)
+		if err != nil {
+			return notFound(err, "template")
+		}
+		if err := a.brandAllowed(t.BrandID); err != nil {
+			return apperr.NotFound("template")
+		}
+		detail := map[string]any{}
+		if in.Name != nil && strings.TrimSpace(*in.Name) != t.Name {
+			if err := tx.SetTemplateName(ctx, a.OrgID, t.ID, strings.TrimSpace(*in.Name)); err != nil {
+				return err
+			}
+			detail["name"] = strings.TrimSpace(*in.Name)
+		}
+		if in.Approval != nil && *in.Approval != t.Approval {
+			if err := tx.SetTemplateApproval(ctx, a.OrgID, t.ID, *in.Approval); err != nil {
+				return err
+			}
+			detail["approval"] = *in.Approval
+		}
+		if len(detail) == 0 {
+			return nil
+		}
+		return s.audit(ctx, tx, a, "template.update", id.Format(id.Template, t.ID), detail)
 	})
 	if err != nil {
 		return nil, nil, err

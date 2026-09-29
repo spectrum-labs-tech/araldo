@@ -80,10 +80,7 @@ func middleware(next http.Handler, log *slog.Logger) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("X-Frame-Options", "DENY")
-		if !strings.HasPrefix(r.URL.Path, "/v1/") {
-			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "+
-				"connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-		}
+		// The dashboard sets its own Content-Security-Policy, with a nonce.
 		if r.Method == http.MethodPost && !strings.HasPrefix(r.URL.Path, "/v1/") {
 			r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		}

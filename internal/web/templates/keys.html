@@ -16,16 +16,17 @@
 
 {{if .Data.Keys}}
 <table>
-  <thead><tr><th>Name</th><th>Key</th><th>Access</th><th>Last used</th><th>Created</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th>Key</th><th>Access</th><th>Last used</th><th>Expires</th><th></th></tr></thead>
   <tbody>
   {{range .Data.Keys}}
-  <tr class="{{if .RevokedAt}}text-muted{{end}}">
+  {{$dead := or .RevokedAt (expired .ExpiresAt)}}
+  <tr class="{{if $dead}}text-muted{{end}}">
     <td>{{.Name}}</td>
     <td><code>{{.Hint}}</code></td>
     <td>{{if .Scopes}}{{join .Scopes ", "}}{{else}}full{{end}}{{if .BrandID}} · one brand{{end}}</td>
     <td>{{if .LastUsedAt}}{{ago (derefTime .LastUsedAt)}}{{else}}never{{end}}</td>
-    <td>{{ago .CreatedAt}}</td>
-    <td>{{if .RevokedAt}}revoked{{else}}
+    <td>{{if .ExpiresAt}}{{fmtDate .ExpiresAt}}{{else}}never{{end}}</td>
+    <td>{{if .RevokedAt}}revoked{{else if expired .ExpiresAt}}expired{{else}}
       <form method="post" action="/keys/{{keyID .ID}}/revoke" data-confirm="Revoke {{.Name}}? Requests using it will fail immediately.">
         <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger">Revoke</button></form>{{end}}</td>
   </tr>
@@ -47,6 +48,17 @@
     <fieldset data-when="access=restricted"><legend>Scopes</legend>
       {{range .Data.Scopes}}<label class="{{$radio}}"><input type="checkbox" name="scopes" value="{{.}}"> <code>{{.}}</code></label>{{end}}
     </fieldset>
+    <div class="grid gap-4 sm:grid-cols-2">
+      <label>Expires
+        <select name="expires" data-toggle="expires">
+          <option value="never">Never</option>
+          <option value="30d">In 30 days</option>
+          <option value="90d" selected>In 90 days</option>
+          <option value="1y">In a year</option>
+          <option value="date">On a date…</option>
+        </select></label>
+      <label data-when="expires=date">Date <input type="date" name="expires_on"></label>
+    </div>
     <label>Limit to one brand
       <select name="brand"><option value="">All brands</option>{{range .Data.Brands}}<option value="{{brandID .ID}}">{{.Name}}</option>{{end}}</select></label>
     <div><button class="btn-primary">Create key</button></div>

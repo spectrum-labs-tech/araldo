@@ -106,6 +106,22 @@ tasks:
     deps: [web:deps]
     cmd: npm run css
 
+  web:js:
+    desc: Bundle the template editor (internal/web/scripts) into internal/web/static/editor.js (commit the result)
+    deps: [web:deps]
+    cmd: npm run js
+
+  web:icons:
+    desc: Regenerate the platform icon sprite (internal/web/templates/_icons.html) from Simple Icons
+    deps: [web:deps]
+    cmd: npm run icons
+
+  web:build:
+    desc: Rebuild every committed web asset (stylesheet and editor bundle)
+    cmds:
+      - task: web:css
+      - task: web:js
+
   web:watch:
     desc: Rebuild the stylesheet on every template or style change while you work
     deps: [web:deps]

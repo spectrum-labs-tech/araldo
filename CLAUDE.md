@@ -40,6 +40,12 @@ platforms from templates). Read `docs/architecture.md`, then the ADRs in
   compiled file. Layout uses utilities; anything repeated is a component
   class in the source stylesheet. Colors are semantic tokens (`bg-panel`,
   `text-muted`, `border-line`…) so dark mode keeps working.
+- **Scripts**: `internal/web/static/app.js` is small hand-written progressive
+  enhancement. The template editor (CodeMirror) is bundled from
+  `internal/web/scripts/editor.js` by `task web:js`; commit
+  `internal/web/static/editor.js` (CI checks it too). Pages must work
+  without JavaScript. Styles that scripts inject need the per-request CSP
+  nonce (`data-nonce`); never loosen the policy with `unsafe-inline`.
 - **Context** flows end to end; logging is `log/slog` only.
 - **Every Go file starts with** `// SPDX-License-Identifier: AGPL-3.0-or-later`.
 - **Dependencies**: standard library first; justify any new module.

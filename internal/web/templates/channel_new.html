@@ -6,7 +6,7 @@
 {{if and (not $f.Provider) (not $f.Channel)}}
 <p class="mb-3">Choose a platform:</p>
 <ul class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-3 p-0">
-  {{range $f.Providers}}<li><a class="card m-0 flex flex-col gap-1 text-ink no-underline hover:border-accent hover:no-underline" href="/channels/new?provider={{.Provider}}&brand={{$f.Brand}}"><strong>{{.Name}}</strong>
+  {{range $f.Providers}}<li><a class="card m-0 flex flex-col gap-1 text-ink no-underline hover:border-accent hover:no-underline" href="/channels/new?provider={{.Provider}}&brand={{$f.Brand}}"><strong class="inline-flex items-center gap-2">{{icon .Provider}} {{.Name}}</strong>
     <span class="text-sm text-muted">{{.Rules.MaxLength}} {{.Rules.Counting}}{{if .Rules.Threads}} · threads{{end}}</span></a></li>{{end}}
 </ul>
 {{if .Livemode}}<p class="mt-3 text-sm text-muted">X, Facebook, Instagram, Threads and LinkedIn need an approved developer app and are on the roadmap.</p>{{end}}

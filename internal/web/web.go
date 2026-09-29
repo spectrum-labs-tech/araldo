@@ -26,6 +26,7 @@ import (
 
 	"github.com/spectrum-labs-tech/araldo/internal/api"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
+	"github.com/spectrum-labs-tech/araldo/internal/authn"
 	"github.com/spectrum-labs-tech/araldo/internal/buildinfo"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
@@ -56,6 +57,7 @@ type Server struct {
 	pages map[string]*template.Template
 	mux   *http.ServeMux
 	login *ipLimiter
+	doc   *apiDoc
 }
 
 // New returns the dashboard.
@@ -64,11 +66,31 @@ func New(svc *core.Service, log *slog.Logger, cfg Config) (*Server, error) {
 	if err := s.parse(); err != nil {
 		return nil, err
 	}
+	doc, err := buildAPIDoc()
+	if err != nil {
+		return nil, fmt.Errorf("web: API reference: %w", err)
+	}
+	s.doc = doc
 	s.routes()
 	return s, nil
 }
 
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
+// ServeHTTP sets a strict Content-Security-Policy with a fresh nonce for
+// the style elements the template editor adds, then routes.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	nonce, _ := authn.NewToken()
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'nonce-"+nonce+"'; "+
+		"script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	s.mux.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), nonceKey{}, nonce)))
+}
+
+type nonceKey struct{}
+
+// cspNonce is the request's style nonce.
+func cspNonce(r *http.Request) string {
+	n, _ := r.Context().Value(nonceKey{}).(string)
+	return n
+}
 
 func (s *Server) parse() error {
 	entries, err := fs.Glob(templateFS, "templates/*.html")
@@ -77,10 +99,10 @@ func (s *Server) parse() error {
 	}
 	for _, e := range entries {
 		name := strings.TrimSuffix(strings.TrimPrefix(e, "templates/"), ".html")
-		if name == "layout" {
-			continue
+		if name == "layout" || strings.HasPrefix(name, "_") {
+			continue // the layout and partials are parsed with every page
 		}
-		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", e)
+		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", "templates/_icons.html", e)
 		if err != nil {
 			return fmt.Errorf("web: parse %s: %w", e, err)
 		}
@@ -126,7 +148,14 @@ type view struct {
 	Data       any
 	NeedsMFA   bool
 	RequireMFA bool
+	// Wide pages use the full width (the template editor).
+	Wide bool
+	// Nonce allows the editor's style elements (Content-Security-Policy).
+	Nonce string
 }
+
+// widePages use the full width of the window.
+var widePages = map[string]bool{"template_edit": true, "api_reference": true}
 
 // reqCtx is a signed-in request.
 type reqCtx struct {
@@ -231,6 +260,7 @@ func (s *Server) view(c *reqCtx, nav, title string, data any) view {
 	v := view{Title: title, Nav: nav, Version: buildinfo.Version, Data: data}
 	if c != nil {
 		v.User, v.Session, v.Org, v.Orgs, v.CSRF = c.user, c.session, c.member, c.orgs, c.session.CSRFToken
+		v.Nonce = cspNonce(c.r)
 		v.Livemode = c.session.Livemode
 		v.Notice = c.r.URL.Query().Get("notice")
 		if c.org != nil {
@@ -246,6 +276,7 @@ func (s *Server) render(w http.ResponseWriter, status int, page string, v view) 
 		http.Error(w, "no such page "+page, http.StatusInternalServerError)
 		return
 	}
+	v.Wide = widePages[page]
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, v); err != nil {
 		s.log.Error("rendering page", "page", page, "err", err)
@@ -404,8 +435,23 @@ var funcs = template.FuncMap{
 	"userID":     func(u uuid.UUID) string { return id.Format(id.User, u) },
 	"deliveryID": func(u uuid.UUID) string { return id.Format(id.Delivery, u) },
 	"join":       strings.Join,
+	"icon": func(provider any) template.HTML {
+		p := fmt.Sprint(provider)
+		if !iconNames[p] {
+			p = "sandbox"
+		}
+		return template.HTML(`<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-` + p + `"/></svg>`) //nolint:gosec // p is from a fixed list
+	},
 	"contains":   func(list []string, v string) bool { return slices.Contains(list, v) },
 	"list":       func(v ...string) []string { return v },
+	"trimSchema": func(a string) string { return strings.TrimPrefix(a, "schema-") },
+	"expired":    func(p *time.Time) bool { return p != nil && time.Now().After(*p) },
+	"fmtDate": func(p *time.Time) string {
+		if p == nil {
+			return ""
+		}
+		return p.UTC().Format("Jan 2, 2006")
+	},
 	"derefTime": func(p *time.Time) time.Time {
 		if p == nil {
 			return time.Time{}
@@ -450,6 +496,10 @@ var funcs = template.FuncMap{
 		return ""
 	},
 }
+
+// iconNames are the symbols in templates/_icons.html.
+var iconNames = map[string]bool{"x": true, "bluesky": true, "mastodon": true, "threads": true, "linkedin": true,
+	"facebook": true, "instagram": true, "discord": true, "telegram": true, "sandbox": true}
 
 func human(d time.Duration) string {
 	switch {

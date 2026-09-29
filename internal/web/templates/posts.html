@@ -21,7 +21,7 @@
       {{if .SlotAt}}<span class="tag">slot</span>{{end}}{{range $k, $v := .Metadata}} <span class="tag">{{$k}}={{$v}}</span>{{end}}</td>
     <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
     <td>{{fmtTime .PublishAt}}</td>
-    <td>{{range .Targets}}<span class="pill {{statusClass .Status}}" title="{{.ChannelName}}: {{.Status}}">{{.Provider}}</span> {{end}}</td>
+    <td>{{range .Targets}}<span class="pill {{statusClass .Status}} inline-flex items-center gap-1" title="{{.ChannelName}}: {{.Status}}">{{icon .Provider}} {{.Provider}}</span> {{end}}</td>
     <td>{{ago .CreatedAt}}</td>
   </tr>
   {{end}}

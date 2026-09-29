@@ -6,10 +6,11 @@
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label>Name <input name="name" value="{{$f.Name}}" required maxlength="100" placeholder="AR15.build"></label>
   <label>Slug <input name="slug" value="{{$f.Slug}}" pattern="[a-z0-9][a-z0-9\-]*" placeholder="made from the name"> <span class="text-sm font-normal text-muted">API callers can use it instead of the ID.</span></label>
-  <label>Time zone
-    <input name="timezone" value="{{$f.Timezone}}" list="zones" required>
-    <datalist id="zones">{{range $f.Zones}}<option value="{{.}}">{{end}}</datalist></label>
-  <label>Approvals
+  <label>Time zone <span class="text-sm font-normal text-muted">slots and dates in posts use it</span>
+    <select name="timezone" required>
+      {{range $f.Zones}}<optgroup label="{{.Region}}">{{range .Zones}}<option value="{{.}}" {{if eq . $f.Timezone}}selected{{end}}>{{.}}</option>{{end}}</optgroup>{{end}}
+    </select></label>
+  <label>Approvals <span class="text-sm font-normal text-muted">the default for this brand's posts; a template can override it</span>
     <select name="approval_policy">
       <option value="none" {{if eq $f.Policy "none"}}selected{{end}}>None: posts go out as scheduled</option>
       <option value="required_for_editors_and_keys" {{if eq $f.Policy "required_for_editors_and_keys"}}selected{{end}}>Required for editors and API keys</option>

@@ -42,7 +42,7 @@
 <section class="card">
   <div class="mb-2 flex items-center justify-between gap-4"><h2 class="mb-0">Channels</h2><a href="/channels/new">Connect</a></div>
   {{if .Data.Channels}}
-  <ul class="m-0 flex list-none flex-wrap gap-x-4 gap-y-2 p-0">{{range .Data.Channels}}<li><span class="pill {{statusClass .Status}}">{{.Provider}}{{if .Emulates}} → {{.Emulates}}{{end}}</span> {{.DisplayName}}</li>{{end}}</ul>
+  <ul class="m-0 flex list-none flex-wrap gap-x-4 gap-y-2 p-0">{{range .Data.Channels}}<li class="inline-flex items-center gap-1.5">{{icon (or .Emulates .Provider)}} {{.DisplayName}} <span class="pill {{statusClass .Status}}">{{.Provider}}{{if .Emulates}} → {{.Emulates}}{{end}}</span></li>{{end}}</ul>
   {{else}}<p class="text-muted">No channels in {{if .Livemode}}live{{else}}test{{end}} mode yet.</p>{{end}}
 </section>
 {{end}}

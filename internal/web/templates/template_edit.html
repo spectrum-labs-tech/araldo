@@ -1,53 +1,79 @@
 {{define "content"}}
 {{$f := .Data}}
 <p class="mb-1 text-sm text-muted"><a href="/templates">Templates</a>{{if $f.Template}} / <code>{{tmplID $f.Template.ID}}</code>{{end}}</p>
-<div class="mb-2 flex flex-wrap items-start justify-between gap-4">
-  <h1>{{if $f.Template}}<code>{{$f.Template.Key}}</code> <span class="text-base font-normal text-muted">v{{$f.Version.Version}} of {{$f.Template.LatestVersion}}</span>{{else}}New template{{end}}</h1>
+<div class="mb-4 flex flex-wrap items-start justify-between gap-4">
+  <h1 class="mb-0">{{if $f.Template}}<code>{{$f.Template.Key}}</code> <span class="text-base font-normal text-muted">v{{$f.Version.Version}} of {{$f.Template.LatestVersion}}</span>{{else}}New template{{end}}</h1>
   {{if $f.Template}}<div class="flex flex-wrap items-center gap-2">
     <a class="btn" href="/posts/new?template={{tmplID $f.Template.ID}}">Use in a post</a>
     <form method="post" action="/templates/{{tmplID $f.Template.ID}}/delete" data-confirm="Delete this template? Posts made from it keep their text.">
       <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger">Delete</button></form>
   </div>{{end}}
 </div>
-<div class="grid items-start gap-6 lg:grid-cols-[1.2fr_1fr]">
-<form method="post" action="{{if $f.Template}}/templates/{{tmplID $f.Template.ID}}{{else}}/templates{{end}}" class="flex flex-col gap-4" id="template-form">
+
+<div class="grid items-start gap-6 lg:grid-cols-2">
+<form method="post" action="{{if $f.Template}}/templates/{{tmplID $f.Template.ID}}{{else}}/templates{{end}}" class="flex min-w-0 flex-col gap-4" id="template-form" data-nonce="{{$.Nonce}}">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  {{if not $f.Template}}
   <div class="grid gap-4 sm:grid-cols-2">
+    {{if not $f.Template}}
     <label>Brand
       <select name="brand">{{range $f.Brands}}<option value="{{brandID .ID}}" {{if eq $f.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
     </label>
     <label>Key <input name="key" value="{{$f.Key}}" required pattern="[a-z0-9][a-z0-9_\-]*" placeholder="featured-build" title="lowercase letters, digits, - and _"></label>
+    {{else}}<input type="hidden" name="brand" value="{{brandID $f.Template.BrandID}}">{{end}}
+    <label>Name <input name="name" value="{{$f.Name}}" placeholder="Featured build"></label>
+    <label>Approval
+      <select name="approval" {{if not $f.CanApprove}}disabled{{end}}>
+        <option value="inherit" {{if eq $f.Approval "inherit"}}selected{{end}}>Follow the brand's policy</option>
+        <option value="not_required" {{if eq $f.Approval "not_required"}}selected{{end}}>Never needs approval</option>
+        <option value="required" {{if eq $f.Approval "required"}}selected{{end}}>Always needs approval</option>
+      </select>
+      {{if not $f.CanApprove}}<span class="text-sm font-normal text-muted">Only admins and owners can change this.</span>{{end}}</label>
   </div>
-  {{else}}<input type="hidden" name="brand" value="{{brandID $f.Template.BrandID}}">
-  {{end}}
-  <label>Name <input name="name" value="{{$f.Name}}" placeholder="Featured build"></label>
-  <label>Body <span class="text-sm font-normal text-muted">Go template: <code>{{"{{.name}}"}}</code>, <code>{{"{{truncate 80 .summary}}"}}</code>, <code>{{"{{hashtags .tags}}"}}</code>, <code>{{"{{thread}}"}}</code> starts a new thread part</span>
-    <textarea name="body" rows="7" class="font-mono" data-preview required>{{$f.Body}}</textarea></label>
-  <details {{if $f.Overrides}}open{{end}}>
-    <summary>Per-platform bodies and fitting</summary>
+
+  <section data-tabs>
+    <div class="mb-1 text-sm font-semibold">Body</div>
+    <p class="mb-2 text-sm text-muted">Go template: <code>{{"{{.name}}"}}</code>, <code>{{"{{truncate 80 .summary}}"}}</code>, <code>{{"{{hashtags .tags}}"}}</code>, <code>{{"{{thread}}"}}</code> starts a new thread part.
+      A platform tab replaces the default body there, e.g. a shorter version for X.</p>
+    <div class="tabbar" role="tablist" data-tabbar hidden>
+      <button type="button" class="tab" role="tab" data-tab="default">Default</button>
+      {{range $f.Providers}}<button type="button" class="tab" role="tab" data-tab="{{.Provider}}" title="{{.Name}}: {{.Limit}} {{.Counting}}">{{icon .Provider}}<span class="sr-only xl:not-sr-only">{{.Name}}</span></button>{{end}}
+    </div>
+    <div data-panel="default" role="tabpanel">
+      <label><span data-panel-title>Default body</span>
+        <textarea name="body" rows="8" class="font-mono" data-editor="gotemplate" aria-label="Default body" required>{{$f.Body}}</textarea></label>
+    </div>
     {{range $f.Providers}}
-    <div class="my-2 grid gap-3 sm:grid-cols-[1fr_10rem]">
-      <label><span><strong>{{.}}</strong> <span class="font-normal">body (blank: use the main body)</span></span>
-        <textarea name="override_{{.}}" rows="3" class="font-mono" data-preview>{{index $f.Overrides (printf "%s" .)}}</textarea></label>
-      <label>When too long
-        <select name="fit_{{.}}" data-preview>
-          {{$fit := index $f.Fit (printf "%s" .)}}
-          <option value="error" {{if or (eq $fit "") (eq $fit "error")}}selected{{end}}>refuse</option>
-          <option value="truncate" {{if eq $fit "truncate"}}selected{{end}}>shorten</option>
-          <option value="thread" {{if eq $fit "thread"}}selected{{end}}>thread</option>
+    <div data-panel="{{.Provider}}" role="tabpanel" class="mt-3 flex flex-col gap-3">
+      <div data-panel-title class="flex items-center gap-1.5 font-semibold">{{icon .Provider}} {{.Name}}</div>
+      <p class="text-sm text-muted">{{.Name}} allows {{.Limit}} {{.Counting}}{{if .Threads}} per post and supports threads{{end}}. Leave this empty to use the default body.</p>
+      <textarea name="override_{{.Provider}}" rows="5" class="font-mono" data-editor="gotemplate" aria-label="{{.Name}} body" placeholder="Same as the default body">{{index $f.Overrides (printf "%s" .Provider)}}</textarea>
+      <label class="max-w-xs">When the text is too long
+        <select name="fit_{{.Provider}}">
+          {{$fit := index $f.Fit (printf "%s" .Provider)}}
+          <option value="error" {{if or (eq $fit "") (eq $fit "error")}}selected{{end}}>Refuse to schedule</option>
+          <option value="truncate" {{if eq $fit "truncate"}}selected{{end}}>Shorten with …</option>
+          {{if .Threads}}<option value="thread" {{if eq $fit "thread"}}selected{{end}}>Split into a thread</option>{{end}}
         </select></label>
     </div>
     {{end}}
-  </details>
-  <label>Variables (JSON Schema) <textarea name="variables" rows="8" class="font-mono" data-preview>{{$f.Variables}}</textarea></label>
-  <label>Example data (JSON; used for checks and the preview) <textarea name="example" rows="3" class="font-mono" data-preview>{{$f.Example}}</textarea></label>
-  <div><button class="btn-primary">{{if $f.Template}}Save as version {{inc $f.Template.LatestVersion}}{{else}}Create template{{end}}</button></div>
+  </section>
+
+  <div class="grid gap-4 xl:grid-cols-2">
+    <label>Variables (JSON Schema) <textarea name="variables" rows="10" class="font-mono" data-editor="json">{{$f.Variables}}</textarea></label>
+    <label>Example data <span class="font-normal text-muted">(checks and the preview use it)</span><textarea name="example" rows="10" class="font-mono" data-editor="json">{{$f.Example}}</textarea></label>
+  </div>
+  <div><button class="btn-primary">{{if $f.Template}}Save{{else}}Create template{{end}}</button>
+    {{if $f.Template}}<span class="ml-2 text-sm text-muted">Changing the text makes version {{inc $f.Template.LatestVersion}}; queued posts keep theirs.</span>{{end}}</div>
 </form>
-<aside class="overflow-auto rounded-lg border border-line bg-panel p-4 lg:sticky lg:top-4 lg:max-h-[90vh]" aria-live="polite">
-  <h2>Preview</h2>
-  <p class="text-sm text-muted">Rendered with the example data, for every platform.</p>
-  <div id="preview" data-csrf="{{$.CSRF}}"></div>
+
+<aside class="min-w-0 rounded-lg border border-line bg-panel p-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-auto" aria-live="polite">
+  <h2 class="mb-1">Preview</h2>
+  <p class="mb-3 text-sm text-muted">Rendered with the example data. Pick the platforms to show; this browser remembers them.</p>
+  <div class="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Platforms to preview">
+    {{range $f.Providers}}<button type="button" class="chip" data-preview-toggle="{{.Provider}}" data-name="{{.Name}}" aria-pressed="false">{{icon .Provider}} {{.Name}}</button>{{end}}
+  </div>
+  <div id="preview" data-csrf="{{$.CSRF}}" data-default-platforms="{{$f.DefaultPreview}}"><p class="text-sm text-muted">The preview needs JavaScript.</p></div>
 </aside>
 </div>
+<script src="/static/editor.js" defer></script>
 {{end}}

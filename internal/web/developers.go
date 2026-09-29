@@ -70,6 +70,11 @@ func (s *Server) createKey(c *reqCtx) error {
 	if c.r.PostFormValue("access") == "full" {
 		in.Scopes = nil
 	}
+	expires, err := keyExpiry(c.r.PostFormValue("expires"), c.r.PostFormValue("expires_on"), time.Now())
+	if err != nil {
+		return s.formErr(c, "keys", "developers", "API keys", d, err)
+	}
+	in.Expires = expires
 	if ref := c.r.PostFormValue("brand"); ref != "" {
 		b, err := s.svc.ResolveBrand(c.ctx(), c.actor, ref)
 		if err != nil {
@@ -87,6 +92,33 @@ func (s *Server) createKey(c *reqCtx) error {
 	d.NewKey, d.NewName = plain, k.Name
 	d.Keys = append([]*model.APIKey{k}, d.Keys...)
 	return s.page(c, "keys", "developers", "API keys", d)
+}
+
+// keyExpiry turns the form's choice into an expiry time (nil: never).
+func keyExpiry(choice, on string, now time.Time) (*time.Time, error) {
+	var t time.Time
+	switch choice {
+	case "", "never":
+		return nil, nil
+	case "30d":
+		t = now.AddDate(0, 0, 30)
+	case "90d":
+		t = now.AddDate(0, 0, 90)
+	case "1y":
+		t = now.AddDate(1, 0, 0)
+	case "date":
+		d, err := time.Parse("2006-01-02", on)
+		if err != nil {
+			return nil, apperr.Invalid("expires_invalid", "expires_on", "Pick the date the key stops working.")
+		}
+		t = d.Add(24*time.Hour - time.Second) // the end of that day, UTC
+	default:
+		return nil, apperr.Invalid("expires_invalid", "expires", "Choose when the key expires.")
+	}
+	if !t.After(now) {
+		return nil, apperr.Invalid("expires_invalid", "expires_on", "The expiry date must be in the future.")
+	}
+	return &t, nil
 }
 
 func (s *Server) revokeKey(c *reqCtx) error {

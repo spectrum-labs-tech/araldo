@@ -74,6 +74,7 @@ type TemplateView struct {
 	Brand         string               `json:"brand"`
 	Key           string               `json:"key"`
 	Name          string               `json:"name"`
+	Approval      string               `json:"approval"`
 	LatestVersion int                  `json:"latest_version"`
 	Latest        *TemplateVersionView `json:"latest,omitempty"`
 	CreatedAt     time.Time            `json:"created_at"`
@@ -83,7 +84,7 @@ type TemplateView struct {
 // ViewTemplate renders a template with (optionally) a version.
 func ViewTemplate(t *model.Template, v *model.TemplateVersion) TemplateView {
 	tv := TemplateView{ID: id.Format(id.Template, t.ID), Object: "template", Brand: id.Format(id.Brand, t.BrandID), Key: t.Key, Name: t.Name,
-		LatestVersion: t.LatestVersion, CreatedAt: t.CreatedAt.UTC(), UpdatedAt: t.UpdatedAt.UTC()}
+		Approval: string(t.Approval), LatestVersion: t.LatestVersion, CreatedAt: t.CreatedAt.UTC(), UpdatedAt: t.UpdatedAt.UTC()}
 	if v != nil {
 		examples := v.Examples
 		if examples == nil {

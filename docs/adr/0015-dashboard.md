@@ -31,6 +31,12 @@ Self-hosting should remain "one binary and a Postgres".
    styles, and CI fails if the committed output is stale. Application code
    is Go, never JavaScript beyond the small progressive-enhancement script.
 5. **Accessibility:** WCAG 2.1 AA. Forms work without JavaScript.
+   JavaScript only enhances: `static/app.js` is hand-written, and the
+   template editor (CodeMirror, syntax highlighting, per-platform tabs, the
+   live preview) is bundled from `internal/web/scripts` with esbuild into a
+   committed `static/editor.js` that only that page loads. The dashboard's
+   Content-Security-Policy allows no inline code; the editor's injected
+   styles carry a per-request nonce.
 6. **First screens:**
    - sign-in and MFA;
    - org, brand and member settings;

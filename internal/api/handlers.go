@@ -41,6 +41,7 @@ func (h *Handler) routes() {
 	h.handle("POST /v1/templates", h.createTemplate)
 	h.handle("POST /v1/templates/preview", h.previewTemplate)
 	h.handle("GET /v1/templates/{id}", h.getTemplate)
+	h.handle("POST /v1/templates/{id}", h.updateTemplate)
 	h.handle("POST /v1/templates/{id}/versions", h.addTemplateVersion)
 	h.handle("DELETE /v1/templates/{id}", h.deleteTemplate)
 
@@ -307,9 +308,10 @@ func (h *Handler) createTemplate(w http.ResponseWriter, r *http.Request) error {
 	a := actor(r)
 	var body struct {
 		sourceBody
-		Brand string `json:"brand"`
-		Key   string `json:"key"`
-		Name  string `json:"name"`
+		Brand    string `json:"brand"`
+		Key      string `json:"key"`
+		Name     string `json:"name"`
+		Approval string `json:"approval"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -318,7 +320,8 @@ func (h *Handler) createTemplate(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	t, v, err := h.svc.CreateTemplate(r.Context(), a, core.TemplateInput{BrandID: b.ID, Key: body.Key, Name: body.Name, Source: body.source()})
+	t, v, err := h.svc.CreateTemplate(r.Context(), a, core.TemplateInput{BrandID: b.ID, Key: body.Key, Name: body.Name,
+		Approval: model.TemplateApproval(body.Approval), Source: body.source()})
 	if err != nil {
 		return err
 	}
@@ -344,6 +347,31 @@ func (h *Handler) getTemplate(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ok(w, http.StatusOK, core.ViewTemplate(t, tv))
+	return nil
+}
+
+func (h *Handler) updateTemplate(w http.ResponseWriter, r *http.Request) error {
+	tid, err := pathID(r, id.Template, "template")
+	if err != nil {
+		return err
+	}
+	var body struct {
+		Name     *string `json:"name"`
+		Approval *string `json:"approval"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	in := core.TemplateSettings{Name: body.Name}
+	if body.Approval != nil {
+		ap := model.TemplateApproval(*body.Approval)
+		in.Approval = &ap
+	}
+	t, v, err := h.svc.UpdateTemplate(r.Context(), actor(r), tid, in)
+	if err != nil {
+		return err
+	}
+	ok(w, http.StatusOK, core.ViewTemplate(t, v))
 	return nil
 }
 

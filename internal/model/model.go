@@ -203,6 +203,22 @@ func (c *Channel) RulesProvider() platform.Provider {
 	return c.Provider
 }
 
+// TemplateApproval overrides the brand's approval policy for posts made
+// from a template (ADR 0004).
+type TemplateApproval string
+
+// Template approval settings.
+const (
+	TemplateApprovalInherit     TemplateApproval = "inherit"
+	TemplateApprovalRequired    TemplateApproval = "required"
+	TemplateApprovalNotRequired TemplateApproval = "not_required"
+)
+
+// Valid reports whether a is known.
+func (a TemplateApproval) Valid() bool {
+	return a == TemplateApprovalInherit || a == TemplateApprovalRequired || a == TemplateApprovalNotRequired
+}
+
 // Template is a named, versioned template in a brand.
 type Template struct {
 	ID            uuid.UUID
@@ -210,6 +226,7 @@ type Template struct {
 	BrandID       uuid.UUID
 	Key           string
 	Name          string
+	Approval      TemplateApproval
 	LatestVersion int
 	CreatedAt     time.Time
 	UpdatedAt     time.Time

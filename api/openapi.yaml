@@ -234,6 +234,7 @@ paths:
                     brand: { type: string }
                     key: { type: string, example: featured-build }
                     name: { type: string }
+                    approval: { $ref: "#/components/schemas/TemplateApproval" }
       responses:
         "201":
           description: The template with version 1.
@@ -274,6 +275,28 @@ paths:
       responses:
         "200":
           description: The template and the version asked for.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Update a template's settings
+      description: |
+        Rename a template or change its approval rule, without making a new
+        version. Only people who can approve posts may change `approval`, so
+        API keys cannot.
+      tags: [Templates]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                approval: { $ref: "#/components/schemas/TemplateApproval" }
+      responses:
+        "200":
+          description: The template.
           content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } }
         default: { $ref: "#/components/responses/Error" }
     delete:
@@ -740,6 +763,14 @@ components:
           type: object
           additionalProperties: { type: string, enum: [error, truncate, thread] }
 
+    TemplateApproval:
+      type: string
+      enum: [inherit, required, not_required]
+      description: |
+        Whether posts made from the template wait for approval: `inherit`
+        follows the brand's policy (the default), `required` always waits,
+        `not_required` never does.
+
     Template:
       type: object
       properties:
@@ -748,6 +779,7 @@ components:
         brand: { type: string }
         key: { type: string }
         name: { type: string }
+        approval: { $ref: "#/components/schemas/TemplateApproval" }
         latest_version: { type: integer }
         latest:
           allOf:

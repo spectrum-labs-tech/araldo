@@ -5,10 +5,20 @@
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "css": "tailwindcss --input internal/web/styles/app.css --output internal/web/static/app.css --minify",
-    "css:watch": "tailwindcss --input internal/web/styles/app.css --output internal/web/static/app.css --watch"
+    "css:watch": "tailwindcss --input internal/web/styles/app.css --output internal/web/static/app.css --watch",
+    "js": "esbuild internal/web/scripts/editor.js --bundle --minify --format=iife --target=es2022 --legal-comments=eof --outfile=internal/web/static/editor.js",
+    "icons": "node scripts/gen-icons.mjs"
   },
   "devDependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-json": "6.0.2",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.13",
+    "@lezer/highlight": "1.2.5",
     "@tailwindcss/cli": "4.3.3",
+    "esbuild": "0.28.2",
+    "simple-icons": "16.33.0",
     "tailwindcss": "4.3.3"
   },
   "engines": {

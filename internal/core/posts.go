@@ -228,7 +228,7 @@ func (s *Service) CreatePost(ctx context.Context, a Actor, in PostInput) (*model
 		p.TemplateID, p.TemplateVersion = &pl.template.ID, &pl.version.Version
 		p.Content = nil
 	}
-	p.ApprovalNeeded = approvalNeeded(pl.brand.ApprovalPolicy, a)
+	p.ApprovalNeeded = approvalNeeded(pl.brand.ApprovalPolicy, pl.template, a)
 
 	useSlot := false
 	switch at := strings.TrimSpace(in.PublishAt); at {
@@ -306,7 +306,17 @@ func (s *Service) CreatePost(ctx context.Context, a Actor, in PostInput) (*model
 	return nil, apperr.Conflict("slot_contention", "Could not reserve a publishing slot; try again.")
 }
 
-func approvalNeeded(policy model.ApprovalPolicy, a Actor) bool {
+// approvalNeeded applies the template's override, or else the brand's
+// policy (ADR 0004).
+func approvalNeeded(policy model.ApprovalPolicy, t *model.Template, a Actor) bool {
+	if t != nil {
+		switch t.Approval {
+		case model.TemplateApprovalRequired:
+			return true
+		case model.TemplateApprovalNotRequired:
+			return false
+		}
+	}
 	switch policy {
 	case model.ApprovalAll:
 		return true

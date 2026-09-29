@@ -35,6 +35,11 @@ on another customer's account.
    or `required_for_all`. A post that needs approval waits in
    `pending_approval` until an admin or owner approves or rejects it.
    The approval, the approver and the time are recorded on the post.
+   A **template can override** the brand's policy: `inherit` (the default),
+   `required` or `not_required`, so a routine announcement can go straight
+   out while everything else waits, or the reverse. Only people who can
+   approve posts may set an override; an editor or an API key cannot exempt
+   its own posts. There is no per-post override for the same reason.
 5. **Enforcement is layered:**
    - **Services** receive the caller (a membership or an API key) from the
      context and scope every store call to its org. A record in another org

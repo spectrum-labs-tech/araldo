@@ -13,18 +13,23 @@ Self-hosting should remain "one binary and a Postgres".
 ## Decision
 
 1. **Server-rendered HTML** (`html/template`) with a little hand-written
-   JavaScript only where a page needs it (template preview), styled by one
-   hand-written stylesheet built on CSS custom properties. The same
-   server-rendered approach as caseline's ADR 0005.
+   JavaScript only where a page needs it (template preview), styled with
+   **Tailwind CSS**: utilities for layout in the templates, and component
+   classes in `internal/web/styles/app.css` for anything repeated (shell,
+   buttons, cards, pills, fields). Colors are semantic tokens (`bg-panel`,
+   `text-muted`) that switch with the system's light or dark preference.
+   The same approach as caseline's ADRs 0005 and 0015.
 2. **Embedded in the binary** (`embed.FS`) and served by `araldo server`
    next to the API, on the same origin.
 3. **The dashboard calls services directly**, never the HTTP API, and uses
    session cookies with CSRF tokens ([ADR 0007](0007-authentication-and-mfa.md)).
    The API uses keys only. This keeps each surface's authentication simple.
-4. **No Node, at runtime or to build.** The stylesheet is plain CSS with
-   design tokens. If it grows past what one file can hold, adopt
-   Tailwind's standalone binary (no Node) with the compiled output
-   committed, as caseline does.
+4. **Node is build tooling only.** Tailwind comes from npm
+   (`package.json`); `task web:css` compiles the stylesheet into
+   `internal/web/static/app.css`, which is committed and embedded in the
+   binary. Nobody needs Node to build or run Araldo unless they change
+   styles, and CI fails if the committed output is stale. Application code
+   is Go, never JavaScript beyond the small progressive-enhancement script.
 5. **Accessibility:** WCAG 2.1 AA. Forms work without JavaScript.
 6. **First screens:**
    - sign-in and MFA;
@@ -37,6 +42,8 @@ Self-hosting should remain "one binary and a Postgres".
 
 ## Alternatives considered
 
+- **Hand-written CSS** (the first version). Fine for a dozen pages, but it
+  drifts as screens are added, and contributors know Tailwind.
 - **A SvelteKit single-page app** (open-b00ks). A second codebase, a Node
   build, and an API surface that would have to accept cookies as well as
   keys.

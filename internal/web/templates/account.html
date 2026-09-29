@@ -6,47 +6,47 @@
 {{if $d.RecoveryCodes}}
 <section class="card secret" role="alert">
   <h2>Save your recovery codes</h2>
-  <p>Each code signs you in once if you lose your authenticator. They are not shown again.</p>
-  <pre class="codes" id="codes">{{range $d.RecoveryCodes}}{{.}}
+  <p class="mb-2">Each code signs you in once if you lose your authenticator. They are not shown again.</p>
+  <pre class="columns-2 rounded-md bg-bg px-4 py-3 text-base" id="codes">{{range $d.RecoveryCodes}}{{.}}
 {{end}}</pre>
-  <button type="button" data-copy="codes">Copy</button>
+  <button type="button" class="mt-2" data-copy="codes">Copy</button>
 </section>
 {{end}}
 
 <section class="card">
   <h2>Two-factor authentication</h2>
   {{if .User.MFAEnabled}}
-    <p><span class="pill good">on</span> Authenticator app. {{$d.RecoveryLeft}} recovery codes left.</p>
-    <div class="actions">
+    <p class="mb-3"><span class="pill good">on</span> Authenticator app. {{$d.RecoveryLeft}} recovery codes left.</p>
+    <div class="flex flex-wrap items-center gap-2">
       <form method="post" action="/account/recovery-codes"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>New recovery codes</button></form>
-      {{if not .RequireMFA}}<form method="post" action="/account/mfa/disable" data-confirm="Turn off two-factor authentication?"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="danger">Turn off</button></form>{{end}}
+      {{if not .RequireMFA}}<form method="post" action="/account/mfa/disable" data-confirm="Turn off two-factor authentication?"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="btn-danger">Turn off</button></form>{{end}}
     </div>
   {{else if $d.Enrolling}}
-    <ol>
+    <ol class="list-decimal space-y-3 pl-5">
       <li>Scan this code with an authenticator app (1Password, Authy, Google Authenticator…).
-        {{if $d.QR}}<div class="qr"><img src="{{dataURL $d.QR}}" alt="QR code for your authenticator app" width="240" height="240"></div>{{end}}
-        <p class="small">Or type this key: <code class="secret-text">{{$d.SecretText}}</code></p></li>
+        {{if $d.QR}}<div><img class="my-2 rounded-md bg-white p-2 [image-rendering:pixelated]" src="{{dataURL $d.QR}}" alt="QR code for your authenticator app" width="240" height="240"></div>{{end}}
+        <p class="text-sm">Or type this key: <code class="copy-box">{{$d.SecretText}}</code></p></li>
       <li>Enter the 6-digit code it shows:
-        <form method="post" action="/account/mfa/confirm" class="inline-form">
+        <form method="post" action="/account/mfa/confirm" class="mt-1 flex flex-wrap items-center gap-2">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <input name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="6" autofocus aria-label="Code">
-          <button class="primary">Turn on</button>
+          <button class="btn-primary">Turn on</button>
         </form></li>
     </ol>
   {{else}}
-    <p><span class="pill neutral">off</span> Protect your account with an authenticator app.</p>
-    <form method="post" action="/account/mfa/begin"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="primary">Set up</button></form>
+    <p class="mb-3"><span class="pill">off</span> Protect your account with an authenticator app.</p>
+    <form method="post" action="/account/mfa/begin"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="btn-primary">Set up</button></form>
   {{end}}
 </section>
 
 <section class="card">
   <h2>Password</h2>
-  <form method="post" action="/account/password" class="stack narrow">
+  <form method="post" action="/account/password" class="flex max-w-xl flex-col gap-4">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <label>Current password <input type="password" name="current_password" autocomplete="current-password" required></label>
-    <label>New password <span class="muted small">at least 12 characters</span><input type="password" name="new_password" autocomplete="new-password" minlength="12" required></label>
+    <label>New password <span class="text-sm font-normal text-muted">at least 12 characters</span><input type="password" name="new_password" autocomplete="new-password" minlength="12" required></label>
     <label>Confirm new password <input type="password" name="confirm_password" autocomplete="new-password" minlength="12" required></label>
-    <button class="primary">Change password</button>
+    <div><button class="btn-primary">Change password</button></div>
   </form>
 </section>
 {{end}}

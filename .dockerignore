@@ -4,5 +4,6 @@ bin
 coverage.*
 .env*
 docs
+node_modules
 deploy/helm
 *.md

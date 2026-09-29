@@ -1,8 +1,8 @@
 {{define "content"}}
-<p class="crumbs"><a href="/org">Organization</a></p>
+<p class="mb-1 text-sm text-muted"><a href="/org">Organization</a></p>
 <h1>Audit log</h1>
 {{if .Data}}
-<table class="small">
+<table class="text-sm">
   <thead><tr><th>When</th><th>Action</th><th>Target</th><th>Actor</th><th>Request</th></tr></thead>
   <tbody>
   {{range .Data}}
@@ -11,10 +11,10 @@
     <td><code>{{.Action}}</code>{{if ne .Outcome "ok"}} <span class="pill bad">{{.Outcome}}</span>{{end}}</td>
     <td><code>{{.Target}}</code></td>
     <td>{{if .ActorUser}}<code>{{userID (derefUUID .ActorUser)}}</code>{{else if .ActorKey}}API key <code>{{keyID (derefUUID .ActorKey)}}</code>{{else}}system{{end}}</td>
-    <td class="muted"><code>{{.RequestID}}</code></td>
+    <td class="text-muted"><code>{{.RequestID}}</code></td>
   </tr>
   {{end}}
   </tbody>
 </table>
-{{else}}<p class="muted">Nothing yet.</p>{{end}}
+{{else}}<p class="text-muted">Nothing yet.</p>{{end}}
 {{end}}

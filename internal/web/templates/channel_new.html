@@ -1,20 +1,20 @@
 {{define "content"}}
 {{$f := .Data}}
-<p class="crumbs"><a href="/channels">Channels</a></p>
+<p class="mb-1 text-sm text-muted"><a href="/channels">Channels</a></p>
 <h1>{{if $f.Channel}}Reconnect {{$f.Channel.DisplayName}}{{else}}Connect a channel{{end}}</h1>
 {{if not $f.Brands}}<p>First <a href="/brands/new">create a brand</a>.</p>{{else}}
 {{if and (not $f.Provider) (not $f.Channel)}}
-<p>Choose a platform:</p>
-<ul class="provider-grid">
-  {{range $f.Providers}}<li><a class="card provider" href="/channels/new?provider={{.Provider}}&brand={{$f.Brand}}"><strong>{{.Name}}</strong>
-    <span class="muted small">{{.Rules.MaxLength}} {{.Rules.Counting}}{{if .Rules.Threads}} · threads{{end}}</span></a></li>{{end}}
+<p class="mb-3">Choose a platform:</p>
+<ul class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-3 p-0">
+  {{range $f.Providers}}<li><a class="card m-0 flex flex-col gap-1 text-ink no-underline hover:border-accent hover:no-underline" href="/channels/new?provider={{.Provider}}&brand={{$f.Brand}}"><strong>{{.Name}}</strong>
+    <span class="text-sm text-muted">{{.Rules.MaxLength}} {{.Rules.Counting}}{{if .Rules.Threads}} · threads{{end}}</span></a></li>{{end}}
 </ul>
-{{if .Livemode}}<p class="muted small">X, Facebook, Instagram, Threads and LinkedIn need an approved developer app and are on the roadmap.</p>{{end}}
+{{if .Livemode}}<p class="mt-3 text-sm text-muted">X, Facebook, Instagram, Threads and LinkedIn need an approved developer app and are on the roadmap.</p>{{end}}
 {{else}}
-<form method="post" action="{{if $f.Channel}}/channels/{{chanID $f.Channel.ID}}/reconnect{{else}}/channels{{end}}" class="stack narrow">
+<form method="post" action="{{if $f.Channel}}/channels/{{chanID $f.Channel.ID}}/reconnect{{else}}/channels{{end}}" class="flex max-w-xl flex-col gap-4">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <input type="hidden" name="provider" value="{{$f.Provider.Provider}}">
-  <p><strong>{{$f.Provider.Name}}</strong> {{if not $f.Channel}}<a class="small" href="/channels/new">change</a>{{end}}</p>
+  <p><strong>{{$f.Provider.Name}}</strong> {{if not $f.Channel}}<a class="text-sm" href="/channels/new">change</a>{{end}}</p>
   {{if not $f.Channel}}
   <label>Brand
     <select name="brand">{{range $f.Brands}}<option value="{{brandID .ID}}" {{if eq $f.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
@@ -24,15 +24,15 @@
     {{if eq .Name "emulates"}}
     <label>{{.Label}}
       <select name="field_emulates">{{range $f.Emulable}}<option value="{{.}}" {{if eq (printf "%s" .) (index $f.Values "emulates")}}selected{{end}}>{{.}}</option>{{end}}</select>
-      <span class="muted small">{{.Help}}</span></label>
+      <span class="text-sm font-normal text-muted">{{.Help}}</span></label>
     {{else}}
-    <label>{{.Label}}{{if .Optional}} <span class="muted small">(optional)</span>{{end}}
+    <label>{{.Label}}{{if .Optional}} <span class="text-sm font-normal text-muted">(optional)</span>{{end}}
       <input name="field_{{.Name}}" {{if .Secret}}type="password" autocomplete="off"{{else}}value="{{index $f.Values .Name}}"{{end}} {{if not .Optional}}required{{end}} placeholder="{{.Default}}">
-      {{if .Help}}<span class="muted small">{{.Help}}</span>{{end}}</label>
+      {{if .Help}}<span class="text-sm font-normal text-muted">{{.Help}}</span>{{end}}</label>
     {{end}}
   {{end}}
-  <p class="muted small">Araldo checks these with {{$f.Provider.Name}} before saving them, and stores secrets encrypted.</p>
-  <button class="primary">{{if $f.Channel}}Reconnect{{else}}Connect{{end}}</button>
+  <p class="text-sm text-muted">Araldo checks these with {{$f.Provider.Name}} before saving them, and stores secrets encrypted.</p>
+  <div><button class="btn-primary">{{if $f.Channel}}Reconnect{{else}}Connect{{end}}</button></div>
 </form>
 {{end}}
 {{end}}

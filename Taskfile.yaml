@@ -95,6 +95,22 @@ tasks:
     desc: Build the container image as araldo:local
     cmd: docker build -t araldo:local --build-arg VERSION={{.VERSION}} .
 
+  web:deps:
+    desc: Install the Node tooling for the dashboard stylesheet (Tailwind CSS)
+    sources: [package.json, package-lock.json]
+    generates: [node_modules/.package-lock.json]
+    cmd: npm ci --no-audit --no-fund
+
+  web:css:
+    desc: Build internal/web/static/app.css from internal/web/styles/app.css and the templates (commit the result)
+    deps: [web:deps]
+    cmd: npm run css
+
+  web:watch:
+    desc: Rebuild the stylesheet on every template or style change while you work
+    deps: [web:deps]
+    cmd: npm run css:watch
+
   helm:lint:
     desc: Lint and render the Helm chart with every CI values file
     dir: deploy/helm/araldo

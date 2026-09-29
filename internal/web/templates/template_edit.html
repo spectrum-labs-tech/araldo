@@ -1,19 +1,19 @@
 {{define "content"}}
 {{$f := .Data}}
-<p class="crumbs"><a href="/templates">Templates</a>{{if $f.Template}} / <code>{{tmplID $f.Template.ID}}</code>{{end}}</p>
-<div class="page-head">
-  <h1>{{if $f.Template}}<code>{{$f.Template.Key}}</code> <span class="muted">v{{$f.Version.Version}} of {{$f.Template.LatestVersion}}</span>{{else}}New template{{end}}</h1>
-  {{if $f.Template}}<div class="actions">
-    <a class="button" href="/posts/new?template={{tmplID $f.Template.ID}}">Use in a post</a>
+<p class="mb-1 text-sm text-muted"><a href="/templates">Templates</a>{{if $f.Template}} / <code>{{tmplID $f.Template.ID}}</code>{{end}}</p>
+<div class="mb-2 flex flex-wrap items-start justify-between gap-4">
+  <h1>{{if $f.Template}}<code>{{$f.Template.Key}}</code> <span class="text-base font-normal text-muted">v{{$f.Version.Version}} of {{$f.Template.LatestVersion}}</span>{{else}}New template{{end}}</h1>
+  {{if $f.Template}}<div class="flex flex-wrap items-center gap-2">
+    <a class="btn" href="/posts/new?template={{tmplID $f.Template.ID}}">Use in a post</a>
     <form method="post" action="/templates/{{tmplID $f.Template.ID}}/delete" data-confirm="Delete this template? Posts made from it keep their text.">
-      <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="danger">Delete</button></form>
+      <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger">Delete</button></form>
   </div>{{end}}
 </div>
-<div class="editor">
-<form method="post" action="{{if $f.Template}}/templates/{{tmplID $f.Template.ID}}{{else}}/templates{{end}}" class="stack" id="template-form">
+<div class="grid items-start gap-6 lg:grid-cols-[1.2fr_1fr]">
+<form method="post" action="{{if $f.Template}}/templates/{{tmplID $f.Template.ID}}{{else}}/templates{{end}}" class="flex flex-col gap-4" id="template-form">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   {{if not $f.Template}}
-  <div class="row">
+  <div class="grid gap-4 sm:grid-cols-2">
     <label>Brand
       <select name="brand">{{range $f.Brands}}<option value="{{brandID .ID}}" {{if eq $f.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
     </label>
@@ -22,14 +22,14 @@
   {{else}}<input type="hidden" name="brand" value="{{brandID $f.Template.BrandID}}">
   {{end}}
   <label>Name <input name="name" value="{{$f.Name}}" placeholder="Featured build"></label>
-  <label>Body <span class="muted small">Go template: <code>{{"{{.name}}"}}</code>, <code>{{"{{truncate 80 .summary}}"}}</code>, <code>{{"{{hashtags .tags}}"}}</code>, <code>{{"{{thread}}"}}</code> starts a new thread part</span>
-    <textarea name="body" rows="7" class="mono" data-preview required>{{$f.Body}}</textarea></label>
+  <label>Body <span class="text-sm font-normal text-muted">Go template: <code>{{"{{.name}}"}}</code>, <code>{{"{{truncate 80 .summary}}"}}</code>, <code>{{"{{hashtags .tags}}"}}</code>, <code>{{"{{thread}}"}}</code> starts a new thread part</span>
+    <textarea name="body" rows="7" class="font-mono" data-preview required>{{$f.Body}}</textarea></label>
   <details {{if $f.Overrides}}open{{end}}>
     <summary>Per-platform bodies and fitting</summary>
     {{range $f.Providers}}
-    <div class="override">
-      <label><strong>{{.}}</strong> body (blank: use the main body)
-        <textarea name="override_{{.}}" rows="3" class="mono" data-preview>{{index $f.Overrides (printf "%s" .)}}</textarea></label>
+    <div class="my-2 grid gap-3 sm:grid-cols-[1fr_10rem]">
+      <label><span><strong>{{.}}</strong> <span class="font-normal">body (blank: use the main body)</span></span>
+        <textarea name="override_{{.}}" rows="3" class="font-mono" data-preview>{{index $f.Overrides (printf "%s" .)}}</textarea></label>
       <label>When too long
         <select name="fit_{{.}}" data-preview>
           {{$fit := index $f.Fit (printf "%s" .)}}
@@ -40,13 +40,13 @@
     </div>
     {{end}}
   </details>
-  <label>Variables (JSON Schema) <textarea name="variables" rows="8" class="mono" data-preview>{{$f.Variables}}</textarea></label>
-  <label>Example data (JSON; used for checks and the preview) <textarea name="example" rows="3" class="mono" data-preview>{{$f.Example}}</textarea></label>
-  <div class="actions"><button class="primary">{{if $f.Template}}Save as version {{inc $f.Template.LatestVersion}}{{else}}Create template{{end}}</button></div>
+  <label>Variables (JSON Schema) <textarea name="variables" rows="8" class="font-mono" data-preview>{{$f.Variables}}</textarea></label>
+  <label>Example data (JSON; used for checks and the preview) <textarea name="example" rows="3" class="font-mono" data-preview>{{$f.Example}}</textarea></label>
+  <div><button class="btn-primary">{{if $f.Template}}Save as version {{inc $f.Template.LatestVersion}}{{else}}Create template{{end}}</button></div>
 </form>
-<aside class="preview-pane" aria-live="polite">
+<aside class="overflow-auto rounded-lg border border-line bg-panel p-4 lg:sticky lg:top-4 lg:max-h-[90vh]" aria-live="polite">
   <h2>Preview</h2>
-  <p class="muted small">Rendered with the example data, for every platform.</p>
+  <p class="text-sm text-muted">Rendered with the example data, for every platform.</p>
   <div id="preview" data-csrf="{{$.CSRF}}"></div>
 </aside>
 </div>

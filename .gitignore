@@ -8,3 +8,6 @@ coverage.html
 
 # Task run state
 .task/
+
+# Node tooling (dashboard stylesheet build)
+node_modules/

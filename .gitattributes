@@ -6,6 +6,9 @@
 # Generated from api/openapi.yaml by `task api:generate`; review the contract.
 internal/api/gen.go linguist-generated=true -diff
 
+# Built by `task web:css`; review the source in internal/web/styles.
+internal/web/static/app.css linguist-generated=true -diff
+
 *.png binary
 *.jpg binary
 *.gif binary

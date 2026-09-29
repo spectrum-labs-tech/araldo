@@ -34,6 +34,12 @@ platforms from templates). Read `docs/architecture.md`, then the ADRs in
   its source.
 - **Migrations**: golang-migrate in `internal/store/migrations`. Never edit a
   shipped migration.
+- **Styles** ([ADR 0015](docs/adr/0015-dashboard.md)): Tailwind CSS. Edit
+  `internal/web/styles/app.css` and templates, run `task web:css`, and commit
+  `internal/web/static/app.css` (CI checks it is current). Never edit the
+  compiled file. Layout uses utilities; anything repeated is a component
+  class in the source stylesheet. Colors are semantic tokens (`bg-panel`,
+  `text-muted`, `border-line`…) so dark mode keeps working.
 - **Context** flows end to end; logging is `log/slog` only.
 - **Every Go file starts with** `// SPDX-License-Identifier: AGPL-3.0-or-later`.
 - **Dependencies**: standard library first; justify any new module.

@@ -1,0 +1,17 @@
+{
+  "name": "araldo-web",
+  "private": true,
+  "description": "Build-time tooling for Araldo's dashboard stylesheet. The Go server embeds the compiled CSS; Node is never needed at runtime.",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "css": "tailwindcss --input internal/web/styles/app.css --output internal/web/static/app.css --minify",
+    "css:watch": "tailwindcss --input internal/web/styles/app.css --output internal/web/static/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "tailwindcss": "4.3.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

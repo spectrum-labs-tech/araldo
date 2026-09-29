@@ -1,9 +1,9 @@
 {{define "content"}}
-<div class="page-head">
+<div class="mb-2 flex flex-wrap items-start justify-between gap-4">
   <h1>Templates</h1>
-  <a class="button primary" href="/templates/new">New template</a>
+  <a class="btn btn-primary" href="/templates/new">New template</a>
 </div>
-<p class="muted">Templates turn your product's data into posts. Your code sends <code>{"template": "featured-build", "data": {…}}</code>; the wording lives here, and changes without a deploy.</p>
+<p class="mb-4 text-muted">Templates turn your product's data into posts. Your code sends <code>{"template": "featured-build", "data": {…}}</code>; the wording lives here, and changes without a deploy.</p>
 {{if .Data.Templates}}
 <table>
   <thead><tr><th>Key</th><th>Name</th><th>Brand</th><th>Version</th><th>Updated</th><th></th></tr></thead>
@@ -20,5 +20,5 @@
   {{end}}
   </tbody>
 </table>
-{{else}}<p class="muted">No templates yet.</p>{{end}}
+{{else}}<p class="text-muted">No templates yet.</p>{{end}}
 {{end}}

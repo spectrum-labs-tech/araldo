@@ -7,6 +7,13 @@ updates:
     groups:
       go-deps:
         patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      web-deps:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

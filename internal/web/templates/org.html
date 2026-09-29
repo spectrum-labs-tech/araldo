@@ -1,19 +1,19 @@
 {{define "content"}}
 {{$d := .Data}}
-<div class="page-head">
+<div class="mb-2 flex flex-wrap items-start justify-between gap-4">
   <h1>{{$d.Org.Name}}</h1>
-  <div class="actions"><a class="button" href="/org/audit">Audit log</a>{{if $d.IsOwner}} <a class="button" href="/org/tasks">Background tasks</a>{{end}}</div>
+  <div class="flex flex-wrap items-center gap-2"><a class="btn" href="/org/audit">Audit log</a>{{if $d.IsOwner}} <a class="btn" href="/org/tasks">Background tasks</a>{{end}}</div>
 </div>
 
 {{if $d.IsOwner}}
 <section class="card">
   <h2>Settings</h2>
-  <form method="post" action="/org" class="stack narrow">
+  <form method="post" action="/org" class="flex max-w-xl flex-col gap-4">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <label>Name <input name="name" value="{{$d.Org.Name}}" required maxlength="100"></label>
-    <label class="check"><input type="checkbox" name="require_mfa" value="1" {{if $d.Org.RequireMFA}}checked{{end}}>
+    <label class="flex-row items-center gap-1.5 font-normal"><input type="checkbox" name="require_mfa" value="1" {{if $d.Org.RequireMFA}}checked{{end}}>
       Require two-factor authentication for every member</label>
-    <button class="primary">Save</button>
+    <div><button class="btn-primary">Save</button></div>
   </form>
 </section>
 {{end}}
@@ -25,17 +25,17 @@
     <tbody>
     {{range $d.Members}}
     <tr>
-      <td>{{.UserEmail}}{{if .UserName}} <span class="muted">{{.UserName}}</span>{{end}}</td>
+      <td>{{.UserEmail}}{{if .UserName}} <span class="text-muted">{{.UserName}}</span>{{end}}</td>
       <td>{{if .UserMFA}}<span class="pill good">on</span>{{else}}<span class="pill {{if $d.Org.RequireMFA}}bad{{else}}neutral{{end}}">off</span>{{end}}</td>
       <td>{{if $d.IsAdmin}}
-        <form method="post" action="/org/members/{{.UserID}}" class="inline-form">
+        <form method="post" action="/org/members/{{.UserID}}" class="flex flex-wrap items-center gap-2">
           <input type="hidden" name="csrf" value="{{$.CSRF}}">
           <select name="role" data-autosubmit aria-label="Role">{{$r := .Role}}{{range $d.Roles}}<option value="{{.}}" {{if eq . $r}}selected{{end}}>{{.}}</option>{{end}}</select>
           <noscript><button>Change</button></noscript>
         </form>{{else}}{{.Role}}{{end}}</td>
       {{if $d.IsAdmin}}<td>{{if ne .UserID $.User.ID}}
         <form method="post" action="/org/members/{{.UserID}}" data-confirm="Remove {{.UserEmail}} from {{$d.Org.Name}}?">
-          <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="action" value="remove"><button class="danger">Remove</button></form>{{end}}</td>{{end}}
+          <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="action" value="remove"><button class="btn-danger">Remove</button></form>{{end}}</td>{{end}}
     </tr>
     {{end}}
     </tbody>
@@ -45,13 +45,13 @@
 {{if $d.IsAdmin}}
 <section class="card">
   <h2>Add a member</h2>
-  <form method="post" action="/org/members" class="stack narrow">
+  <form method="post" action="/org/members" class="flex max-w-xl flex-col gap-4">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <label>Email <input type="email" name="email" required></label>
     <label>Role <select name="role"><option>editor</option><option>viewer</option><option>admin</option>{{if $d.IsOwner}}<option>owner</option>{{end}}</select></label>
-    <label>Temporary password <span class="muted small">only for people without an account; share it with them privately</span>
+    <label>Temporary password <span class="text-sm font-normal text-muted">only for people without an account; share it with them privately</span>
       <input type="password" name="password" autocomplete="new-password" minlength="12"></label>
-    <button class="primary">Add</button>
+    <div><button class="btn-primary">Add</button></div>
   </form>
 </section>
 {{end}}

@@ -221,6 +221,10 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 			t.Errorf("%s from another org: %v, want not found", what, err)
 		}
 	}
+	// Queue counts are per org.
+	if q, err := b.s.QueueStats(ctx, b.owner); err != nil || q.Due+q.Publishing+q.NeedsAttention != 0 {
+		t.Errorf("another org's queue stats: %+v, %v; want empty", q, err)
+	}
 	// A channel from another org cannot be named as a target either.
 	_, err = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: b.brand.ID, Content: &model.Content{Body: "x"}, Channels: []uuid.UUID{a.channel.ID}})
 	if kind(err) != apperr.KindInvalid {

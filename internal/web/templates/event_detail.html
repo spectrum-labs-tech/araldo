@@ -1,6 +1,6 @@
 {{define "content"}}
-<p class="crumbs"><a href="/events">Events</a> / <code>{{eventID .Data.Event.ID}}</code></p>
+<p class="mb-1 text-sm text-muted"><a href="/events">Events</a> / <code>{{eventID .Data.Event.ID}}</code></p>
 <h1><code>{{.Data.Event.Type}}</code></h1>
-<p class="muted">{{fmtTime .Data.Event.CreatedAt}}{{if .Data.Event.RequestID}} · request <code>{{.Data.Event.RequestID}}</code>{{end}}</p>
+<p class="mb-3 text-muted">{{fmtTime .Data.Event.CreatedAt}}{{if .Data.Event.RequestID}} · request <code>{{.Data.Event.RequestID}}</code>{{end}}</p>
 <pre class="json">{{.Data.JSON}}</pre>
 {{end}}

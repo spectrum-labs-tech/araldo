@@ -1,13 +1,13 @@
 {{define "content"}}
-<p class="crumbs"><a href="/posts/{{postID .Data.PostID}}">Back to the post</a></p>
+<p class="mb-1 text-sm text-muted"><a href="/posts/{{postID .Data.PostID}}">Back to the post</a></p>
 <h1>Sandbox post</h1>
-<p class="muted">Published to the test-mode sandbox channel <strong>{{.Data.ChannelName}}</strong> {{fmtTime .Data.PublishedAt}}. Nothing was posted anywhere real.</p>
-<div class="sandbox-feed">
+<p class="text-muted">Published to the test-mode sandbox channel <strong>{{.Data.ChannelName}}</strong> {{fmtTime .Data.PublishedAt}}. Nothing was posted anywhere real.</p>
+<div class="max-w-xl">
   {{range $i, $part := .Data.Parts}}
-  <article class="sandbox-post" id="part-{{inc $i}}">
-    <div class="avatar" aria-hidden="true">A</div>
-    <div><div class="muted small">{{$.Data.ChannelName}}{{if gt (len $.Data.Parts) 1}} · {{inc $i}}/{{len $.Data.Parts}}{{end}}</div>
-    <p class="post-body">{{$part}}</p></div>
+  <article class="my-2 flex gap-3 rounded-xl border border-line bg-panel p-4" id="part-{{inc $i}}">
+    <div class="grid size-10 shrink-0 place-items-center rounded-full bg-accent font-bold text-accent-ink" aria-hidden="true">A</div>
+    <div><div class="text-sm text-muted">{{$.Data.ChannelName}}{{if gt (len $.Data.Parts) 1}} · {{inc $i}}/{{len $.Data.Parts}}{{end}}</div>
+    <p class="mt-1 break-words whitespace-pre-wrap">{{$part}}</p></div>
   </article>
   {{end}}
 </div>

@@ -1,27 +1,27 @@
 {{define "content"}}
-<div class="page-head">
+<div class="mb-2 flex flex-wrap items-start justify-between gap-4">
   <h1>Overview</h1>
-  <a class="button primary" href="/posts/new">New post</a>
+  <a class="btn btn-primary" href="/posts/new">New post</a>
 </div>
 
 {{$open := false}}{{range .Data.Steps}}{{if not .Done}}{{$open = true}}{{end}}{{end}}
 {{if $open}}
 <section class="card">
   <h2>Get started</h2>
-  <ol class="steps">
-    {{range .Data.Steps}}<li class="{{if .Done}}done{{end}}"><a href="{{.Href}}">{{.Label}}</a>{{if .Done}} <span class="tick" aria-label="done">✓</span>{{end}}</li>{{end}}
+  <ol class="list-decimal space-y-1 pl-5">
+    {{range .Data.Steps}}<li><a href="{{.Href}}" class="{{if .Done}}text-muted line-through{{end}}">{{.Label}}</a>{{if .Done}} <span class="font-bold text-good" aria-label="done">✓</span>{{end}}</li>{{end}}
   </ol>
 </section>
 {{end}}
 
-<div class="grid3">
-  <section class="card stat"><div class="stat-n">{{.Data.Queue.Due}}</div><div class="muted">due now</div></section>
-  <section class="card stat"><div class="stat-n">{{.Data.Queue.Publishing}}</div><div class="muted">publishing</div></section>
-  <section class="card stat {{if .Data.Queue.NeedsAttention}}attention{{end}}"><div class="stat-n">{{.Data.Queue.NeedsAttention}}</div><div class="muted">need attention</div></section>
+<div class="grid gap-4 sm:grid-cols-3">
+  <section class="card my-0 text-center"><div class="text-3xl font-bold">{{.Data.Queue.Due}}</div><div class="text-muted">due now</div></section>
+  <section class="card my-0 text-center"><div class="text-3xl font-bold">{{.Data.Queue.Publishing}}</div><div class="text-muted">publishing</div></section>
+  <section class="card my-0 text-center {{if .Data.Queue.NeedsAttention}}attention{{end}}"><div class="text-3xl font-bold">{{.Data.Queue.NeedsAttention}}</div><div class="text-muted">need attention</div></section>
 </div>
 
 <section class="card">
-  <div class="card-head"><h2>Recent posts</h2><a href="/posts">All posts</a></div>
+  <div class="mb-2 flex items-center justify-between gap-4"><h2 class="mb-0">Recent posts</h2><a href="/posts">All posts</a></div>
   {{if .Data.Posts}}
   <table>
     <thead><tr><th>Post</th><th>Status</th><th>Publish at</th><th>Channels</th></tr></thead>
@@ -36,13 +36,13 @@
     {{end}}
     </tbody>
   </table>
-  {{else}}<p class="muted">No posts yet in {{if .Livemode}}live{{else}}test{{end}} mode.</p>{{end}}
+  {{else}}<p class="text-muted">No posts yet in {{if .Livemode}}live{{else}}test{{end}} mode.</p>{{end}}
 </section>
 
 <section class="card">
-  <div class="card-head"><h2>Channels</h2><a href="/channels/new">Connect</a></div>
+  <div class="mb-2 flex items-center justify-between gap-4"><h2 class="mb-0">Channels</h2><a href="/channels/new">Connect</a></div>
   {{if .Data.Channels}}
-  <ul class="chips">{{range .Data.Channels}}<li><span class="pill {{statusClass .Status}}">{{.Provider}}{{if .Emulates}} → {{.Emulates}}{{end}}</span> {{.DisplayName}}</li>{{end}}</ul>
-  {{else}}<p class="muted">No channels in {{if .Livemode}}live{{else}}test{{end}} mode yet.</p>{{end}}
+  <ul class="m-0 flex list-none flex-wrap gap-x-4 gap-y-2 p-0">{{range .Data.Channels}}<li><span class="pill {{statusClass .Status}}">{{.Provider}}{{if .Emulates}} → {{.Emulates}}{{end}}</span> {{.DisplayName}}</li>{{end}}</ul>
+  {{else}}<p class="text-muted">No channels in {{if .Livemode}}live{{else}}test{{end}} mode yet.</p>{{end}}
 </section>
 {{end}}

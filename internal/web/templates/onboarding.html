@@ -1,9 +1,9 @@
 {{define "content"}}
 <h1>Create your organization</h1>
-<p>An organization holds your brands, channels, API keys and team.</p>
-<form method="post" action="/onboarding" class="stack narrow">
+<p class="mb-4">An organization holds your brands, channels, API keys and team.</p>
+<form method="post" action="/onboarding" class="flex max-w-xl flex-col gap-4">
   <input type="hidden" name="csrf" value="{{.CSRF}}">
   <label>Name <input name="name" required maxlength="100" placeholder="Spectrum Labs" autofocus></label>
-  <button class="primary">Create</button>
+  <div><button class="btn-primary">Create</button></div>
 </form>
 {{end}}

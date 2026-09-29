@@ -8,13 +8,13 @@
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <script src="/static/app.js" defer></script>
 </head>
-<body class="{{if .User}}signed-in{{else}}signed-out{{end}}{{if and .User (not .Livemode)}} testmode{{end}}">
+<body>
 {{if .User}}
 {{if not .Livemode}}<div class="mode-banner" role="status">Test mode · posts go to sandbox channels only</div>{{end}}
 <header class="topbar">
-  <a class="brandmark" href="/"><img src="/static/icon.svg" alt="" width="22" height="22"> Araldo</a>
+  <a class="brandmark text-lg" href="/"><img src="/static/icon.svg" alt="" width="22" height="22"> Araldo</a>
   {{if .Org}}
-  <form method="post" action="/context" class="ctx">
+  <form method="post" action="/context" class="ctx flex items-center gap-2.5">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <input type="hidden" name="back" value="">
     <label class="sr-only" for="org-switch">Organization</label>
@@ -27,13 +27,13 @@
     </div>
   </form>
   {{end}}
-  <div class="who">
+  <div class="ml-auto flex items-center gap-3 text-sm">
     <a href="/account">{{.User.Email}}</a>
-    <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="link">Sign out</button></form>
+    <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="btn-link">Sign out</button></form>
   </div>
 </header>
-<div class="shell">
-  <nav class="side" aria-label="Main">
+<div class="grid min-h-[calc(100vh-110px)] md:grid-cols-[var(--spacing-sidebar)_minmax(0,1fr)]">
+  <nav class="side-nav" aria-label="Main">
     <a href="/" class="{{if eq .Nav "home"}}active{{end}}">Overview</a>
     <a href="/posts" class="{{if eq .Nav "posts"}}active{{end}}">Posts</a>
     <a href="/templates" class="{{if eq .Nav "templates"}}active{{end}}">Templates</a>
@@ -48,23 +48,23 @@
     <a href="/org" class="{{if eq .Nav "org"}}active{{end}}">Organization</a>
     <a href="/account" class="{{if eq .Nav "account"}}active{{end}}">Your account</a>
   </nav>
-  <main id="main">
+  <main id="main" class="max-w-[1100px] px-4 py-6 md:px-8">
     {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
     {{if .Error}}<div class="alert" role="alert"><strong>{{.Error}}</strong>
-      {{if .Problems}}<ul>{{range .Problems}}<li>{{if .Param}}<code>{{.Param}}</code>: {{end}}{{.Message}}</li>{{end}}</ul>{{end}}</div>{{end}}
+      {{if .Problems}}<ul class="mt-1.5 list-disc pl-5">{{range .Problems}}<li>{{if .Param}}<code>{{.Param}}</code>: {{end}}{{.Message}}</li>{{end}}</ul>{{end}}</div>{{end}}
     {{template "content" .}}
   </main>
 </div>
 {{else}}
-<main class="auth">
-  <div class="auth-card">
-    <a class="brandmark big" href="/"><img src="/static/icon.svg" alt="" width="32" height="32"> Araldo</a>
+<main class="grid min-h-[90vh] place-items-center p-4">
+  <div class="w-full max-w-sm rounded-xl border border-line bg-panel p-8">
+    <a class="brandmark mb-4 text-2xl" href="/"><img src="/static/icon.svg" alt="" width="32" height="32"> Araldo</a>
     {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
     {{if .Error}}<div class="alert" role="alert">{{.Error}}</div>{{end}}
     {{template "content" .}}
   </div>
 </main>
 {{end}}
-<footer class="foot">Araldo {{.Version}} · <a href="https://github.com/spectrum-labs-tech/araldo">source</a> (AGPL-3.0)</footer>
+<footer class="p-4 text-center text-xs text-muted">Araldo {{.Version}} · <a class="text-muted" href="https://github.com/spectrum-labs-tech/araldo">source</a> (AGPL-3.0)</footer>
 </body>
 </html>

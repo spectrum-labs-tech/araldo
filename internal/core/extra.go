@@ -117,9 +117,12 @@ func (s *Service) TaskStatuses(ctx context.Context, a Actor) ([]opsched.TaskStat
 	return s.store.Tasks(ctx)
 }
 
-// QueueStats summarizes the publishing queue.
-func (s *Service) QueueStats(ctx context.Context) (store.QueueStats, error) {
-	return s.store.QueueStats(ctx, s.Now())
+// QueueStats summarizes the actor's publishing queue (its org and mode).
+func (s *Service) QueueStats(ctx context.Context, a Actor) (store.QueueStats, error) {
+	if err := a.require(PermPostsRead); err != nil {
+		return store.QueueStats{}, err
+	}
+	return s.store.QueueStats(ctx, a.OrgID, a.Livemode, s.Now())
 }
 
 // AuditEvents lists the org's audit trail.

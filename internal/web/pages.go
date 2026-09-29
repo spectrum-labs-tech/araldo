@@ -151,7 +151,7 @@ func (s *Server) home(c *reqCtx) error {
 			}
 		}
 	}
-	if d.Queue, err = s.svc.QueueStats(c.ctx()); err != nil {
+	if d.Queue, err = s.svc.QueueStats(c.ctx(), c.actor); err != nil {
 		return err
 	}
 	mode := "test"

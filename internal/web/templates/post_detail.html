@@ -1,14 +1,15 @@
 {{define "content"}}
 {{$p := .Data.Post}}
-<div class="page-head">
+{{$row := "flex flex-wrap items-center gap-2"}}
+<div class="mb-2 flex flex-wrap items-start justify-between gap-4">
   <div>
-    <p class="crumbs"><a href="/posts">Posts</a> / <code>{{postID $p.ID}}</code></p>
+    <p class="mb-1 text-sm text-muted"><a href="/posts">Posts</a> / <code>{{postID $p.ID}}</code></p>
     <h1>Post <span class="pill {{statusClass $p.Status}}">{{$p.Status}}</span></h1>
   </div>
-  <div class="actions">
+  <div class="{{$row}}">
     {{if or (eq $p.Status "scheduled") (eq $p.Status "pending_approval") (eq $p.Status "publishing")}}
     <form method="post" action="/posts/{{postID $p.ID}}/cancel" data-confirm="Cancel every unpublished target?">
-      <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="danger">Cancel post</button>
+      <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger">Cancel post</button>
     </form>{{end}}
   </div>
 </div>
@@ -26,25 +27,25 @@
 <section class="card attention">
   <h2>Waiting for approval</h2>
   {{if .Data.CanApprove}}
-  <form method="post" action="/posts/{{postID $p.ID}}/review" class="inline-form">
+  <form method="post" action="/posts/{{postID $p.ID}}/review" class="{{$row}}">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
-    <input name="note" placeholder="Note (optional)" maxlength="500">
-    <button class="primary" name="decision" value="approve">Approve</button>
-    <button class="danger" name="decision" value="reject">Reject</button>
+    <input name="note" placeholder="Note (optional)" maxlength="500" aria-label="Note">
+    <button class="btn-primary" name="decision" value="approve">Approve</button>
+    <button class="btn-danger" name="decision" value="reject">Reject</button>
   </form>
-  {{else}}<p class="muted">An admin or owner must approve this post.</p>{{end}}
+  {{else}}<p class="text-muted">An admin or owner must approve this post.</p>{{end}}
 </section>
-{{else if $p.ReviewedAt}}<p class="muted">Reviewed {{fmtTime $p.ReviewedAt}}{{if $p.ReviewNote}}: “{{$p.ReviewNote}}”{{end}}</p>{{end}}
+{{else if $p.ReviewedAt}}<p class="text-muted">Reviewed {{fmtTime $p.ReviewedAt}}{{if $p.ReviewNote}}: “{{$p.ReviewNote}}”{{end}}</p>{{end}}
 
-<h2>Targets</h2>
+<h2 class="mt-6">Targets</h2>
 {{range $p.Targets}}
-<section class="card target">
-  <div class="card-head">
-    <h3>{{.ChannelName}} <span class="muted">{{.Provider}}</span></h3>
+<section class="card">
+  <div class="mb-2 flex items-center justify-between gap-4">
+    <h3>{{.ChannelName}} <span class="font-normal text-muted">{{.Provider}}</span></h3>
     <span class="pill {{statusClass .Status}}">{{.Status}}</span>
   </div>
   {{range $i, $part := .Parts}}<pre class="post-text">{{$part}}</pre>{{end}}
-  <dl class="facts small">
+  <dl class="facts text-sm">
     <dt>Attempts</dt><dd>{{.Attempts}}</dd>
     {{if eq .Status "queued"}}<dt>Next attempt</dt><dd>{{fmtTime .NextAttemptAt}}</dd>{{end}}
     {{if .PublishedAt}}<dt>Published</dt><dd>{{fmtTime .PublishedAt}}</dd>{{end}}
@@ -53,19 +54,19 @@
   </dl>
   {{if eq .Status "needs_attention"}}
   <div class="callout">
-    <p><strong>Did this publish?</strong> The platform may or may not have accepted it. Check the account, then:</p>
-    <div class="inline-form">
+    <p class="mb-2"><strong>Did this publish?</strong> The platform may or may not have accepted it. Check the account, then:</p>
+    <div class="{{$row}}">
       <form method="post" action="/targets/{{targetID .ID}}/retry"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>It did not: retry</button></form>
-      <form method="post" action="/targets/{{targetID .ID}}/published" class="inline-form"><input type="hidden" name="csrf" value="{{$.CSRF}}">
-        <input name="permalink" placeholder="Link to the post (optional)"><button class="primary">It did: mark published</button></form>
+      <form method="post" action="/targets/{{targetID .ID}}/published" class="{{$row}}"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <input name="permalink" placeholder="Link to the post (optional)" aria-label="Link to the post"><button class="btn-primary">It did: mark published</button></form>
     </div>
   </div>
   {{else if eq .Status "failed"}}
   <form method="post" action="/targets/{{targetID .ID}}/retry"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Retry</button></form>
   {{end}}
   {{with index $.Data.Attempts .ID}}
-  <details><summary>Attempt history</summary>
-    <table class="small"><thead><tr><th>#</th><th>Started</th><th>Outcome</th><th>Error</th></tr></thead><tbody>
+  <details class="mt-2"><summary>Attempt history</summary>
+    <table class="text-sm"><thead><tr><th>#</th><th>Started</th><th>Outcome</th><th>Error</th></tr></thead><tbody>
     {{range .}}<tr><td>{{.Attempt}}</td><td>{{fmtTime .StartedAt}}</td><td><span class="pill {{statusClass .Outcome}}">{{.Outcome}}</span></td><td>{{if .ErrorCode}}<code>{{.ErrorCode}}</code> {{.Error}}{{end}}</td></tr>{{end}}
     </tbody></table>
   </details>
@@ -73,5 +74,5 @@
 </section>
 {{end}}
 
-<details class="card"><summary>API object</summary><pre class="json">{{.Data.JSON}}</pre></details>
+<details class="card"><summary>API object</summary><pre class="json mt-2">{{.Data.JSON}}</pre></details>
 {{end}}

@@ -391,13 +391,13 @@ type QueueStats struct {
 	OldestDue      *time.Time
 }
 
-func (s *Store) QueueStats(ctx context.Context, now time.Time) (QueueStats, error) {
+func (s *Store) QueueStats(ctx context.Context, orgID uuid.UUID, livemode bool, now time.Time) (QueueStats, error) {
 	var q QueueStats
 	err := s.q.QueryRow(ctx, `SELECT
-		count(*) FILTER (WHERE status = 'queued' AND next_attempt_at <= $1),
+		count(*) FILTER (WHERE status = 'queued' AND next_attempt_at <= $3),
 		count(*) FILTER (WHERE status = 'publishing'),
 		count(*) FILTER (WHERE status = 'needs_attention'),
-		min(next_attempt_at) FILTER (WHERE status = 'queued' AND next_attempt_at <= $1)
-		FROM post_targets`, now).Scan(&q.Due, &q.Publishing, &q.NeedsAttention, &q.OldestDue)
+		min(next_attempt_at) FILTER (WHERE status = 'queued' AND next_attempt_at <= $3)
+		FROM post_targets WHERE org_id = $1 AND livemode = $2`, orgID, livemode, now).Scan(&q.Due, &q.Publishing, &q.NeedsAttention, &q.OldestDue)
 	return q, err
 }

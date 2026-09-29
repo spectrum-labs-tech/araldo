@@ -50,6 +50,15 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code -- go.mod go.sum
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Compiled stylesheet matches the styles and templates
+        run: |
+          npm ci --no-audit --no-fund
+          npm run css
+          git diff --exit-code -- internal/web/static/app.css
       - name: Every hand-written Go file has an SPDX header
         run: |
           files=$(grep -L '^// Code generated .* DO NOT EDIT.$' $(git ls-files '*.go') || true)

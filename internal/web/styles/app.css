@@ -1,0 +1,282 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/*
+ * Araldo's dashboard stylesheet (ADR 0015). Built with Tailwind CSS into
+ * internal/web/static/app.css by `task web:css`; never edit the output.
+ *
+ * Templates use Tailwind utilities for layout, and the component classes
+ * below for anything repeated (shell, buttons, cards, pills, fields), so a
+ * design change is made once. Colors are semantic tokens that switch with
+ * the system's light or dark preference.
+ */
+/* Scan only the templates and the script: automatic detection would pick
+ * up class-like words from Go code and docs and make the output drift. */
+@import "tailwindcss" source(none);
+
+@source "../templates";
+@source "../static/app.js";
+
+:root {
+  --bg: #f7f6f3;
+  --panel: #ffffff;
+  --ink: #1d1b16;
+  --muted: #6b6659;
+  --line: #e4e0d6;
+  --accent: #8a3b12; /* herald's copper */
+  --accent-ink: #ffffff;
+  --accent-soft: #f6e7dc;
+  --good: #1e6b3a;
+  --good-bg: #e2f2e7;
+  --warn: #8a5a00;
+  --warn-bg: #fbf0d6;
+  --bad: #a3261d;
+  --bad-bg: #fbe5e3;
+  --subtle: #eeebe4;
+  --test: #b45309;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15140f;
+    --panel: #1f1d17;
+    --ink: #efece4;
+    --muted: #a39d8f;
+    --line: #35322a;
+    --accent: #e08a55;
+    --accent-ink: #1d1b16;
+    --accent-soft: #3a2518;
+    --good: #7fd49b;
+    --good-bg: #183322;
+    --warn: #f0c060;
+    --warn-bg: #3a2e12;
+    --bad: #f28b82;
+    --bad-bg: #3d1a17;
+    --subtle: #2b2922;
+    --test: #f59e0b;
+    color-scheme: dark;
+  }
+}
+
+/* Tokens as Tailwind colors: bg-panel, text-muted, border-line, … */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-good: var(--good);
+  --color-good-bg: var(--good-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-bad: var(--bad);
+  --color-bad-bg: var(--bad-bg);
+  --color-subtle: var(--subtle);
+  --color-test: var(--test);
+}
+
+@theme {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --spacing-sidebar: 13rem;
+}
+
+@layer base {
+  html {
+    font-size: 15px;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-bg font-sans leading-normal text-ink antialiased;
+  }
+  a {
+    @apply text-accent underline-offset-2 hover:underline;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-1 outline-accent;
+  }
+  h1 {
+    @apply mb-3 text-2xl font-semibold tracking-tight;
+  }
+  h2 {
+    @apply mb-3 text-lg font-semibold;
+  }
+  h3 {
+    @apply text-base font-semibold;
+  }
+  code,
+  pre {
+    @apply font-mono text-[0.9em];
+  }
+  table {
+    @apply w-full border-collapse overflow-hidden rounded-lg border border-line bg-panel;
+  }
+  th,
+  td {
+    @apply border-b border-line px-3 py-2 text-left align-top;
+  }
+  th {
+    @apply bg-bg text-xs font-semibold tracking-wide text-muted uppercase;
+  }
+  tr:last-child td {
+    @apply border-b-0;
+  }
+  label {
+    @apply flex flex-col gap-1 text-sm font-semibold;
+  }
+  fieldset {
+    @apply m-0 rounded-lg border border-line px-4 py-3;
+  }
+  legend {
+    @apply px-1 text-sm font-semibold;
+  }
+  input,
+  select,
+  textarea {
+    @apply rounded-md border border-line bg-panel px-2.5 py-1.5 font-normal text-ink;
+  }
+  textarea {
+    @apply resize-y;
+  }
+  details > summary {
+    @apply my-1 cursor-pointer font-semibold;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Shell */
+  .mode-banner {
+    @apply bg-test py-0.5 text-center text-xs font-semibold tracking-wide text-white;
+  }
+  .topbar {
+    @apply flex flex-wrap items-center gap-5 border-b border-line bg-panel px-5 py-2.5;
+  }
+  .brandmark {
+    @apply inline-flex items-center gap-2 font-bold text-ink no-underline hover:no-underline;
+  }
+  .mode-toggle {
+    @apply inline-flex overflow-hidden rounded-full border border-line;
+  }
+  .mode-toggle button {
+    @apply cursor-pointer border-0 bg-transparent px-3 py-1 text-sm font-semibold text-ink;
+  }
+  .mode-toggle button.on {
+    @apply bg-test text-white;
+  }
+  .mode-toggle button.on.live {
+    @apply bg-good text-white;
+  }
+  .side-nav {
+    @apply flex flex-row flex-wrap gap-0.5 border-b border-line p-3 md:flex-col md:border-r md:border-b-0;
+  }
+  .side-nav a {
+    @apply rounded-md px-2.5 py-1.5 text-ink no-underline hover:bg-subtle hover:no-underline;
+  }
+  .side-nav a.active {
+    @apply bg-accent-soft font-semibold text-accent;
+  }
+  .side-head {
+    @apply mx-2.5 mt-4 mb-1 hidden text-xs tracking-wider text-muted uppercase md:block;
+  }
+
+  /* Blocks */
+  .card {
+    @apply my-4 rounded-lg border border-line bg-panel px-5 py-4;
+  }
+  .card.attention {
+    @apply border-warn bg-warn-bg;
+  }
+  .card.secret {
+    @apply border-2 border-accent;
+  }
+  .notice {
+    @apply mb-4 rounded-lg bg-good-bg px-4 py-2.5 text-good;
+  }
+  .alert {
+    @apply mb-4 rounded-lg bg-bad-bg px-4 py-2.5 text-bad;
+  }
+  .callout {
+    @apply my-3 rounded-lg bg-warn-bg px-4 py-3;
+  }
+  .facts {
+    @apply my-2 grid grid-cols-[max-content_1fr] gap-x-5 gap-y-1;
+  }
+  .facts dt {
+    @apply text-muted;
+  }
+  .facts dd {
+    @apply m-0;
+  }
+  .muted {
+    @apply text-muted;
+  }
+  .small {
+    @apply text-sm;
+  }
+
+  /* Pills and tags */
+  .pill {
+    @apply inline-block rounded-full bg-subtle px-2 py-px text-xs font-semibold whitespace-nowrap text-muted;
+  }
+  .pill.good {
+    @apply bg-good-bg text-good;
+  }
+  .pill.warn {
+    @apply bg-warn-bg text-warn;
+  }
+  .pill.bad {
+    @apply bg-bad-bg text-bad;
+  }
+  .tag {
+    @apply inline-block rounded bg-subtle px-1.5 font-mono text-xs text-muted;
+  }
+
+  /* Buttons */
+  .btn,
+  button {
+    @apply inline-block cursor-pointer rounded-md border border-line bg-panel px-3.5 py-1.5 text-sm font-semibold text-ink no-underline hover:border-muted hover:no-underline;
+  }
+  .btn-primary,
+  button.btn-primary {
+    @apply border-accent bg-accent text-accent-ink;
+  }
+  .btn-danger,
+  button.btn-danger {
+    @apply text-bad;
+  }
+  .btn-link,
+  button.btn-link {
+    @apply border-0 bg-transparent p-0 font-normal text-accent;
+  }
+
+  /* Posts and previews */
+  .post-text {
+    @apply my-1.5 rounded-md border border-line bg-bg px-3 py-2.5 font-sans text-[0.95rem] break-words whitespace-pre-wrap;
+  }
+  .rendition {
+    @apply my-4 border-l-4 border-good pl-3;
+  }
+  .rendition.bad {
+    @apply border-bad;
+  }
+  .r-head {
+    @apply flex items-baseline gap-2;
+  }
+  .json {
+    @apply overflow-auto rounded-lg border border-line bg-panel p-4 text-xs;
+  }
+  .copy-box {
+    @apply rounded-md border border-line bg-bg px-2.5 py-1.5 break-all;
+  }
+}

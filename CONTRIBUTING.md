@@ -14,6 +14,15 @@ task check      # everything CI checks without Docker
 task db:up && task test:integration
 ```
 
+Changing templates or styles? You also need [Node.js](https://nodejs.org)
+20 or later, only to compile the stylesheet (it is committed, so nobody else
+needs Node):
+
+```sh
+task web:css     # rebuild internal/web/static/app.css; commit it with your change
+task web:watch   # rebuild on every save while you work
+```
+
 ## Ground rules
 
 1. **Read the ADRs** in [docs/adr](docs/adr/) before changing a behavior

@@ -52,7 +52,7 @@ jobs:
           git diff --exit-code -- go.mod go.sum
       - name: Every hand-written Go file has an SPDX header
         run: |
-          files=$(grep -L '^// Code generated .* DO NOT EDIT.$' $(git ls-files '*.go'))
+          files=$(grep -L '^// Code generated .* DO NOT EDIT.$' $(git ls-files '*.go') || true)
           missing=$(grep -LE 'SPDX-License-Identifier: (AGPL-3.0-or-later|Apache-2.0)' $files || true)
           if [ -n "$missing" ]; then echo "Missing SPDX header:"; echo "$missing"; exit 1; fi
 

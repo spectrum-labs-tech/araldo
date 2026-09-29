@@ -109,7 +109,7 @@ tasks:
   spdx:
     desc: Fail if a hand-written Go file lacks the SPDX license header
     cmd: |
-      files=$(grep -L '^// Code generated .* DO NOT EDIT.$' $(git ls-files -co --exclude-standard '*.go'))
+      files=$(grep -L '^// Code generated .* DO NOT EDIT.$' $(git ls-files -co --exclude-standard '*.go') || true)
       missing=$(grep -LE 'SPDX-License-Identifier: (AGPL-3.0-or-later|Apache-2.0)' $files || true)
       if [ -n "$missing" ]; then echo "Missing SPDX header:"; echo "$missing"; exit 1; fi
 

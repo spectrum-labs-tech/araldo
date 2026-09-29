@@ -1,0 +1,159 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package core
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/spectrum-labs-tech/araldo/internal/apperr"
+	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/opsched"
+	"github.com/spectrum-labs-tech/araldo/internal/store"
+)
+
+// ResolveBrand finds a brand by ID ("brand_…") or slug.
+func (s *Service) ResolveBrand(ctx context.Context, a Actor, ref string) (*model.Brand, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, apperr.Invalid("brand_required", "brand", "Name a brand by ID or slug.")
+	}
+	if strings.HasPrefix(ref, string(id.Brand)+"_") {
+		bid, err := ParseID(id.Brand, ref, "brand")
+		if err != nil {
+			return nil, err
+		}
+		return s.Brand(ctx, a, bid)
+	}
+	b, err := s.store.BrandBySlug(ctx, a.OrgID, ref)
+	if err != nil {
+		return nil, notFoundID("brand", ref)
+	}
+	if err := a.brandAllowed(b.ID); err != nil {
+		return nil, notFoundID("brand", ref)
+	}
+	return b, nil
+}
+
+// Idempotency (ADR 0005).
+
+// IdempotencyWindow is how long a key is remembered.
+const IdempotencyWindow = 24 * time.Hour
+
+// IdempotentReplay is a stored response to replay.
+type IdempotentReplay struct {
+	Status int
+	Body   []byte
+}
+
+// BeginIdempotent claims an idempotency key for a request. It returns a
+// replay when the key already completed with the same request, and a 409
+// when it is in use or was used for a different request.
+func (s *Service) BeginIdempotent(ctx context.Context, a Actor, key string, fingerprint []byte) (*IdempotentReplay, error) {
+	if a.KeyID == nil {
+		return nil, nil
+	}
+	if len(key) > 255 {
+		return nil, apperr.Invalid("idempotency_key_invalid", "Idempotency-Key", "Idempotency keys are at most 255 characters.")
+	}
+	rec, claimed, err := s.store.BeginIdempotent(ctx, *a.KeyID, key, fingerprint, s.Now().Add(-IdempotencyWindow))
+	if err != nil || claimed {
+		return nil, err
+	}
+	if string(rec.Fingerprint) != string(fingerprint) {
+		return nil, apperr.Conflict("idempotency_key_reused", "This Idempotency-Key was used for a different request.")
+	}
+	if rec.Status != "done" {
+		return nil, apperr.Conflict("idempotency_key_in_use", "A request with this Idempotency-Key is still in progress; retry shortly.")
+	}
+	return &IdempotentReplay{Status: rec.ResponseStatus, Body: rec.ResponseBody}, nil
+}
+
+// FinishIdempotent stores the response for a claimed key. Server errors
+// release the key so the request can be retried.
+func (s *Service) FinishIdempotent(ctx context.Context, a Actor, key string, status int, body []byte) error {
+	if a.KeyID == nil {
+		return nil
+	}
+	if status >= 500 {
+		status = 0
+	}
+	return s.store.FinishIdempotent(context.WithoutCancel(ctx), *a.KeyID, key, status, body)
+}
+
+// Housekeeping tasks (opsched).
+
+// Tasks returns the periodic tasks a worker runs.
+func (s *Service) Tasks() []opsched.Task {
+	return []opsched.Task{
+		{Name: "publish.reclaim", Interval: 30 * time.Second, Run: s.ReclaimLostTargets},
+		{Name: "publish.expire", Interval: time.Minute, Run: s.ExpireOverdue},
+		{Name: "webhooks.reclaim", Interval: 30 * time.Second, Run: func(ctx context.Context) (int, error) {
+			return s.store.ReclaimDeliveries(ctx, s.Now())
+		}},
+		{Name: "webhooks.disable_failing", Interval: 10 * time.Minute, Run: s.DisableFailingEndpoints},
+		{Name: "events.prune", Interval: time.Hour, Run: func(ctx context.Context) (int, error) {
+			return s.store.PruneEvents(ctx, s.Now().Add(-30*24*time.Hour))
+		}},
+		{Name: "idempotency.prune", Interval: time.Hour, Run: func(ctx context.Context) (int, error) {
+			return s.store.PruneIdempotencyKeys(ctx, s.Now().Add(-IdempotencyWindow))
+		}},
+		{Name: "sessions.prune", Interval: time.Hour, Run: func(ctx context.Context) (int, error) {
+			return s.store.PruneSessions(ctx, s.Now())
+		}},
+	}
+}
+
+// TaskStatuses lists background tasks for operators.
+func (s *Service) TaskStatuses(ctx context.Context, a Actor) ([]opsched.TaskStatus, error) {
+	if !a.Can(PermOrgWrite) {
+		return nil, apperr.Forbidden("Only owners can see background tasks.")
+	}
+	return s.store.Tasks(ctx)
+}
+
+// QueueStats summarizes the publishing queue.
+func (s *Service) QueueStats(ctx context.Context) (store.QueueStats, error) {
+	return s.store.QueueStats(ctx, s.Now())
+}
+
+// AuditEvents lists the org's audit trail.
+func (s *Service) AuditEvents(ctx context.Context, a Actor, page store.Page) ([]model.AuditEvent, bool, error) {
+	if !a.Can(PermMembersWrite) {
+		return nil, false, apperr.Forbidden("Only admins can read the audit log.")
+	}
+	return s.store.AuditEvents(ctx, a.OrgID, page)
+}
+
+// Attempts lists a target's publish attempts.
+func (s *Service) Attempts(ctx context.Context, a Actor, targetID uuid.UUID) ([]model.Attempt, error) {
+	if err := a.require(PermPostsRead); err != nil {
+		return nil, err
+	}
+	t, err := s.store.Target(ctx, a.OrgID, targetID)
+	if err != nil || t.Livemode != a.Livemode {
+		return nil, apperr.NotFound("post target")
+	}
+	return s.store.Attempts(ctx, a.OrgID, targetID)
+}
+
+// Ready reports whether the database is reachable and the schema current.
+func (s *Service) Ready(ctx context.Context) error {
+	v, dirty, err := s.store.SchemaState(ctx)
+	if err != nil {
+		return err
+	}
+	latest, err := store.LatestVersion()
+	if err != nil {
+		return err
+	}
+	if dirty || v < latest {
+		return errors.New("database schema is not up to date")
+	}
+	return nil
+}

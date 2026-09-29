@@ -1,0 +1,30 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>Channels</h1>
+  <a class="button primary" href="/channels/new">Connect a channel</a>
+</div>
+<p class="muted">{{if .Livemode}}Live channels post to real accounts.{{else}}Test mode uses sandbox channels: each follows a real platform's rules but publishes nowhere.{{end}}</p>
+{{if .Data.Channels}}
+<table>
+  <thead><tr><th>Account</th><th>Platform</th><th>Brand</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Channels}}
+  <tr>
+    <td><strong>{{.DisplayName}}</strong>{{if .Handle}} <span class="muted">{{.Handle}}</span>{{end}}{{if .ProfileURL}} <a href="{{safeURL .ProfileURL}}" target="_blank" rel="noopener">↗</a>{{end}}
+      <div class="muted small"><code>{{chanID .ID}}</code></div></td>
+    <td>{{.Provider}}{{if .Emulates}} → {{.Emulates}}{{end}}</td>
+    <td>{{index $.Data.Brands .BrandID}}</td>
+    <td><span class="pill {{statusClass .Status}}">{{.Status}}</span>{{if .StatusNote}}<div class="small muted">{{.StatusNote}}</div>{{end}}</td>
+    <td class="row-actions">
+      {{if eq .Status "needs_reauth"}}<a class="button" href="/channels/{{chanID .ID}}/reconnect">Reconnect</a>{{end}}
+      {{if eq .Status "active"}}<form method="post" action="/channels/{{chanID .ID}}/toggle"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Pause</button></form>{{end}}
+      {{if eq .Status "disabled"}}<form method="post" action="/channels/{{chanID .ID}}/toggle"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="enable" value="1"><button>Resume</button></form>{{end}}
+      <form method="post" action="/channels/{{chanID .ID}}/delete" data-confirm="Disconnect {{.DisplayName}}? Its post history goes too.">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="danger">Disconnect</button></form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="muted">No channels yet.</p>{{end}}
+{{end}}

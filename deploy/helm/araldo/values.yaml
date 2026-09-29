@@ -1,0 +1,52 @@
+# Araldo Helm values. Secrets never go here: point existingSecret at a
+# Secret holding ARALDO_DATABASE_URL and ARALDO_MASTER_KEYS (ADR 0008).
+
+image:
+  repository: ghcr.io/spectrum-labs-tech/araldo
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Required: a Secret with ARALDO_DATABASE_URL and ARALDO_MASTER_KEYS (and
+# any other ARALDO_* secrets). Its keys become environment variables.
+existingSecret: ""
+
+config:
+  # The public URL people and platforms reach (required).
+  baseURL: ""
+  logLevel: info
+  # A trusted proxy header with the client IP, e.g. CF-Connecting-IP.
+  clientIPHeader: ""
+  # Let webhooks and adapters reach private networks (self-hosters only).
+  allowPrivateNetworks: false
+  # Both roles migrate at startup; golang-migrate serializes them.
+  autoMigrate: true
+
+# Extra environment variables for both roles.
+extraEnv: []
+
+server:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+worker:
+  enabled: true
+  replicas: 1
+  resources:
+    requests: { cpu: 25m, memory: 48Mi }
+    limits: { memory: 192Mi }
+
+service:
+  type: ClusterIP
+  port: 8080
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

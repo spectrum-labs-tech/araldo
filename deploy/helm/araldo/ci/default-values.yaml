@@ -1,0 +1,3 @@
+existingSecret: araldo-secrets
+config:
+  baseURL: https://araldo.example

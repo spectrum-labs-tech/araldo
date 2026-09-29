@@ -1,25 +1,31 @@
 name: CI
 
+# Every push and pull request: unit tests, lint, integration tests against
+# Postgres, the Helm chart and the image build. Pushes to main also publish
+# the image (tags main, sha-<sha>) and the chart version 0.0.0-main, whose
+# appVersion pins that exact image. Deployments pull that channel; this
+# repository never deploys anything itself.
+
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  REGISTRY: ghcr.io
 
 jobs:
   test:
-    name: Unit tests (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    name: Unit tests
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -47,7 +53,7 @@ jobs:
       - name: Every hand-written Go file has an SPDX header
         run: |
           files=$(grep -L '^// Code generated .* DO NOT EDIT.$' $(git ls-files '*.go'))
-          missing=$(grep -L 'SPDX-License-Identifier: AGPL-3.0-or-later' $files || true)
+          missing=$(grep -LE 'SPDX-License-Identifier: (AGPL-3.0-or-later|Apache-2.0)' $files || true)
           if [ -n "$missing" ]; then echo "Missing SPDX header:"; echo "$missing"; exit 1; fi
 
   vulncheck:
@@ -59,6 +65,49 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  integration:
+    name: Integration (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: araldo
+          POSTGRES_PASSWORD: araldo
+          POSTGRES_DB: araldo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U araldo" --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      ARALDO_TEST_DSN: postgres://araldo:araldo@localhost:5432/araldo?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go test -tags=integration
+        run: go test -tags=integration -race -count=1 ./...
+      # Tests never clean up; a second run proves they pass on a database
+      # full of earlier runs' data.
+      - name: go test -tags=integration (again, on the now-dirty database)
+        run: go test -tags=integration -count=1 ./...
+
+  helm:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint and render every CI values file
+        working-directory: deploy/helm/araldo
+        run: |
+          for f in ci/*-values.yaml; do
+            echo "== $f"
+            helm lint --strict . -f "$f"
+            helm template araldo . -f "$f" > /dev/null
+          done
+          if helm template araldo . >/dev/null 2>&1; then echo "rendered without a secret"; exit 1; fi
 
   build:
     name: Cross-compile
@@ -73,9 +122,45 @@ jobs:
             GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 go build -trimpath -o /tmp/out/ ./cmd/...
           done
 
+  publish:
+    name: Publish image and chart
+    needs: [test, lint, integration, helm, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: VERSION=main-${{ github.sha }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}:main
+            ${{ env.REGISTRY }}/${{ github.repository }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: azure/setup-helm@v4
+      - name: Package and push the chart (moving 0.0.0-main, pinned to this image)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" -u "${{ github.actor }}" --password-stdin
+          helm package deploy/helm/araldo --version 0.0.0-main --app-version "sha-${{ github.sha }}" --destination dist
+          helm push dist/araldo-0.0.0-main.tgz "oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts"
+
   notify:
     name: Discord on failure
-    needs: [test, lint, vulncheck, build]
+    needs: [test, lint, vulncheck, integration, helm, build, publish]
     if: ${{ failure() && github.event_name == 'push' }}
     uses: spectrum-labs-tech/.github/.github/workflows/discord-cicd-notify.yaml@main
     secrets: inherit

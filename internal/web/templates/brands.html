@@ -1,0 +1,17 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>Brands</h1>
+  <a class="button primary" href="/brands/new">New brand</a>
+</div>
+<p class="muted">A brand is a product or voice: its own channels, templates, schedule and approval rules.</p>
+{{if .Data}}
+<table>
+  <thead><tr><th>Name</th><th>Slug</th><th>Time zone</th><th>Approvals</th></tr></thead>
+  <tbody>
+  {{range .Data}}
+  <tr><td><a href="/brands/{{brandID .ID}}">{{.Name}}</a></td><td><code>{{.Slug}}</code></td><td>{{.Timezone}}</td><td>{{.ApprovalPolicy}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="muted">No brands yet.</p>{{end}}
+{{end}}

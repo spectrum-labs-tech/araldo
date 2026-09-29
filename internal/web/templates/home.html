@@ -1,0 +1,48 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>Overview</h1>
+  <a class="button primary" href="/posts/new">New post</a>
+</div>
+
+{{$open := false}}{{range .Data.Steps}}{{if not .Done}}{{$open = true}}{{end}}{{end}}
+{{if $open}}
+<section class="card">
+  <h2>Get started</h2>
+  <ol class="steps">
+    {{range .Data.Steps}}<li class="{{if .Done}}done{{end}}"><a href="{{.Href}}">{{.Label}}</a>{{if .Done}} <span class="tick" aria-label="done">✓</span>{{end}}</li>{{end}}
+  </ol>
+</section>
+{{end}}
+
+<div class="grid3">
+  <section class="card stat"><div class="stat-n">{{.Data.Queue.Due}}</div><div class="muted">due now</div></section>
+  <section class="card stat"><div class="stat-n">{{.Data.Queue.Publishing}}</div><div class="muted">publishing</div></section>
+  <section class="card stat {{if .Data.Queue.NeedsAttention}}attention{{end}}"><div class="stat-n">{{.Data.Queue.NeedsAttention}}</div><div class="muted">need attention</div></section>
+</div>
+
+<section class="card">
+  <div class="card-head"><h2>Recent posts</h2><a href="/posts">All posts</a></div>
+  {{if .Data.Posts}}
+  <table>
+    <thead><tr><th>Post</th><th>Status</th><th>Publish at</th><th>Channels</th></tr></thead>
+    <tbody>
+    {{range .Data.Posts}}
+      <tr>
+        <td><a href="/posts/{{postID .ID}}">{{with index .Targets 0}}{{index .Parts 0 | printf "%.80s"}}{{end}}</a></td>
+        <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
+        <td>{{fmtTime .PublishAt}}</td>
+        <td>{{len .Targets}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="muted">No posts yet in {{if .Livemode}}live{{else}}test{{end}} mode.</p>{{end}}
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Channels</h2><a href="/channels/new">Connect</a></div>
+  {{if .Data.Channels}}
+  <ul class="chips">{{range .Data.Channels}}<li><span class="pill {{statusClass .Status}}">{{.Provider}}{{if .Emulates}} → {{.Emulates}}{{end}}</span> {{.DisplayName}}</li>{{end}}</ul>
+  {{else}}<p class="muted">No channels in {{if .Livemode}}live{{else}}test{{end}} mode yet.</p>{{end}}
+</section>
+{{end}}

@@ -1,0 +1,11 @@
+fullnameOverride: araldo
+existingSecret: araldo-secrets
+imagePullSecrets: [{ name: ghcr-pull }]
+podAnnotations: { example.com/team: growth }
+config:
+  baseURL: https://araldo.example
+  clientIPHeader: CF-Connecting-IP
+extraEnv:
+  - { name: ARALDO_INSECURE_COOKIES, value: "false" }
+server: { replicas: 2 }
+worker: { enabled: false }

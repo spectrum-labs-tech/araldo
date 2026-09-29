@@ -1,0 +1,9 @@
+apiVersion: v2
+name: araldo
+description: Developer-first social distribution API (server and worker).
+type: application
+# Set by the publish workflow (0.0.0-main for the main-branch channel).
+version: 0.0.0-dev
+appVersion: 0.0.0-dev
+home: https://github.com/spectrum-labs-tech/araldo
+sources: [https://github.com/spectrum-labs-tech/araldo]

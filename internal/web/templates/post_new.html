@@ -1,0 +1,71 @@
+{{define "content"}}
+<h1>New post</h1>
+{{if not .Data.Brands}}<p>First <a href="/brands/new">create a brand</a> and connect a channel.</p>{{else}}
+<form method="post" action="/posts" class="stack">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <fieldset class="seg">
+    <legend>Content</legend>
+    <label><input type="radio" name="mode" value="content" {{if eq (index .Data.Form "mode") "content"}}checked{{end}} data-toggle="mode"> Write it</label>
+    <label><input type="radio" name="mode" value="template" {{if eq (index .Data.Form "mode") "template"}}checked{{end}} data-toggle="mode"> From a template</label>
+  </fieldset>
+
+  <div data-when="mode=content" class="stack">
+    <label>Brand
+      <select name="brand">{{range .Data.Brands}}<option value="{{brandID .ID}}" {{if eq (index $.Data.Form "brand") (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+    </label>
+    <label>Text <textarea name="body" rows="6" placeholder="What are you announcing?">{{index .Data.Form "body"}}</textarea></label>
+    <label>If it's too long for a platform
+      <select name="fit">
+        <option value="error" {{if eq (index .Data.Form "fit") "error"}}selected{{end}}>Refuse to schedule</option>
+        <option value="thread" {{if eq (index .Data.Form "fit") "thread"}}selected{{end}}>Split into a thread</option>
+        <option value="truncate" {{if eq (index .Data.Form "fit") "truncate"}}selected{{end}}>Shorten with …</option>
+      </select>
+    </label>
+  </div>
+
+  <div data-when="mode=template" class="stack">
+    <label>Template
+      <select name="template">
+        <option value="">Choose…</option>
+        {{range .Data.Templates}}<option value="{{tmplID .ID}}" {{if eq (index $.Data.Form "template") (tmplID .ID)}}selected{{end}}>{{.Key}}{{if .Name}} — {{.Name}}{{end}}</option>{{end}}
+      </select>
+    </label>
+    <label>Data (JSON) <textarea name="data" rows="5" class="mono" placeholder='{"name": "…"}'>{{index .Data.Form "data"}}</textarea></label>
+  </div>
+
+  <fieldset>
+    <legend>Channels <span class="muted small">(none checked: every active channel of the brand)</span></legend>
+    {{if .Data.Channels}}
+    {{range .Data.Channels}}<label class="check"><input type="checkbox" name="channels" value="{{chanID .ID}}" {{if contains $.Data.Chosen (chanID .ID)}}checked{{end}} {{if ne .Status "active"}}disabled{{end}}>
+      {{.DisplayName}} <span class="muted">({{.Provider}}{{if .Emulates}} → {{.Emulates}}{{end}})</span></label>{{end}}
+    {{else}}<p class="muted">No channels in this mode. <a href="/channels/new">Connect one</a>.</p>{{end}}
+  </fieldset>
+
+  <fieldset class="seg">
+    <legend>When</legend>
+    <label><input type="radio" name="publish" value="now" {{if eq (index .Data.Form "publish") "now"}}checked{{end}}> Now</label>
+    <label><input type="radio" name="publish" value="next_slot" {{if eq (index .Data.Form "publish") "next_slot"}}checked{{end}}> Next free slot</label>
+    <label><input type="radio" name="publish" value="at" {{if eq (index .Data.Form "publish") "at"}}checked{{end}}> At
+      <input type="datetime-local" name="publish_at" value="{{index .Data.Form "publish_at"}}"> <span class="muted small">(brand's time zone)</span></label>
+  </fieldset>
+
+  <div class="actions">
+    <button name="action" value="preview">Preview</button>
+    <button class="primary" name="action" value="create">Schedule</button>
+  </div>
+</form>
+
+{{if .Data.Renditions}}
+<section class="card">
+  <h2>Preview</h2>
+  {{range .Data.Renditions}}
+  <div class="rendition {{if .Violations}}bad{{end}}">
+    <div class="r-head"><strong>{{.Provider}}</strong> <span class="muted">limit {{.Limit}} {{.Counting}}</span></div>
+    {{$r := .}}{{range $i, $p := .Parts}}<pre class="post-text">{{$p}}</pre><div class="muted small">{{if gt (len $r.Parts) 1}}part {{inc $i}} · {{end}}{{index $r.Lengths $i}} / {{$r.Limit}}</div>{{end}}
+    {{range .Violations}}<p class="alert small">{{.Message}}</p>{{end}}
+  </div>
+  {{end}}
+</section>
+{{end}}
+{{end}}
+{{end}}

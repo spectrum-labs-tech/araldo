@@ -1,0 +1,20 @@
+{{define "content"}}
+<p class="crumbs"><a href="/org">Organization</a></p>
+<h1>Background tasks</h1>
+<p class="muted">These run in <code>araldo worker</code>, each on one worker at a time.</p>
+<table>
+  <thead><tr><th>Task</th><th>Every</th><th>Last run</th><th>Last success</th><th>Next</th><th>Failures</th></tr></thead>
+  <tbody>
+  {{range .Data.Tasks}}
+  <tr>
+    <td><code>{{.Name}}</code>{{if not .Enabled}} <span class="pill neutral">off</span>{{end}}</td>
+    <td>{{.Interval}}</td>
+    <td>{{if .LastRunAt}}{{ago (derefTime .LastRunAt)}}{{else}}never{{end}}</td>
+    <td>{{if .LastOKAt}}{{ago (derefTime .LastOKAt)}}{{else}}never{{end}}</td>
+    <td>{{ago .NextRunAt}}</td>
+    <td>{{if .Failures}}<span class="pill bad">{{.Failures}}</span> <span class="small">{{.LastError}}</span>{{else}}0{{end}}</td>
+  </tr>
+  {{else}}<tr><td colspan="6" class="muted">No worker has started yet.</td></tr>{{end}}
+  </tbody>
+</table>
+{{end}}

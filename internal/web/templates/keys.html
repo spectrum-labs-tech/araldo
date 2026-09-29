@@ -1,0 +1,55 @@
+{{define "content"}}
+<h1>API keys <span class="pill {{if .Livemode}}bad{{else}}warn{{end}}">{{if .Livemode}}live{{else}}test{{end}}</span></h1>
+{{if .Data.NewKey}}
+<section class="card secret" role="alert">
+  <h2>Copy your new key now</h2>
+  <p>This is the only time <strong>{{.Data.NewName}}</strong> is shown in full. Araldo keeps only a hash.</p>
+  <div class="copy"><code id="new-key">{{.Data.NewKey}}</code> <button type="button" data-copy="new-key">Copy</button></div>
+  <p class="small">Try it:</p>
+  <pre class="mono small">curl {{.Data.BaseURL}}/v1/posts \
+  -H "Authorization: Bearer {{.Data.NewKey}}" \
+  -H "Idempotency-Key: first-post" \
+  -H "Content-Type: application/json" \
+  -d '{"brand":"{{with index .Data.Brands 0}}{{.Slug}}{{else}}your-brand{{end}}","content":{"body":"Hello from Araldo"},"publish_at":"now"}'</pre>
+</section>
+{{end}}
+
+{{if .Data.Keys}}
+<table>
+  <thead><tr><th>Name</th><th>Key</th><th>Access</th><th>Last used</th><th>Created</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Keys}}
+  <tr class="{{if .RevokedAt}}muted{{end}}">
+    <td>{{.Name}}</td>
+    <td><code>{{.Hint}}</code></td>
+    <td>{{if .Scopes}}{{join .Scopes ", "}}{{else}}full{{end}}{{if .BrandID}} · one brand{{end}}</td>
+    <td>{{if .LastUsedAt}}{{ago (derefTime .LastUsedAt)}}{{else}}never{{end}}</td>
+    <td>{{ago .CreatedAt}}</td>
+    <td>{{if .RevokedAt}}revoked{{else}}
+      <form method="post" action="/keys/{{keyID .ID}}/revoke" data-confirm="Revoke {{.Name}}? Requests using it will fail immediately.">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="danger">Revoke</button></form>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="muted">No {{if .Livemode}}live{{else}}test{{end}} keys yet.</p>{{end}}
+
+<section class="card">
+  <h2>Create a {{if .Livemode}}live{{else}}test{{end}} key</h2>
+  <form method="post" action="/keys" class="stack narrow">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Name <input name="name" required maxlength="100" placeholder="ar15.build production"></label>
+    <fieldset class="seg"><legend>Access</legend>
+      <label><input type="radio" name="access" value="full" checked data-toggle="access"> Full</label>
+      <label><input type="radio" name="access" value="restricted" data-toggle="access"> Restricted</label>
+    </fieldset>
+    <fieldset data-when="access=restricted"><legend>Scopes</legend>
+      {{range .Data.Scopes}}<label class="check"><input type="checkbox" name="scopes" value="{{.}}"> <code>{{.}}</code></label>{{end}}
+    </fieldset>
+    <label>Limit to one brand
+      <select name="brand"><option value="">All brands</option>{{range .Data.Brands}}<option value="{{brandID .ID}}">{{.Name}}</option>{{end}}</select></label>
+    <button class="primary">Create key</button>
+    <p class="muted small">Creating a key asks you to confirm your password.</p>
+  </form>
+</section>
+{{end}}

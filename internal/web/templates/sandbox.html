@@ -1,0 +1,14 @@
+{{define "content"}}
+<p class="crumbs"><a href="/posts/{{postID .Data.PostID}}">Back to the post</a></p>
+<h1>Sandbox post</h1>
+<p class="muted">Published to the test-mode sandbox channel <strong>{{.Data.ChannelName}}</strong> {{fmtTime .Data.PublishedAt}}. Nothing was posted anywhere real.</p>
+<div class="sandbox-feed">
+  {{range $i, $part := .Data.Parts}}
+  <article class="sandbox-post" id="part-{{inc $i}}">
+    <div class="avatar" aria-hidden="true">A</div>
+    <div><div class="muted small">{{$.Data.ChannelName}}{{if gt (len $.Data.Parts) 1}} · {{inc $i}}/{{len $.Data.Parts}}{{end}}</div>
+    <p class="post-body">{{$part}}</p></div>
+  </article>
+  {{end}}
+</div>
+{{end}}

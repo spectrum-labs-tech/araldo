@@ -235,3 +235,14 @@ func trimPage[T any](p Page, rows []T) ([]T, bool) {
 	}
 	return rows, more
 }
+
+// SchemaState reads the applied migration version straight from
+// golang-migrate's table (cheap enough for readiness probes).
+func (s *Store) SchemaState(ctx context.Context) (version uint, dirty bool, err error) {
+	var v int64
+	err = s.q.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations LIMIT 1`).Scan(&v, &dirty)
+	if err != nil {
+		return 0, false, mapErr(err)
+	}
+	return uint(v), dirty, nil //nolint:gosec // versions are positive
+}

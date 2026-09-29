@@ -1,0 +1,52 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Your account</h1>
+{{if $d.MFARequired}}<div class="alert" role="alert">{{with .Org}}{{.OrgName}}{{end}} requires two-factor authentication. Turn it on to continue.</div>{{end}}
+
+{{if $d.RecoveryCodes}}
+<section class="card secret" role="alert">
+  <h2>Save your recovery codes</h2>
+  <p>Each code signs you in once if you lose your authenticator. They are not shown again.</p>
+  <pre class="codes" id="codes">{{range $d.RecoveryCodes}}{{.}}
+{{end}}</pre>
+  <button type="button" data-copy="codes">Copy</button>
+</section>
+{{end}}
+
+<section class="card">
+  <h2>Two-factor authentication</h2>
+  {{if .User.MFAEnabled}}
+    <p><span class="pill good">on</span> Authenticator app. {{$d.RecoveryLeft}} recovery codes left.</p>
+    <div class="actions">
+      <form method="post" action="/account/recovery-codes"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>New recovery codes</button></form>
+      {{if not .RequireMFA}}<form method="post" action="/account/mfa/disable" data-confirm="Turn off two-factor authentication?"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="danger">Turn off</button></form>{{end}}
+    </div>
+  {{else if $d.Enrolling}}
+    <ol>
+      <li>Scan this code with an authenticator app (1Password, Authy, Google Authenticator…).
+        {{if $d.QR}}<div class="qr"><img src="{{dataURL $d.QR}}" alt="QR code for your authenticator app" width="240" height="240"></div>{{end}}
+        <p class="small">Or type this key: <code class="secret-text">{{$d.SecretText}}</code></p></li>
+      <li>Enter the 6-digit code it shows:
+        <form method="post" action="/account/mfa/confirm" class="inline-form">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <input name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="6" autofocus aria-label="Code">
+          <button class="primary">Turn on</button>
+        </form></li>
+    </ol>
+  {{else}}
+    <p><span class="pill neutral">off</span> Protect your account with an authenticator app.</p>
+    <form method="post" action="/account/mfa/begin"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="primary">Set up</button></form>
+  {{end}}
+</section>
+
+<section class="card">
+  <h2>Password</h2>
+  <form method="post" action="/account/password" class="stack narrow">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Current password <input type="password" name="current_password" autocomplete="current-password" required></label>
+    <label>New password <span class="muted small">at least 12 characters</span><input type="password" name="new_password" autocomplete="new-password" minlength="12" required></label>
+    <label>Confirm new password <input type="password" name="confirm_password" autocomplete="new-password" minlength="12" required></label>
+    <button class="primary">Change password</button>
+  </form>
+</section>
+{{end}}

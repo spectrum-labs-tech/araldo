@@ -1,0 +1,77 @@
+{{define "content"}}
+{{$p := .Data.Post}}
+<div class="page-head">
+  <div>
+    <p class="crumbs"><a href="/posts">Posts</a> / <code>{{postID $p.ID}}</code></p>
+    <h1>Post <span class="pill {{statusClass $p.Status}}">{{$p.Status}}</span></h1>
+  </div>
+  <div class="actions">
+    {{if or (eq $p.Status "scheduled") (eq $p.Status "pending_approval") (eq $p.Status "publishing")}}
+    <form method="post" action="/posts/{{postID $p.ID}}/cancel" data-confirm="Cancel every unpublished target?">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="danger">Cancel post</button>
+    </form>{{end}}
+  </div>
+</div>
+
+<dl class="facts">
+  <dt>Brand</dt><dd>{{with .Data.Brand}}<a href="/brands/{{brandID .ID}}">{{.Name}}</a>{{end}}</dd>
+  <dt>Publish at</dt><dd>{{fmtTime $p.PublishAt}}{{if $p.SlotAt}} <span class="tag">slot</span>{{end}}</dd>
+  <dt>Give up after</dt><dd>{{fmtTime $p.PublishBy}}</dd>
+  {{if $p.TemplateID}}<dt>Template</dt><dd><a href="/templates/{{tmplID (derefUUID $p.TemplateID)}}?version={{deref $p.TemplateVersion}}">version {{deref $p.TemplateVersion}}</a></dd>{{end}}
+  {{if $p.Metadata}}<dt>Metadata</dt><dd>{{range $k, $v := $p.Metadata}}<span class="tag">{{$k}}={{$v}}</span> {{end}}</dd>{{end}}
+  <dt>Created</dt><dd>{{fmtTime $p.CreatedAt}} {{if $p.CreatedByKey}}by an API key{{end}}</dd>
+</dl>
+
+{{if eq $p.Status "pending_approval"}}
+<section class="card attention">
+  <h2>Waiting for approval</h2>
+  {{if .Data.CanApprove}}
+  <form method="post" action="/posts/{{postID $p.ID}}/review" class="inline-form">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input name="note" placeholder="Note (optional)" maxlength="500">
+    <button class="primary" name="decision" value="approve">Approve</button>
+    <button class="danger" name="decision" value="reject">Reject</button>
+  </form>
+  {{else}}<p class="muted">An admin or owner must approve this post.</p>{{end}}
+</section>
+{{else if $p.ReviewedAt}}<p class="muted">Reviewed {{fmtTime $p.ReviewedAt}}{{if $p.ReviewNote}}: “{{$p.ReviewNote}}”{{end}}</p>{{end}}
+
+<h2>Targets</h2>
+{{range $p.Targets}}
+<section class="card target">
+  <div class="card-head">
+    <h3>{{.ChannelName}} <span class="muted">{{.Provider}}</span></h3>
+    <span class="pill {{statusClass .Status}}">{{.Status}}</span>
+  </div>
+  {{range $i, $part := .Parts}}<pre class="post-text">{{$part}}</pre>{{end}}
+  <dl class="facts small">
+    <dt>Attempts</dt><dd>{{.Attempts}}</dd>
+    {{if eq .Status "queued"}}<dt>Next attempt</dt><dd>{{fmtTime .NextAttemptAt}}</dd>{{end}}
+    {{if .PublishedAt}}<dt>Published</dt><dd>{{fmtTime .PublishedAt}}</dd>{{end}}
+    {{if .Permalink}}<dt>Link</dt><dd><a href="{{safeURL .Permalink}}" rel="noopener" target="_blank">{{.Permalink}}</a></dd>{{end}}
+    {{if .ErrorCode}}<dt>Last error</dt><dd><code>{{.ErrorCode}}</code> {{.ErrorMessage}}</dd>{{end}}
+  </dl>
+  {{if eq .Status "needs_attention"}}
+  <div class="callout">
+    <p><strong>Did this publish?</strong> The platform may or may not have accepted it. Check the account, then:</p>
+    <div class="inline-form">
+      <form method="post" action="/targets/{{targetID .ID}}/retry"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>It did not: retry</button></form>
+      <form method="post" action="/targets/{{targetID .ID}}/published" class="inline-form"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <input name="permalink" placeholder="Link to the post (optional)"><button class="primary">It did: mark published</button></form>
+    </div>
+  </div>
+  {{else if eq .Status "failed"}}
+  <form method="post" action="/targets/{{targetID .ID}}/retry"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Retry</button></form>
+  {{end}}
+  {{with index $.Data.Attempts .ID}}
+  <details><summary>Attempt history</summary>
+    <table class="small"><thead><tr><th>#</th><th>Started</th><th>Outcome</th><th>Error</th></tr></thead><tbody>
+    {{range .}}<tr><td>{{.Attempt}}</td><td>{{fmtTime .StartedAt}}</td><td><span class="pill {{statusClass .Outcome}}">{{.Outcome}}</span></td><td>{{if .ErrorCode}}<code>{{.ErrorCode}}</code> {{.Error}}{{end}}</td></tr>{{end}}
+    </tbody></table>
+  </details>
+  {{end}}
+</section>
+{{end}}
+
+<details class="card"><summary>API object</summary><pre class="json">{{.Data.JSON}}</pre></details>
+{{end}}

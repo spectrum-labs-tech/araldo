@@ -1,0 +1,37 @@
+{{define "content"}}
+<h1>Webhooks <span class="pill {{if .Livemode}}bad{{else}}warn{{end}}">{{if .Livemode}}live{{else}}test{{end}}</span></h1>
+{{if .Data.Secret}}
+<section class="card secret" role="alert">
+  <h2>Copy the signing secret now</h2>
+  <p>Deliveries to <code>{{.Data.SecretFor}}</code> are signed with this secret. It is not shown again (you can roll a new one).</p>
+  <div class="copy"><code id="secret">{{.Data.Secret}}</code> <button type="button" data-copy="secret">Copy</button></div>
+  <p class="small muted">Verify <code>Araldo-Signature: t=…,v1=…</code>: HMAC-SHA256 of <code>t + "." + body</code> with this secret.</p>
+</section>
+{{end}}
+{{if .Data.Endpoints}}
+<table>
+  <thead><tr><th>URL</th><th>Events</th><th>Status</th></tr></thead>
+  <tbody>
+  {{range .Data.Endpoints}}
+  <tr><td><a href="/webhooks/{{endpointID .ID}}">{{.URL}}</a>{{if .Description}}<div class="muted small">{{.Description}}</div>{{end}}</td>
+    <td class="small">{{join .EventTypes ", "}}</td>
+    <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="muted">No endpoints yet.</p>{{end}}
+
+<section class="card">
+  <h2>Add an endpoint</h2>
+  <form method="post" action="/webhooks" class="stack narrow">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>URL <input type="url" name="url" value="{{index .Data.Form "url"}}" required placeholder="https://example.com/araldo/webhooks"></label>
+    <label>Description <input name="description" value="{{index .Data.Form "description"}}" maxlength="500"></label>
+    <fieldset><legend>Events</legend>
+      <label class="check"><input type="checkbox" name="all" value="1" checked> Every event</label>
+      <details><summary>Or choose</summary>{{range .Data.EventTypes}}<label class="check"><input type="checkbox" name="events" value="{{.}}"> <code>{{.}}</code></label>{{end}}</details>
+    </fieldset>
+    <button class="primary">Add endpoint</button>
+  </form>
+</section>
+{{end}}

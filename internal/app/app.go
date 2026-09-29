@@ -1,0 +1,143 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Package app is the composition root: it opens the database and keyring,
+// builds the platform registry and the use cases, and wires the HTTP
+// server and the worker. Subcommands in internal/cli call it.
+package app
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/spectrum-labs-tech/araldo/internal/api"
+	"github.com/spectrum-labs-tech/araldo/internal/config"
+	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/keyring"
+	"github.com/spectrum-labs-tech/araldo/internal/netguard"
+	"github.com/spectrum-labs-tech/araldo/internal/opsched"
+	"github.com/spectrum-labs-tech/araldo/internal/platform"
+	"github.com/spectrum-labs-tech/araldo/internal/platform/bluesky"
+	"github.com/spectrum-labs-tech/araldo/internal/platform/discord"
+	"github.com/spectrum-labs-tech/araldo/internal/platform/mastodon"
+	"github.com/spectrum-labs-tech/araldo/internal/platform/sandbox"
+	"github.com/spectrum-labs-tech/araldo/internal/platform/telegram"
+	"github.com/spectrum-labs-tech/araldo/internal/server"
+	"github.com/spectrum-labs-tech/araldo/internal/store"
+	"github.com/spectrum-labs-tech/araldo/internal/web"
+)
+
+// App is an opened Araldo.
+type App struct {
+	Cfg   config.Config
+	Log   *slog.Logger
+	Store *store.Store
+	Keys  *keyring.Keyring
+	Svc   *core.Service
+}
+
+// Logger returns the JSON logger at level.
+func Logger(level string) *slog.Logger {
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(level)); err != nil {
+		l = slog.LevelInfo
+	}
+	return slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: l}))
+}
+
+// Open connects to the database (migrating it when configured) and builds
+// the application. Without master keys, secrets cannot be read or written;
+// only commands that need none may skip them.
+func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error) {
+	st, err := store.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.AutoMigrate {
+		if err := st.Migrate(ctx); err != nil {
+			st.Close()
+			return nil, err
+		}
+	}
+	a := &App{Cfg: cfg, Log: log, Store: st}
+	if cfg.MasterKeys != "" {
+		mk, err := keyring.ParseMasterKeys(cfg.MasterKeys)
+		if err != nil {
+			st.Close()
+			return nil, err
+		}
+		a.Keys = keyring.New(mk, st)
+	}
+	client := netguard.Client(cfg.AllowPrivateNetworks, 60*time.Second)
+	reg := platform.NewRegistry(
+		sandbox.New(cfg.BaseURL),
+		bluesky.New(client),
+		mastodon.New(client),
+		discord.New(client),
+		telegram.New(client),
+	)
+	a.Svc = core.New(st, a.Keys, reg, log, core.Config{BaseURL: cfg.BaseURL, AllowPrivateWebhooks: cfg.AllowPrivateNetworks})
+	return a, nil
+}
+
+// Close releases the database pool.
+func (a *App) Close() { a.Store.Close() }
+
+// Handler is the HTTP server: API, dashboard, health checks.
+func (a *App) Handler() (http.Handler, error) {
+	dash, err := web.New(a.Svc, a.Log, web.Config{SecureCookies: !a.Cfg.InsecureCookies, ClientIPHeader: a.Cfg.ClientIPHeader})
+	if err != nil {
+		return nil, err
+	}
+	return server.Handler(api.New(a.Svc, a.Log), dash, a.Svc.Ready, a.Log), nil
+}
+
+// Serve runs the HTTP server until ctx ends.
+func (a *App) Serve(ctx context.Context) error {
+	h, err := a.Handler()
+	if err != nil {
+		return err
+	}
+	return server.Serve(ctx, a.Cfg.Listen, h, a.Log)
+}
+
+// RunWorker publishes, delivers webhooks and runs periodic tasks until ctx
+// ends.
+func (a *App) RunWorker(ctx context.Context) error {
+	host, _ := os.Hostname()
+	owner := host + "/" + strconv.Itoa(os.Getpid())
+	sched, err := opsched.New(a.Store, a.Log, a.Svc.Tasks()...)
+	if err != nil {
+		return err
+	}
+	sched.Owner = owner
+	var wg sync.WaitGroup
+	errs := make(chan error, 3)
+	run := func(name string, fn func(context.Context) error) {
+		wg.Go(func() {
+			if err := fn(ctx); err != nil && ctx.Err() == nil {
+				errs <- fmt.Errorf("%s: %w", name, err)
+			}
+		})
+	}
+	a.Log.InfoContext(ctx, "worker started", "owner", owner)
+	run("publisher", func(ctx context.Context) error { return a.Svc.RunPublisher(ctx, owner) })
+	run("webhooks", func(ctx context.Context) error { return a.Svc.RunDeliverer(ctx, owner) })
+	run("tasks", sched.Run)
+	wg.Wait()
+	close(errs)
+	var msgs []string
+	for err := range errs {
+		msgs = append(msgs, err.Error())
+	}
+	if len(msgs) > 0 {
+		return fmt.Errorf("worker: %s", strings.Join(msgs, "; "))
+	}
+	return nil
+}

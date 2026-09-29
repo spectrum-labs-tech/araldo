@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Command araldo is the single Araldo binary: it runs the API server and
-// the background worker, manages the database, keys and backups, and talks
-// to an Araldo API as a developer CLI. See internal/cli.
+// the background worker, and manages the database, users and keys. See
+// internal/cli.
 package main
 
 import (
@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	_ "time/tzdata" // brands use IANA time zones; the image has no zoneinfo
 
 	"github.com/spectrum-labs-tech/araldo/internal/cli"
 )

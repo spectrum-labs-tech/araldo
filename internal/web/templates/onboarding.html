@@ -1,0 +1,9 @@
+{{define "content"}}
+<h1>Create your organization</h1>
+<p>An organization holds your brands, channels, API keys and team.</p>
+<form method="post" action="/onboarding" class="stack narrow">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <label>Name <input name="name" required maxlength="100" placeholder="Spectrum Labs" autofocus></label>
+  <button class="primary">Create</button>
+</form>
+{{end}}

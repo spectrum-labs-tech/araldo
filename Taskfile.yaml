@@ -9,6 +9,10 @@ vars:
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo dev
   LDFLAGS: -X github.com/spectrum-labs-tech/araldo/internal/buildinfo.Version={{.VERSION}}
+  # The local Postgres from deploy/compose.yaml (task db:up).
+  DEV_DSN: postgres://araldo:araldo@localhost:55433/araldo?sslmode=disable
+  # Development only: a fixed, public master key. Never use it anywhere real.
+  DEV_MASTER_KEY: dev:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 
 tasks:
   default:
@@ -20,6 +24,22 @@ tasks:
   build:
     desc: Build the araldo binary into bin/
     cmd: go build -trimpath -ldflags "{{.LDFLAGS}}" -o bin/ ./cmd/...
+
+  run:
+    desc: "Run server + worker on http://localhost:8080 against the local Postgres (task db:up first)"
+    env:
+      ARALDO_DATABASE_URL: "{{.DEV_DSN}}"
+      ARALDO_MASTER_KEYS: "{{.DEV_MASTER_KEY}}"
+      ARALDO_INSECURE_COOKIES: "true"
+      ARALDO_ALLOW_PRIVATE_NETWORKS: "true"
+    cmd: go run ./cmd/araldo all
+
+  bootstrap:
+    desc: "Create the first owner locally, e.g. task bootstrap -- --email you@example.com --org 'My org' --brand 'My product'"
+    env:
+      ARALDO_DATABASE_URL: "{{.DEV_DSN}}"
+      ARALDO_MASTER_KEYS: "{{.DEV_MASTER_KEY}}"
+    cmd: go run ./cmd/araldo bootstrap {{.CLI_ARGS}}
 
   check:
     desc: Everything CI checks that runs without Docker (fmt, vet, lint, tests, tidy, SPDX headers)
@@ -47,17 +67,50 @@ tasks:
     desc: Run unit tests (no network, no database)
     cmd: go test {{if eq .RACE "true"}}-race{{end}} -count=1 ./...
 
+  test:integration:
+    desc: Run integration tests against the local Postgres (task db:up first); they never clean up
+    env:
+      ARALDO_TEST_DSN: "{{.DEV_DSN}}"
+    cmd: go test -tags=integration -count=1 ./...
+
   test:cover:
     desc: Run unit tests with an HTML coverage report
     cmds:
       - go test -count=1 -coverprofile=coverage.out ./...
       - go tool cover -html=coverage.out -o coverage.html
 
+  db:up:
+    desc: Start the local Postgres (port 55433)
+    cmd: docker compose -f deploy/compose.yaml up -d --wait postgres
+
+  db:down:
+    desc: Stop the local Postgres (data is kept)
+    cmd: docker compose -f deploy/compose.yaml stop postgres
+
+  up:
+    desc: Build and run Araldo and Postgres in Docker at http://localhost:8080
+    cmd: docker compose -f deploy/compose.yaml up -d --build
+
+  image:
+    desc: Build the container image as araldo:local
+    cmd: docker build -t araldo:local --build-arg VERSION={{.VERSION}} .
+
+  helm:lint:
+    desc: Lint and render the Helm chart with every CI values file
+    dir: deploy/helm/araldo
+    cmd: |
+      for f in ci/*-values.yaml; do
+        echo "== $f"
+        helm lint --strict . -f "$f" || exit 1
+        helm template araldo . -f "$f" >/dev/null || exit 1
+      done
+      if helm template araldo . >/dev/null 2>&1; then echo "rendered without a secret"; exit 1; fi
+
   spdx:
     desc: Fail if a hand-written Go file lacks the SPDX license header
     cmd: |
       files=$(grep -L '^// Code generated .* DO NOT EDIT.$' $(git ls-files -co --exclude-standard '*.go'))
-      missing=$(grep -L 'SPDX-License-Identifier: AGPL-3.0-or-later' $files || true)
+      missing=$(grep -LE 'SPDX-License-Identifier: (AGPL-3.0-or-later|Apache-2.0)' $files || true)
       if [ -n "$missing" ]; then echo "Missing SPDX header:"; echo "$missing"; exit 1; fi
 
   vuln:

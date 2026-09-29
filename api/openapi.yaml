@@ -1,0 +1,949 @@
+# SPDX-License-Identifier: Apache-2.0
+openapi: 3.0.3
+info:
+  title: Araldo API
+  version: v1
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+  description: |
+    Schedule and publish posts to every platform from your product.
+
+    **Authentication.** Send an API key as a bearer token:
+    `Authorization: Bearer ald_test_…`. Test keys (`ald_test_`) only ever
+    reach sandbox channels; live keys (`ald_live_`) reach real accounts.
+
+    **Idempotency.** Every `POST` accepts an `Idempotency-Key` header. A
+    retry with the same key and body returns the first response (with
+    `Idempotent-Replayed: true`) for 24 hours.
+
+    **Errors** are RFC 9457 problem details with a stable `code`, the
+    `param` at fault, and every validation problem in `errors`.
+
+    **Lists** page by cursor: `limit`, `starting_after`, `ending_before`,
+    and `has_more` in the response.
+
+    **Events and webhooks.** Every change of interest becomes an event,
+    listed at `/v1/events` and delivered to your webhook endpoints, signed
+    with `Araldo-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "t.body">`.
+servers:
+  - url: /
+security:
+  - apiKey: []
+tags:
+  - name: Brands
+  - name: Channels
+  - name: Templates
+  - name: Posts
+  - name: Events
+  - name: Webhooks
+  - name: Platforms
+
+paths:
+  /v1/openapi.yaml:
+    get:
+      summary: This contract
+      security: []
+      tags: [Platforms]
+      responses:
+        "200":
+          description: The OpenAPI document.
+          content:
+            application/yaml:
+              schema: { type: string }
+
+  /v1/platforms:
+    get:
+      summary: List platforms and their rules
+      description: Length limits, how length is counted, threads and media rules for every platform. In live mode, also the fields needed to connect a channel.
+      tags: [Platforms]
+      responses:
+        "200":
+          description: Platforms.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Platform" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/brands:
+    get:
+      summary: List brands
+      tags: [Brands]
+      responses:
+        "200":
+          description: Brands.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Brand" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Create a brand
+      description: New brands get weekday publishing slots at 09:00 and 13:00 in their time zone.
+      tags: [Brands]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BrandInput" }
+      responses:
+        "201":
+          description: The brand.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Brand" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/brands/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A brand ID (`brand_…`) or slug.
+        schema: { type: string }
+    get:
+      summary: Retrieve a brand
+      tags: [Brands]
+      responses:
+        "200":
+          description: The brand.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Brand" } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Update a brand
+      tags: [Brands]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BrandInput" }
+      responses:
+        "200":
+          description: The brand.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Brand" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/channels:
+    get:
+      summary: List channels
+      description: Channels in the key's mode.
+      tags: [Channels]
+      parameters:
+        - { name: brand, in: query, schema: { type: string }, description: Brand ID or slug. }
+      responses:
+        "200":
+          description: Channels.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Channel" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Connect a channel
+      description: |
+        Araldo checks the credentials with the platform before saving them
+        (encrypted). With a test key, only `provider: sandbox` works; give
+        the platform it imitates in `emulates`.
+      tags: [Channels]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [brand, provider]
+              properties:
+                brand: { type: string }
+                provider: { type: string, example: sandbox }
+                emulates: { type: string, example: bluesky, description: For sandbox channels. }
+                fields:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: The platform's connect fields (see /v1/platforms).
+      responses:
+        "201":
+          description: The channel.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Channel" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/channels/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Retrieve a channel
+      tags: [Channels]
+      responses:
+        "200":
+          description: The channel.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Channel" } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Disconnect a channel
+      tags: [Channels]
+      responses:
+        "200":
+          description: Deleted.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/templates:
+    get:
+      summary: List templates
+      tags: [Templates]
+      parameters:
+        - { name: brand, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Templates (without their bodies).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Template" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Create a template
+      tags: [Templates]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TemplateSource"
+                - type: object
+                  required: [brand, key]
+                  properties:
+                    brand: { type: string }
+                    key: { type: string, example: featured-build }
+                    name: { type: string }
+      responses:
+        "201":
+          description: The template with version 1.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/templates/preview:
+    post:
+      summary: Preview a template
+      description: Render a saved template (`brand` + `template`) or an unsaved one (the source fields) for each platform. Nothing is stored.
+      tags: [Templates]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TemplateSource"
+                - type: object
+                  properties:
+                    brand: { type: string }
+                    template: { type: string, description: "key, key@version or template ID" }
+                    data: { type: object, additionalProperties: true }
+                    providers: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: One rendition per platform.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Preview" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/templates/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Retrieve a template
+      tags: [Templates]
+      parameters:
+        - { name: version, in: query, schema: { type: integer, minimum: 1 }, description: Default the latest. }
+      responses:
+        "200":
+          description: The template and the version asked for.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Delete a template
+      description: Posts made from it keep their text.
+      tags: [Templates]
+      responses:
+        "200":
+          description: Deleted.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/templates/{id}/versions:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Save a new version
+      description: Versions are immutable. Queued posts keep the text they were rendered with.
+      tags: [Templates]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TemplateSource"
+                - type: object
+                  properties:
+                    name: { type: string }
+      responses:
+        "201":
+          description: The template with its new version.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/posts:
+    get:
+      summary: List posts
+      tags: [Posts]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+        - $ref: "#/components/parameters/EndingBefore"
+        - { name: brand, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/PostStatus" } }
+        - name: metadata
+          in: query
+          style: deepObject
+          explode: true
+          schema: { type: object, additionalProperties: { type: string } }
+          description: "Filter by metadata, e.g. metadata[build_id]=8812."
+      responses:
+        "200":
+          description: Posts, newest first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Post" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Create a post
+      description: |
+        Renders the post for every channel, checks each platform's rules,
+        and schedules it. The text is frozen now: what `/v1/posts/preview`
+        showed is what gets published. A rule violation is a 422 listing
+        every channel's problems.
+      tags: [Posts]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PostInput" }
+      responses:
+        "201":
+          description: The post.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Post" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/posts/preview:
+    post:
+      summary: Preview a post
+      description: Renders a post for each channel without saving it. Rule violations are listed per rendition (not as an error), so an agent can read them and fix its text.
+      tags: [Posts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PostInput" }
+      responses:
+        "200":
+          description: One rendition per channel.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Preview" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/posts/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Retrieve a post
+      tags: [Posts]
+      responses:
+        "200":
+          description: The post and its targets.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Post" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/posts/{id}/cancel:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Cancel a post
+      description: Cancels every target not yet published or publishing.
+      tags: [Posts]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "200":
+          description: The post.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Post" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/post_targets/{id}/retry:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Retry a target
+      description: Queues a failed or `needs_attention` target again. For `needs_attention`, you assert the post did not go out.
+      tags: [Posts]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "200":
+          description: The post.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Post" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/post_targets/{id}/mark_published:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Mark a target published
+      description: For a `needs_attention` target that did go out.
+      tags: [Posts]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                permalink: { type: string }
+      responses:
+        "200":
+          description: The post.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Post" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/events:
+    get:
+      summary: List events
+      tags: [Events]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+        - $ref: "#/components/parameters/EndingBefore"
+        - { name: type, in: query, schema: { $ref: "#/components/schemas/EventType" } }
+      responses:
+        "200":
+          description: Events, newest first (kept 30 days).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Event" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/events/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Retrieve an event
+      tags: [Events]
+      responses:
+        "200":
+          description: The event.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Event" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/webhook_endpoints:
+    get:
+      summary: List webhook endpoints
+      tags: [Webhooks]
+      responses:
+        "200":
+          description: Endpoints in the key's mode.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/WebhookEndpoint" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Create a webhook endpoint
+      description: The response includes the signing `secret`, shown only now.
+      tags: [Webhooks]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEndpointInput" }
+      responses:
+        "201":
+          description: The endpoint, with its secret.
+          content: { application/json: { schema: { $ref: "#/components/schemas/WebhookEndpoint" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/webhook_endpoints/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Retrieve a webhook endpoint
+      tags: [Webhooks]
+      responses:
+        "200":
+          description: The endpoint.
+          content: { application/json: { schema: { $ref: "#/components/schemas/WebhookEndpoint" } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Update a webhook endpoint
+      tags: [Webhooks]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/WebhookEndpointInput"
+                - type: object
+                  properties:
+                    disabled: { type: boolean }
+      responses:
+        "200":
+          description: The endpoint.
+          content: { application/json: { schema: { $ref: "#/components/schemas/WebhookEndpoint" } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Delete a webhook endpoint
+      tags: [Webhooks]
+      responses:
+        "200":
+          description: Deleted.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/webhook_endpoints/{id}/roll_secret:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Replace an endpoint's signing secret
+      tags: [Webhooks]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "200":
+          description: The endpoint, with its new secret.
+          content: { application/json: { schema: { $ref: "#/components/schemas/WebhookEndpoint" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/webhook_endpoints/{id}/deliveries:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: List an endpoint's deliveries
+      tags: [Webhooks]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+        - $ref: "#/components/parameters/EndingBefore"
+      responses:
+        "200":
+          description: Deliveries, newest first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/WebhookDelivery" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/webhook_deliveries/{id}/resend:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Resend a delivery
+      tags: [Webhooks]
+      responses:
+        "202":
+          description: Queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  object: { type: string }
+                  status: { type: string }
+        default: { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: "An API key: ald_test_… or ald_live_…"
+
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      schema: { type: string, maxLength: 255 }
+      description: Makes the request safe to retry for 24 hours.
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    StartingAfter:
+      name: starting_after
+      in: query
+      schema: { type: string }
+      description: An object ID; returns older objects.
+    EndingBefore:
+      name: ending_before
+      in: query
+      schema: { type: string }
+      description: An object ID; returns newer objects.
+
+  responses:
+    Error:
+      description: A problem.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string, example: too_long }
+        param: { type: string }
+        request_id: { type: string }
+        doc_url: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              param: { type: string }
+              message: { type: string }
+              detail: { type: object, additionalProperties: true }
+
+    ListBase:
+      type: object
+      required: [object, data, has_more, url]
+      properties:
+        object: { type: string, enum: [list] }
+        data: { type: array, items: {} }
+        has_more: { type: boolean }
+        url: { type: string }
+
+    Deleted:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string }
+        deleted: { type: boolean }
+
+    Platform:
+      type: object
+      properties:
+        provider: { type: string }
+        name: { type: string }
+        max_length: { type: integer }
+        counting: { type: string, enum: [characters, graphemes, x_weighted, mastodon] }
+        threads: { type: boolean }
+        max_thread_parts: { type: integer }
+        media_required: { type: boolean }
+        max_media: { type: integer }
+        source: { type: string }
+        connect_fields:
+          type: array
+          items:
+            type: object
+            properties:
+              Name: { type: string }
+              Label: { type: string }
+              Help: { type: string }
+              Secret: { type: boolean }
+              Optional: { type: boolean }
+              Default: { type: string }
+
+    BrandInput:
+      type: object
+      properties:
+        name: { type: string }
+        slug: { type: string }
+        timezone: { type: string, example: America/Denver }
+        approval_policy: { type: string, enum: [none, required_for_editors_and_keys, required_for_all] }
+
+    Brand:
+      type: object
+      properties:
+        id: { type: string, example: brand_01j9x3k2v7e8f9g0h1j2k3m4n5 }
+        object: { type: string, enum: [brand] }
+        name: { type: string }
+        slug: { type: string }
+        timezone: { type: string }
+        approval_policy: { type: string }
+        created_at: { type: string, format: date-time }
+
+    Channel:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [channel] }
+        brand: { type: string }
+        livemode: { type: boolean }
+        provider: { type: string }
+        emulates: { type: string }
+        display_name: { type: string }
+        handle: { type: string }
+        profile_url: { type: string }
+        status: { type: string, enum: [active, needs_reauth, disabled] }
+        status_note: { type: string }
+        created_at: { type: string, format: date-time }
+
+    TemplateSource:
+      type: object
+      properties:
+        variables:
+          type: object
+          additionalProperties: true
+          description: A JSON Schema (2020-12) for the data.
+        examples: { type: array, items: { type: object, additionalProperties: true } }
+        body: { type: string, example: "Featured build: {{.name}} {{.url}}" }
+        overrides:
+          type: object
+          additionalProperties: { type: string }
+          description: Per-platform bodies.
+        fit:
+          type: object
+          additionalProperties: { type: string, enum: [error, truncate, thread] }
+
+    Template:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [template] }
+        brand: { type: string }
+        key: { type: string }
+        name: { type: string }
+        latest_version: { type: integer }
+        latest:
+          allOf:
+            - $ref: "#/components/schemas/TemplateSource"
+            - type: object
+              properties:
+                version: { type: integer }
+                created_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Content:
+      type: object
+      properties:
+        body: { type: string }
+        parts: { type: array, items: { type: string }, description: Explicit thread parts. }
+        overrides: { type: object, additionalProperties: { type: string } }
+        fit: { type: object, additionalProperties: { type: string, enum: [error, truncate, thread] } }
+
+    PostInput:
+      type: object
+      required: [brand]
+      properties:
+        brand: { type: string, description: Brand ID or slug. }
+        template: { type: string, description: "key, key@version or template ID" }
+        data: { type: object, additionalProperties: true }
+        content: { $ref: "#/components/schemas/Content" }
+        channels:
+          type: array
+          items: { type: string }
+          description: Default every active channel of the brand in this mode.
+        publish_at:
+          type: string
+          description: '"now" (default), "next_slot", or an RFC 3339 time.'
+        publish_by:
+          type: string
+          format: date-time
+          description: Give up after this (default publish_at + 24h).
+        metadata:
+          type: object
+          additionalProperties: { type: string }
+          description: |
+            Up to 50 keys of your own. In test mode, `araldo_simulate`
+            imitates a failure: rate_limited, auth_revoked, rejected,
+            timeout_after_send or slow.
+
+    PostStatus:
+      type: string
+      enum: [pending_approval, scheduled, publishing, published, partially_published, failed, canceled, rejected]
+
+    Post:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [post] }
+        brand: { type: string }
+        livemode: { type: boolean }
+        status: { $ref: "#/components/schemas/PostStatus" }
+        template: { type: string }
+        template_version: { type: integer }
+        data: { type: object, additionalProperties: true }
+        content: { $ref: "#/components/schemas/Content" }
+        publish_at: { type: string, format: date-time }
+        publish_by: { type: string, format: date-time }
+        slot: { type: boolean }
+        metadata: { type: object, additionalProperties: { type: string } }
+        approval:
+          type: object
+          properties:
+            required: { type: boolean }
+            reviewed_by: { type: string }
+            reviewed_at: { type: string, format: date-time }
+            note: { type: string }
+        targets: { type: array, items: { $ref: "#/components/schemas/PostTarget" } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    PostTarget:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [post_target] }
+        post: { type: string }
+        channel: { type: string }
+        channel_name: { type: string }
+        provider: { type: string }
+        parts: { type: array, items: { type: string } }
+        status: { type: string, enum: [held, queued, publishing, published, failed, needs_attention, canceled] }
+        attempts: { type: integer }
+        next_attempt_at: { type: string, format: date-time }
+        publish_by: { type: string, format: date-time }
+        permalink: { type: string }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+        published_at: { type: string, format: date-time }
+        livemode: { type: boolean }
+
+    Preview:
+      type: object
+      properties:
+        object: { type: string, enum: [preview] }
+        valid: { type: boolean }
+        renditions:
+          type: array
+          items:
+            type: object
+            properties:
+              provider: { type: string }
+              channel: { type: string }
+              parts: { type: array, items: { type: string } }
+              lengths: { type: array, items: { type: integer } }
+              limit: { type: integer }
+              counting: { type: string }
+              violations:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code: { type: string, example: too_long }
+                    message: { type: string }
+                    part: { type: integer }
+                    length: { type: integer }
+                    limit: { type: integer }
+
+    EventType:
+      type: string
+      enum:
+        - post.created
+        - post.approval_requested
+        - post.approved
+        - post.rejected
+        - post.published
+        - post.partially_published
+        - post.failed
+        - post.canceled
+        - post_target.published
+        - post_target.failed
+        - post_target.needs_attention
+        - channel.connected
+        - channel.needs_reauth
+        - template.version_created
+
+    Event:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [event] }
+        type: { $ref: "#/components/schemas/EventType" }
+        livemode: { type: boolean }
+        request_id: { type: string }
+        created_at: { type: string, format: date-time }
+        data:
+          type: object
+          properties:
+            object: { type: object, additionalProperties: true }
+
+    WebhookEndpointInput:
+      type: object
+      properties:
+        url: { type: string }
+        description: { type: string }
+        enabled_events:
+          type: array
+          items: { type: string }
+          description: Event types, or ["*"] (default).
+
+    WebhookEndpoint:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [webhook_endpoint] }
+        url: { type: string }
+        description: { type: string }
+        enabled_events: { type: array, items: { type: string } }
+        status: { type: string, enum: [enabled, disabled] }
+        disabled_reason: { type: string }
+        livemode: { type: boolean }
+        secret: { type: string, description: Only when created or rolled. }
+        created_at: { type: string, format: date-time }
+
+    WebhookDelivery:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [webhook_delivery] }
+        event: { type: string }
+        event_type: { type: string }
+        status: { type: string, enum: [pending, delivering, succeeded, failed] }
+        attempts: { type: integer }
+        response_status: { type: integer }
+        response_body: { type: string }
+        error: { type: string }
+        duration_ms: { type: integer }
+        last_attempt_at: { type: string, format: date-time }
+        next_attempt_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }

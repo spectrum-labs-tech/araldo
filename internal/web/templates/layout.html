@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · Araldo</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<script src="/static/app.js" defer></script>
+</head>
+<body class="{{if .User}}signed-in{{else}}signed-out{{end}}{{if and .User (not .Livemode)}} testmode{{end}}">
+{{if .User}}
+{{if not .Livemode}}<div class="mode-banner" role="status">Test mode · posts go to sandbox channels only</div>{{end}}
+<header class="topbar">
+  <a class="brandmark" href="/"><img src="/static/icon.svg" alt="" width="22" height="22"> Araldo</a>
+  {{if .Org}}
+  <form method="post" action="/context" class="ctx">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <input type="hidden" name="back" value="">
+    <label class="sr-only" for="org-switch">Organization</label>
+    <select id="org-switch" name="org" data-autosubmit>
+      {{range .Orgs}}<option value="{{.OrgID}}" {{if eq .OrgID $.Org.OrgID}}selected{{end}}>{{.OrgName}}</option>{{end}}
+    </select>
+    <div class="mode-toggle" role="group" aria-label="Mode">
+      <button name="mode" value="test" class="{{if not .Livemode}}on{{end}}" aria-pressed="{{not .Livemode}}">Test</button>
+      <button name="mode" value="live" class="{{if .Livemode}}on live{{end}}" aria-pressed="{{.Livemode}}">Live</button>
+    </div>
+  </form>
+  {{end}}
+  <div class="who">
+    <a href="/account">{{.User.Email}}</a>
+    <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="link">Sign out</button></form>
+  </div>
+</header>
+<div class="shell">
+  <nav class="side" aria-label="Main">
+    <a href="/" class="{{if eq .Nav "home"}}active{{end}}">Overview</a>
+    <a href="/posts" class="{{if eq .Nav "posts"}}active{{end}}">Posts</a>
+    <a href="/templates" class="{{if eq .Nav "templates"}}active{{end}}">Templates</a>
+    <a href="/channels" class="{{if eq .Nav "channels"}}active{{end}}">Channels</a>
+    <a href="/brands" class="{{if eq .Nav "brands"}}active{{end}}">Brands</a>
+    <div class="side-head">Developers</div>
+    <a href="/keys" class="{{if and (eq .Nav "developers") (eq .Title "API keys")}}active{{end}}">API keys</a>
+    <a href="/webhooks" class="{{if and (eq .Nav "developers") (or (eq .Title "Webhooks") (eq .Title "Webhook endpoint"))}}active{{end}}">Webhooks</a>
+    <a href="/events" class="{{if and (eq .Nav "developers") (not (or (eq .Title "API keys") (eq .Title "Webhooks") (eq .Title "Webhook endpoint")))}}active{{end}}">Events</a>
+    <a href="/v1/openapi.yaml">API reference</a>
+    <div class="side-head">Settings</div>
+    <a href="/org" class="{{if eq .Nav "org"}}active{{end}}">Organization</a>
+    <a href="/account" class="{{if eq .Nav "account"}}active{{end}}">Your account</a>
+  </nav>
+  <main id="main">
+    {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
+    {{if .Error}}<div class="alert" role="alert"><strong>{{.Error}}</strong>
+      {{if .Problems}}<ul>{{range .Problems}}<li>{{if .Param}}<code>{{.Param}}</code>: {{end}}{{.Message}}</li>{{end}}</ul>{{end}}</div>{{end}}
+    {{template "content" .}}
+  </main>
+</div>
+{{else}}
+<main class="auth">
+  <div class="auth-card">
+    <a class="brandmark big" href="/"><img src="/static/icon.svg" alt="" width="32" height="32"> Araldo</a>
+    {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
+    {{if .Error}}<div class="alert" role="alert">{{.Error}}</div>{{end}}
+    {{template "content" .}}
+  </div>
+</main>
+{{end}}
+<footer class="foot">Araldo {{.Version}} · <a href="https://github.com/spectrum-labs-tech/araldo">source</a> (AGPL-3.0)</footer>
+</body>
+</html>

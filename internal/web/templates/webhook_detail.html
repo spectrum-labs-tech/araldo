@@ -1,0 +1,55 @@
+{{define "content"}}
+{{$e := .Data.Endpoint}}
+<p class="crumbs"><a href="/webhooks">Webhooks</a> / <code>{{endpointID $e.ID}}</code></p>
+<div class="page-head">
+  <h1>{{$e.URL}}</h1>
+  <span class="pill {{statusClass $e.Status}}">{{$e.Status}}</span>
+</div>
+{{if $e.DisabledReason}}<p class="alert">{{$e.DisabledReason}}</p>{{end}}
+{{if .Data.Secret}}
+<section class="card secret" role="alert">
+  <h2>New signing secret</h2>
+  <div class="copy"><code id="secret">{{.Data.Secret}}</code> <button type="button" data-copy="secret">Copy</button></div>
+</section>
+{{end}}
+
+<section class="card">
+  <form method="post" action="/webhooks/{{endpointID $e.ID}}" class="stack narrow">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>URL <input type="url" name="url" value="{{$e.URL}}" required></label>
+    <label>Description <input name="description" value="{{$e.Description}}" maxlength="500"></label>
+    <fieldset><legend>Events</legend>
+      <label class="check"><input type="checkbox" name="all" value="1" {{if contains $e.EventTypes "*"}}checked{{end}}> Every event</label>
+      {{range .Data.EventTypes}}<label class="check"><input type="checkbox" name="events" value="{{.}}" {{if contains $e.EventTypes .}}checked{{end}}> <code>{{.}}</code></label>{{end}}
+    </fieldset>
+    <label class="check"><input type="checkbox" name="enabled" value="1" {{if eq $e.Status "enabled"}}checked{{end}}> Enabled</label>
+    <div class="actions"><button class="primary">Save</button></div>
+  </form>
+  <div class="actions">
+    <form method="post" action="/webhooks/{{endpointID $e.ID}}/roll" data-confirm="Replace the signing secret? The old one stops working now.">
+      <input type="hidden" name="csrf" value="{{.CSRF}}"><button>Roll secret</button></form>
+    <form method="post" action="/webhooks/{{endpointID $e.ID}}/delete" data-confirm="Delete this endpoint and its delivery log?">
+      <input type="hidden" name="csrf" value="{{.CSRF}}"><button class="danger">Delete</button></form>
+  </div>
+</section>
+
+<h2>Deliveries</h2>
+{{if .Data.Deliveries}}
+<table class="small">
+  <thead><tr><th>Event</th><th>Status</th><th>Attempts</th><th>Response</th><th>Last attempt</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Deliveries}}
+  <tr>
+    <td><a href="/events/{{eventID .EventID}}"><code>{{.EventType}}</code></a></td>
+    <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
+    <td>{{.Attempts}}</td>
+    <td>{{if .ResponseStatus}}HTTP {{deref .ResponseStatus}}{{end}} {{.Error}}{{if .DurationMS}} <span class="muted">{{deref .DurationMS}} ms</span>{{end}}</td>
+    <td>{{if .LastAttemptAt}}{{ago (derefTime .LastAttemptAt)}}{{else}}—{{end}}</td>
+    <td><form method="post" action="/deliveries/{{deliveryID .ID}}/resend"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+      <input type="hidden" name="back" value="/webhooks/{{endpointID $e.ID}}"><button>Resend</button></form></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="muted">No deliveries yet.</p>{{end}}
+{{end}}

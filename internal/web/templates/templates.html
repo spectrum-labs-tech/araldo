@@ -1,0 +1,24 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>Templates</h1>
+  <a class="button primary" href="/templates/new">New template</a>
+</div>
+<p class="muted">Templates turn your product's data into posts. Your code sends <code>{"template": "featured-build", "data": {…}}</code>; the wording lives here, and changes without a deploy.</p>
+{{if .Data.Templates}}
+<table>
+  <thead><tr><th>Key</th><th>Name</th><th>Brand</th><th>Version</th><th>Updated</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Templates}}
+  <tr>
+    <td><a href="/templates/{{tmplID .ID}}"><code>{{.Key}}</code></a></td>
+    <td>{{.Name}}</td>
+    <td>{{index $.Data.Brands .BrandID}}</td>
+    <td>v{{.LatestVersion}}</td>
+    <td>{{ago .UpdatedAt}}</td>
+    <td><a href="/posts/new?template={{tmplID .ID}}">Use</a></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="muted">No templates yet.</p>{{end}}
+{{end}}

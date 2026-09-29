@@ -1,0 +1,25 @@
+{{define "content"}}
+{{$f := .Data}}
+<p class="crumbs"><a href="/brands">Brands</a>{{if $f.Brand}} / <code>{{brandID $f.Brand.ID}}</code>{{end}}</p>
+<h1>{{if $f.Brand}}{{$f.Brand.Name}}{{else}}New brand{{end}}</h1>
+<form method="post" action="{{if $f.Brand}}/brands/{{brandID $f.Brand.ID}}{{else}}/brands{{end}}" class="stack narrow">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <label>Name <input name="name" value="{{$f.Name}}" required maxlength="100" placeholder="AR15.build"></label>
+  <label>Slug <input name="slug" value="{{$f.Slug}}" pattern="[a-z0-9][a-z0-9\-]*" placeholder="made from the name"> <span class="muted small">API callers can use it instead of the ID.</span></label>
+  <label>Time zone
+    <input name="timezone" value="{{$f.Timezone}}" list="zones" required>
+    <datalist id="zones">{{range $f.Zones}}<option value="{{.}}">{{end}}</datalist></label>
+  <label>Approvals
+    <select name="approval_policy">
+      <option value="none" {{if eq $f.Policy "none"}}selected{{end}}>None: posts go out as scheduled</option>
+      <option value="required_for_editors_and_keys" {{if eq $f.Policy "required_for_editors_and_keys"}}selected{{end}}>Required for editors and API keys</option>
+      <option value="required_for_all" {{if eq $f.Policy "required_for_all"}}selected{{end}}>Required for every post</option>
+    </select></label>
+  {{if $f.Brand}}
+  <label>Publishing slots <span class="muted small">one per line, in the brand's time zone: <code>mon 09:00</code>, <code>weekdays 13:00</code>, <code>daily 18:30</code></span>
+    <textarea name="slots" rows="8" class="mono">{{$f.Slots}}</textarea></label>
+  <p class="muted small"><code>"publish_at": "next_slot"</code> takes the earliest free slot.</p>
+  {{end}}
+  <button class="primary">{{if $f.Brand}}Save{{else}}Create brand{{end}}</button>
+</form>
+{{end}}

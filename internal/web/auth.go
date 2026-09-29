@@ -57,7 +57,7 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login/mfa?next="+url.QueryEscape(next), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, next, http.StatusSeeOther)
+	http.Redirect(w, r, next, http.StatusSeeOther) //nolint:gosec // G710: next went through safeNext
 }
 
 func (s *Server) pendingSession(w http.ResponseWriter, r *http.Request) (*model.Session, bool) {

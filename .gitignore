@@ -1,0 +1,10 @@
+/bin/
+/.out/
+*.exe
+coverage.out
+coverage.html
+.env.local
+.env.*.local
+
+# Task run state
+.task/

@@ -1,0 +1,54 @@
+version: "2"
+
+run:
+  timeout: 5m
+  build-tags: [integration]
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - contextcheck # context must flow from request/signal down to every I/O call
+    - copyloopvar
+    - depguard
+    - errorlint
+    - forbidigo # no fmt.Print*/print: log with slog, write output to an io.Writer
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - usestdlibvars
+  settings:
+    depguard:
+      rules:
+        logging:
+          deny:
+            - pkg: "log$"
+              desc: "log with log/slog (structured, carries trace IDs); see ADR 0014"
+    forbidigo:
+      forbid:
+        - pattern: ^(fmt\.Print(|f|ln)|print|println)$
+          msg: "log with log/slog, or write to an io.Writer passed in"
+    revive:
+      rules:
+        - name: exported
+          disabled: true # internal packages; doc comments are reviewed by hand
+        - name: package-comments
+        - name: var-naming
+    misspell:
+      locale: US
+  exclusions:
+    presets: [comments, std-error-handling]
+    rules:
+      - path: _test\.go
+        linters: [gosec, noctx]
+
+formatters:
+  enable: [gofmt, goimports]
+  settings:
+    goimports:
+      local-prefixes: [github.com/spectrum-labs-tech/araldo]

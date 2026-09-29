@@ -1,0 +1,477 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package core
+
+import (
+	"context"
+	"errors"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/spectrum-labs-tech/araldo/internal/apperr"
+	"github.com/spectrum-labs-tech/araldo/internal/authn"
+	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/store"
+)
+
+// Orgs and members (ADR 0004).
+
+// CreateOrg makes an org with userID as its owner.
+func (s *Service) CreateOrg(ctx context.Context, userID uuid.UUID, name string) (*model.Org, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 100 {
+		return nil, apperr.Invalid("name_invalid", "name", "An org needs a name of 1 to 100 characters.")
+	}
+	o := &model.Org{ID: id.New(), Name: name}
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.CreateOrg(ctx, o); err != nil {
+			return err
+		}
+		if err := tx.AddMember(ctx, &model.Membership{OrgID: o.ID, UserID: userID, Role: model.RoleOwner}); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, Actor{OrgID: o.ID, UserID: &userID}, "org.create", id.Format(id.Org, o.ID), nil)
+	})
+	return o, err
+}
+
+// Org returns the actor's org.
+func (s *Service) Org(ctx context.Context, a Actor) (*model.Org, error) {
+	o, err := s.store.Org(ctx, a.OrgID)
+	return o, notFound(err, "org")
+}
+
+// UserOrgs lists the orgs a user belongs to.
+func (s *Service) UserOrgs(ctx context.Context, userID uuid.UUID) ([]model.Membership, error) {
+	return s.store.UserMemberships(ctx, userID)
+}
+
+// UpdateOrg changes an org's name and MFA policy.
+func (s *Service) UpdateOrg(ctx context.Context, a Actor, name string, requireMFA bool) error {
+	if err := a.require(PermOrgWrite); err != nil {
+		return err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 100 {
+		return apperr.Invalid("name_invalid", "name", "An org needs a name of 1 to 100 characters.")
+	}
+	if requireMFA && a.UserID != nil {
+		u, err := s.store.User(ctx, *a.UserID)
+		if err != nil {
+			return err
+		}
+		if !u.MFAEnabled() {
+			return apperr.Invalid("mfa_required_first", "require_mfa", "Turn on two-factor authentication for yourself before requiring it.")
+		}
+	}
+	return s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.UpdateOrg(ctx, &model.Org{ID: a.OrgID, Name: name, RequireMFA: requireMFA}); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, a, "org.update", id.Format(id.Org, a.OrgID), map[string]any{"require_mfa": requireMFA})
+	})
+}
+
+// Members lists an org's members.
+func (s *Service) Members(ctx context.Context, a Actor) ([]model.Membership, error) {
+	if a.IsKey() {
+		return nil, apperr.Forbidden("API keys cannot list members.")
+	}
+	return s.store.Members(ctx, a.OrgID)
+}
+
+// AddMember adds a person to the org. Someone without an account gets one
+// with the given temporary password, to share with them out of band.
+func (s *Service) AddMember(ctx context.Context, a Actor, email string, role model.Role, tempPassword string) (*model.User, error) {
+	if err := a.require(PermMembersWrite); err != nil {
+		return nil, err
+	}
+	if !role.Valid() {
+		return nil, apperr.Invalid("role_invalid", "role", "Role must be owner, admin, editor or viewer.")
+	}
+	if role == model.RoleOwner && !a.Can(PermOrgWrite) {
+		return nil, apperr.Forbidden("Only owners can add owners.")
+	}
+	u, err := s.UserByEmail(ctx, email)
+	if errors.Is(err, apperr.ErrNotFound) {
+		if tempPassword == "" {
+			return nil, apperr.Invalid("password_required", "password", "%s has no account yet: set a temporary password for them.", email)
+		}
+		u, err = s.CreateUser(ctx, email, "", tempPassword)
+	}
+	if err != nil {
+		return nil, err
+	}
+	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.AddMember(ctx, &model.Membership{OrgID: a.OrgID, UserID: u.ID, Role: role}); err != nil {
+			if errors.Is(err, store.ErrConflict) {
+				return apperr.Conflict("already_member", "%s is already a member.", u.Email)
+			}
+			return err
+		}
+		return s.audit(ctx, tx, a, "member.add", id.Format(id.User, u.ID), map[string]any{"role": role})
+	})
+	return u, err
+}
+
+// SetMemberRole changes a member's role. Owners are managed by owners, and
+// an org always keeps at least one.
+func (s *Service) SetMemberRole(ctx context.Context, a Actor, userID uuid.UUID, role model.Role) error {
+	if err := a.require(PermMembersWrite); err != nil {
+		return err
+	}
+	if !role.Valid() {
+		return apperr.Invalid("role_invalid", "role", "Role must be owner, admin, editor or viewer.")
+	}
+	return s.store.InTx(ctx, func(tx *store.Store) error {
+		m, err := tx.Membership(ctx, a.OrgID, userID)
+		if err != nil {
+			return notFound(err, "member")
+		}
+		if (m.Role == model.RoleOwner || role == model.RoleOwner) && !a.Can(PermOrgWrite) {
+			return apperr.Forbidden("Only owners can change owners.")
+		}
+		if m.Role == model.RoleOwner && role != model.RoleOwner {
+			if err := s.keepAnOwner(ctx, tx, a.OrgID); err != nil {
+				return err
+			}
+		}
+		if err := tx.SetMemberRole(ctx, a.OrgID, userID, role); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, a, "member.role", id.Format(id.User, userID), map[string]any{"role": role})
+	})
+}
+
+// RemoveMember takes a person out of the org.
+func (s *Service) RemoveMember(ctx context.Context, a Actor, userID uuid.UUID) error {
+	if err := a.require(PermMembersWrite); err != nil {
+		return err
+	}
+	return s.store.InTx(ctx, func(tx *store.Store) error {
+		m, err := tx.Membership(ctx, a.OrgID, userID)
+		if err != nil {
+			return notFound(err, "member")
+		}
+		if m.Role == model.RoleOwner {
+			if !a.Can(PermOrgWrite) {
+				return apperr.Forbidden("Only owners can remove owners.")
+			}
+			if err := s.keepAnOwner(ctx, tx, a.OrgID); err != nil {
+				return err
+			}
+		}
+		if err := tx.RemoveMember(ctx, a.OrgID, userID); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, a, "member.remove", id.Format(id.User, userID), nil)
+	})
+}
+
+func (s *Service) keepAnOwner(ctx context.Context, tx *store.Store, orgID uuid.UUID) error {
+	n, err := tx.CountOwners(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	if n <= 1 {
+		return apperr.Conflict("last_owner", "An org must keep at least one owner.")
+	}
+	return nil
+}
+
+// Brands.
+
+var slugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
+// BrandInput creates or changes a brand.
+type BrandInput struct {
+	Name           string
+	Slug           string
+	Timezone       string
+	ApprovalPolicy model.ApprovalPolicy
+}
+
+func (in *BrandInput) check() error {
+	var ps apperr.Problems
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" || len(in.Name) > 100 {
+		ps.Add("name_invalid", "name", "A brand needs a name of 1 to 100 characters.")
+	}
+	if in.Slug == "" {
+		in.Slug = Slugify(in.Name)
+	}
+	if !slugRE.MatchString(in.Slug) {
+		ps.Add("slug_invalid", "slug", "Slugs use lowercase letters, digits and dashes.")
+	}
+	if in.Timezone == "" {
+		in.Timezone = "UTC"
+	}
+	if _, err := time.LoadLocation(in.Timezone); err != nil {
+		ps.Add("timezone_invalid", "timezone", "%q is not an IANA time zone.", in.Timezone)
+	}
+	if in.ApprovalPolicy == "" {
+		in.ApprovalPolicy = model.ApprovalNone
+	}
+	if !in.ApprovalPolicy.Valid() {
+		ps.Add("approval_policy_invalid", "approval_policy", "Approval policy must be none, required_for_editors_and_keys or required_for_all.")
+	}
+	return ps.Err("The brand is not valid.")
+}
+
+// Slugify makes a slug from a name.
+func Slugify(name string) string {
+	var sb strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+			sb.WriteRune(r)
+			dash = false
+		case !dash && sb.Len() > 0:
+			sb.WriteByte('-')
+			dash = true
+		}
+	}
+	return strings.Trim(sb.String(), "-")
+}
+
+// CreateBrand adds a brand, with default weekday slots at 09:00 and 13:00.
+func (s *Service) CreateBrand(ctx context.Context, a Actor, in BrandInput) (*model.Brand, error) {
+	if err := a.require(PermBrandsWrite); err != nil {
+		return nil, err
+	}
+	if a.BrandID != nil {
+		return nil, apperr.Forbidden("This API key is limited to one brand.")
+	}
+	if err := in.check(); err != nil {
+		return nil, err
+	}
+	b := &model.Brand{ID: id.New(), OrgID: a.OrgID, Name: in.Name, Slug: in.Slug, Timezone: in.Timezone, ApprovalPolicy: in.ApprovalPolicy}
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.CreateBrand(ctx, b); err != nil {
+			if errors.Is(err, store.ErrConflict) {
+				return apperr.Invalid("slug_taken", "slug", "Another brand already uses the slug %q.", b.Slug)
+			}
+			return err
+		}
+		var slots []model.Slot
+		for d := time.Monday; d <= time.Friday; d++ {
+			slots = append(slots, model.Slot{Weekday: d, MinuteOfDay: 9 * 60}, model.Slot{Weekday: d, MinuteOfDay: 13 * 60})
+		}
+		if err := tx.ReplaceSlots(ctx, a.OrgID, b.ID, slots); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, a, "brand.create", id.Format(id.Brand, b.ID), map[string]any{"name": b.Name})
+	})
+	return b, err
+}
+
+// UpdateBrand changes a brand.
+func (s *Service) UpdateBrand(ctx context.Context, a Actor, brandID uuid.UUID, in BrandInput) (*model.Brand, error) {
+	if err := a.require(PermBrandsWrite); err != nil {
+		return nil, err
+	}
+	b, err := s.Brand(ctx, a, brandID)
+	if err != nil {
+		return nil, err
+	}
+	if in.Slug == "" {
+		in.Slug = b.Slug
+	}
+	if err := in.check(); err != nil {
+		return nil, err
+	}
+	b.Name, b.Slug, b.Timezone, b.ApprovalPolicy = in.Name, in.Slug, in.Timezone, in.ApprovalPolicy
+	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.UpdateBrand(ctx, b); err != nil {
+			if errors.Is(err, store.ErrConflict) {
+				return apperr.Invalid("slug_taken", "slug", "Another brand already uses the slug %q.", b.Slug)
+			}
+			return err
+		}
+		return s.audit(ctx, tx, a, "brand.update", id.Format(id.Brand, b.ID), nil)
+	})
+	return b, err
+}
+
+// Brand returns one of the actor's brands.
+func (s *Service) Brand(ctx context.Context, a Actor, brandID uuid.UUID) (*model.Brand, error) {
+	if err := a.require(PermBrandsRead); err != nil && !a.Can(PermPostsRead) {
+		return nil, err
+	}
+	if err := a.brandAllowed(brandID); err != nil {
+		return nil, err
+	}
+	b, err := s.store.Brand(ctx, a.OrgID, brandID)
+	return b, notFound(err, "brand")
+}
+
+// Brands lists the actor's brands.
+func (s *Service) Brands(ctx context.Context, a Actor) ([]*model.Brand, error) {
+	if err := a.require(PermBrandsRead); err != nil && !a.Can(PermPostsRead) {
+		return nil, err
+	}
+	bs, err := s.store.Brands(ctx, a.OrgID)
+	if err != nil || a.BrandID == nil {
+		return bs, err
+	}
+	return slices.DeleteFunc(bs, func(b *model.Brand) bool { return b.ID != *a.BrandID }), nil
+}
+
+// Slots returns a brand's weekly slots.
+func (s *Service) Slots(ctx context.Context, a Actor, brandID uuid.UUID) ([]model.Slot, error) {
+	if _, err := s.Brand(ctx, a, brandID); err != nil {
+		return nil, err
+	}
+	return s.store.Slots(ctx, a.OrgID, brandID)
+}
+
+// SetSlots replaces a brand's weekly slots.
+func (s *Service) SetSlots(ctx context.Context, a Actor, brandID uuid.UUID, slots []model.Slot) error {
+	if err := a.require(PermBrandsWrite); err != nil {
+		return err
+	}
+	if _, err := s.Brand(ctx, a, brandID); err != nil {
+		return err
+	}
+	var ps apperr.Problems
+	for i, sl := range slots {
+		if sl.Weekday < time.Sunday || sl.Weekday > time.Saturday || sl.MinuteOfDay < 0 || sl.MinuteOfDay >= 24*60 {
+			ps.Add("slot_invalid", "slots["+strconv.Itoa(i)+"]", "Slots need a weekday and a time of day.")
+		}
+	}
+	if len(slots) > 200 {
+		ps.Add("too_many_slots", "slots", "A brand can have at most 200 weekly slots.")
+	}
+	if err := ps.Err("The slots are not valid."); err != nil {
+		return err
+	}
+	return s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.ReplaceSlots(ctx, a.OrgID, brandID, slots); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, a, "brand.slots", id.Format(id.Brand, brandID), map[string]any{"count": len(slots)})
+	})
+}
+
+// API keys (ADR 0006).
+
+// APIKeyInput creates a key.
+type APIKeyInput struct {
+	Name     string
+	Livemode bool
+	Scopes   []string
+	BrandID  *uuid.UUID
+	Expires  *time.Time
+}
+
+// CreateAPIKey makes a key and returns it in full, the only time it is
+// shown. It needs a recent re-authentication.
+func (s *Service) CreateAPIKey(ctx context.Context, a Actor, ss *model.Session, in APIKeyInput) (string, *model.APIKey, error) {
+	if err := a.require(PermKeysWrite); err != nil {
+		return "", nil, err
+	}
+	if err := s.requireSudo(ss); err != nil {
+		return "", nil, err
+	}
+	var ps apperr.Problems
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" || len(in.Name) > 100 {
+		ps.Add("name_invalid", "name", "A key needs a name of 1 to 100 characters.")
+	}
+	for _, sc := range in.Scopes {
+		if !slices.Contains(KeyScopes, Permission(sc)) {
+			ps.Add("scope_invalid", "scopes", "Unknown scope %q.", sc)
+		}
+	}
+	if in.BrandID != nil {
+		if _, err := s.store.Brand(ctx, a.OrgID, *in.BrandID); err != nil {
+			ps.Add("brand_invalid", "brand", "No such brand.")
+		}
+	}
+	if err := ps.Err("The key is not valid."); err != nil {
+		return "", nil, err
+	}
+	plain := authn.NewAPIKey(in.Livemode)
+	k := &model.APIKey{ID: id.New(), OrgID: a.OrgID, Livemode: in.Livemode, Name: in.Name, Hint: authn.KeyHint(plain),
+		Scopes: in.Scopes, BrandID: in.BrandID, CreatedBy: a.UserID, ExpiresAt: in.Expires}
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.CreateAPIKey(ctx, k, authn.HashToken(plain)); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, a, "api_key.create", id.Format(id.APIKey, k.ID), map[string]any{"livemode": in.Livemode, "scopes": in.Scopes})
+	})
+	return plain, k, err
+}
+
+// APIKeys lists the org's keys.
+func (s *Service) APIKeys(ctx context.Context, a Actor) ([]*model.APIKey, error) {
+	if err := a.require(PermKeysWrite); err != nil {
+		return nil, err
+	}
+	return s.store.APIKeys(ctx, a.OrgID)
+}
+
+// RevokeAPIKey stops a key working immediately.
+func (s *Service) RevokeAPIKey(ctx context.Context, a Actor, keyID uuid.UUID) error {
+	if err := a.require(PermKeysWrite); err != nil {
+		return err
+	}
+	return s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.ExpireAPIKey(ctx, a.OrgID, keyID, s.Now(), true); err != nil {
+			return notFound(err, "API key")
+		}
+		return s.audit(ctx, tx, a, "api_key.revoke", id.Format(id.APIKey, keyID), nil)
+	})
+}
+
+// RollAPIKey issues a replacement key with the same settings and lets the
+// old one keep working for overlap (at most 7 days).
+func (s *Service) RollAPIKey(ctx context.Context, a Actor, ss *model.Session, keyID uuid.UUID, overlap time.Duration) (string, *model.APIKey, error) {
+	if err := a.require(PermKeysWrite); err != nil {
+		return "", nil, err
+	}
+	old, err := s.store.APIKey(ctx, a.OrgID, keyID)
+	if err != nil {
+		return "", nil, notFound(err, "API key")
+	}
+	if !old.Active(s.Now()) {
+		return "", nil, apperr.Conflict("key_inactive", "That key is no longer active.")
+	}
+	overlap = min(max(overlap, 0), 7*24*time.Hour)
+	plain, k, err := s.CreateAPIKey(ctx, a, ss, APIKeyInput{Name: old.Name, Livemode: old.Livemode, Scopes: old.Scopes, BrandID: old.BrandID})
+	if err != nil {
+		return "", nil, err
+	}
+	if err := s.store.ExpireAPIKey(ctx, a.OrgID, keyID, s.Now().Add(overlap), false); err != nil {
+		return "", nil, err
+	}
+	return plain, k, nil
+}
+
+// AuthenticateKey turns an API key into an actor.
+func (s *Service) AuthenticateKey(ctx context.Context, plain, requestID string) (Actor, error) {
+	bad := &apperr.Error{Kind: apperr.KindUnauthorized, Code: "api_key_invalid", Message: "Invalid API key. Keys look like ald_test_… or ald_live_…"}
+	if _, err := authn.ParseAPIKey(plain); err != nil {
+		return Actor{}, bad
+	}
+	k, err := s.store.APIKeyByHash(ctx, authn.HashToken(plain))
+	if errors.Is(err, store.ErrNotFound) {
+		return Actor{}, bad
+	}
+	if err != nil {
+		return Actor{}, err
+	}
+	now := s.Now()
+	if !k.Active(now) {
+		return Actor{}, &apperr.Error{Kind: apperr.KindUnauthorized, Code: "api_key_expired", Message: "This API key was revoked or has expired."}
+	}
+	_ = s.store.TouchAPIKey(ctx, k.ID, now)
+	return Actor{OrgID: k.OrgID, Livemode: k.Livemode, KeyID: &k.ID, Scopes: k.Scopes, BrandID: k.BrandID, RequestID: requestID}, nil
+}

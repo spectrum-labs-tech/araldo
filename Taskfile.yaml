@@ -1,0 +1,69 @@
+version: "3"
+
+# Every repeated command lives here. Prefer `task <name>` over raw go commands.
+
+dotenv: [".env.local"]
+
+vars:
+  RACE: '{{.RACE | default "false"}}'
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  LDFLAGS: -X github.com/spectrum-labs-tech/araldo/internal/buildinfo.Version={{.VERSION}}
+
+tasks:
+  default:
+    desc: Run vet and unit tests
+    cmds:
+      - task: vet
+      - task: test
+
+  build:
+    desc: Build the araldo binary into bin/
+    cmd: go build -trimpath -ldflags "{{.LDFLAGS}}" -o bin/ ./cmd/...
+
+  check:
+    desc: Everything CI checks that runs without Docker (fmt, vet, lint, tests, tidy, SPDX headers)
+    cmds:
+      - test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - task: vet
+      - task: lint
+      - task: test
+      - go mod tidy -diff
+      - task: spdx
+
+  vet:
+    desc: Run go vet
+    cmd: go vet ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmd: golangci-lint run ./...
+
+  fmt:
+    desc: Format Go sources
+    cmd: gofmt -w -s .
+
+  test:
+    desc: Run unit tests (no network, no database)
+    cmd: go test {{if eq .RACE "true"}}-race{{end}} -count=1 ./...
+
+  test:cover:
+    desc: Run unit tests with an HTML coverage report
+    cmds:
+      - go test -count=1 -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+
+  spdx:
+    desc: Fail if a hand-written Go file lacks the SPDX license header
+    cmd: |
+      files=$(grep -L '^// Code generated .* DO NOT EDIT.$' $(git ls-files -co --exclude-standard '*.go'))
+      missing=$(grep -L 'SPDX-License-Identifier: AGPL-3.0-or-later' $files || true)
+      if [ -n "$missing" ]; then echo "Missing SPDX header:"; echo "$missing"; exit 1; fi
+
+  vuln:
+    desc: Scan dependencies for known vulnerabilities
+    cmd: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  tidy:
+    desc: Tidy go module dependencies
+    cmd: go mod tidy

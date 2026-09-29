@@ -1,0 +1,36 @@
+# Local stack: Postgres for integration tests, plus Araldo itself.
+#   task db:up   start Postgres only (integration tests)
+#   task up      build and run Araldo at http://localhost:8080
+name: araldo
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: araldo
+      POSTGRES_PASSWORD: araldo
+      POSTGRES_DB: araldo
+    ports: ["55433:5432"]
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "araldo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  araldo:
+    build:
+      context: ..
+    command: ["all"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      ARALDO_DATABASE_URL: postgres://araldo:araldo@postgres:5432/araldo?sslmode=disable
+      # Development only: a fixed, public master key. Never use it anywhere real.
+      ARALDO_MASTER_KEYS: dev:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      ARALDO_BASE_URL: http://localhost:8080
+      ARALDO_INSECURE_COOKIES: "true"
+    ports: ["8080:8080"]
+
+volumes:
+  postgres: {}

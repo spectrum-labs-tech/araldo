@@ -1,0 +1,310 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package core
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/platform"
+	"github.com/spectrum-labs-tech/araldo/internal/store"
+)
+
+// Publishing (ADR 0011).
+const (
+	publishPoll    = 5 * time.Second
+	publishLease   = 3 * time.Minute
+	publishTimeout = 90 * time.Second
+	publishBatch   = 10
+	maxRetryDelay  = 30 * time.Minute
+)
+
+// RunPublisher publishes due targets until ctx ends: it polls every few
+// seconds and wakes early on NOTIFY araldo_publish.
+func (s *Service) RunPublisher(ctx context.Context, owner string) error {
+	wake := make(chan struct{}, 1)
+	go s.listen(ctx, "araldo_publish", wake)
+	for {
+		n, err := s.PublishDue(ctx, owner)
+		if err != nil && ctx.Err() == nil {
+			s.log.ErrorContext(ctx, "publishing round failed", "err", err)
+		}
+		if n == publishBatch {
+			continue // more may be waiting
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-wake:
+		case <-time.After(publishPoll):
+		}
+	}
+}
+
+// listen forwards Postgres notifications on channel to wake, reconnecting
+// after errors.
+func (s *Service) listen(ctx context.Context, channel string, wake chan<- struct{}) {
+	for ctx.Err() == nil {
+		conn, err := s.store.Pool().Acquire(ctx)
+		if err != nil {
+			sleepCtx(ctx, 5*time.Second)
+			continue
+		}
+		if _, err := conn.Exec(ctx, "LISTEN "+channel); err == nil {
+			for {
+				if _, err := conn.Conn().WaitForNotification(ctx); err != nil {
+					break
+				}
+				select {
+				case wake <- struct{}{}:
+				default:
+				}
+			}
+		}
+		conn.Release()
+		sleepCtx(ctx, time.Second)
+	}
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(d):
+	}
+}
+
+// PublishDue claims and publishes one batch of due targets, one per
+// channel, in parallel, and returns how many it claimed.
+func (s *Service) PublishDue(ctx context.Context, owner string) (int, error) {
+	now := s.Now()
+	claimed, err := s.store.ClaimDueTargets(ctx, owner, now, now.Add(publishLease), publishBatch)
+	if err != nil {
+		return 0, err
+	}
+	var wg sync.WaitGroup
+	for _, ct := range claimed {
+		wg.Go(func() {
+			if err := s.publishTarget(ctx, owner, ct); err != nil {
+				s.log.ErrorContext(ctx, "recording publish outcome failed", "target", id.Format(id.Target, ct.ID), "err", err)
+			}
+		})
+	}
+	wg.Wait()
+	return len(claimed), nil
+}
+
+func (s *Service) publishTarget(ctx context.Context, owner string, ct store.ClaimedTarget) error {
+	t := ct.Target
+	started := s.Now()
+	attempt := &model.Attempt{ID: id.New(), OrgID: t.OrgID, TargetID: t.ID, Attempt: t.Attempts, StartedAt: started}
+	// The attempt is on record before the platform is called, so a crash
+	// leaves evidence (ADR 0011).
+	if err := s.store.StartAttempt(ctx, attempt); err != nil {
+		return err
+	}
+	ch, err := s.store.Channel(ctx, t.OrgID, t.ChannelID)
+	if err != nil {
+		return err
+	}
+	adapter, ok := s.platforms.Get(ch.Provider)
+	var res platform.Result
+	var pubErr error
+	switch {
+	case !ok:
+		pubErr = &platform.Error{Kind: platform.Rejected, Code: "provider_unsupported", Msg: "this server has no " + string(ch.Provider) + " adapter"}
+	default:
+		creds, err := s.credentials(ctx, ch)
+		if err != nil {
+			pubErr = &platform.Error{Kind: platform.Transient, Code: "credentials_unreadable", Msg: "could not decrypt the channel's credentials", Err: err}
+			break
+		}
+		payload := platform.Payload{Key: id.Format(id.Target, t.ID), KeyTime: t.CreatedAt, Parts: t.Parts, Posted: t.Posted, Attempt: t.Attempts}
+		if !t.Livemode {
+			payload.Simulate = ct.Metadata["araldo_simulate"]
+		}
+		pctx, cancel := context.WithTimeout(ctx, publishTimeout)
+		res, pubErr = adapter.Publish(pctx, creds, payload, func(ref platform.RemoteRef) error {
+			return s.store.RecordPostedPart(context.WithoutCancel(ctx), t.ID, owner, ref)
+		})
+		cancel()
+	}
+	return s.finishPublish(context.WithoutCancel(ctx), owner, &t, ch, adapter, attempt, res, pubErr)
+}
+
+func (s *Service) finishPublish(ctx context.Context, owner string, t *model.Target, ch *model.Channel, adapter platform.Adapter,
+	attempt *model.Attempt, res platform.Result, pubErr error) error {
+	now := s.Now()
+	o := store.TargetOutcome{NextAttemptAt: now}
+	outcome, event := "published", "post_target.published"
+	var pe *platform.Error
+	switch {
+	case pubErr == nil:
+		o.Status, o.Permalink, o.Posted, o.PublishedAt = model.TargetPublished, res.Permalink, res.Parts, &now
+		if o.Permalink == "" && len(res.Parts) > 0 {
+			o.Permalink = res.Parts[0].URL
+		}
+	case errors.As(pubErr, &pe):
+		o.ErrorCode, o.ErrorMessage = pe.Code, truncate(pe.Error(), 1000)
+		if o.ErrorCode == "" {
+			o.ErrorCode = string(pe.Kind)
+		}
+		outcome, event = string(pe.Kind), ""
+		switch pe.Kind {
+		case platform.RateLimited:
+			o.Status, o.NextAttemptAt = model.TargetQueued, now.Add(max(pe.RetryAfter, 30*time.Second))
+		case platform.Transient, platform.AuthRevoked:
+			o.Status, o.NextAttemptAt = model.TargetQueued, now.Add(retryDelay(t.Attempts))
+		case platform.Uncertain:
+			if adapter != nil && adapter.Idempotent() {
+				o.Status, o.NextAttemptAt = model.TargetQueued, now.Add(retryDelay(t.Attempts))
+			} else {
+				o.Status, event = model.TargetNeedsAttention, "post_target.needs_attention"
+				o.ErrorMessage = "The platform may or may not have published this: " + o.ErrorMessage +
+					". Check the account, then retry or mark it published."
+			}
+		default: // Rejected
+			o.Status, event = model.TargetFailed, "post_target.failed"
+		}
+		if o.Status == model.TargetQueued && o.NextAttemptAt.After(t.PublishBy) {
+			o.Status, event = model.TargetFailed, "post_target.failed"
+			o.ErrorMessage = "Gave up at the publish_by deadline. Last error: " + o.ErrorMessage
+		}
+	default:
+		o.Status, o.ErrorCode, o.ErrorMessage, event = model.TargetNeedsAttention, "unknown", truncate(pubErr.Error(), 1000), "post_target.needs_attention"
+	}
+	return s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.FinishTarget(ctx, t.ID, owner, o); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return fmt.Errorf("lease on %s lost before the outcome was recorded", id.Format(id.Target, t.ID))
+			}
+			return err
+		}
+		if err := tx.FinishAttempt(ctx, attempt.ID, now, outcome, o.ErrorCode, o.ErrorMessage); err != nil {
+			return err
+		}
+		if pe != nil {
+			switch pe.Kind {
+			case platform.RateLimited:
+				if err := tx.HoldChannel(ctx, ch.OrgID, ch.ID, o.NextAttemptAt); err != nil {
+					return err
+				}
+			case platform.AuthRevoked:
+				if ch.Status == model.ChannelActive {
+					if err := tx.SetChannelStatus(ctx, ch.OrgID, ch.ID, model.ChannelNeedsReauth, truncate(pe.Msg, 500)); err != nil {
+						return err
+					}
+					ch.Status, ch.StatusNote = model.ChannelNeedsReauth, pe.Msg
+					if err := s.emit(ctx, tx, ch.OrgID, ch.Livemode, "", "channel.needs_reauth", ViewChannel(ch)); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		if event != "" {
+			stored, err := tx.Target(ctx, t.OrgID, t.ID)
+			if err != nil {
+				return err
+			}
+			if err := s.emit(ctx, tx, t.OrgID, t.Livemode, "", event, ViewTarget(stored)); err != nil {
+				return err
+			}
+		}
+		_, err := s.refreshPost(ctx, tx, t.OrgID, t.PostID, "", "")
+		return err
+	})
+}
+
+// retryDelay is 30 seconds doubling per attempt, up to 30 minutes.
+func retryDelay(attempts int) time.Duration {
+	d := 30 * time.Second
+	for i := 1; i < attempts && d < maxRetryDelay; i++ {
+		d *= 2
+	}
+	return min(d, maxRetryDelay)
+}
+
+// ReclaimLostTargets handles targets whose worker vanished mid-publish:
+// retried if the platform is idempotent, otherwise held for a person
+// (ADR 0011).
+func (s *Service) ReclaimLostTargets(ctx context.Context) (int, error) {
+	now := s.Now()
+	lost, err := s.store.ExpiredLeases(ctx, now, 100)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, t := range lost {
+		status, code, msg, event := model.TargetNeedsAttention, "worker_lost",
+			"The worker stopped while publishing, so this may or may not have been published. Check the account, then retry or mark it published.",
+			"post_target.needs_attention"
+		if a, ok := s.platforms.Get(t.Provider); ok && a.Idempotent() {
+			status, msg, event = model.TargetQueued, "The worker stopped while publishing; retrying safely.", ""
+		}
+		err := s.store.InTx(ctx, func(tx *store.Store) error {
+			if err := tx.ReclaimTarget(ctx, t.ID, now, status, code, msg); err != nil {
+				return err
+			}
+			if event != "" {
+				stored, err := tx.Target(ctx, t.OrgID, t.ID)
+				if err != nil {
+					return err
+				}
+				if err := s.emit(ctx, tx, t.OrgID, t.Livemode, "", event, ViewTarget(stored)); err != nil {
+					return err
+				}
+			}
+			_, err := s.refreshPost(ctx, tx, t.OrgID, t.PostID, "", "")
+			return err
+		})
+		if errors.Is(err, store.ErrNotFound) {
+			continue // finished after all
+		}
+		if err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
+// ExpireOverdue fails queued targets past their publish_by deadline.
+func (s *Service) ExpireOverdue(ctx context.Context) (int, error) {
+	var n int
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		expired, err := tx.ExpireOverdueTargets(ctx, s.Now(), 200)
+		if err != nil {
+			return err
+		}
+		n = len(expired)
+		for i := range expired {
+			t := &expired[i]
+			if err := s.emit(ctx, tx, t.OrgID, t.Livemode, "", "post_target.failed", ViewTarget(t)); err != nil {
+				return err
+			}
+			if _, err := s.refreshPost(ctx, tx, t.OrgID, t.PostID, "", ""); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return n, err
+}
+
+// SandboxTarget returns a test-mode target for the sandbox page, which
+// shows what the sandbox "published".
+func (s *Service) SandboxTarget(ctx context.Context, ref string) (*model.Target, error) {
+	tid, err := ParseID(id.Target, ref, "post target")
+	if err != nil {
+		return nil, err
+	}
+	t, err := s.store.TargetAnyOrg(ctx, tid)
+	if err != nil || t.Status != model.TargetPublished {
+		return nil, notFoundID("post target", ref)
+	}
+	return t, nil
+}

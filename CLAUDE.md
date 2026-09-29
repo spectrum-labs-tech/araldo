@@ -6,6 +6,11 @@ platforms from templates). Read `docs/architecture.md`, then the ADRs in
 
 ## Ground rules
 
+- **This repo is (going to be) public.** Never reference private
+  deployments, deploy repos, infrastructure repos, hostnames or secrets
+  paths. Deployments pull published images and charts; nothing here
+  triggers or names them.
+
 - **Layering** ([ADR 0002](docs/adr/0002-layout-and-storage.md)):
   - `internal/model` has no storage or transport concerns.
   - `internal/store` is the only package with SQL (pgx, Postgres only).

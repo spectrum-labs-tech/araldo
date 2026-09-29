@@ -11,9 +11,9 @@ history. A backup must be one command, go off the machine, and be useless to
 anyone who steals it, including an attacker who has taken over the server
 that made it.
 
-Spectrum Labs' own deployment already backs up its Postgres hosts to R2
-through the platform (core-infra). The built-in backup is for everyone
-else, and a second line of defense.
+Installs that already back up their Postgres at the platform level can rely
+on that. The built-in backup is for everyone else, and a second line of
+defense.
 
 ## Decision
 

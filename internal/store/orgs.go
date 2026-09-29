@@ -93,23 +93,23 @@ func (s *Store) CountOwners(ctx context.Context, orgID uuid.UUID) (int, error) {
 
 // Brands.
 
-const brandCols = `id, org_id, name, slug, timezone, approval_policy, created_at`
+const brandCols = `id, org_id, name, slug, timezone, approval_policy, utm_domains, created_at`
 
 func scanBrand(r pgx.Row) (*model.Brand, error) {
 	var b model.Brand
-	err := r.Scan(&b.ID, &b.OrgID, &b.Name, &b.Slug, &b.Timezone, &b.ApprovalPolicy, &b.CreatedAt)
+	err := r.Scan(&b.ID, &b.OrgID, &b.Name, &b.Slug, &b.Timezone, &b.ApprovalPolicy, &b.UTMDomains, &b.CreatedAt)
 	return &b, mapErr(err)
 }
 
 func (s *Store) CreateBrand(ctx context.Context, b *model.Brand) error {
-	_, err := s.q.Exec(ctx, `INSERT INTO brands (id, org_id, name, slug, timezone, approval_policy) VALUES ($1, $2, $3, $4, $5, $6)`,
-		b.ID, b.OrgID, b.Name, b.Slug, b.Timezone, b.ApprovalPolicy)
+	_, err := s.q.Exec(ctx, `INSERT INTO brands (id, org_id, name, slug, timezone, approval_policy, utm_domains) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		b.ID, b.OrgID, b.Name, b.Slug, b.Timezone, b.ApprovalPolicy, nonNilStrings(b.UTMDomains))
 	return mapErr(err)
 }
 
 func (s *Store) UpdateBrand(ctx context.Context, b *model.Brand) error {
-	return mapErr(s.execOne(ctx, `UPDATE brands SET name = $3, slug = $4, timezone = $5, approval_policy = $6, updated_at = now()
-		WHERE org_id = $1 AND id = $2`, b.OrgID, b.ID, b.Name, b.Slug, b.Timezone, b.ApprovalPolicy))
+	return mapErr(s.execOne(ctx, `UPDATE brands SET name = $3, slug = $4, timezone = $5, approval_policy = $6, utm_domains = $7, updated_at = now()
+		WHERE org_id = $1 AND id = $2`, b.OrgID, b.ID, b.Name, b.Slug, b.Timezone, b.ApprovalPolicy, nonNilStrings(b.UTMDomains)))
 }
 
 func (s *Store) Brand(ctx context.Context, orgID, id uuid.UUID) (*model.Brand, error) {
@@ -222,4 +222,12 @@ func (s *Store) ExpireAPIKey(ctx context.Context, orgID, id uuid.UUID, at time.T
 func (s *Store) TouchAPIKey(ctx context.Context, id uuid.UUID, now time.Time) error {
 	_, err := s.q.Exec(ctx, `UPDATE api_keys SET last_used_at = $2 WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $2 - interval '1 minute')`, id, now)
 	return err
+}
+
+// nonNilStrings stores an empty list as '{}', never NULL.
+func nonNilStrings(l []string) []string {
+	if l == nil {
+		return []string{}
+	}
+	return l
 }

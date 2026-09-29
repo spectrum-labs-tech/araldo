@@ -132,7 +132,9 @@ type Brand struct {
 	Slug           string
 	Timezone       string
 	ApprovalPolicy ApprovalPolicy
-	CreatedAt      time.Time
+	// UTMDomains are the sites whose links get UTM parameters (empty: none).
+	UTMDomains []string
+	CreatedAt  time.Time
 }
 
 // Slot is a weekly publishing time in the brand's time zone.

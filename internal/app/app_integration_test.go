@@ -25,6 +25,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
+	"github.com/spectrum-labs-tech/araldo/internal/testlock"
 )
 
 type harness struct {
@@ -42,6 +43,7 @@ func newHarness(t *testing.T) *harness {
 	if dsn == "" {
 		t.Skip("ARALDO_TEST_DSN not set")
 	}
+	testlock.Publishing(t, dsn)
 	cfg := config.Config{DatabaseURL: dsn, MasterKeys: "test:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", BaseURL: "http://araldo.test",
 		AutoMigrate: true, InsecureCookies: true, AllowPrivateNetworks: true}
 	a, err := app.Open(t.Context(), cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))

@@ -47,7 +47,7 @@ posts on every platform your users read. This page is the map; the
 | Term | Meaning |
 |---|---|
 | Org | A tenant: members, brands, keys. Nothing crosses orgs. |
-| Brand | A product or voice in an org, with its own channels, templates, slots and approval policy. |
+| Brand | A product or voice in an org, with its own channels, templates, slots, approval policy and the sites whose links get UTM parameters ([ADR 0016](adr/0016-link-tagging.md)). |
 | Channel | A connected account on a platform, under a brand. Test mode has sandbox channels only. |
 | Template | Versioned text with a JSON Schema for its data and per-platform bodies. |
 | Post | Something to publish, to one or more channels. |

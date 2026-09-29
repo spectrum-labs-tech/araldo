@@ -693,7 +693,7 @@ components:
         provider: { type: string }
         name: { type: string }
         max_length: { type: integer }
-        counting: { type: string, enum: [characters, graphemes, x_weighted, mastodon] }
+        counting: { type: string, enum: [characters, graphemes, x_weighted, mastodon, bluesky] }
         threads: { type: boolean }
         max_thread_parts: { type: integer }
         media_required: { type: boolean }
@@ -718,6 +718,17 @@ components:
         slug: { type: string }
         timezone: { type: string, example: America/Denver }
         approval_policy: { type: string, enum: [none, required_for_editors_and_keys, required_for_all] }
+        utm_domains:
+          type: array
+          maxItems: 20
+          items: { type: string, example: ar15.build }
+          description: |
+            Sites whose links get UTM parameters, so web analytics can tell
+            which post and network a visit came from. A link to one of these
+            domains or a subdomain gets utm_source (the network), utm_medium
+            (social), utm_campaign (the template's key) and utm_content (the
+            post's ID), unless it already has a utm_ parameter. Empty: no
+            tagging.
 
     Brand:
       type: object
@@ -728,6 +739,7 @@ components:
         slug: { type: string }
         timezone: { type: string }
         approval_policy: { type: string }
+        utm_domains: { type: array, items: { type: string } }
         created_at: { type: string, format: date-time }
 
     Channel:

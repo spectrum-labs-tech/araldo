@@ -16,6 +16,8 @@
       <option value="required_for_editors_and_keys" {{if eq $f.Policy "required_for_editors_and_keys"}}selected{{end}}>Required for editors and API keys</option>
       <option value="required_for_all" {{if eq $f.Policy "required_for_all"}}selected{{end}}>Required for every post</option>
     </select></label>
+  <label>Tag links with UTM parameters <span class="text-sm font-normal text-muted">links to these sites (and their subdomains) say which post and network a visit came from; one per line, or leave empty</span>
+    <textarea name="utm_domains" rows="2" class="font-mono" placeholder="example.com">{{$f.UTMDomains}}</textarea></label>
   {{if $f.Brand}}
   <label>Publishing slots <span class="text-sm font-normal text-muted">one per line, in the brand's time zone: <code>mon 09:00</code>, <code>weekdays 13:00</code>, <code>daily 18:30</code></span>
     <textarea name="slots" rows="8" class="font-mono">{{$f.Slots}}</textarea></label>

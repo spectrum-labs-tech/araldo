@@ -148,7 +148,8 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 			return res, err
 		}
 		if ref == nil {
-			rec := post{Type: postCollection, Text: p.Parts[i], CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), Facets: Facets(p.Parts[i])}
+			text, facets := RichText(p.Parts[i])
+			rec := post{Type: postCollection, Text: text, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), Facets: facets}
 			if root != nil {
 				rec.Reply = &replyRef{Root: *root, Parent: *parent}
 			}
@@ -218,21 +219,21 @@ func TID(t time.Time, key string, part int) string {
 	return string(out)
 }
 
-var (
-	linkRE = regexp.MustCompile(`https?://[^\s<>"]+[^\s<>".,;:!?)\]]`)
-	tagRE  = regexp.MustCompile(`(^|\s)#([\p{L}\p{N}_]+)`)
-)
+var tagRE = regexp.MustCompile(`(^|\s)#([\p{L}\p{N}_]+)`)
 
-// Facets marks links and hashtags so Bluesky renders them (byte offsets in
-// UTF-8, as the protocol requires).
-func Facets(text string) []facet {
+// RichText returns the text to post, with each link in the short form the
+// Bluesky app shows, and the facets that make its links and hashtags work:
+// a link facet carries the full URL (byte offsets in UTF-8, as the protocol
+// requires). The platform's length rule measures the same short text.
+func RichText(raw string) (string, []facet) {
+	text, links := platform.ShortenLinks(raw)
 	var out []facet
-	for _, m := range linkRE.FindAllStringIndex(text, -1) {
-		out = append(out, facet{Index: byteSlice{m[0], m[1]}, Features: []feature{{Type: "app.bsky.richtext.facet#link", URI: text[m[0]:m[1]]}}})
+	for _, l := range links {
+		out = append(out, facet{Index: byteSlice{l.Start, l.End}, Features: []feature{{Type: "app.bsky.richtext.facet#link", URI: l.URL}}})
 	}
 	for _, m := range tagRE.FindAllStringSubmatchIndex(text, -1) {
 		start, end := m[4]-1, m[5] // include the '#'
 		out = append(out, facet{Index: byteSlice{start, end}, Features: []feature{{Type: "app.bsky.richtext.facet#tag", Tag: text[m[4]:m[5]]}}})
 	}
-	return out
+	return text, out
 }

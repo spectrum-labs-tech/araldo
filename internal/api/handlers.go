@@ -107,16 +107,17 @@ func (h *Handler) listPlatforms(w http.ResponseWriter, r *http.Request) error {
 // Brands.
 
 type brandBody struct {
-	Name           *string `json:"name"`
-	Slug           *string `json:"slug"`
-	Timezone       *string `json:"timezone"`
-	ApprovalPolicy *string `json:"approval_policy"`
+	Name           *string   `json:"name"`
+	Slug           *string   `json:"slug"`
+	Timezone       *string   `json:"timezone"`
+	ApprovalPolicy *string   `json:"approval_policy"`
+	UTMDomains     *[]string `json:"utm_domains"`
 }
 
 func (b brandBody) input(base *model.Brand) core.BrandInput {
 	in := core.BrandInput{}
 	if base != nil {
-		in = core.BrandInput{Name: base.Name, Slug: base.Slug, Timezone: base.Timezone, ApprovalPolicy: base.ApprovalPolicy}
+		in = core.BrandInput{Name: base.Name, Slug: base.Slug, Timezone: base.Timezone, ApprovalPolicy: base.ApprovalPolicy, UTMDomains: base.UTMDomains}
 	}
 	if b.Name != nil {
 		in.Name = *b.Name
@@ -129,6 +130,9 @@ func (b brandBody) input(base *model.Brand) core.BrandInput {
 	}
 	if b.ApprovalPolicy != nil {
 		in.ApprovalPolicy = model.ApprovalPolicy(*b.ApprovalPolicy)
+	}
+	if b.UTMDomains != nil {
+		in.UTMDomains = *b.UTMDomains
 	}
 	return in
 }

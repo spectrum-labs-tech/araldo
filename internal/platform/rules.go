@@ -26,6 +26,9 @@ const (
 	CountXWeighted Counting = "x_weighted"
 	// CountMastodon counts code points, but every URL as 23.
 	CountMastodon Counting = "mastodon"
+	// CountBluesky counts graphemes of the text as posted, where each link
+	// is its short form (ShortenLinks) and the full URL is in a facet.
+	CountBluesky Counting = "bluesky"
 )
 
 // Rules are a platform's limits (ADR 0009). Every limit cites its source.
@@ -49,7 +52,7 @@ var rules = map[Provider]Rules{
 		Source: "https://docs.x.com/fundamentals/counting-characters",
 	},
 	Bluesky: {
-		Provider: Bluesky, Name: "Bluesky", MaxLength: 300, Counting: CountGraphemes, Threads: true, MaxThreadParts: 25, MaxMedia: 4,
+		Provider: Bluesky, Name: "Bluesky", MaxLength: 300, Counting: CountBluesky, Threads: true, MaxThreadParts: 25, MaxMedia: 4,
 		Source: "https://docs.bsky.app/docs/advanced-guides/post-richtext",
 	},
 	Mastodon: {
@@ -103,6 +106,9 @@ func (r Rules) Length(s string) int {
 	switch r.Counting {
 	case CountGraphemes:
 		return uniseg.GraphemeClusterCount(s)
+	case CountBluesky:
+		short, _ := ShortenLinks(s)
+		return uniseg.GraphemeClusterCount(short)
 	case CountXWeighted:
 		return xWeighted(s)
 	case CountMastodon:

@@ -18,6 +18,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
+	"github.com/spectrum-labs-tech/araldo/internal/utm"
 )
 
 // Orgs and members (ADR 0004).
@@ -195,6 +196,7 @@ type BrandInput struct {
 	Slug           string
 	Timezone       string
 	ApprovalPolicy model.ApprovalPolicy
+	UTMDomains     []string
 }
 
 func (in *BrandInput) check() error {
@@ -220,6 +222,16 @@ func (in *BrandInput) check() error {
 	}
 	if !in.ApprovalPolicy.Valid() {
 		ps.Add("approval_policy_invalid", "approval_policy", "Approval policy must be none, required_for_editors_and_keys or required_for_all.")
+	}
+	domains, err := utm.NormalizeDomains(in.UTMDomains)
+	var de *utm.DomainError
+	switch {
+	case errors.As(err, &de):
+		ps.Add("utm_domain_invalid", "utm_domains", "%q is not a domain, like example.com.", de.Domain)
+	case len(domains) > utm.MaxDomains:
+		ps.Add("utm_domains_too_many", "utm_domains", "A brand can tag links to at most %d domains.", utm.MaxDomains)
+	default:
+		in.UTMDomains = domains
 	}
 	return ps.Err("The brand is not valid.")
 }
@@ -252,7 +264,8 @@ func (s *Service) CreateBrand(ctx context.Context, a Actor, in BrandInput) (*mod
 	if err := in.check(); err != nil {
 		return nil, err
 	}
-	b := &model.Brand{ID: id.New(), OrgID: a.OrgID, Name: in.Name, Slug: in.Slug, Timezone: in.Timezone, ApprovalPolicy: in.ApprovalPolicy}
+	b := &model.Brand{ID: id.New(), OrgID: a.OrgID, Name: in.Name, Slug: in.Slug, Timezone: in.Timezone, ApprovalPolicy: in.ApprovalPolicy,
+		UTMDomains: in.UTMDomains}
 	err := s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.CreateBrand(ctx, b); err != nil {
 			if errors.Is(err, store.ErrConflict) {
@@ -287,7 +300,7 @@ func (s *Service) UpdateBrand(ctx context.Context, a Actor, brandID uuid.UUID, i
 	if err := in.check(); err != nil {
 		return nil, err
 	}
-	b.Name, b.Slug, b.Timezone, b.ApprovalPolicy = in.Name, in.Slug, in.Timezone, in.ApprovalPolicy
+	b.Name, b.Slug, b.Timezone, b.ApprovalPolicy, b.UTMDomains = in.Name, in.Slug, in.Timezone, in.ApprovalPolicy, in.UTMDomains
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.UpdateBrand(ctx, b); err != nil {
 			if errors.Is(err, store.ErrConflict) {

@@ -21,6 +21,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform/sandbox"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
 	"github.com/spectrum-labs-tech/araldo/internal/tmpl"
+	"github.com/spectrum-labs-tech/araldo/internal/utm"
 )
 
 // Scheduling defaults (ADR 0011).
@@ -63,8 +64,9 @@ func location(tz string) *time.Location {
 	return time.UTC
 }
 
-// prepare validates in and renders it for every channel.
-func (s *Service) prepare(ctx context.Context, a Actor, in *PostInput) (*plan, error) {
+// prepare validates in and renders it for every channel. postID goes into
+// the links' utm_content when the brand tags links.
+func (s *Service) prepare(ctx context.Context, a Actor, in *PostInput, postID uuid.UUID) (*plan, error) {
 	if err := a.require(PermPostsWrite); err != nil {
 		return nil, err
 	}
@@ -164,11 +166,20 @@ func (s *Service) prepare(ctx context.Context, a Actor, in *PostInput) (*plan, e
 		return nil, err
 	}
 
-	// Render for each channel, with its platform's rules.
+	// Render for each channel, with its platform's rules. Links are tagged
+	// before the rules measure them.
 	loc := location(b.Timezone)
+	campaign := ""
+	if pl.template != nil {
+		campaign = pl.template.Key
+	}
 	for _, ch := range pl.channels {
 		rp := ch.RulesProvider()
 		rules, _ := platform.RulesFor(rp)
+		tag := func(text string) string {
+			return utm.Tag(text, b.UTMDomains, utm.Params{Source: string(ch.Provider), Medium: "social", Campaign: campaign,
+				Content: id.Format(id.Post, postID)})
+		}
 		var parts []string
 		switch {
 		case compiled != nil:
@@ -176,15 +187,15 @@ func (s *Service) prepare(ctx context.Context, a Actor, in *PostInput) (*plan, e
 			if err != nil {
 				return nil, err
 			}
-			parts = rules.Split(text, compiled.FitFor(rp))
+			parts = rules.Split(tag(text), compiled.FitFor(rp))
 		case len(in.Content.Parts) > 0 && in.Content.Overrides[rp] == "":
-			parts = rules.Split(strings.Join(in.Content.Parts, platform.ThreadBreak), fitOf(in.Content, rp))
+			parts = rules.Split(tag(strings.Join(in.Content.Parts, platform.ThreadBreak)), fitOf(in.Content, rp))
 		default:
 			text := in.Content.Body
 			if o := in.Content.Overrides[rp]; o != "" {
 				text = o
 			}
-			parts = rules.Split(text, fitOf(in.Content, rp))
+			parts = rules.Split(tag(text), fitOf(in.Content, rp))
 		}
 		r := rendition(rules, parts, id.Format(id.Channel, ch.ID))
 		pl.renders = append(pl.renders, r)
@@ -207,7 +218,9 @@ func fitOf(c *model.Content, p platform.Provider) platform.Fit {
 // violations are reported in the renditions rather than as an error, so an
 // agent can read them and fix its text (ADR 0001).
 func (s *Service) PreviewPost(ctx context.Context, a Actor, in PostInput) ([]Rendition, error) {
-	pl, err := s.prepare(ctx, a, &in)
+	// The zero ID has a real ID's length, so a preview measures what
+	// publishing will.
+	pl, err := s.prepare(ctx, a, &in, uuid.Nil)
 	if pl != nil && len(pl.renders) > 0 {
 		return pl.renders, nil
 	}
@@ -217,12 +230,13 @@ func (s *Service) PreviewPost(ctx context.Context, a Actor, in PostInput) ([]Ren
 // CreatePost validates, renders and schedules a post (ADR 0011). The text
 // is frozen now: what was previewed is what gets published.
 func (s *Service) CreatePost(ctx context.Context, a Actor, in PostInput) (*model.Post, error) {
-	pl, err := s.prepare(ctx, a, &in)
+	postID := id.New()
+	pl, err := s.prepare(ctx, a, &in, postID)
 	if err != nil {
 		return nil, err
 	}
 	now := s.Now()
-	p := &model.Post{ID: id.New(), OrgID: a.OrgID, BrandID: pl.brand.ID, Livemode: a.Livemode, Data: in.Data, Content: in.Content,
+	p := &model.Post{ID: postID, OrgID: a.OrgID, BrandID: pl.brand.ID, Livemode: a.Livemode, Data: in.Data, Content: in.Content,
 		Metadata: in.Metadata, CreatedByUser: a.UserID, CreatedByKey: a.KeyID}
 	if pl.template != nil {
 		p.TemplateID, p.TemplateVersion = &pl.template.ID, &pl.version.Version

@@ -16,6 +16,9 @@
   silently double-posting; sandbox (with failure simulation), Bluesky,
   Mastodon, Discord and Telegram.
 - Events and signed webhooks with retries, a delivery log and resend.
+- UTM tagging of links to a brand's own sites, so web analytics can credit
+  each network, template and post; Bluesky posts show short links
+  ([ADR 0016](adr/0016-link-tagging.md)).
 - Dashboard for all of the above; one binary; Helm chart; CI publishing to
   GHCR.
 

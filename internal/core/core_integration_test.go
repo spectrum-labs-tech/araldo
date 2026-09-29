@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -23,11 +24,13 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/authn"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/sandbox"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
+	"github.com/spectrum-labs-tech/araldo/internal/testlock"
 	"github.com/spectrum-labs-tech/araldo/internal/tmpl"
 )
 
@@ -84,6 +87,7 @@ type world struct {
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	s := service(t)
+	testlock.Publishing(t, os.Getenv("ARALDO_TEST_DSN"))
 	ctx := t.Context()
 	email := fmt.Sprintf("owner-%s@example.com", uuid.NewString()[:8])
 	u, err := s.CreateUser(ctx, email, "Owner", "correct horse battery")
@@ -600,5 +604,60 @@ func TestTemplateApprovalOverride(t *testing.T) {
 	name := "Featured brand"
 	if tpl, _, err := w.s.UpdateTemplate(ctx, editor, fast.ID, core.TemplateSettings{Name: &name}); err != nil || tpl.Name != name {
 		t.Errorf("editor renaming: %v", err)
+	}
+}
+
+func TestUTMTagging(t *testing.T) {
+	w := newWorld(t)
+	ctx := t.Context()
+	b, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
+		UTMDomains: []string{"https://www.AR15.build/", "ar15.build"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(b.UTMDomains, []string{"ar15.build"}) {
+		t.Fatalf("stored domains %q", b.UTMDomains)
+	}
+	if _, _, err := w.s.CreateTemplate(ctx, w.owner, core.TemplateInput{BrandID: w.brand.ID, Key: "brand-spotlight", Name: "Spotlight",
+		Source: tmpl.Source{Body: "{{.name}} {{.url}} via https://example.com/x"}}); err != nil {
+		t.Fatal(err)
+	}
+	in := core.PostInput{BrandID: w.brand.ID, Template: "brand-spotlight", Data: json.RawMessage(`{"name":"Aero","url":"https://ar15.build/brands/7?ref=a"}`)}
+	tagged := func(postID string) string {
+		return "Aero https://ar15.build/brands/7?ref=a&utm_campaign=brand-spotlight&utm_content=" + postID +
+			"&utm_medium=social&utm_source=sandbox via https://example.com/x"
+	}
+
+	// A preview uses a placeholder ID of the same length.
+	rs, err := w.s.PreviewPost(ctx, w.owner, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := tagged(id.Format(id.Post, uuid.Nil)); len(rs) != 1 || rs[0].Parts[0] != want {
+		t.Fatalf("preview parts %q, want %q", rs[0].Parts, want)
+	}
+
+	p, err := w.s.CreatePost(ctx, w.owner, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := tagged(id.Format(id.Post, p.ID)); p.Targets[0].Parts[0] != want {
+		t.Fatalf("post parts %q, want %q", p.Targets[0].Parts, want)
+	}
+
+	// Clearing the list stops tagging; a bad entry is refused.
+	if _, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
+		UTMDomains: []string{"not a domain"}}); kind(err) != apperr.KindInvalid {
+		t.Fatalf("bad domain: %v", err)
+	}
+	if _, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone}); err != nil {
+		t.Fatal(err)
+	}
+	p2, err := w.s.CreatePost(ctx, w.owner, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "Aero https://ar15.build/brands/7?ref=a via https://example.com/x"; p2.Targets[0].Parts[0] != want {
+		t.Fatalf("untagged parts %q", p2.Targets[0].Parts)
 	}
 }

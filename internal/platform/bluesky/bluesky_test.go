@@ -143,18 +143,23 @@ func TestTID(t *testing.T) {
 	}
 }
 
-func TestFacetsUseByteOffsets(t *testing.T) {
+func TestRichText(t *testing.T) {
 	t.Parallel()
-	text := "héllo https://x.dev/a. #tag"
-	fs := Facets(text)
-	if len(fs) != 2 {
+	long := "https://ar15.build/brands/10/bear-creek-arsenal?utm_source=bluesky&utm_medium=social"
+	text, fs := RichText("héllo https://x.dev/a. " + long + " #tag")
+	if want := "héllo x.dev/a. ar15.build/brands/10/be... #tag"; text != want {
+		t.Fatalf("text = %q, want %q", text, want)
+	}
+	if len(fs) != 3 {
 		t.Fatalf("facets %+v", fs)
 	}
-	link := fs[0]
-	if got := text[link.Index.ByteStart:link.Index.ByteEnd]; got != "https://x.dev/a" {
-		t.Fatalf("link facet covers %q", got)
+	for i, want := range []struct{ covers, uri string }{{"x.dev/a", "https://x.dev/a"}, {"ar15.build/brands/10/be...", long}} {
+		f := fs[i]
+		if got := text[f.Index.ByteStart:f.Index.ByteEnd]; got != want.covers || f.Features[0].URI != want.uri {
+			t.Errorf("link facet %d covers %q opening %q, want %q opening %q", i, got, f.Features[0].URI, want.covers, want.uri)
+		}
 	}
-	tag := fs[1]
+	tag := fs[2]
 	if got := text[tag.Index.ByteStart:tag.Index.ByteEnd]; got != "#tag" || tag.Features[0].Tag != "tag" {
 		t.Fatalf("tag facet covers %q (%+v)", got, tag)
 	}

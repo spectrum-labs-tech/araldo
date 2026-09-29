@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 
@@ -869,7 +870,9 @@ type brandForm struct {
 	Timezone string
 	Policy   string
 	Slots    string
-	Zones    []zoneGroup
+	// UTMDomains is the form's text: domains separated by spaces, commas or lines.
+	UTMDomains string
+	Zones      []zoneGroup
 }
 
 // zoneGroup is one region's time zones, for the brand form's picker.
@@ -906,8 +909,9 @@ func (s *Server) newBrand(c *reqCtx) error {
 
 func (s *Server) createBrand(c *reqCtx) error {
 	f := brandForm{Name: c.r.PostFormValue("name"), Slug: c.r.PostFormValue("slug"), Timezone: c.r.PostFormValue("timezone"),
-		Policy: c.r.PostFormValue("approval_policy"), Zones: zoneGroups}
-	b, err := s.svc.CreateBrand(c.ctx(), c.actor, core.BrandInput{Name: f.Name, Slug: f.Slug, Timezone: f.Timezone, ApprovalPolicy: model.ApprovalPolicy(f.Policy)})
+		Policy: c.r.PostFormValue("approval_policy"), UTMDomains: c.r.PostFormValue("utm_domains"), Zones: zoneGroups}
+	b, err := s.svc.CreateBrand(c.ctx(), c.actor, core.BrandInput{Name: f.Name, Slug: f.Slug, Timezone: f.Timezone, ApprovalPolicy: model.ApprovalPolicy(f.Policy),
+		UTMDomains: splitDomains(f.UTMDomains)})
 	if err != nil {
 		return s.formErr(c, "brand_edit", "brands", "New brand", f, err)
 	}
@@ -927,7 +931,8 @@ func (s *Server) brandDetail(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	f := brandForm{Brand: b, Name: b.Name, Slug: b.Slug, Timezone: b.Timezone, Policy: string(b.ApprovalPolicy), Slots: formatSlots(slots), Zones: zoneGroups}
+	f := brandForm{Brand: b, Name: b.Name, Slug: b.Slug, Timezone: b.Timezone, Policy: string(b.ApprovalPolicy), Slots: formatSlots(slots),
+		UTMDomains: strings.Join(b.UTMDomains, "\n"), Zones: zoneGroups}
 	return s.page(c, "brand_edit", "brands", b.Name, f)
 }
 
@@ -941,18 +946,25 @@ func (s *Server) saveBrand(c *reqCtx) error {
 		return err
 	}
 	f := brandForm{Brand: b, Name: c.r.PostFormValue("name"), Slug: c.r.PostFormValue("slug"), Timezone: c.r.PostFormValue("timezone"),
-		Policy: c.r.PostFormValue("approval_policy"), Slots: c.r.PostFormValue("slots"), Zones: zoneGroups}
+		Policy: c.r.PostFormValue("approval_policy"), Slots: c.r.PostFormValue("slots"), UTMDomains: c.r.PostFormValue("utm_domains"), Zones: zoneGroups}
 	slots, err := parseSlots(f.Slots)
 	if err != nil {
 		return s.formErr(c, "brand_edit", "brands", b.Name, f, err)
 	}
-	if _, err := s.svc.UpdateBrand(c.ctx(), c.actor, bid, core.BrandInput{Name: f.Name, Slug: f.Slug, Timezone: f.Timezone, ApprovalPolicy: model.ApprovalPolicy(f.Policy)}); err != nil {
+	if _, err := s.svc.UpdateBrand(c.ctx(), c.actor, bid, core.BrandInput{Name: f.Name, Slug: f.Slug, Timezone: f.Timezone, ApprovalPolicy: model.ApprovalPolicy(f.Policy),
+		UTMDomains: splitDomains(f.UTMDomains)}); err != nil {
 		return s.formErr(c, "brand_edit", "brands", b.Name, f, err)
 	}
 	if err := s.svc.SetSlots(c.ctx(), c.actor, bid, slots); err != nil {
 		return s.formErr(c, "brand_edit", "brands", b.Name, f, err)
 	}
 	return redirect(c, "/brands/"+c.r.PathValue("id"), "Saved.")
+}
+
+// splitDomains reads the brand form's domain list: separated by spaces,
+// commas or lines.
+func splitDomains(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
 }
 
 var weekdays = []string{"sun", "mon", "tue", "wed", "thu", "fri", "sat"}

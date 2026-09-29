@@ -24,13 +24,14 @@ type BrandView struct {
 	Slug           string    `json:"slug"`
 	Timezone       string    `json:"timezone"`
 	ApprovalPolicy string    `json:"approval_policy"`
+	UTMDomains     []string  `json:"utm_domains"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
 // ViewBrand renders a brand.
 func ViewBrand(b *model.Brand) BrandView {
 	return BrandView{ID: id.Format(id.Brand, b.ID), Object: "brand", Name: b.Name, Slug: b.Slug, Timezone: b.Timezone,
-		ApprovalPolicy: string(b.ApprovalPolicy), CreatedAt: b.CreatedAt.UTC()}
+		ApprovalPolicy: string(b.ApprovalPolicy), UTMDomains: nonNilList(b.UTMDomains), CreatedAt: b.CreatedAt.UTC()}
 }
 
 // ChannelView is a connected account.
@@ -101,6 +102,13 @@ func nonNil(m map[platform.Provider]string) map[platform.Provider]string {
 		return map[platform.Provider]string{}
 	}
 	return m
+}
+
+func nonNilList(l []string) []string {
+	if l == nil {
+		return []string{}
+	}
+	return l
 }
 
 func nonNilFit(m map[platform.Provider]platform.Fit) map[platform.Provider]platform.Fit {

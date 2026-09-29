@@ -24,6 +24,9 @@ func TestLength(t *testing.T) {
 		want     int
 	}{
 		{Bluesky, "hello", 5},
+		// A link counts as its short form: "see x.dev/a." and "see example.com/a/very/long/...".
+		{Bluesky, "see https://x.dev/a.", 12},
+		{Bluesky, "see https://example.com/a/very/long/path?utm_source=bluesky", 4 + 27},
 		{Bluesky, "👍🏽", 1}, // emoji with a skin-tone modifier is one grapheme
 		{Bluesky, "é", 1},
 		{Telegram, "👍🏽", 2}, // but two code points

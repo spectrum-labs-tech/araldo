@@ -30,7 +30,6 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/sandbox"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
-	"github.com/spectrum-labs-tech/araldo/internal/testlock"
 	"github.com/spectrum-labs-tech/araldo/internal/tmpl"
 )
 
@@ -87,7 +86,6 @@ type world struct {
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	s := service(t)
-	testlock.Publishing(t, os.Getenv("ARALDO_TEST_DSN"))
 	ctx := t.Context()
 	email := fmt.Sprintf("owner-%s@example.com", uuid.NewString()[:8])
 	u, err := s.CreateUser(ctx, email, "Owner", "correct horse battery")
@@ -126,6 +124,7 @@ func kind(err error) apperr.Kind {
 }
 
 func TestPostPublishesThroughTheSandbox(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
 	_, _, err := w.s.CreateTemplate(ctx, w.owner, core.TemplateInput{BrandID: w.brand.ID, Key: "featured-build", Name: "Featured build", Source: tmpl.Source{
@@ -144,7 +143,7 @@ func TestPostPublishesThroughTheSandbox(t *testing.T) {
 	if p.Status != model.PostScheduled || len(p.Targets) != 1 || p.Targets[0].Parts[0] != "Featured build: Recce https://ar15.build/b/1" {
 		t.Fatalf("post = %+v", p)
 	}
-	publishAll(t, w.s)
+	settle(t, w, p.ID)
 	got, err := w.s.Post(ctx, w.owner, p.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -172,21 +171,39 @@ func TestPostPublishesThroughTheSandbox(t *testing.T) {
 	}
 }
 
-// publishAll runs publishing rounds until nothing is due.
-func publishAll(t *testing.T, s *core.Service) {
+// settle runs publishing rounds until none of the post's targets is due or
+// being published. Publishing claims due targets in every org, and tests run
+// in parallel (and other packages' tests at the same time), so another
+// worker may publish this post; that is fine, as every worker runs the same
+// code. Only this post's state is waited for.
+func settle(t *testing.T, w *world, postID uuid.UUID) *model.Post {
 	t.Helper()
-	for range 10 {
-		n, err := s.PublishDue(t.Context(), "test-worker")
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if _, err := w.s.PublishDue(t.Context(), "test-worker"); err != nil {
+			t.Fatal(err)
+		}
+		p, err := w.s.Post(t.Context(), w.owner, postID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if n == 0 {
-			return
+		busy := false
+		for _, tg := range p.Targets {
+			due := tg.Status == model.TargetQueued && !tg.NextAttemptAt.After(w.s.Now())
+			busy = busy || due || tg.Status == model.TargetPublishing
 		}
+		if !busy {
+			return p
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("post %s did not settle: %+v", postID, p.Targets)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
 func TestRulesAreEnforcedPerChannel(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
 	long := strings.Repeat("word ", 70) // 350 graphemes: too long for Bluesky
@@ -207,6 +224,7 @@ func TestRulesAreEnforcedPerChannel(t *testing.T) {
 }
 
 func TestOtherOrgsSeeNothing(t *testing.T) {
+	t.Parallel()
 	a, b := newWorld(t), newWorld(t)
 	ctx := t.Context()
 	p, err := a.s.CreatePost(ctx, a.owner, core.PostInput{BrandID: a.brand.ID, Content: &model.Content{Body: "hello"}, PublishAt: "next_slot"})
@@ -237,6 +255,7 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 }
 
 func TestTestModeCannotReachRealPlatforms(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	_, err := w.s.ConnectChannel(t.Context(), w.owner, core.ConnectInput{BrandID: w.brand.ID, Provider: platform.Bluesky,
 		Fields: map[string]string{"identifier": "x", "app_password": "y"}})
@@ -256,6 +275,7 @@ func TestTestModeCannotReachRealPlatforms(t *testing.T) {
 }
 
 func TestNextSlotsAreUnique(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	seen := map[time.Time]bool{}
 	for range 4 {
@@ -284,6 +304,7 @@ func mustLoc(t *testing.T, name string) *time.Location {
 }
 
 func TestApprovalFlow(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
 	if _, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
@@ -305,7 +326,7 @@ func TestApprovalFlow(t *testing.T) {
 	if p.Status != model.PostPendingApproval || p.Targets[0].Status != model.TargetHeld {
 		t.Fatalf("editor's post: %s / %s", p.Status, p.Targets[0].Status)
 	}
-	publishAll(t, w.s)
+	settle(t, w, p.ID)
 	if got, _ := w.s.Post(ctx, w.owner, p.ID); got.Status != model.PostPendingApproval {
 		t.Fatalf("held post published before approval: %s", got.Status)
 	}
@@ -315,13 +336,14 @@ func TestApprovalFlow(t *testing.T) {
 	if _, err := w.s.ReviewPost(ctx, w.owner, p.ID, true, "ship it"); err != nil {
 		t.Fatal(err)
 	}
-	publishAll(t, w.s)
+	settle(t, w, p.ID)
 	if got, _ := w.s.Post(ctx, w.owner, p.ID); got.Status != model.PostPublished || got.ReviewNote != "ship it" {
 		t.Fatalf("after approval: %s", got.Status)
 	}
 }
 
 func TestSimulatedFailures(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
 	now := time.Now()
@@ -335,7 +357,7 @@ func TestSimulatedFailures(t *testing.T) {
 		return p
 	}
 	uncertain := mk(sandbox.SimTimeoutAfterSend)
-	publishAll(t, w.s)
+	settle(t, w, uncertain.ID)
 	got, _ := w.s.Post(ctx, w.owner, uncertain.ID)
 	if got.Targets[0].Status != model.TargetNeedsAttention {
 		t.Fatalf("timeout after send: target %s, want needs_attention", got.Targets[0].Status)
@@ -343,31 +365,31 @@ func TestSimulatedFailures(t *testing.T) {
 	if _, err := w.s.RetryTarget(ctx, w.owner, got.Targets[0].ID); err != nil {
 		t.Fatal(err)
 	}
-	publishAll(t, w.s)
+	settle(t, w, uncertain.ID)
 	if got, _ := w.s.Post(ctx, w.owner, uncertain.ID); got.Status != model.PostPublished {
 		t.Fatalf("after retry: %s", got.Status)
 	}
 
 	rejected := mk(sandbox.SimRejected)
-	publishAll(t, w.s)
+	settle(t, w, rejected.ID)
 	if got, _ := w.s.Post(ctx, w.owner, rejected.ID); got.Status != model.PostFailed || got.Targets[0].ErrorCode != "rejected" {
 		t.Fatalf("rejected: %s %q", got.Status, got.Targets[0].ErrorCode)
 	}
 
 	limited := mk(sandbox.SimRateLimited)
-	publishAll(t, w.s)
+	settle(t, w, limited.ID)
 	got, _ = w.s.Post(ctx, w.owner, limited.ID)
 	if got.Targets[0].Status != model.TargetQueued || got.Targets[0].Attempts != 1 {
 		t.Fatalf("rate limited: %+v", got.Targets[0])
 	}
 	now = now.Add(time.Minute) // past the hold
-	publishAll(t, w.s)
+	settle(t, w, limited.ID)
 	if got, _ := w.s.Post(ctx, w.owner, limited.ID); got.Status != model.PostPublished {
 		t.Fatalf("after the rate limit passed: %s", got.Status)
 	}
 
 	revoked := mk(sandbox.SimAuthRevoked)
-	publishAll(t, w.s)
+	settle(t, w, revoked.ID)
 	ch, _ := w.s.Channel(ctx, w.owner, w.channel.ID)
 	if ch.Status != model.ChannelNeedsReauth {
 		t.Fatalf("channel after auth revoked: %s", ch.Status)
@@ -381,6 +403,7 @@ func TestSimulatedFailures(t *testing.T) {
 }
 
 func TestAPIKeys(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
 	plain, k, err := w.s.CreateAPIKey(ctx, w.owner, w.session, core.APIKeyInput{Name: "ar15.build", Scopes: []string{"posts:read"}})
@@ -418,6 +441,7 @@ func TestAPIKeys(t *testing.T) {
 }
 
 func TestOperatorAPIKeys(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
 	plain, k, err := w.s.CreateOperatorAPIKey(ctx, w.owner, core.APIKeyInput{Name: "ar15.build staging",
@@ -443,6 +467,7 @@ func TestOperatorAPIKeys(t *testing.T) {
 }
 
 func TestLoginAndTOTP(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
 	if _, err := w.s.Login(ctx, w.user.Email, "wrong password!!", "", ""); !errors.Is(err, core.ErrBadCredentials) {
@@ -498,6 +523,7 @@ func decodeB32(t *testing.T, s string) []byte {
 }
 
 func TestWebhookDelivery(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
 	var mu sync.Mutex
@@ -521,27 +547,41 @@ func TestWebhookDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	secret = sec
-	if _, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "hook me"}}); err != nil {
+	hooked, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "hook me"}})
+	if err != nil {
 		t.Fatal(err)
 	}
-	publishAll(t, w.s)
-	for range 5 {
-		if n, err := w.s.DeliverDue(ctx, "test-worker"); err != nil || n == 0 {
+	settle(t, w, hooked.ID)
+	// Delivery claims due webhooks in every org, so another worker may send
+	// this one; wait for this endpoint's delivery to finish.
+	var ds []model.Delivery
+	for deadline := time.Now().Add(15 * time.Second); ; {
+		if _, err := w.s.DeliverDue(ctx, "test-worker"); err != nil {
+			t.Fatal(err)
+		}
+		if ds, _, err = w.s.Deliveries(ctx, w.owner, ep.ID, store.Page{}); err != nil {
+			t.Fatal(err)
+		}
+		if len(ds) == 1 && (ds[0].Status == "succeeded" || ds[0].Status == "failed") {
 			break
 		}
+		if time.Now().After(deadline) {
+			t.Fatalf("delivery did not finish: %+v", ds)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if ds[0].Status != "succeeded" {
+		t.Fatalf("delivery %+v", ds[0])
 	}
 	mu.Lock()
 	defer mu.Unlock()
 	if len(got) != 1 || got[0] != "post_target.published" {
 		t.Fatalf("endpoint received %v", got)
 	}
-	ds, _, err := w.s.Deliveries(ctx, w.owner, ep.ID, store.Page{})
-	if err != nil || len(ds) != 1 || ds[0].Status != "succeeded" {
-		t.Fatalf("deliveries %+v %v", ds, err)
-	}
 }
 
 func TestTemplateApprovalOverride(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
 	if _, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
@@ -608,6 +648,7 @@ func TestTemplateApprovalOverride(t *testing.T) {
 }
 
 func TestUTMTagging(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
 	b, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
@@ -663,6 +704,7 @@ func TestUTMTagging(t *testing.T) {
 }
 
 func TestPreviewTemplateNeedsData(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
 	src := tmpl.Source{Body: "{{.name}}", Variables: json.RawMessage(`{"type":"object","required":["name"]}`)}

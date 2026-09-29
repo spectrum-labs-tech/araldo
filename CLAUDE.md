@@ -59,9 +59,18 @@ platforms from templates). Read `docs/architecture.md`, then the ADRs in
 
 - `task check` must pass with no network or database.
 - Integration tests (`//go:build integration`) need `task db:up`, then
-  `task test:integration`. They never clean up: create your own org with
-  random names and assert only on your rows.
-- Table-driven tests and `t.Parallel()` where safe.
+  `task test:integration`. They run in parallel against a database full of
+  earlier runs' data, and must pass rerun after rerun:
+  - Create your own org, users and brands with random names; never rely on
+    rows you did not create, and never change them.
+  - Assert only on your own rows: no global counts, no "the queue is empty".
+  - Workers (publishing, webhook delivery) claim due work in every org, and
+    other tests run them at the same time. Drive them in a loop and wait for
+    your own post or delivery to reach its state (see `settle`); never assume
+    your call did the work.
+  - Never clean up.
+- Table-driven tests and `t.Parallel()` everywhere; a test that cannot run
+  in parallel says why in a comment.
 
 ## Commands
 

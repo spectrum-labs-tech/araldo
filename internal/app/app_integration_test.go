@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -24,8 +25,8 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/config"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
-	"github.com/spectrum-labs-tech/araldo/internal/testlock"
 )
 
 type harness struct {
@@ -43,7 +44,6 @@ func newHarness(t *testing.T) *harness {
 	if dsn == "" {
 		t.Skip("ARALDO_TEST_DSN not set")
 	}
-	testlock.Publishing(t, dsn)
 	cfg := config.Config{DatabaseURL: dsn, MasterKeys: "test:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", BaseURL: "http://araldo.test",
 		AutoMigrate: true, InsecureCookies: true, AllowPrivateNetworks: true}
 	a, err := app.Open(t.Context(), cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -98,6 +98,7 @@ func (h *harness) csrf(page string) string {
 }
 
 func TestDashboardEndToEnd(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	ctx := t.Context()
 	u, err := h.a.Svc.CreateUser(ctx, h.email, "UI", h.pw)
@@ -161,10 +162,25 @@ func TestDashboardEndToEnd(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(body, "Bluesky allows 300") {
 		t.Fatalf("preview post: %d", code)
 	}
-	for range 3 {
+	// Publishing claims due posts in every org, and other tests publish at the
+	// same time, so any worker may take this post; wait until it is done.
+	actor, _, _ := h.a.Svc.MemberActor(ctx, u.ID, org.ID, false, "")
+	pid, _ := id.Parse(id.Post, strings.TrimPrefix(postPath, "/posts/"))
+	var p *model.Post
+	for deadline := time.Now().Add(15 * time.Second); ; {
 		if _, err := h.a.Svc.PublishDue(ctx, "ui-test"); err != nil {
 			t.Fatal(err)
 		}
+		if p, err = h.a.Svc.Post(ctx, actor, pid); err != nil {
+			t.Fatal(err)
+		}
+		if p.Status == model.PostPublished {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("post not published: %s %+v", p.Status, p.Targets)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 
 	// Every page renders.
@@ -184,15 +200,14 @@ func TestDashboardEndToEnd(t *testing.T) {
 		t.Errorf("post page does not show published: %.500s", body)
 	}
 
-	// Sandbox permalink.
-	actor, _, _ := h.a.Svc.MemberActor(ctx, u.ID, org.ID, false, "")
-	pid, _ := id.Parse(id.Post, strings.TrimPrefix(postPath, "/posts/"))
-	p, err := h.a.Svc.Post(ctx, actor, pid)
+	// Sandbox permalink. Whichever worker published it used its own base URL,
+	// so only the path is ours to follow.
+	link, err := url.Parse(p.Targets[0].Permalink)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code, body := h.get(strings.TrimPrefix(p.Targets[0].Permalink, "http://araldo.test")); code != http.StatusOK || !strings.Contains(body, "Recce") {
-		t.Errorf("sandbox page: %d", code)
+	if code, body := h.get(link.Path); code != http.StatusOK || !strings.Contains(body, "Recce") {
+		t.Errorf("sandbox page %s: %d", link.Path, code)
 	}
 
 	// MFA setup shows a QR code (the login gave sudo mode).
@@ -230,6 +245,7 @@ func TestDashboardEndToEnd(t *testing.T) {
 }
 
 func TestAPIEndToEnd(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t)
 	ctx := t.Context()
 	u, err := h.a.Svc.CreateUser(ctx, h.email, "", h.pw)

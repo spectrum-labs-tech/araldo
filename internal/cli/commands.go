@@ -14,11 +14,13 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/app"
 	"github.com/spectrum-labs-tech/araldo/internal/config"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
+	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
@@ -293,4 +295,97 @@ func runKeys(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		return nil
 	}
 	return usageErr("unknown keys command %q", args[0])
+}
+
+func runAPIKeys(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 {
+		return usageErr("apikeys create")
+	}
+	if args[0] != "create" {
+		return usageErr("unknown apikeys command %q", args[0])
+	}
+	var email, org, brand, name, scopes string
+	var live bool
+	var expires time.Duration
+	if err := flags("apikeys create", stderr, args[1:], func(fs *flag.FlagSet) {
+		fs.StringVar(&email, "email", "", "the member the key acts for (required)")
+		fs.StringVar(&org, "org", "", "the org's name, when the member belongs to more than one")
+		fs.StringVar(&brand, "brand", "", "limit the key to this brand (slug or ID)")
+		fs.StringVar(&name, "name", "", "the key's name (required)")
+		fs.StringVar(&scopes, "scopes", "", "comma-separated scopes, e.g. posts:write,templates:write (default full access)")
+		fs.BoolVar(&live, "live", false, "a live key (default test)")
+		fs.DurationVar(&expires, "expires", 0, "expire after this long, e.g. 8760h (default never)")
+	}); err != nil {
+		return err
+	}
+	if email == "" || name == "" {
+		return usageErr("--email and --name are required")
+	}
+	a, err := open(ctx, true)
+	if err != nil {
+		return err
+	}
+	defer a.Close()
+	u, err := a.Svc.UserByEmail(ctx, email)
+	if err != nil {
+		return err
+	}
+	ms, err := a.Svc.UserOrgs(ctx, u.ID)
+	if err != nil {
+		return err
+	}
+	m, err := pickOrg(ms, org)
+	if err != nil {
+		return err
+	}
+	actor, _, err := a.Svc.MemberActor(ctx, u.ID, m.OrgID, live, "cli")
+	if err != nil {
+		return err
+	}
+	in := core.APIKeyInput{Name: name, Livemode: live, Scopes: splitList(scopes)}
+	if brand != "" {
+		b, err := a.Svc.ResolveBrand(ctx, actor, brand)
+		if err != nil {
+			return err
+		}
+		in.BrandID = &b.ID
+	}
+	if expires > 0 {
+		at := time.Now().Add(expires)
+		in.Expires = &at
+	}
+	plain, k, err := a.Svc.CreateOperatorAPIKey(ctx, actor, in)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(stderr, "Created API key %q (%s) in %s.\n", k.Name, k.Hint, m.OrgName)
+	_, _ = fmt.Fprintln(stdout, plain)
+	return nil
+}
+
+// pickOrg chooses the membership named org, or the only one when org is
+// empty.
+func pickOrg(ms []model.Membership, org string) (model.Membership, error) {
+	if org == "" {
+		if len(ms) != 1 {
+			return model.Membership{}, usageErr("the member belongs to %d orgs; name one with --org", len(ms))
+		}
+		return ms[0], nil
+	}
+	for _, m := range ms {
+		if strings.EqualFold(m.OrgName, org) {
+			return m, nil
+		}
+	}
+	return model.Membership{}, fmt.Errorf("the member does not belong to an org named %q", org)
+}
+
+func splitList(s string) []string {
+	var out []string
+	for _, v := range strings.Split(s, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }

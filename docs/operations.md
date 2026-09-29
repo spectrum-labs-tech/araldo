@@ -41,6 +41,21 @@ two-factor authentication under **Your account**.
 - `araldo users create --email …` and `araldo users reset-password --email …`
   print a generated password (or read one with `--password-stdin`).
 
+## API keys for other services
+
+`araldo apikeys create` makes a key without the dashboard, for provisioning
+a service's key straight into its secret store. It prints only the key on
+stdout, so pipe it rather than copying it:
+
+```bash
+araldo apikeys create --email you@example.com --brand your-product \
+  --name "your-service staging" --scopes posts:write,templates:read,templates:write \
+  | your-secret-store put …
+```
+
+The key acts for the member named by `--email` and needs their permission to
+manage keys. Add `--live` for a live key and `--expires 8760h` to expire it.
+
 ## Health
 
 - `GET /healthz`: the process is up.

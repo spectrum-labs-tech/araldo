@@ -380,6 +380,21 @@ func (s *Service) CreateAPIKey(ctx context.Context, a Actor, ss *model.Session, 
 	if err := s.requireSudo(ss); err != nil {
 		return "", nil, err
 	}
+	return s.createAPIKey(ctx, a, in)
+}
+
+// CreateOperatorAPIKey makes a key for the `araldo apikeys create`
+// command. Whoever runs it already holds the database URL and master keys,
+// so the dashboard's re-authentication adds nothing; the member still needs
+// permission to manage keys.
+func (s *Service) CreateOperatorAPIKey(ctx context.Context, a Actor, in APIKeyInput) (string, *model.APIKey, error) {
+	if err := a.require(PermKeysWrite); err != nil {
+		return "", nil, err
+	}
+	return s.createAPIKey(ctx, a, in)
+}
+
+func (s *Service) createAPIKey(ctx context.Context, a Actor, in APIKeyInput) (string, *model.APIKey, error) {
 	var ps apperr.Problems
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" || len(in.Name) > 100 {

@@ -38,6 +38,7 @@ func commands() []command {
 		{name: "bootstrap", summary: "Create the first user, org and brand", run: runBootstrap},
 		{name: "users", summary: "Manage users: create, reset-password", run: runUsers},
 		{name: "keys", summary: "Master keys: generate, rotate", run: runKeys},
+		{name: "apikeys", summary: "API keys: create (prints only the key, for piping into a secret store)", run: runAPIKeys},
 		{name: "version", summary: "Print the araldo version", run: runVersion},
 	}
 }

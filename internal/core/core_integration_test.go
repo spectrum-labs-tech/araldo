@@ -413,6 +413,31 @@ func TestAPIKeys(t *testing.T) {
 	}
 }
 
+func TestOperatorAPIKeys(t *testing.T) {
+	w := newWorld(t)
+	ctx := t.Context()
+	plain, k, err := w.s.CreateOperatorAPIKey(ctx, w.owner, core.APIKeyInput{Name: "ar15.build staging",
+		Scopes: []string{"posts:write", "templates:write"}, BrandID: &w.brand.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(plain, "ald_test_") || k.BrandID == nil || *k.BrandID != w.brand.ID {
+		t.Fatalf("key %q brand %v", plain, k.BrandID)
+	}
+	if _, err := w.s.AuthenticateKey(ctx, plain, ""); err != nil {
+		t.Fatalf("AuthenticateKey: %v", err)
+	}
+	// Still bound by the member's role.
+	viewer := w.owner
+	viewer.Role = model.RoleViewer
+	if _, _, err := w.s.CreateOperatorAPIKey(ctx, viewer, core.APIKeyInput{Name: "x"}); kind(err) != apperr.KindForbidden {
+		t.Fatalf("viewer creating a key: %v", err)
+	}
+	if _, _, err := w.s.CreateOperatorAPIKey(ctx, w.owner, core.APIKeyInput{Name: "x", Scopes: []string{"org:write"}}); kind(err) != apperr.KindInvalid {
+		t.Fatalf("key with a scope keys cannot have: %v", err)
+	}
+}
+
 func TestLoginAndTOTP(t *testing.T) {
 	w := newWorld(t)
 	ctx := t.Context()

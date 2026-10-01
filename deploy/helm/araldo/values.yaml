@@ -56,6 +56,64 @@ service:
   type: ClusterIP
   port: 8080
 
+# Metrics and alerts (OpenTelemetry, ADR 0014; see docs/operations.md, "Metrics"). All off by default.
+metrics:
+  # Serve Prometheus metrics from the server and worker pods (OTEL_METRICS_EXPORTER=prometheus) on
+  # their own port, apart from the public HTTP port. Database-wide gauges (targets by status, task
+  # health) come from every pod alike: aggregate them with max, not sum.
+  enabled: false
+  port: 9464
+  # A monitoring.coreos.com/v1 PodMonitor scraping both roles (needs the Prometheus Operator CRDs).
+  podMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    # Extra labels, e.g. the ones your Prometheus selects PodMonitors by.
+    labels: {}
+  # A monitoring.coreos.com/v1 PrometheusRule with Araldo's alerts.
+  prometheusRule:
+    enabled: false
+    # Extra labels on the PrometheusRule object, e.g. the ones your Prometheus selects rules by.
+    labels: {}
+    # Labels added to every alert (routing, team), next to each alert's severity.
+    alertLabels: {}
+    # The dashboard the runbook links point at; defaults to config.baseURL.
+    dashboardURL: ""
+    # PromQL label matchers that pick this release's series. Default: namespace="<release
+    # namespace>", plus job="<namespace>/<fullname>" when the chart's PodMonitor is on.
+    selector: ""
+    alerts:
+      # A live post target is in needs_attention: the platform may or may not have published it.
+      postNeedsAttention:
+        enabled: true
+        for: 5m
+        severity: warning
+      # Live publish attempts to a provider keep failing (retried, failed or needs_attention; rate
+      # limits are not failures).
+      publishFailing:
+        enabled: true
+        for: 15m
+        severity: warning
+        window: 30m
+        minFailures: 3
+        # Failed share of that provider's live attempts in the window.
+        ratio: 0.5
+      # Live targets are due but nothing claims them, or the worker's tasks stopped succeeding.
+      publishingStalled:
+        enabled: true
+        for: 5m
+        severity: critical
+        # The oldest claimable live target has been due this long.
+        dueSeconds: 900
+        # publish.reclaim (every 30s) last succeeded this long ago.
+        taskStaleSeconds: 600
+      # A background task failed this many times in a row.
+      backgroundTaskFailing:
+        enabled: true
+        for: 5m
+        severity: warning
+        consecutiveFailures: 3
+
 podAnnotations: {}
 nodeSelector: {}
 tolerations: []

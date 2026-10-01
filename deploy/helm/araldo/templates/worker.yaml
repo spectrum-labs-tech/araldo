@@ -30,7 +30,12 @@ spec:
           image: {{ include "araldo.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["worker"]
+          {{- if .Values.metrics.enabled }}
+          ports:
+            {{- include "araldo.metricsPort" . | nindent 12 }}
+          {{- end }}
           env:
+            {{- include "araldo.metricsEnv" . | nindent 12 }}
             {{- include "araldo.env" . | nindent 12 }}
           envFrom:
             - secretRef: { name: {{ required "existingSecret is required" .Values.existingSecret }} }

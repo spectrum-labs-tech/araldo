@@ -1,0 +1,106 @@
+{{- if .Values.metrics.prometheusRule.enabled }}
+{{- $sel := include "araldo.metricsSelector" . }}
+{{- $url := trimSuffix "/" (default .Values.config.baseURL .Values.metrics.prometheusRule.dashboardURL) }}
+{{- $a := .Values.metrics.prometheusRule.alerts }}
+{{- $common := .Values.metrics.prometheusRule.alertLabels }}
+# Araldo's alerts (docs/operations.md, "Metrics"). Every pod reports the database-wide gauges, so
+# they are aggregated with max. Runbook links open the dashboard page that shows the cause; switch
+# it to live mode first.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "araldo.fullname" . }}
+  labels:
+    {{- include "araldo.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: araldo
+      rules:
+        {{- with $a.postNeedsAttention }}
+        {{- if .enabled }}
+        - alert: AraldoPostNeedsAttention
+          expr: max(araldo_post_targets{ {{- $sel }}, mode="live", status="needs_attention"}) > 0
+          for: {{ .for }}
+          labels:
+            severity: {{ .severity }}
+            {{- with $common }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: {{`"{{ $value }} live post target(s) need attention"`}}
+            description: >-
+              The platform may or may not have published these, so Araldo will not retry them on its
+              own (ADR 0011). On the dashboard's Home (live mode), open each post that needs attention,
+              check the account on the platform, then Retry or Mark published.
+            runbook_url: {{ printf "%s/" $url | quote }}
+        {{- end }}
+        {{- end }}
+        {{- with $a.publishFailing }}
+        {{- if .enabled }}
+        - alert: AraldoPublishFailing
+          expr: |
+            sum by (provider) (increase(araldo_publish_attempts_total{ {{- $sel }}, mode="live", outcome=~"retry|failed|needs_attention"}[{{ .window }}])) >= {{ .minFailures }}
+            and
+            sum by (provider) (increase(araldo_publish_attempts_total{ {{- $sel }}, mode="live", outcome=~"retry|failed|needs_attention"}[{{ .window }}]))
+              / sum by (provider) (increase(araldo_publish_attempts_total{ {{- $sel }}, mode="live"}[{{ .window }}])) >= {{ .ratio }}
+          for: {{ .for }}
+          labels:
+            severity: {{ .severity }}
+            {{- with $common }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: {{ printf "Live publishing to {{ $labels.provider }} keeps failing (%s)" .window | quote }}
+            description: >-
+              Most live publish attempts to this provider failed in the window (araldo_publish_attempts_total
+              by error_kind says why: auth_revoked, rejected, transient, uncertain). Each post's attempt
+              history on the dashboard shows the platform's error; Channels shows accounts that need
+              reconnecting.
+            runbook_url: {{ printf "%s/posts" $url | quote }}
+        {{- end }}
+        {{- end }}
+        {{- with $a.publishingStalled }}
+        {{- if .enabled }}
+        - alert: AraldoPublishingStalled
+          expr: |
+            max(araldo_post_targets_oldest_due_age_seconds{ {{- $sel }}, mode="live"}) > {{ .dueSeconds }}
+            or
+            time() - max(araldo_task_last_success_timestamp_seconds{ {{- $sel }}, task="publish.reclaim"}) > {{ .taskStaleSeconds }}
+          for: {{ .for }}
+          labels:
+            severity: {{ .severity }}
+            {{- with $common }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: Live posts are due but not being published
+            description: >-
+              Either a live target that could be published has waited longer than {{ .dueSeconds }}s,
+              or the worker's publish.reclaim task has not succeeded for {{ .taskStaleSeconds }}s: the
+              worker is down, stuck or cannot reach the database. Organization > Background tasks shows
+              each task's last success and error; check the worker pods and their logs.
+            runbook_url: {{ printf "%s/org/tasks" $url | quote }}
+        {{- end }}
+        {{- end }}
+        {{- with $a.backgroundTaskFailing }}
+        {{- if .enabled }}
+        - alert: AraldoBackgroundTaskFailing
+          expr: max by (task) (araldo_task_consecutive_failures{ {{- $sel }}}) >= {{ .consecutiveFailures }}
+          for: {{ .for }}
+          labels:
+            severity: {{ .severity }}
+            {{- with $common }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: {{`"Background task {{ $labels.task }} failed {{ $value }} times in a row"`}}
+            description: >-
+              The task backs off and keeps retrying. Organization > Background tasks shows its last
+              error; the worker logs have the details.
+            runbook_url: {{ printf "%s/org/tasks" $url | quote }}
+        {{- end }}
+        {{- end }}
+{{- end }}

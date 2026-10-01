@@ -47,6 +47,35 @@ app.kubernetes.io/component: {{ .component }}
 {{- end }}
 {{- end -}}
 
+{{/* Metrics export for the long-running roles (server, worker); before araldo.env so extraEnv can override it. */}}
+{{- define "araldo.metricsEnv" -}}
+{{- if .Values.metrics.enabled }}
+- name: OTEL_METRICS_EXPORTER
+  value: prometheus
+# All interfaces, so the pod IP answers scrapes; the Service does not expose this port.
+- name: OTEL_EXPORTER_PROMETHEUS_HOST
+  value: "0.0.0.0"
+- name: OTEL_EXPORTER_PROMETHEUS_PORT
+  value: {{ .Values.metrics.port | quote }}
+{{- end }}
+{{- end -}}
+
+{{- define "araldo.metricsPort" -}}
+{{- if .Values.metrics.enabled }}
+- { name: metrics, containerPort: {{ .Values.metrics.port }} }
+{{- end }}
+{{- end -}}
+
+{{/* PromQL matchers for this release's series. */}}
+{{- define "araldo.metricsSelector" -}}
+{{- with .Values.metrics.prometheusRule.selector -}}
+{{ . }}
+{{- else -}}
+namespace="{{ .Release.Namespace }}"
+{{- if .Values.metrics.podMonitor.enabled }}, job="{{ .Release.Namespace }}/{{ include "araldo.fullname" . }}"{{ end }}
+{{- end -}}
+{{- end -}}
+
 {{- define "araldo.podSecurity" -}}
 securityContext:
   runAsNonRoot: true

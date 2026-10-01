@@ -21,6 +21,8 @@
   ([ADR 0016](adr/0016-link-tagging.md)).
 - Dashboard for all of the above; one binary; Helm chart; CI publishing to
   GHCR.
+- Metrics through OpenTelemetry (Prometheus or OTLP), with the Helm chart's
+  optional PodMonitor and alerts ([operations](operations.md#metrics)).
 
 ## Next
 
@@ -34,8 +36,9 @@
    server, TypeScript and Go SDKs generated from the contract, a request
    log in the dashboard.
 5. **Passkeys** (WebAuthn) and OIDC single sign-on.
-6. **Backups** built in ([ADR 0013](adr/0013-backups.md)) and OpenTelemetry
-   ([ADR 0014](adr/0014-telemetry.md)).
+6. **Backups** built in ([ADR 0013](adr/0013-backups.md)), and the rest of
+   OpenTelemetry: traces, logs, publish lateness, channels needing
+   reauthorization ([ADR 0014](adr/0014-telemetry.md)).
 7. **LinkedIn, YouTube, TikTok, Pinterest, Reddit.**
 8. **Newsletters**: lists, double opt-in, one-click unsubscribe, SES /
    Brevo / Resend / SMTP, bounces and complaints, digests from templates.

@@ -386,6 +386,7 @@ func (s *Service) deliver(ctx context.Context, owner string, d store.ClaimedDeli
 		res.NextAttemptAt = res.At.Add(webhookRetryDelay(d.Attempts))
 		res.GiveUp = res.NextAttemptAt.After(d.CreatedAt.Add(deliveryWindow))
 	}
+	s.metrics.recordDelivery(ctx, &d, &res)
 	return s.store.FinishDelivery(context.WithoutCancel(ctx), d, owner, res)
 }
 

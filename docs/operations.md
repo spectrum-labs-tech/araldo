@@ -63,6 +63,67 @@ manage keys. Add `--live` for a live key and `--expires 8760h` to expire it.
 - The dashboard's **Organization → Background tasks** shows every periodic
   task, its last success and failures.
 
+## Metrics
+
+`araldo server`, `araldo worker` and `araldo all` export OpenTelemetry
+metrics, configured only through the standard `OTEL_*` variables
+([ADR 0014](adr/0014-telemetry.md)). Nothing is exported until one is set.
+
+| Variable | Meaning |
+|---|---|
+| `OTEL_METRICS_EXPORTER` | `prometheus` serves a scrape endpoint; `otlp` pushes to a collector; `console`; `none`. |
+| `OTEL_EXPORTER_PROMETHEUS_HOST`, `OTEL_EXPORTER_PROMETHEUS_PORT` | Where `/metrics` listens, default `localhost:9464`. Use `0.0.0.0` for scrapes from other hosts. It is a separate listener: the public port never serves metrics. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (or `…_METRICS_ENDPOINT`), `OTEL_EXPORTER_OTLP_PROTOCOL` | The collector for `otlp`; setting an endpoint alone also turns OTLP export on. |
+| `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | Resource attributes (default `service.name=araldo`). |
+| `OTEL_SDK_DISABLED=true` | Turns everything off. |
+
+### What is measured
+
+Names as Prometheus shows them. Labels are bounded: never an org, brand,
+user, channel, post or target ID, never post text, and errors only by kind,
+never by message. `mode` is `live` or `test`.
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `araldo_post_targets` | gauge | `status`, `mode` | Post targets in each status (`queued`, `publishing`, `held`, `needs_attention`, `failed`, `published`, `canceled`), zeros included. |
+| `araldo_post_targets_due` | gauge | `mode` | Queued targets the publisher could claim now: due, on an active channel not held by a rate limit. |
+| `araldo_post_targets_oldest_due_age_seconds` | gauge | `mode` | How long the oldest of those has been due; 0 when none is. |
+| `araldo_task_last_success_timestamp_seconds` | gauge | `task` | Unix time of each background task's last successful run. |
+| `araldo_task_consecutive_failures` | gauge | `task` | Failures of each task since its last success. |
+| `araldo_publish_attempts_total` | counter | `provider`, `mode`, `outcome`, `error_kind` | Publish attempts. `outcome` is what the publisher did: `published`, `retry`, `rate_limited`, `needs_attention`, `failed`. `error_kind` is the platform's classification: `none`, `rate_limited`, `auth_revoked`, `transient`, `uncertain`, `rejected`, `unknown`. |
+| `araldo_webhook_delivery_attempts_total` | counter | `mode`, `outcome` | Webhook delivery attempts: `succeeded`, `retry`, `failed` (gave up after three days). |
+| `araldo_task_failures_total` | counter | `task` | Failed background task runs (errors, panics, timeouts). |
+
+The gauges are read from the database when metrics are collected (one
+grouped count of targets and the task table, at most every 10 seconds per
+process) and cover every org. Every process reports the same values, so
+aggregate them with `max`, not `sum`. The counters count what each process
+did: publishing and deliveries happen in workers, task failures in whichever
+worker holds the task's lease, so `sum` them.
+
+### Helm chart
+
+All off by default:
+
+| Value | Effect |
+|---|---|
+| `metrics.enabled` | Sets `OTEL_METRICS_EXPORTER=prometheus` and the port (`metrics.port`, default 9464) on the server and worker, and declares a `metrics` container port. The Service does not expose it. |
+| `metrics.podMonitor.enabled` | A `monitoring.coreos.com/v1` PodMonitor scraping both roles (`interval`, `scrapeTimeout`, `labels` for your Prometheus's selector). Needs `metrics.enabled`. |
+| `metrics.prometheusRule.enabled` | A `monitoring.coreos.com/v1` PrometheusRule with the alerts below. `labels` go on the object, `alertLabels` on every alert; `dashboardURL` (default `config.baseURL`) is where runbook links point; `selector` overrides the PromQL matchers that pick this release's series (default: the release namespace, and the PodMonitor's job when it is on). |
+
+Each alert under `metrics.prometheusRule.alerts` has `enabled`, `for`,
+`severity` and its thresholds:
+
+| Alert | Fires when (defaults) | Runbook link |
+|---|---|---|
+| `AraldoPostNeedsAttention` (warning) | `max(araldo_post_targets{mode="live", status="needs_attention"}) > 0` for 5m. | Home, where live mode counts targets needing attention. Open each post, check the account, then **Retry** or **Mark published** ([ADR 0011](adr/0011-publishing.md)). |
+| `AraldoPublishFailing` (warning) | Per provider, over `window` (30m), at least `minFailures` (3) live attempts ended in `retry`, `failed` or `needs_attention`, and they are at least `ratio` (0.5) of that provider's live attempts; for 15m. Rate limits do not count. | Posts: each post's attempt history shows the platform's error; Channels shows accounts to reconnect. |
+| `AraldoPublishingStalled` (critical) | The oldest claimable live target has been due over `dueSeconds` (900), or `publish.reclaim` last succeeded over `taskStaleSeconds` (600) ago; for 5m. The worker is down, stuck or cannot reach the database. | Organization → Background tasks. |
+| `AraldoBackgroundTaskFailing` (warning) | `max by (task) (araldo_task_consecutive_failures) >= consecutiveFailures` (3) for 5m. | Organization → Background tasks, with the last error. |
+
+The alerts cannot see a deployment with no running pods at all; alert on
+the scrape targets themselves (`up`) for that.
+
 ## Kubernetes
 
 The chart is in `deploy/helm/araldo` and published to

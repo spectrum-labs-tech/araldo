@@ -7,9 +7,17 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	promexporter "go.opentelemetry.io/otel/exporters/prometheus"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
 // memStore is an in-memory Store with the same lease rules as Postgres.
@@ -170,5 +178,81 @@ func TestNewValidates(t *testing.T) {
 		if _, err := New(newMem(), slog.Default(), tasks...); err == nil {
 			t.Errorf("New(%+v) succeeded", tasks)
 		}
+	}
+}
+
+// Failed runs (errors and panics) are counted per task as
+// araldo_task_failures_total; successes and runs cut short by shutdown are
+// not, and the error text never reaches the exporter (ADR 0014).
+func TestFailuresAreCounted(t *testing.T) {
+	t.Parallel()
+	reg := prometheus.NewRegistry()
+	exp, err := promexporter.New(promexporter.WithRegisterer(reg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(exp))
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+
+	const secret = "password authentication failed for tok_live_5ecr3t"
+	tasks := []Task{
+		{Name: "fails", Interval: time.Minute, Run: func(context.Context) (int, error) { return 0, errors.New(secret) }},
+		{Name: "panics", Interval: time.Minute, Run: func(context.Context) (int, error) { panic(secret) }},
+		{Name: "works", Interval: time.Minute, Run: func(context.Context) (int, error) { return 1, nil }},
+	}
+	st := newMem()
+	s := sched(t, st, tasks...)
+	if err := s.Instrument(mp); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1000, 0)
+	s.Now = func() time.Time { return now }
+	_ = st.EnsureTasks(t.Context(), []TaskDef{{Name: "fails", Enabled: true, Interval: time.Minute},
+		{Name: "panics", Enabled: true, Interval: time.Minute}, {Name: "works", Enabled: true, Interval: time.Minute}})
+	for range 2 {
+		for _, task := range tasks {
+			if _, err := s.Attempt(t.Context(), task); err != nil {
+				t.Fatal(err)
+			}
+		}
+		now = now.Add(time.Hour)
+	}
+	// A run cut short by shutdown is not the task's failure.
+	ctx, cancel := context.WithCancel(t.Context())
+	stopping := Task{Name: "fails", Interval: time.Minute, Run: func(context.Context) (int, error) { cancel(); return 0, errors.New(secret) }}
+	if _, err := s.Attempt(ctx, stopping); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	promhttp.HandlerFor(reg, promhttp.HandlerOpts{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	text := rec.Body.String()
+	if strings.Contains(text, "tok_live_5ecr3t") || strings.Contains(text, "password") {
+		t.Fatalf("the error reached the exporter:\n%s", text)
+	}
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]float64{}
+	for _, f := range families {
+		if f.GetName() != "araldo_task_failures_total" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			labels := map[string]string{}
+			for _, l := range m.GetLabel() {
+				if !strings.HasPrefix(l.GetName(), "otel_scope_") {
+					labels[l.GetName()] = l.GetValue()
+				}
+			}
+			if len(labels) != 1 {
+				t.Errorf("labels %v, want only task", labels)
+			}
+			got[labels["task"]] = m.GetCounter().GetValue()
+		}
+	}
+	if len(got) != 2 || got["fails"] != 2 || got["panics"] != 2 {
+		t.Fatalf("araldo_task_failures_total = %v, want fails=2 panics=2 and nothing for works", got)
 	}
 }

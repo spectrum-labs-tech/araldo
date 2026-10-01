@@ -20,6 +20,12 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
+
+	"github.com/spectrum-labs-tech/araldo/internal/telemetry"
 )
 
 // Task is a unit of periodic work.
@@ -90,6 +96,9 @@ type Scheduler struct {
 	Tick time.Duration
 	// Now is the clock; tests replace it.
 	Now func() time.Time
+	// failures counts failed runs per task (ADR 0014); a no-op until
+	// Instrument.
+	failures metric.Int64Counter
 }
 
 // New returns a scheduler for tasks, which must have unique names,
@@ -110,7 +119,23 @@ func New(st Store, log *slog.Logger, tasks ...Task) (*Scheduler, error) {
 		seen[t.Name] = true
 	}
 	host, _ := os.Hostname()
-	return &Scheduler{store: st, tasks: tasks, log: log, Owner: host + "/" + strconv.Itoa(os.Getpid()), Tick: 30 * time.Second, Now: time.Now}, nil
+	s := &Scheduler{store: st, tasks: tasks, log: log, Owner: host + "/" + strconv.Itoa(os.Getpid()), Tick: 30 * time.Second, Now: time.Now}
+	if err := s.Instrument(noop.NewMeterProvider()); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// Instrument counts failed runs with mp, as araldo.task.failures by task
+// name; the error itself is logged, never recorded. Call it before Run.
+func (s *Scheduler) Instrument(mp metric.MeterProvider) error {
+	c, err := mp.Meter(telemetry.Scope).Int64Counter("araldo.task.failures", metric.WithUnit("{failure}"),
+		metric.WithDescription("Failed background task runs (errors, panics, timeouts) by task."))
+	if err != nil {
+		return err
+	}
+	s.failures = c
+	return nil
 }
 
 // Run registers the tasks, then runs each whenever it is due until ctx
@@ -186,6 +211,7 @@ func (s *Scheduler) Attempt(ctx context.Context, t Task) (time.Time, error) {
 	case runErr != nil:
 		ok, msg = false, runErr.Error()
 		next = finished.Add(Backoff(state.Failures+1, state.Interval))
+		s.failures.Add(ctx, 1, metric.WithAttributes(attribute.String("task", t.Name)))
 		s.log.ErrorContext(ctx, "task failed", "task", t.Name, "err", msg, "consecutive_failures", state.Failures+1)
 	case affected > 0:
 		s.log.InfoContext(ctx, "task ran", "task", t.Name, "affected", affected, "duration", finished.Sub(started).String())

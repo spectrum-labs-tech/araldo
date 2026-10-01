@@ -41,6 +41,11 @@ func runServer(ctx context.Context, args []string, _, stderr io.Writer) error {
 		return err
 	}
 	defer a.Close()
+	stop, err := a.StartTelemetry(ctx)
+	if err != nil {
+		return err
+	}
+	defer stop()
 	return a.Serve(ctx)
 }
 
@@ -53,6 +58,11 @@ func runWorker(ctx context.Context, args []string, _, stderr io.Writer) error {
 		return err
 	}
 	defer a.Close()
+	stop, err := a.StartTelemetry(ctx)
+	if err != nil {
+		return err
+	}
+	defer stop()
 	return a.RunWorker(ctx)
 }
 
@@ -65,6 +75,11 @@ func runAll(ctx context.Context, args []string, _, stderr io.Writer) error {
 		return err
 	}
 	defer a.Close()
+	stop, err := a.StartTelemetry(ctx)
+	if err != nil {
+		return err
+	}
+	defer stop()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var wg sync.WaitGroup

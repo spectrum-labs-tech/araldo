@@ -48,12 +48,14 @@ type Service struct {
 	Now func() time.Time
 	// HTTP is the client for webhook deliveries.
 	HTTP *http.Client
+	// metrics records nothing until Instrument.
+	metrics *metrics
 }
 
 // New returns the application.
 func New(st *store.Store, keys *keyring.Keyring, platforms *platform.Registry, log *slog.Logger, cfg Config) *Service {
 	return &Service{store: st, keys: keys, platforms: platforms, log: log, cfg: cfg, Now: time.Now,
-		HTTP: netguard.Client(cfg.AllowPrivateWebhooks, deliveryTimeout)}
+		HTTP: netguard.Client(cfg.AllowPrivateWebhooks, deliveryTimeout), metrics: noopMetrics()}
 }
 
 // Store exposes the store to the composition root (health checks).

@@ -31,7 +31,9 @@ spec:
           args: ["server"]
           ports:
             - { name: http, containerPort: 8080 }
+            {{- include "araldo.metricsPort" . | nindent 12 }}
           env:
+            {{- include "araldo.metricsEnv" . | nindent 12 }}
             {{- include "araldo.env" . | nindent 12 }}
           envFrom:
             - secretRef: { name: {{ $secret }} }

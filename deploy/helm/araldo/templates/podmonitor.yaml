@@ -1,0 +1,27 @@
+{{- if .Values.metrics.podMonitor.enabled }}
+{{- if not .Values.metrics.enabled }}
+{{- fail "metrics.podMonitor.enabled needs metrics.enabled: the pods serve no metrics without it" }}
+{{- end }}
+# Scrapes the server and worker pods' metrics port (docs/operations.md, "Metrics").
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "araldo.fullname" . }}
+  labels:
+    {{- include "araldo.labels" . | nindent 4 }}
+    {{- with .Values.metrics.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "araldo.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+    matchExpressions:
+      - { key: app.kubernetes.io/component, operator: In, values: [server, worker] }
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.podMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.podMonitor.scrapeTimeout }}
+{{- end }}

@@ -401,3 +401,43 @@ func (s *Store) QueueStats(ctx context.Context, orgID uuid.UUID, livemode bool, 
 		FROM post_targets WHERE org_id = $1 AND livemode = $2`, orgID, livemode, now).Scan(&q.Due, &q.Publishing, &q.NeedsAttention, &q.OldestDue)
 	return q, err
 }
+
+// TargetCount is how many targets share a status and mode. For queued
+// targets it also counts those that are due on a channel able to publish,
+// and when the oldest of them came due.
+type TargetCount struct {
+	Status    model.TargetStatus
+	Livemode  bool
+	Count     int
+	Due       int
+	OldestDue *time.Time
+}
+
+// TargetCounts counts targets by status and mode in one round trip, across
+// every org when orgID is nil (metrics, ADR 0014) or in one org. Due
+// targets are those the publisher would claim now: queued, past their next
+// attempt, on an active channel not held by a rate limit.
+func (s *Store) TargetCounts(ctx context.Context, orgID *uuid.UUID, now time.Time) ([]TargetCount, error) {
+	rows, err := s.q.Query(ctx, `
+		WITH counts AS (
+			SELECT status, livemode, count(*) AS n FROM post_targets
+			WHERE ($1::uuid IS NULL OR org_id = $1) GROUP BY status, livemode
+		), due AS (
+			SELECT t.livemode, count(*) AS n, min(t.next_attempt_at) AS oldest
+			FROM post_targets t JOIN channels c ON c.id = t.channel_id
+			WHERE t.status = 'queued' AND t.next_attempt_at <= $2 AND ($1::uuid IS NULL OR t.org_id = $1)
+			  AND c.status = 'active' AND (c.hold_until IS NULL OR c.hold_until <= $2)
+			GROUP BY t.livemode
+		)
+		SELECT c.status, c.livemode, c.n, COALESCE(d.n, 0), d.oldest
+		FROM counts c LEFT JOIN due d ON c.status = 'queued' AND d.livemode = c.livemode
+		ORDER BY c.status, c.livemode`, orgID, now)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (TargetCount, error) {
+		var c TargetCount
+		err := r.Scan(&c.Status, &c.Livemode, &c.Count, &c.Due, &c.OldestDue)
+		return c, err
+	})
+}

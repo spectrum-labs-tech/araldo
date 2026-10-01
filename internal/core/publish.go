@@ -140,7 +140,7 @@ func (s *Service) finishPublish(ctx context.Context, owner string, t *model.Targ
 	attempt *model.Attempt, res platform.Result, pubErr error) error {
 	now := s.Now()
 	o := store.TargetOutcome{NextAttemptAt: now}
-	outcome, event := "published", "post_target.published"
+	outcome, event := historyOutcome(pubErr), "post_target.published"
 	var pe *platform.Error
 	switch {
 	case pubErr == nil:
@@ -153,7 +153,7 @@ func (s *Service) finishPublish(ctx context.Context, owner string, t *model.Targ
 		if o.ErrorCode == "" {
 			o.ErrorCode = string(pe.Kind)
 		}
-		outcome, event = string(pe.Kind), ""
+		event = ""
 		switch pe.Kind {
 		case platform.RateLimited:
 			o.Status, o.NextAttemptAt = model.TargetQueued, now.Add(max(pe.RetryAfter, 30*time.Second))
@@ -177,6 +177,7 @@ func (s *Service) finishPublish(ctx context.Context, owner string, t *model.Targ
 	default:
 		o.Status, o.ErrorCode, o.ErrorMessage, event = model.TargetNeedsAttention, "unknown", truncate(pubErr.Error(), 1000), "post_target.needs_attention"
 	}
+	s.metrics.recordAttempt(ctx, t, ch.Provider, adapter != nil, o.Status, pubErr)
 	return s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.FinishTarget(ctx, t.ID, owner, o); err != nil {
 			if errors.Is(err, store.ErrNotFound) {
@@ -217,6 +218,20 @@ func (s *Service) finishPublish(ctx context.Context, owner string, t *model.Targ
 		_, err := s.refreshPost(ctx, tx, t.OrgID, t.PostID, "", "")
 		return err
 	})
+}
+
+// historyOutcome is what an attempt's history row records: "published", the platform's
+// classification of the error, or "unknown" for an error the adapter did not classify (which
+// sends the target to needs_attention; recording it as published hid the failure).
+func historyOutcome(pubErr error) string {
+	if pubErr == nil {
+		return "published"
+	}
+	var pe *platform.Error
+	if errors.As(pubErr, &pe) {
+		return string(pe.Kind)
+	}
+	return "unknown"
 }
 
 // retryDelay is 30 seconds doubling per attempt, up to 30 minutes.

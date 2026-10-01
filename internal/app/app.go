@@ -16,7 +16,11 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
+
 	"github.com/spectrum-labs-tech/araldo/internal/api"
+	"github.com/spectrum-labs-tech/araldo/internal/buildinfo"
 	"github.com/spectrum-labs-tech/araldo/internal/config"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
@@ -30,6 +34,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform/telegram"
 	"github.com/spectrum-labs-tech/araldo/internal/server"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
+	"github.com/spectrum-labs-tech/araldo/internal/telemetry"
 	"github.com/spectrum-labs-tech/araldo/internal/web"
 )
 
@@ -40,6 +45,8 @@ type App struct {
 	Store *store.Store
 	Keys  *keyring.Keyring
 	Svc   *core.Service
+	// meters is where instruments go: a no-op until StartTelemetry.
+	meters metric.MeterProvider
 }
 
 // Logger returns the JSON logger at level.
@@ -65,7 +72,7 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 			return nil, err
 		}
 	}
-	a := &App{Cfg: cfg, Log: log, Store: st}
+	a := &App{Cfg: cfg, Log: log, Store: st, meters: noop.NewMeterProvider()}
 	if cfg.MasterKeys != "" {
 		mk, err := keyring.ParseMasterKeys(cfg.MasterKeys)
 		if err != nil {
@@ -88,6 +95,29 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 
 // Close releases the database pool.
 func (a *App) Close() { a.Store.Close() }
+
+// StartTelemetry starts metric export as the OTEL_* variables configure it
+// (ADR 0014) and instruments the use cases. The worker started afterwards
+// is instrumented too. Call stop, which flushes the exporter, when done.
+func (a *App) StartTelemetry(ctx context.Context) (stop func(), err error) {
+	t, err := telemetry.Start(ctx, a.Log, "araldo", buildinfo.Version)
+	if err != nil {
+		return nil, fmt.Errorf("telemetry: %w", err)
+	}
+	stop = func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := t.Shutdown(ctx); err != nil {
+			a.Log.WarnContext(ctx, "telemetry shutdown failed", "err", err)
+		}
+	}
+	if err := a.Svc.Instrument(t.MeterProvider()); err != nil {
+		stop()
+		return nil, fmt.Errorf("telemetry: %w", err)
+	}
+	a.meters = t.MeterProvider()
+	return stop, nil
+}
 
 // Handler is the HTTP server: API, dashboard, health checks.
 func (a *App) Handler() (http.Handler, error) {
@@ -117,6 +147,9 @@ func (a *App) RunWorker(ctx context.Context) error {
 		return err
 	}
 	sched.Owner = owner
+	if err := sched.Instrument(a.meters); err != nil {
+		return err
+	}
 	var wg sync.WaitGroup
 	errs := make(chan error, 3)
 	run := func(name string, fn func(context.Context) error) {

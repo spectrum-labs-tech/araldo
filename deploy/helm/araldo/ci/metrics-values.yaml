@@ -1,0 +1,17 @@
+existingSecret: araldo-secrets
+config:
+  baseURL: https://araldo.example
+extraEnv:
+  - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=ci }
+metrics:
+  enabled: true
+  podMonitor:
+    enabled: true
+    labels: { release: prometheus }
+  prometheusRule:
+    enabled: true
+    labels: { release: prometheus }
+    alertLabels: { team: growth }
+    alerts:
+      publishingStalled: { severity: page }
+      backgroundTaskFailing: { enabled: false }

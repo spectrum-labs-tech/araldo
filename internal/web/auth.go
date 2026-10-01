@@ -5,6 +5,7 @@ package web
 import (
 	"bytes"
 	"encoding/base64"
+	"image"
 	"image/png"
 	"net/http"
 	"net/url"
@@ -228,13 +229,42 @@ func qrDataURL(uri string) string {
 	if err != nil {
 		return ""
 	}
-	code.Scale = 6
-	img := code.Image()
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
+	if err := png.Encode(&buf, qrImage(code, qrScale)); err != nil {
 		return ""
 	}
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
+// qrScale is pixels per module; qrQuiet is the white margin, in modules, scanners need around the code.
+const (
+	qrScale = 6
+	qrQuiet = 4
+)
+
+// qrImage draws code with scale pixels per module inside a qrQuiet-module margin. It replaces
+// qr.Code.Image, which sizes the canvas for the scale but draws each module as a single pixel in the
+// top-left corner, leaving a speck in a large white square.
+func qrImage(code *qr.Code, scale int) *image.Gray {
+	side := (code.Size + 2*qrQuiet) * scale
+	img := image.NewGray(image.Rect(0, 0, side, side))
+	for i := range img.Pix {
+		img.Pix[i] = 0xff
+	}
+	for my := 0; my < code.Size; my++ {
+		for mx := 0; mx < code.Size; mx++ {
+			if !code.Black(mx, my) {
+				continue
+			}
+			x0, y0 := (mx+qrQuiet)*scale, (my+qrQuiet)*scale
+			for y := y0; y < y0+scale; y++ {
+				for x := x0; x < x0+scale; x++ {
+					img.Pix[y*img.Stride+x] = 0
+				}
+			}
+		}
+	}
+	return img
 }
 
 // Context switches: org and mode.

@@ -24,7 +24,7 @@
   {{else if $d.Enrolling}}
     <ol class="list-decimal space-y-3 pl-5">
       <li>Scan this code with an authenticator app (1Password, Authy, Google Authenticator…).
-        {{if $d.QR}}<div><img class="my-2 rounded-md bg-white p-2 [image-rendering:pixelated]" src="{{dataURL $d.QR}}" alt="QR code for your authenticator app" width="240" height="240"></div>{{end}}
+        {{if $d.QR}}<div><img class="my-2 max-w-full rounded-md [image-rendering:pixelated]" src="{{dataURL $d.QR}}" alt="QR code for your authenticator app"></div>{{end}}
         <p class="text-sm">Or type this key: <code class="copy-box">{{$d.SecretText}}</code></p></li>
       <li>Enter the 6-digit code it shows:
         <form method="post" action="/account/mfa/confirm" class="mt-1 flex flex-wrap items-center gap-2">

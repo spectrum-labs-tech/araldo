@@ -35,7 +35,7 @@ app.kubernetes.io/component: {{ .component }}
 - name: ARALDO_LOG_LEVEL
   value: {{ .Values.config.logLevel | quote }}
 - name: ARALDO_AUTO_MIGRATE
-  value: {{ .Values.config.autoMigrate | quote }}
+  value: {{ not .Values.migrations.job | quote }}
 - name: ARALDO_ALLOW_PRIVATE_NETWORKS
   value: {{ .Values.config.allowPrivateNetworks | quote }}
 {{- with .Values.config.clientIPHeader }}

@@ -6,11 +6,11 @@ Everything comes from environment variables.
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `ARALDO_DATABASE_URL` | yes | Postgres URL (`DATABASE_URL` also works). The role must own the schema: Araldo migrates at startup. |
+| `ARALDO_DATABASE_URL` | yes | Postgres URL (`DATABASE_URL` also works). The role must own the schema: Araldo runs its own migrations. |
 | `ARALDO_MASTER_KEYS` | yes | `id:base64key[,id:base64key…]`, primary first ([ADR 0008](adr/0008-encryption.md)). Or `ARALDO_MASTER_KEYS_FILE`. |
 | `ARALDO_BASE_URL` | yes | The public URL, e.g. `https://araldo.example.com`. |
 | `ARALDO_LISTEN` | | HTTP address, default `:8080`. |
-| `ARALDO_AUTO_MIGRATE` | | Migrate at startup, default `true`. |
+| `ARALDO_AUTO_MIGRATE` | | Migrate at startup, default `true`. The Helm chart sets it to `false` and migrates in a hook instead (see Kubernetes). |
 | `ARALDO_CLIENT_IP_HEADER` | | Trusted proxy header with the client IP (e.g. `CF-Connecting-IP`), for sign-in rate limits. |
 | `ARALDO_ALLOW_PRIVATE_NETWORKS` | | Let webhooks and adapters reach private addresses. Off by default. |
 | `ARALDO_INSECURE_COOKIES` | | Plain-HTTP development only. |
@@ -70,3 +70,14 @@ The chart is in `deploy/helm/araldo` and published to
 main branch (its appVersion pins the exact image), and `X.Y.Z` follows
 release tags. It needs `existingSecret` (a Secret with `ARALDO_DATABASE_URL`
 and `ARALDO_MASTER_KEYS`) and `config.baseURL`.
+
+**Migrations run before the rollout.** A `pre-install`/`pre-upgrade` hook Job
+runs `araldo migrate`; only when it succeeds does Helm update the Deployments.
+If it fails, the upgrade stops, the running pods keep serving the previous
+version on the previous schema, the release is marked `failed`, and the Job is
+kept so `kubectl logs job/<release>-migrate` shows why. The pods do not
+migrate, and `/readyz` stays unready until the schema is current. Write
+migrations that the previous version can still run against (add before you
+remove), since it keeps serving until the new pods are ready. Rendering the
+chart without hooks (`helm template | kubectl apply`)? Set
+`migrations.job=false` and the pods migrate at startup instead.

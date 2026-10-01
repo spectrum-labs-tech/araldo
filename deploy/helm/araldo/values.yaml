@@ -23,8 +23,18 @@ config:
   clientIPHeader: ""
   # Let webhooks and adapters reach private networks (self-hosters only).
   allowPrivateNetworks: false
-  # Both roles migrate at startup; golang-migrate serializes them.
-  autoMigrate: true
+
+# Database migrations.
+migrations:
+  # true: a pre-install/pre-upgrade hook Job runs `araldo migrate` before the Deployments change, and a
+  # failed migration stops the upgrade with the old pods still serving. The pods do not migrate.
+  # false: both roles migrate at startup instead (golang-migrate serializes them); use this when the
+  # chart is rendered without Helm hooks, e.g. `helm template | kubectl apply`.
+  job: true
+  timeoutSeconds: 600
+  resources:
+    requests: { cpu: 25m, memory: 48Mi }
+    limits: { memory: 192Mi }
 
 # Extra environment variables for both roles.
 extraEnv: []

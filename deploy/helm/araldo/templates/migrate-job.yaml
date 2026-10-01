@@ -1,0 +1,50 @@
+{{- if .Values.migrations.job }}
+{{- $secret := required "existingSecret is required: a Secret with ARALDO_DATABASE_URL and ARALDO_MASTER_KEYS" .Values.existingSecret -}}
+# Migrations run here, before Helm touches the Deployments: a pre-install/pre-upgrade hook. If this Job
+# fails, the install or upgrade stops, the running pods keep serving the old version against the old
+# schema, and the release is marked failed. The pods themselves do not migrate (ARALDO_AUTO_MIGRATE is
+# false), and /readyz stays unready until the schema is current. A failed Job is kept for its logs
+# (deleted only before the next attempt or after a success).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "araldo.fullname" . }}-migrate
+  labels:
+    {{- include "araldo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.migrations.timeoutSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "araldo.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      {{- include "araldo.podSecurity" . | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "araldo.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["migrate"]
+          env:
+            {{- include "araldo.env" . | nindent 12 }}
+          envFrom:
+            - secretRef: { name: {{ $secret }} }
+          resources: {{ toYaml .Values.migrations.resources | nindent 12 }}
+          {{- include "araldo.containerSecurity" . | nindent 10 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{ toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

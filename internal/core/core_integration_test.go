@@ -238,7 +238,13 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, key, err := a.s.CreateOperatorAPIKey(ctx, a.owner, core.APIKeyInput{Name: "theirs"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	checks := map[string]error{}
+	_, checks["api key"] = b.s.APIKey(ctx, b.owner, key.ID)
+	_, checks["member"] = b.s.Member(ctx, b.owner, *a.owner.UserID)
 	_, checks["media"] = b.s.Media(ctx, b.owner, m.ID)
 	_, _, checks["media content"] = b.s.MediaContent(ctx, b.owner, m.ID)
 	_, checks["media alt"] = b.s.UpdateMediaAlt(ctx, b.owner, m.ID, "mine now")

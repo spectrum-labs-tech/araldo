@@ -77,6 +77,7 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /keys", s.app("developers", s.keys))
 	s.mux.HandleFunc("POST /keys", s.app("developers", s.createKey))
+	s.mux.HandleFunc("GET /keys/{id}", s.app("developers", s.keyDetail))
 	s.mux.HandleFunc("POST /keys/{id}/revoke", s.app("developers", s.revokeKey))
 	s.mux.HandleFunc("POST /keys/{id}/roll", s.app("developers", s.rollKey))
 	s.mux.HandleFunc("GET /webhooks", s.app("developers", s.webhooks))
@@ -98,6 +99,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /org", s.app("org", s.orgPage))
 	s.mux.HandleFunc("POST /org", s.app("org", s.saveOrg))
 	s.mux.HandleFunc("POST /org/members", s.app("org", s.addMember))
+	s.mux.HandleFunc("GET /org/members/{id}", s.app("org", s.memberDetail))
 	s.mux.HandleFunc("POST /org/members/{id}", s.app("org", s.changeMember))
 	s.mux.HandleFunc("GET /org/audit", s.app("org", s.audit))
 	s.mux.HandleFunc("GET /org/tasks", s.app("org", s.tasks))
@@ -457,6 +459,40 @@ type postDetailData struct {
 	Attempts   map[uuid.UUID][]model.Attempt
 	JSON       string
 	CanApprove bool
+	// Who made and who reviewed the post: a member or an API key, nil
+	// when they are gone (a member who left the org).
+	Creator  *actorRef
+	Reviewer *actorRef
+}
+
+// actorRef names a member or an API key and links to its page.
+type actorRef struct {
+	Label string
+	Href  string
+	Key   bool
+}
+
+// whoIs describes the member or key behind an action; a member who has
+// left, or a key outside the viewer's reach, is named without a link.
+func (s *Server) whoIs(c *reqCtx, user, key *uuid.UUID) *actorRef {
+	switch {
+	case user != nil:
+		ref := &actorRef{Label: "a former member"}
+		if m, err := s.svc.Member(c.ctx(), c.actor, *user); err == nil {
+			ref.Label, ref.Href = m.UserEmail, "/org/members/"+id.Format(id.User, *user)
+			if m.UserName != "" {
+				ref.Label = m.UserName
+			}
+		}
+		return ref
+	case key != nil:
+		ref := &actorRef{Label: "an API key", Key: true}
+		if k, err := s.svc.APIKey(c.ctx(), c.actor, *key); err == nil {
+			ref.Label, ref.Href = k.Name, "/keys/"+id.Format(id.APIKey, *key)
+		}
+		return ref
+	}
+	return nil
 }
 
 func (s *Server) postDetail(c *reqCtx) error {
@@ -470,6 +506,8 @@ func (s *Server) postDetail(c *reqCtx) error {
 	}
 	d := postDetailData{Post: p, View: core.ViewPost(p), Attempts: map[uuid.UUID][]model.Attempt{}, CanApprove: c.actor.Can(core.PermPostsApprove)}
 	d.Brand, _ = s.svc.Brand(c.ctx(), c.actor, p.BrandID)
+	d.Creator = s.whoIs(c, p.CreatedByUser, p.CreatedByKey)
+	d.Reviewer = s.whoIs(c, p.ReviewedBy, p.ReviewedByKey)
 	for _, t := range p.Targets {
 		if d.Attempts[t.ID], err = s.svc.Attempts(c.ctx(), c.actor, t.ID); err != nil {
 			return err

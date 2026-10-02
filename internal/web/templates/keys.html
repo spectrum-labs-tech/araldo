@@ -21,7 +21,7 @@
   {{range .Data.Keys}}
   {{$dead := or .RevokedAt (expired .ExpiresAt)}}
   <tr class="{{if $dead}}text-muted{{end}}">
-    <td>{{.Name}}</td>
+    <td><a href="/keys/{{keyID .ID}}">{{.Name}}</a></td>
     <td><code>{{.Hint}}</code></td>
     <td>{{if .Scopes}}{{join .Scopes ", "}}{{else}}full{{end}}{{if .BrandID}} · one brand{{end}}</td>
     <td>{{if .LastUsedAt}}{{ago (derefTime .LastUsedAt)}}{{else}}never{{end}}</td>

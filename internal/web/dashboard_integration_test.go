@@ -245,3 +245,51 @@ func TestRollKeyKeepsTheOldSecretForADay(t *testing.T) {
 		t.Fatalf("the old key during the overlap: %v", err)
 	}
 }
+
+func TestCreatorsLinkToTheirPages(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	plain, k, err := d.s.CreateOperatorAPIKey(ctx, d.owner, core.APIKeyInput{Name: "ar15.build staging", Scopes: []string{"posts:read", "posts:write"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := d.s.AuthenticateKey(ctx, plain, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byKey, err := d.s.CreatePost(ctx, key, core.PostInput{BrandID: d.brand.ID, Content: &model.Content{Body: "Posted by the key"}, PublishAt: "next_slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byOwner, err := d.s.CreatePost(ctx, d.owner, core.PostInput{BrandID: d.brand.ID, Content: &model.Content{Body: "Posted by a person"}, PublishAt: "next_slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(path string) string {
+		t.Helper()
+		rec := d.send(httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: %d\n%s", path, rec.Code, rec.Body)
+		}
+		return rec.Body.String()
+	}
+	keyHref := "/keys/" + id.Format(id.APIKey, k.ID)
+	memberHref := "/org/members/" + id.Format(id.User, *d.owner.UserID)
+
+	if page := get("/posts/" + id.Format(id.Post, byKey.ID)); !strings.Contains(page, `API key <a href="`+keyHref+`">ar15.build staging</a>`) {
+		t.Fatalf("post by a key does not link to it:\n%s", page)
+	}
+	if page := get("/posts/" + id.Format(id.Post, byOwner.ID)); !strings.Contains(page, `by <a href="`+memberHref+`">`) {
+		t.Fatalf("post by a member does not link to them:\n%s", page)
+	}
+	page := get(keyHref)
+	if !strings.Contains(page, "posts:write") || !strings.Contains(page, "Posted by the key") || strings.Contains(page, "Posted by a person") ||
+		!strings.Contains(page, `action="`+keyHref+`/revoke"`) {
+		t.Fatalf("key page:\n%s", page)
+	}
+	page = get(memberHref)
+	if !strings.Contains(page, "Posted by a person") || strings.Contains(page, "Posted by the key") || !strings.Contains(page, ">you<") {
+		t.Fatalf("member page:\n%s", page)
+	}
+}

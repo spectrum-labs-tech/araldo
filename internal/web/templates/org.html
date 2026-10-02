@@ -25,7 +25,7 @@
     <tbody>
     {{range $d.Members}}
     <tr>
-      <td>{{.UserEmail}}{{if .UserName}} <span class="text-muted">{{.UserName}}</span>{{end}}</td>
+      <td><a href="/org/members/{{userID .UserID}}">{{.UserEmail}}</a>{{if .UserName}} <span class="text-muted">{{.UserName}}</span>{{end}}</td>
       <td>{{if .UserMFA}}<span class="pill good">on</span>{{else}}<span class="pill {{if $d.Org.RequireMFA}}bad{{else}}neutral{{end}}">off</span>{{end}}</td>
       <td>{{if $d.IsAdmin}}
         <form method="post" action="/org/members/{{.UserID}}" class="flex flex-wrap items-center gap-2">

@@ -1,0 +1,25 @@
+{{define "content"}}
+{{$m := .Data.Member}}
+<p class="mb-1 text-sm text-muted"><a href="/org">Organization</a> / <code>{{userID $m.UserID}}</code></p>
+<h1>{{if $m.UserName}}{{$m.UserName}}{{else}}{{$m.UserEmail}}{{end}}{{if .Data.IsYou}} <span class="pill neutral">you</span>{{end}}</h1>
+
+<dl class="facts">
+  <dt>Email</dt><dd>{{$m.UserEmail}}</dd>
+  <dt>Role</dt><dd>{{$m.Role}}</dd>
+  <dt>Two-factor</dt><dd>{{if $m.UserMFA}}<span class="pill good">on</span>{{else}}<span class="pill neutral">off</span>{{end}}</dd>
+  <dt>Member since</dt><dd>{{fmtTime $m.CreatedAt}}</dd>
+</dl>
+{{if .Data.IsYou}}<p class="text-sm text-muted">Change your name, password or two-factor settings on <a href="/account">your account</a>.</p>{{end}}
+
+<h2 class="mt-6">Posts they made</h2>
+{{if .Data.Posts}}
+<table>
+  <thead><tr><th>Post</th><th>Status</th><th>Publish at</th></tr></thead>
+  <tbody>{{range .Data.Posts}}<tr>
+    <td><a href="/posts/{{postID .ID}}">{{with index .Targets 0}}{{index .Parts 0 | printf "%.90s"}}{{else}}(no text){{end}}</a></td>
+    <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
+    <td>{{fmtTime .PublishAt}}</td>
+  </tr>{{end}}</tbody>
+</table>
+{{else}}<p class="text-muted">None in this mode.</p>{{end}}
+{{end}}

@@ -87,6 +87,15 @@ func (s *Service) Members(ctx context.Context, a Actor) ([]model.Membership, err
 	return s.store.Members(ctx, a.OrgID)
 }
 
+// Member returns one member of the org; any member may look.
+func (s *Service) Member(ctx context.Context, a Actor, userID uuid.UUID) (*model.Membership, error) {
+	if a.IsKey() {
+		return nil, apperr.Forbidden("API keys cannot read members.")
+	}
+	m, err := s.store.Member(ctx, a.OrgID, userID)
+	return m, notFound(err, "member")
+}
+
 // AddMember adds a person to the org. Someone without an account gets one
 // with the given temporary password, to share with them out of band.
 func (s *Service) AddMember(ctx context.Context, a Actor, email string, role model.Role, tempPassword string) (*model.User, error) {
@@ -528,6 +537,21 @@ func (s *Service) APIKeys(ctx context.Context, a Actor) ([]*model.APIKey, error)
 		}
 	}
 	return out, nil
+}
+
+// APIKey returns one key's definition, never its secret. Any member may
+// look (it shows who or what made a post); a key needs keys:write.
+func (s *Service) APIKey(ctx context.Context, a Actor, keyID uuid.UUID) (*model.APIKey, error) {
+	if a.IsKey() {
+		if err := a.require(PermKeysWrite); err != nil {
+			return nil, err
+		}
+	}
+	k, err := s.store.APIKey(ctx, a.OrgID, keyID)
+	if err != nil || !keyVisible(a, k) {
+		return nil, apperr.NotFound("API key")
+	}
+	return k, nil
 }
 
 // CreateKeyWithKey is CreateAPIKey for an API key with keys:write: no

@@ -135,6 +135,66 @@ func keyExpiry(choice, on string, now time.Time) (*time.Time, error) {
 	return &t, nil
 }
 
+type keyDetailData struct {
+	Key       *model.APIKey
+	Brand     *model.Brand
+	Creator   *actorRef
+	Posts     []*model.Post
+	CanManage bool
+}
+
+// keyDetail shows a key's definition (never its secret) and the posts it
+// made.
+func (s *Server) keyDetail(c *reqCtx) error {
+	kid, err := pathUUID(c, id.APIKey, "API key")
+	if err != nil {
+		return err
+	}
+	k, err := s.svc.APIKey(c.ctx(), c.actor, kid)
+	if err != nil {
+		return err
+	}
+	d := keyDetailData{Key: k, Creator: s.whoIs(c, k.CreatedBy, nil), CanManage: c.actor.Can(core.PermKeysWrite)}
+	if k.BrandID != nil {
+		d.Brand, _ = s.svc.Brand(c.ctx(), c.actor, *k.BrandID)
+	}
+	if k.Livemode == c.actor.Livemode {
+		d.Posts, _, err = s.svc.Posts(c.ctx(), c.actor, core.PostFilter{CreatedByKey: &k.ID}, store.Page{Limit: 20})
+		if err != nil {
+			return err
+		}
+	}
+	return s.page(c, "key_detail", "developers", "API key", d)
+}
+
+type memberDetailData struct {
+	Member *model.Membership
+	Posts  []*model.Post
+	IsYou  bool
+}
+
+// memberDetail shows a member's profile and the posts they made.
+func (s *Server) memberDetail(c *reqCtx) error {
+	uid, err := pathUUID(c, id.User, "member")
+	if err != nil {
+		return err
+	}
+	m, err := s.svc.Member(c.ctx(), c.actor, uid)
+	if err != nil {
+		return err
+	}
+	d := memberDetailData{Member: m, IsYou: uid == c.user.ID}
+	d.Posts, _, err = s.svc.Posts(c.ctx(), c.actor, core.PostFilter{CreatedByUser: &uid}, store.Page{Limit: 20})
+	if err != nil {
+		return err
+	}
+	title := m.UserEmail
+	if m.UserName != "" {
+		title = m.UserName
+	}
+	return s.page(c, "member_detail", "org", title, d)
+}
+
 // RollOverlap is how long a rolled key's old secret keeps working, so the
 // new one can be deployed without downtime.
 const RollOverlap = 24 * time.Hour

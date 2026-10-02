@@ -1,0 +1,40 @@
+{{define "content"}}
+{{$k := .Data.Key}}
+<p class="mb-1 text-sm text-muted">{{if .Data.CanManage}}<a href="/keys">API keys</a> / {{end}}<code>{{keyID $k.ID}}</code></p>
+<div class="mb-2 flex flex-wrap items-start justify-between gap-4">
+  <h1>{{$k.Name}}
+    {{if $k.RevokedAt}}<span class="pill bad">revoked</span>{{else if expired $k.ExpiresAt}}<span class="pill bad">expired</span>{{else}}<span class="pill good">active</span>{{end}}</h1>
+  {{if and .Data.CanManage (not $k.RevokedAt) (not (expired $k.ExpiresAt))}}
+  <div class="flex flex-wrap gap-1.5">
+    <form method="post" action="/keys/{{keyID $k.ID}}/roll" data-confirm="Roll {{$k.Name}}? You get a new secret; the old one keeps working for 24 hours.">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Roll</button></form>
+    <form method="post" action="/keys/{{keyID $k.ID}}/revoke" data-confirm="Revoke {{$k.Name}}? Requests using it will fail immediately.">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger">Revoke</button></form>
+  </div>{{end}}
+</div>
+
+<dl class="facts">
+  <dt>Key</dt><dd><code>{{$k.Hint}}</code> <span class="text-sm text-muted">(the secret is shown only once, when the key is made)</span></dd>
+  <dt>Mode</dt><dd><span class="pill {{if $k.Livemode}}bad{{else}}warn{{end}}">{{if $k.Livemode}}live{{else}}test{{end}}</span></dd>
+  <dt>Access</dt><dd>{{if $k.Scopes}}{{range $k.Scopes}}<span class="tag">{{.}}</span> {{end}}{{else}}full (every integration scope){{end}}</dd>
+  <dt>Brand</dt><dd>{{with .Data.Brand}}<a href="/brands/{{brandID .ID}}">{{.Name}}</a> only{{else}}all brands{{end}}</dd>
+  <dt>Created</dt><dd>{{fmtTime $k.CreatedAt}}{{with .Data.Creator}} by {{if .Href}}<a href="{{.Href}}">{{.Label}}</a>{{else}}{{.Label}}{{end}}{{end}}</dd>
+  <dt>Last used</dt><dd>{{if $k.LastUsedAt}}{{ago (derefTime $k.LastUsedAt)}}{{else}}never{{end}}</dd>
+  <dt>Expires</dt><dd>{{if $k.ExpiresAt}}{{fmtTime $k.ExpiresAt}}{{else}}never{{end}}</dd>
+  {{if $k.RevokedAt}}<dt>Revoked</dt><dd>{{fmtTime $k.RevokedAt}}</dd>{{end}}
+</dl>
+
+<h2 class="mt-6">Posts it made</h2>
+{{template "post_list" .Data.Posts}}
+{{end}}
+
+{{define "post_list"}}{{if .}}
+<table>
+  <thead><tr><th>Post</th><th>Status</th><th>Publish at</th></tr></thead>
+  <tbody>{{range .}}<tr>
+    <td><a href="/posts/{{postID .ID}}">{{with index .Targets 0}}{{index .Parts 0 | printf "%.90s"}}{{else}}(no text){{end}}</a></td>
+    <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
+    <td>{{fmtTime .PublishAt}}</td>
+  </tr>{{end}}</tbody>
+</table>
+{{else}}<p class="text-muted">None in this mode.</p>{{end}}{{end}}

@@ -118,18 +118,22 @@ type PostFilter struct {
 	BrandID  *uuid.UUID
 	Status   string
 	Metadata map[string]string
+	// CreatedByUser or CreatedByKey keep the posts a member or a key made.
+	CreatedByUser *uuid.UUID
+	CreatedByKey  *uuid.UUID
 }
 
 // Posts lists posts newest first, each with its targets.
 func (s *Store) Posts(ctx context.Context, orgID uuid.UUID, livemode bool, f PostFilter, page Page) ([]*model.Post, bool, error) {
-	where, order, extra := pageClause(page, "id", 6)
+	where, order, extra := pageClause(page, "id", 8)
 	var meta any
 	if len(f.Metadata) > 0 {
 		meta = f.Metadata
 	}
-	args := append([]any{orgID, livemode, f.BrandID, f.Status, meta}, extra...)
+	args := append([]any{orgID, livemode, f.BrandID, f.Status, meta, f.CreatedByUser, f.CreatedByKey}, extra...)
 	rows, err := s.q.Query(ctx, `SELECT `+postCols+` FROM posts WHERE org_id = $1 AND livemode = $2
-		AND ($3::uuid IS NULL OR brand_id = $3) AND ($4 = '' OR status = $4) AND ($5::jsonb IS NULL OR metadata @> $5)`+where+order, args...)
+		AND ($3::uuid IS NULL OR brand_id = $3) AND ($4 = '' OR status = $4) AND ($5::jsonb IS NULL OR metadata @> $5)
+		AND ($6::uuid IS NULL OR created_by_user = $6) AND ($7::uuid IS NULL OR created_by_key = $7)`+where+order, args...)
 	if err != nil {
 		return nil, false, err
 	}

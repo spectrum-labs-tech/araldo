@@ -71,6 +71,15 @@ func (s *Store) UserMemberships(ctx context.Context, userID uuid.UUID) ([]model.
 	})
 }
 
+// Member returns one member of an org, with their account details.
+func (s *Store) Member(ctx context.Context, orgID, userID uuid.UUID) (*model.Membership, error) {
+	var m model.Membership
+	err := s.q.QueryRow(ctx, `SELECT m.org_id, m.user_id, m.role, m.created_at, u.email, u.name, u.totp_enabled_at IS NOT NULL
+		FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.org_id = $1 AND m.user_id = $2`, orgID, userID).
+		Scan(&m.OrgID, &m.UserID, &m.Role, &m.CreatedAt, &m.UserEmail, &m.UserName, &m.UserMFA)
+	return &m, mapErr(err)
+}
+
 // Members lists an org's members, by email.
 func (s *Store) Members(ctx context.Context, orgID uuid.UUID) ([]model.Membership, error) {
 	rows, err := s.q.Query(ctx, `SELECT m.org_id, m.user_id, m.role, m.created_at, u.email, u.name, u.totp_enabled_at IS NOT NULL

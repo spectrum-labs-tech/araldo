@@ -40,8 +40,9 @@ own products, but the API may still change.
   org.
 
 Platforms today: Bluesky, Mastodon, X, LinkedIn (a member's own feed),
-Discord (webhooks) and Telegram (bots), plus the sandbox. Facebook Pages,
-Instagram and Threads are next ([roadmap](docs/roadmap.md)).
+Threads (signing in through your developer app), Discord (webhooks) and
+Telegram (bots), plus the sandbox. Facebook Pages and Instagram are next
+([roadmap](docs/roadmap.md)).
 
 ## Run it
 

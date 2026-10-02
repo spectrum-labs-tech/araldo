@@ -497,6 +497,28 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/media/{id}/content:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Download media by a signed link
+      description: |
+        Serves a media file without an API key when the link is signed and
+        has not expired. Araldo makes these links (valid for an hour) for
+        platforms that fetch images themselves, such as Threads and
+        Instagram; there is no need to call it directly.
+      security: []
+      tags: [Media]
+      parameters:
+        - { name: expires, in: query, required: true, schema: { type: integer }, description: Unix time the link stops working. }
+        - { name: signature, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The file.
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/posts:
     get:
       summary: List posts

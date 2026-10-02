@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
@@ -210,5 +211,21 @@ func (h *Handler) deleteMedia(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ok(w, http.StatusOK, deleted{ID: id.Format(id.Media, mid), Object: "media", Deleted: true})
+	return nil
+}
+
+// mediaContent serves a file by a signed link (ADR 0021): no API key, so
+// a platform can fetch it.
+func (h *Handler) mediaContent(w http.ResponseWriter, r *http.Request) error {
+	q := r.URL.Query()
+	m, rc, err := h.svc.LinkedMedia(r.Context(), r.PathValue("id"), q.Get("expires"), q.Get("signature"))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rc.Close() }()
+	w.Header().Set("Content-Type", m.ContentType)
+	w.Header().Set("Content-Length", strconv.FormatInt(m.Size, 10))
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	_, _ = io.Copy(w, rc)
 	return nil
 }

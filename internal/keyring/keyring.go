@@ -14,7 +14,9 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -75,6 +77,9 @@ type MasterKeys struct {
 	primary string
 	keys    map[string]cipher.AEAD
 	order   []string
+	// derive is the root for Derive, from the primary key; the raw key
+	// itself is not kept.
+	derive []byte
 }
 
 // ParseMasterKeys reads "id:base64key[,id:base64key...]" (standard or URL
@@ -105,6 +110,7 @@ func ParseMasterKeys(s string) (*MasterKeys, error) {
 		m.order = append(m.order, kid)
 		if m.primary == "" {
 			m.primary = kid
+			m.derive = hmacSHA256(raw, "araldo:v1:derive")
 		}
 	}
 	if m.primary == "" {
@@ -245,6 +251,19 @@ func (k *Keyring) Decrypt(ctx context.Context, scope uuid.UUID, aad string, ciph
 		return nil, ErrDecrypt
 	}
 	return plain, nil
+}
+
+// Derive returns a 32-byte key for one purpose (label), from the primary
+// master key: for signing, not for encrypting stored data. It changes when
+// the primary key does.
+func (k *Keyring) Derive(label string) []byte {
+	return hmacSHA256(k.master.derive, label)
+}
+
+func hmacSHA256(key []byte, label string) []byte {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(label))
+	return mac.Sum(nil)
 }
 
 // Forget drops a scope's cached data keys (after the scope is deleted).

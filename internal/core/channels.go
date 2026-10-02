@@ -298,6 +298,8 @@ type ProviderInfo struct {
 	Name     string
 	Fields   []platform.Field
 	Rules    platform.Rules
+	// OAuth providers connect with a sign-in through a developer app.
+	OAuth bool
 }
 
 // Providers lists the platforms channels can connect to in a mode.
@@ -309,7 +311,8 @@ func (s *Service) Providers(livemode bool) []ProviderInfo {
 	var out []ProviderInfo
 	for _, p := range s.platforms.Providers() {
 		a, _ := s.platforms.Get(p)
-		out = append(out, ProviderInfo{Provider: p, Name: a.Rules().Name, Fields: a.Fields(), Rules: a.Rules()})
+		_, oauth := a.(platform.Connector)
+		out = append(out, ProviderInfo{Provider: p, Name: a.Rules().Name, Fields: a.Fields(), Rules: a.Rules(), OAuth: oauth})
 	}
 	return out
 }

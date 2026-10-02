@@ -5,6 +5,7 @@ package keyring
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -166,5 +167,22 @@ func TestParseMasterKeys(t *testing.T) {
 				t.Fatalf("ParseMasterKeys(%q) succeeded", s)
 			}
 		})
+	}
+}
+
+func TestDerive(t *testing.T) {
+	t.Parallel()
+	spec := masterKeys(t, "a", "b")
+	first, second, _ := strings.Cut(spec, ",")
+	a := newKeyring(t, first, nil)
+	if got := a.Derive("media-urls"); len(got) != 32 || bytes.Equal(got, a.Derive("other")) {
+		t.Fatalf("Derive: %x (labels must give different keys)", got)
+	}
+	// The primary key alone decides; a new primary gives new keys.
+	if !bytes.Equal(a.Derive("media-urls"), newKeyring(t, first+","+second, nil).Derive("media-urls")) {
+		t.Fatal("Derive depends on more than the primary key")
+	}
+	if bytes.Equal(a.Derive("media-urls"), newKeyring(t, second+","+first, nil).Derive("media-urls")) {
+		t.Fatal("a new primary key should give new derived keys")
 	}
 }

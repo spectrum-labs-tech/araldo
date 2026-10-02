@@ -1,0 +1,14 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Choose {{$d.Name}} accounts</h1>
+<p class="mb-3">{{$d.Name}} gave access to more than one account. Choose which to connect; each becomes a channel.</p>
+<form method="post" action="/connect/{{$d.Provider}}/choose" class="flex max-w-xl flex-col gap-4">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <input type="hidden" name="state" value="{{$d.State}}">
+  <fieldset><legend>Accounts</legend>
+    {{range $d.Choices}}<label class="flex-row items-center gap-1.5 font-normal"><input type="checkbox" name="account" value="{{.ExternalID}}" checked>
+      {{.DisplayName}}{{if .Handle}} <span class="text-muted">{{.Handle}}</span>{{end}}</label>{{end}}
+  </fieldset>
+  <div><button class="btn-primary">Connect</button></div>
+</form>
+{{end}}

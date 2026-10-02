@@ -34,6 +34,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform/mastodon"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/sandbox"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/telegram"
+	"github.com/spectrum-labs-tech/araldo/internal/platform/threads"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/x"
 	"github.com/spectrum-labs-tech/araldo/internal/server"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
@@ -93,6 +94,7 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 		telegram.New(client),
 		x.New(client),
 		linkedin.New(client),
+		threads.New(client),
 	)
 	ccfg := core.Config{BaseURL: cfg.BaseURL, AllowPrivateWebhooks: cfg.AllowPrivateNetworks}
 	if s := cfg.S3; s.Bucket != "" {

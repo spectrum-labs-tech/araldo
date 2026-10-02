@@ -26,3 +26,4 @@ open a pull request.
 | [0018](0018-engagement.md) | Read each published post's engagement on a fixed schedule and keep every reading | proposed |
 | [0019](0019-administration-api.md) | The API manages everything a declarative tool needs; admin powers are explicit-only scopes | proposed |
 | [0020](0020-mcp.md) | An MCP server in the binary, as a client of the public API | proposed |
+| [0021](0021-oauth-connections.md) | Channels connect with OAuth through an org's developer apps; images reach platforms by signed links | proposed |

@@ -197,6 +197,36 @@ type Channel struct {
 	StatusNote  string
 	HoldUntil   *time.Time
 	CreatedAt   time.Time
+	// AppID is the developer app an OAuth channel connected through, and
+	// TokenExpiresAt when its token expires (ADR 0021).
+	AppID          *uuid.UUID
+	TokenExpiresAt *time.Time
+}
+
+// ProviderApp is an org's developer app on a platform (ADR 0021).
+type ProviderApp struct {
+	ID       uuid.UUID
+	OrgID    uuid.UUID
+	Provider platform.Provider
+	Name     string
+	ClientID string
+	// ClientSecret is encrypted (ADR 0008).
+	ClientSecret []byte
+	CreatedBy    *uuid.UUID
+	CreatedAt    time.Time
+}
+
+// OAuthState is a sign-in in progress (ADR 0021).
+type OAuthState struct {
+	OrgID    uuid.UUID
+	UserID   uuid.UUID
+	BrandID  uuid.UUID
+	AppID    uuid.UUID
+	Provider platform.Provider
+	Verifier string
+	// Connections, encrypted, wait for the member to choose among them.
+	Connections []byte
+	CreatedAt   time.Time
 }
 
 // RulesProvider is the platform whose rules apply to the channel.

@@ -61,19 +61,22 @@ func open(t *testing.T) *store.Store {
 
 const testMasterKey = "test:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
-func service(t *testing.T, opts ...func(*core.Config)) *core.Service {
+// option changes a test service's configuration or adds adapters.
+type option func(cfg *core.Config, adapters *[]platform.Adapter)
+
+func service(t *testing.T, opts ...option) *core.Service {
 	t.Helper()
 	st := open(t)
 	mk, err := keyring.ParseMasterKeys(testMasterKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg := platform.NewRegistry(sandbox.New("https://araldo.test"))
+	adapters := []platform.Adapter{sandbox.New("https://araldo.test")}
 	cfg := core.Config{BaseURL: "https://araldo.test", AllowPrivateWebhooks: true}
 	for _, o := range opts {
-		o(&cfg)
+		o(&cfg, &adapters)
 	}
-	return core.New(st, keyring.New(mk, st), reg, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	return core.New(st, keyring.New(mk, st), platform.NewRegistry(adapters...), slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
 }
 
 type world struct {
@@ -86,7 +89,7 @@ type world struct {
 	channel *model.Channel
 }
 
-func newWorld(t *testing.T, opts ...func(*core.Config)) *world {
+func newWorld(t *testing.T, opts ...option) *world {
 	t.Helper()
 	s := service(t, opts...)
 	ctx := t.Context()

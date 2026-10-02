@@ -26,6 +26,9 @@
 - Images on posts: uploads or URLs, checked against each platform's limits,
   stored in Postgres or S3-compatible storage
   ([ADR 0017](adr/0017-media.md)).
+- Threads, connected with OAuth through an org's developer app, with
+  token renewal, images by signed links and engagement including views
+  ([ADR 0021](adr/0021-oauth-connections.md)).
 - X and LinkedIn, connected with tokens from each platform's developer
   portal (X: the app's keys and the account's access token; LinkedIn: a
   member token, 60 days), with images.
@@ -41,11 +44,10 @@
 
 ## Next
 
-1. **Facebook Pages, Instagram, Threads** (ported from ar15.build's
-   `pkg/social`), with provider apps stored in the database
-   ([ADR 0009](adr/0009-platform-adapters.md)) and OAuth connect flows,
-   which X and LinkedIn then use too instead of pasted tokens; engagement
-   from X (it needs a paid API tier to read) and LinkedIn.
+1. **Facebook Pages and Instagram** (ported from ar15.build's
+   `pkg/social`) on the OAuth flow Threads uses, which X and LinkedIn can
+   then use too instead of pasted tokens; install-wide developer apps;
+   engagement from X (it needs a paid API tier to read) and LinkedIn.
 2. **More media**: video, and resizing images to fit each platform.
 3. **ar15.build as the first tenant**: its daily featured build and brand
    posts sent through the API.

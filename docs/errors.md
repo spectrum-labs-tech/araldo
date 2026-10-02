@@ -84,6 +84,19 @@ every problem in `errors`, each with its own `code` and `param`.
 - **livemode_mismatch**: a key creates keys in its own mode only.
 - **key_inactive** (409): the key to roll has expired or was revoked.
 
+## Connecting with OAuth
+
+- **connect_expired**: the sign-in took over 15 minutes or was already
+  used; start again.
+- **connect_failed**: the platform refused the sign-in or the app's
+  credentials.
+- **connect_empty**, **choice_required**: there was no account to connect,
+  or none was chosen.
+- **provider_invalid**, **client_id_invalid**, **client_secret_invalid**,
+  **name_taken**: the developer app is not valid.
+- A post target fails with **media_link_missing** when a platform that
+  fetches images (Threads) cannot reach the install's API.
+
 ## Media
 
 - **file_missing** (400): upload the image as `multipart/form-data` in a

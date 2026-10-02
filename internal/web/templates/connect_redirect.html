@@ -1,0 +1,5 @@
+{{define "content"}}
+<h1>{{.Title}}</h1>
+<p>Continue to {{.Data.Name}} to sign in and choose what Araldo may do. You will come back here afterwards.</p>
+<p class="mt-3"><a class="btn btn-primary" href="{{safeURL .Data.URL}}" rel="noreferrer">Continue to {{.Data.Name}}</a></p>
+{{end}}

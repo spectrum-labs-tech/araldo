@@ -49,6 +49,12 @@ func (s *Store) Media(ctx context.Context, orgID, id uuid.UUID) (*model.Media, e
 	return scanMedia(s.q.QueryRow(ctx, `SELECT `+mediaCols+` FROM media m WHERE m.org_id = $1 AND m.id = $2`, orgID, id))
 }
 
+// MediaAnyOrg reads media by ID alone, for a signed link, whose signature
+// already proves which file it is.
+func (s *Store) MediaAnyOrg(ctx context.Context, id uuid.UUID) (*model.Media, error) {
+	return scanMedia(s.q.QueryRow(ctx, `SELECT `+mediaCols+` FROM media m WHERE m.id = $1`, id))
+}
+
 // MediaByIDs returns the org's media with these IDs, in no order.
 func (s *Store) MediaByIDs(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID) ([]*model.Media, error) {
 	rows, err := s.q.Query(ctx, `SELECT `+mediaCols+` FROM media m WHERE m.org_id = $1 AND m.id = ANY($2)`, orgID, ids)

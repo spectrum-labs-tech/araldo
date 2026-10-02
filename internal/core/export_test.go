@@ -31,3 +31,8 @@ func PruneUnusedMediaOrg(s *Service, org uuid.UUID) (int, error) {
 func CollectEngagementOrg(s *Service, org uuid.UUID) (int, error) {
 	return s.collectEngagement(context.Background(), &org)
 }
+
+// RefreshTokensOrg is RefreshTokens for one org.
+func RefreshTokensOrg(s *Service, org uuid.UUID) (int, error) {
+	return s.refreshTokens(context.Background(), &org)
+}

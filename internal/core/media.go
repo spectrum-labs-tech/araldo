@@ -5,13 +5,16 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -396,6 +399,55 @@ func (s *Service) payloadMedia(ms []*model.Media) []platform.Media {
 	out := ruleMedia(ms)
 	for i, m := range ms {
 		out[i].Open = func(ctx context.Context) (io.ReadCloser, error) { return s.openMedia(ctx, m) }
+		out[i].URL = s.MediaLink(m)
 	}
 	return out
+}
+
+// MediaLinkTTL is how long a signed media link works: long enough for a
+// platform to fetch the file, short enough not to matter if it leaks.
+const MediaLinkTTL = time.Hour
+
+// MediaLink is a public link to m's file, signed and expiring (ADR 0021),
+// for platforms that fetch images themselves. Without master keys there is
+// nothing to sign with, and it is empty.
+func (s *Service) MediaLink(m *model.Media) string {
+	if s.keys == nil || s.cfg.BaseURL == "" {
+		return ""
+	}
+	exp := s.Now().Add(MediaLinkTTL).Unix()
+	return s.cfg.BaseURL + "/v1/media/" + id.Format(id.Media, m.ID) + "/content?expires=" + strconv.FormatInt(exp, 10) +
+		"&signature=" + s.mediaSignature(m.ID, exp)
+}
+
+func (s *Service) mediaSignature(mediaID uuid.UUID, expires int64) string {
+	mac := hmac.New(sha256.New, s.keys.Derive("media-links"))
+	mac.Write([]byte(mediaID.String() + "|" + strconv.FormatInt(expires, 10)))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// LinkedMedia opens a file by a signed link: the signature must match and
+// the link must not have expired. Any failure is "not found", saying
+// nothing about which part was wrong.
+func (s *Service) LinkedMedia(ctx context.Context, ref, expires, signature string) (*model.Media, io.ReadCloser, error) {
+	missing := apperr.NotFound("media")
+	mid, err := id.Parse(id.Media, ref)
+	if err != nil || s.keys == nil {
+		return nil, nil, missing
+	}
+	exp, err := strconv.ParseInt(expires, 10, 64)
+	now := s.Now()
+	if err != nil || now.Unix() > exp || time.Unix(exp, 0).After(now.Add(MediaLinkTTL+time.Minute)) {
+		return nil, nil, missing
+	}
+	want := s.mediaSignature(mid, exp)
+	if !hmac.Equal([]byte(want), []byte(signature)) {
+		return nil, nil, missing
+	}
+	m, err := s.store.MediaAnyOrg(ctx, mid)
+	if err != nil {
+		return nil, nil, notFound(err, "media")
+	}
+	rc, err := s.openMedia(ctx, m)
+	return m, rc, err
 }

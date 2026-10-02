@@ -88,6 +88,37 @@ Roll a key in the dashboard, or have it roll itself with
 old one keeps working for 24 hours (`overlap_hours`, up to 168) so the new
 one can be deployed without downtime.
 
+## Connecting platforms
+
+Most platforms connect with credentials pasted into **Channels → Connect a
+channel** in live mode; the form says where each comes from. Some connect
+with a sign-in through a **developer app** you register with the platform
+([ADR 0021](adr/0021-oauth-connections.md)): add it under **Channels →
+Developer apps**, which shows the redirect URI to give the platform, then
+connect channels through it. Tokens are stored encrypted and renewed before
+they expire (the `channels.refresh` task); a channel whose token can no
+longer be renewed shows *needs reauth* and reconnects the same way.
+
+| Platform | How it connects |
+|---|---|
+| Bluesky | Handle and an app password. |
+| Mastodon | Server and an access token (write:statuses, write:media, read:accounts). |
+| X | The app's API key and secret, and the account's access token and secret (developer.x.com, read and write). |
+| LinkedIn | A member access token from the developer portal's token tools (openid, profile, w_member_social); it lasts 60 days. |
+| Threads | A sign-in through your Threads app, below. |
+| Discord, Telegram | A webhook URL; a bot token and chat. |
+
+**Threads.** At developers.facebook.com, create an app with the *Access the
+Threads API* use case; add the permissions `threads_basic`,
+`threads_content_publish` and `threads_manage_insights`; under its
+settings add Araldo's redirect URI (`{ARALDO_BASE_URL}/connect/threads/callback`)
+to the redirect callback URLs; and, while the app is in development, add
+the Threads accounts you will connect as testers (they accept in Threads
+→ Settings → Website permissions). Add the app's Threads app ID and secret
+under Developer apps, then connect. Threads fetches images from a link to
+the install, so posts with images need `/v1` reachable from the internet;
+the engagement it reports includes views.
+
 ## AI assistants (MCP)
 
 `araldo mcp` gives an AI assistant Araldo's tools over the Model Context

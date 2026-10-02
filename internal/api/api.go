@@ -59,11 +59,13 @@ type Handler struct {
 	Routes []string
 	// Query lists each route's query parameters, for the contract test.
 	Query map[string][]string
+	// open are the routes that need no API key.
+	open map[string]bool
 }
 
 // New returns the API handler.
 func New(svc *core.Service, log *slog.Logger) *Handler {
-	h := &Handler{svc: svc, log: log, mux: http.NewServeMux(), limiter: newLimiter(25, 100), Query: map[string][]string{}}
+	h := &Handler{svc: svc, log: log, mux: http.NewServeMux(), limiter: newLimiter(25, 100), Query: map[string][]string{}, open: map[string]bool{}}
 	h.routes()
 	return h
 }
@@ -108,16 +110,17 @@ func checkQuery(r *http.Request, allowed []string) error {
 	return nil
 }
 
-// public registers a route that needs no API key.
-func (h *Handler) public(pattern string, fn http.HandlerFunc) {
-	h.Routes = append(h.Routes, pattern)
-	h.mux.HandleFunc(pattern, fn)
+// public registers a route that needs no API key, with the query
+// parameters it takes.
+func (h *Handler) public(pattern string, fn handlerFunc, query ...string) {
+	h.handle(pattern, fn, query...)
+	h.open[pattern] = true
 }
 
 // ServeHTTP authenticates, rate limits and applies idempotency, then
 // routes.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/v1/openapi.yaml" {
+	if _, pattern := h.mux.Handler(r); h.open[pattern] {
 		h.mux.ServeHTTP(w, r)
 		return
 	}

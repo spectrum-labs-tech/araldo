@@ -15,10 +15,13 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -270,4 +273,56 @@ func TestEngagementEndpoints(t *testing.T) {
 	if status != http.StatusNotFound {
 		t.Fatalf("readings of an unknown target: %d %v", status, got)
 	}
+}
+
+func TestSignedMediaLinks(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	img := pngOf(t, 12, 12)
+	m, err := c.s.CreateMedia(t.Context(), c.owner, core.MediaInput{BrandID: mustBrand(t, c), Data: img})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := c.s.CreateMedia(t.Context(), c.owner, core.MediaInput{BrandID: mustBrand(t, c), Data: pngOf(t, 3, 3)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := c.s.MediaLink(m)
+	u, err := url.Parse(link)
+	if err != nil || !strings.HasPrefix(link, "https://araldo.test/v1/media/media_") {
+		t.Fatalf("link %q", link)
+	}
+	fetch := func(target string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		c.h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil)) // no API key
+		return rec
+	}
+	rec := fetch(u.RequestURI())
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/png" || !bytes.Equal(rec.Body.Bytes(), img) {
+		t.Fatalf("a signed link: %d %q, %d bytes", rec.Code, rec.Header().Get("Content-Type"), rec.Body.Len())
+	}
+	q := u.Query()
+	tampered := u.Path + "?expires=" + q.Get("expires") + "&signature=" + strings.Repeat("0", len(q.Get("signature")))
+	later := u.Path + "?expires=" + strconv.FormatInt(time.Now().Add(48*time.Hour).Unix(), 10) + "&signature=" + q.Get("signature")
+	swapped := "/v1/media/" + id.Format(id.Media, other.ID) + "/content?" + u.RawQuery
+	for name, target := range map[string]string{"tampered": tampered, "extended": later, "another file": swapped,
+		"no signature": u.Path, "an unknown parameter": u.RequestURI() + "&x=1"} {
+		if rec := fetch(target); rec.Code == http.StatusOK {
+			t.Errorf("%s link was served", name)
+		}
+	}
+	// Expired.
+	c.s.Now = func() time.Time { return time.Now().Add(2 * core.MediaLinkTTL) }
+	if rec := fetch(u.RequestURI()); rec.Code != http.StatusNotFound {
+		t.Fatalf("an expired link: %d", rec.Code)
+	}
+}
+
+func mustBrand(t *testing.T, c *client) uuid.UUID {
+	t.Helper()
+	bid, err := id.Parse(id.Brand, c.brand)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bid
 }

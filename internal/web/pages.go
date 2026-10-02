@@ -64,6 +64,12 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /channels", s.app("channels", s.channels))
 	s.mux.HandleFunc("GET /channels/new", s.app("channels", s.newChannel))
+	s.mux.HandleFunc("GET /channels/apps", s.app("channels", s.apps))
+	s.mux.HandleFunc("POST /channels/apps", s.app("channels", s.createApp))
+	s.mux.HandleFunc("POST /channels/apps/{id}/delete", s.app("channels", s.deleteApp))
+	s.mux.HandleFunc("GET /connect/{provider}/start", s.app("channels", s.startConnect))
+	s.mux.HandleFunc("GET /connect/{provider}/callback", s.app("channels", s.connectCallback))
+	s.mux.HandleFunc("POST /connect/{provider}/choose", s.app("channels", s.chooseConnections))
 	s.mux.HandleFunc("POST /channels", s.app("channels", s.createChannel))
 	s.mux.HandleFunc("POST /channels/{id}/toggle", s.app("channels", s.toggleChannel))
 	s.mux.HandleFunc("POST /channels/{id}/delete", s.app("channels", s.deleteChannel))
@@ -990,6 +996,8 @@ type channelForm struct {
 	Values    map[string]string
 	Emulable  []platform.Provider
 	Channel   *model.Channel
+	// Apps are the org's developer apps for an OAuth provider.
+	Apps []*model.ProviderApp
 }
 
 func (s *Server) channelForm(c *reqCtx, provider string) (*channelForm, error) {
@@ -1001,6 +1009,17 @@ func (s *Server) channelForm(c *reqCtx, provider string) (*channelForm, error) {
 	for i := range f.Providers {
 		if string(f.Providers[i].Provider) == provider || len(f.Providers) == 1 {
 			f.Provider = &f.Providers[i]
+		}
+	}
+	if f.Provider != nil && f.Provider.OAuth {
+		apps, err := s.svc.ProviderApps(c.ctx(), c.actor)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range apps {
+			if a.Provider == f.Provider.Provider {
+				f.Apps = append(f.Apps, a)
+			}
 		}
 	}
 	return f, nil

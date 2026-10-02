@@ -15,13 +15,13 @@ import (
 )
 
 const channelCols = `id, org_id, brand_id, livemode, provider, COALESCE(emulates, ''), display_name, handle, external_id, profile_url,
-	settings, credentials, status, status_note, hold_until, created_at`
+	settings, credentials, status, status_note, hold_until, created_at, app_id, token_expires_at`
 
 func scanChannel(r pgx.Row) (*model.Channel, error) {
 	var c model.Channel
 	var provider, emulates string
 	err := r.Scan(&c.ID, &c.OrgID, &c.BrandID, &c.Livemode, &provider, &emulates, &c.DisplayName, &c.Handle, &c.ExternalID, &c.ProfileURL,
-		&c.Settings, &c.Credentials, &c.Status, &c.StatusNote, &c.HoldUntil, &c.CreatedAt)
+		&c.Settings, &c.Credentials, &c.Status, &c.StatusNote, &c.HoldUntil, &c.CreatedAt, &c.AppID, &c.TokenExpiresAt)
 	c.Provider, c.Emulates = platform.Provider(provider), platform.Provider(emulates)
 	return &c, mapErr(err)
 }
@@ -36,9 +36,9 @@ func (s *Store) CreateChannel(ctx context.Context, c *model.Channel) error {
 		c.Settings = map[string]string{}
 	}
 	_, err := s.q.Exec(ctx, `INSERT INTO channels (id, org_id, brand_id, livemode, provider, emulates, display_name, handle, external_id,
-		profile_url, settings, credentials, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		profile_url, settings, credentials, status, app_id, token_expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		c.ID, c.OrgID, c.BrandID, c.Livemode, string(c.Provider), emulates, c.DisplayName, c.Handle, c.ExternalID, c.ProfileURL,
-		c.Settings, c.Credentials, c.Status)
+		c.Settings, c.Credentials, c.Status, c.AppID, c.TokenExpiresAt)
 	return mapErr(err)
 }
 
@@ -59,8 +59,26 @@ func (s *Store) Channels(ctx context.Context, orgID uuid.UUID, livemode bool, br
 // UpdateChannelConnection stores new account details and credentials.
 func (s *Store) UpdateChannelConnection(ctx context.Context, c *model.Channel) error {
 	return s.execOne(ctx, `UPDATE channels SET display_name = $3, handle = $4, external_id = $5, profile_url = $6, settings = $7,
-		credentials = $8, status = $9, status_note = $10, updated_at = now() WHERE org_id = $1 AND id = $2`,
-		c.OrgID, c.ID, c.DisplayName, c.Handle, c.ExternalID, c.ProfileURL, c.Settings, c.Credentials, c.Status, c.StatusNote)
+		credentials = $8, status = $9, status_note = $10, app_id = $11, token_expires_at = $12, updated_at = now() WHERE org_id = $1 AND id = $2`,
+		c.OrgID, c.ID, c.DisplayName, c.Handle, c.ExternalID, c.ProfileURL, c.Settings, c.Credentials, c.Status, c.StatusNote,
+		c.AppID, c.TokenExpiresAt)
+}
+
+// SetChannelToken stores refreshed credentials and their expiry.
+func (s *Store) SetChannelToken(ctx context.Context, orgID, id uuid.UUID, credentials []byte, expires *time.Time) error {
+	return s.execOne(ctx, `UPDATE channels SET credentials = $3, token_expires_at = $4, updated_at = now() WHERE org_id = $1 AND id = $2`,
+		orgID, id, credentials, expires)
+}
+
+// ChannelsExpiring lists active channels connected through an app whose
+// token expires before cutoff, in one org or (orgID nil) every org.
+func (s *Store) ChannelsExpiring(ctx context.Context, orgID *uuid.UUID, cutoff time.Time, limit int) ([]*model.Channel, error) {
+	rows, err := s.q.Query(ctx, `SELECT `+channelCols+` FROM channels WHERE app_id IS NOT NULL AND status = 'active'
+		AND token_expires_at < $1 AND ($3::uuid IS NULL OR org_id = $3) ORDER BY token_expires_at LIMIT $2`, cutoff, limit, orgID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Channel, error) { return scanChannel(r) })
 }
 
 func (s *Store) SetChannelStatus(ctx context.Context, orgID, id uuid.UUID, status model.ChannelStatus, note string) error {

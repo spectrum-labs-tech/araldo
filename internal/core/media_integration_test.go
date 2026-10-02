@@ -398,7 +398,7 @@ func (b *memBlobs) len() int {
 func TestMediaInObjectStorage(t *testing.T) {
 	t.Parallel()
 	blobs := &memBlobs{objects: map[string][]byte{}}
-	w := newWorld(t, func(c *core.Config) { c.Blobs = blobs })
+	w := newWorld(t, func(c *core.Config, _ *[]platform.Adapter) { c.Blobs = blobs })
 	ctx := t.Context()
 	data := pngOf(t, 40, 40)
 	m, err := w.s.CreateMedia(ctx, w.owner, core.MediaInput{BrandID: w.brand.ID, Data: data})

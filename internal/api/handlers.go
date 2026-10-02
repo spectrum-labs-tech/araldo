@@ -23,9 +23,10 @@ import (
 )
 
 func (h *Handler) routes() {
-	h.public("GET /v1/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
+	h.public("GET /v1/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) error {
 		w.Header().Set("Content-Type", "application/yaml")
 		_, _ = w.Write(contract.OpenAPI)
+		return nil
 	})
 	h.handle("GET /v1/platforms", h.listPlatforms)
 
@@ -54,6 +55,7 @@ func (h *Handler) routes() {
 	h.handle("GET /v1/media/{id}", h.getMedia)
 	h.handle("POST /v1/media/{id}", h.updateMedia)
 	h.handle("DELETE /v1/media/{id}", h.deleteMedia)
+	h.public("GET /v1/media/{id}/content", h.mediaContent, "expires", "signature")
 
 	h.handle("GET /v1/posts", h.listPosts, paged("brand", "status", "metadata", "q")...)
 	h.handle("POST /v1/posts", h.createPost)

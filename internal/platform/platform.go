@@ -95,6 +95,9 @@ type Media struct {
 	Size          int64
 	Width, Height int
 	Alt           string
+	// URL is a public, expiring link to the file, for platforms that fetch
+	// images themselves (ADR 0021); empty when the install cannot sign one.
+	URL string
 	// Open returns the file. Rule checks leave it nil.
 	Open func(ctx context.Context) (io.ReadCloser, error)
 }
@@ -273,4 +276,36 @@ type EngagementReader interface {
 	// RemoteRef.ID; a ref missing from the result was deleted. An error is
 	// a *Error.
 	Engagement(ctx context.Context, c Credentials, refs []RemoteRef) (map[string]Counts, error)
+}
+
+// App is a developer app's credentials (ADR 0021).
+type App struct {
+	ClientID     string
+	ClientSecret string
+}
+
+// Connection is an account a sign-in returned, ready to become a channel.
+type Connection struct {
+	Account     Account     `json:"account"`
+	Credentials Credentials `json:"credentials"`
+	// ExpiresAt is when the token expires, if it does.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
+// Connector is implemented by adapters whose channels connect with OAuth
+// (ADR 0021).
+type Connector interface {
+	// AuthorizeURL is where the member signs in and grants access.
+	// challenge is a PKCE S256 challenge, for platforms that take one.
+	AuthorizeURL(app App, redirectURI, state, challenge string) string
+	// Exchange turns the code the platform sent back (and the PKCE
+	// verifier) into the accounts the member can connect.
+	Exchange(ctx context.Context, app App, redirectURI, code, verifier string) ([]Connection, error)
+}
+
+// Refresher is implemented by adapters whose tokens expire and can be
+// renewed. An error is a *Error; AuthRevoked means the member must sign in
+// again.
+type Refresher interface {
+	Refresh(ctx context.Context, app App, c Credentials) (Credentials, *time.Time, error)
 }

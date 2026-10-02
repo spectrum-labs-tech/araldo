@@ -1,0 +1,44 @@
+{{define "content"}}
+{{$d := .Data}}
+<p class="mb-1 text-sm text-muted"><a href="/channels">Channels</a></p>
+<h1>Developer apps</h1>
+<p class="mb-4 text-muted">Some platforms connect through a developer app you register with them. Register the app, give it the
+redirect URI below, and add its ID and secret here; then connect channels through it. Secrets are stored encrypted.</p>
+
+{{if $d.Apps}}
+<table>
+  <thead><tr><th>App</th><th>Platform</th><th>Client ID</th><th>Added</th><th></th></tr></thead>
+  <tbody>
+  {{range $d.Apps}}
+  <tr>
+    <td>{{.Name}}</td>
+    <td><span class="inline-flex items-center gap-1.5">{{icon .Provider}} {{.Provider}}</span></td>
+    <td><code>{{.ClientID}}</code></td>
+    <td>{{fmtTime .CreatedAt}}</td>
+    <td><form method="post" action="/channels/apps/{{.ID}}/delete" data-confirm="Delete {{.Name}}? Its channels keep working until their tokens need renewing.">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger" aria-label="Delete {{.Name}}">Delete</button></form></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="text-muted">No apps yet.</p>{{end}}
+
+{{if $d.Providers}}
+<section class="card">
+  <h2>Add an app</h2>
+  <form method="post" action="/channels/apps" class="flex max-w-xl flex-col gap-4">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Platform
+      <select name="provider">{{range $d.Providers}}<option value="{{.Provider}}" {{if eq (index $d.Form "provider") (printf "%s" .Provider)}}selected{{end}}>{{.Name}}</option>{{end}}</select></label>
+    <dl class="facts text-sm">
+      {{range $d.Providers}}<dt>{{.Name}} redirect URI</dt><dd><code id="redirect-{{.Provider}}" class="copy-box">{{index $d.Redirects .Provider}}</code>
+        <button type="button" data-copy="redirect-{{.Provider}}">Copy</button></dd>{{end}}
+    </dl>
+    <label>Name <input name="name" maxlength="100" value="{{index $d.Form "name"}}" placeholder="Threads app"></label>
+    <label>Client ID (app ID) <input name="client_id" required maxlength="500" value="{{index $d.Form "client_id"}}" autocomplete="off"></label>
+    <label>Client secret (app secret) <input name="client_secret" type="password" required maxlength="500" autocomplete="off"></label>
+    <div><button class="btn-primary">Add app</button></div>
+  </form>
+</section>
+{{end}}
+{{end}}

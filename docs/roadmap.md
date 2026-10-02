@@ -26,6 +26,9 @@
 - Images on posts: uploads or URLs, checked against each platform's limits,
   stored in Postgres or S3-compatible storage
   ([ADR 0017](adr/0017-media.md)).
+- X and LinkedIn, connected with tokens from each platform's developer
+  portal (X: the app's keys and the account's access token; LinkedIn: a
+  member token, 60 days), with images.
 - An MCP server (`araldo mcp`, ADR 0020): assistants draft, check,
   schedule and follow up on posts through the API.
 - Administration by API (ADR 0019): channel recovery, brand slots, attempt
@@ -38,9 +41,11 @@
 
 ## Next
 
-1. **X, Facebook Pages, Instagram, Threads** (ported from ar15.build's
+1. **Facebook Pages, Instagram, Threads** (ported from ar15.build's
    `pkg/social`), with provider apps stored in the database
-   ([ADR 0009](adr/0009-platform-adapters.md)) and OAuth connect flows.
+   ([ADR 0009](adr/0009-platform-adapters.md)) and OAuth connect flows,
+   which X and LinkedIn then use too instead of pasted tokens; engagement
+   from X (it needs a paid API tier to read) and LinkedIn.
 2. **More media**: video, and resizing images to fit each platform.
 3. **ar15.build as the first tenant**: its daily featured build and brand
    posts sent through the API.

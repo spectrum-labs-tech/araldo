@@ -31,6 +31,10 @@ own products, but the API may still change.
   can simulate failures, so you can integrate before any platform approves
   anything.
 - **Signed webhooks** with retries and a delivery log.
+- **AI assistants** can use it: `araldo mcp` is an MCP server, so Claude
+  and other assistants can list your brands, draft a post, check it against
+  every platform, schedule it and see how it did, within what an API key
+  allows ([docs](docs/operations.md#ai-assistants-mcp)).
 - **Multi-tenant**: orgs, brands, members with roles, optional approvals,
   MFA, scoped API keys, an audit log. Secrets are envelope-encrypted per
   org.

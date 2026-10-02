@@ -36,6 +36,7 @@ func TestRun(t *testing.T) {
 		{name: "members add needs a target", args: []string{"members", "add", "--as", "a@example.com", "--role", "editor"}, wantCode: ExitUsage, wantStderr: "--email"},
 		{name: "members role needs a real role", args: []string{"members", "role", "--as", "a@example.com", "--email", "b@example.com", "--role", "boss"}, wantCode: ExitUsage, wantStderr: "--role is owner, admin, editor or viewer"},
 		{name: "org needs update", args: []string{"org"}, wantCode: ExitUsage, wantStderr: "org update"},
+		{name: "mcp needs a URL and key", args: []string{"mcp", "--url", ""}, wantCode: ExitUsage, wantStderr: "ARALDO_API_KEY"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

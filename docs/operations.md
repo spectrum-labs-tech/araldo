@@ -88,6 +88,49 @@ Roll a key in the dashboard, or have it roll itself with
 old one keeps working for 24 hours (`overlap_hours`, up to 168) so the new
 one can be deployed without downtime.
 
+## AI assistants (MCP)
+
+`araldo mcp` gives an AI assistant Araldo's tools over the Model Context
+Protocol ([ADR 0020](adr/0020-mcp.md)). It talks to an Araldo API with a
+key, so it needs no database, and the key decides what the assistant may
+do: start with a test key (its posts reach only sandbox channels), then a
+live key limited to the brand it should post for.
+
+| Tool | Does |
+|---|---|
+| `list_platforms`, `list_brands`, `list_channels`, `list_templates`, `get_template` | Read what there is (read-only). |
+| `upload_media_from_url` | Fetch an image for posts to attach. |
+| `preview_post` | Render a post per channel and list every rule it breaks (read-only). |
+| `create_post` | Schedule it (with an idempotency key, so a retry does not post twice). |
+| `list_posts`, `get_post` | Follow up: status, links, errors, engagement (read-only). |
+| `cancel_post` | Stop what has not published yet (marked destructive). |
+| `engagement_summary` | What did best, by post, channel or template (read-only). |
+
+Claude Code:
+
+```bash
+claude mcp add araldo --env ARALDO_URL=https://araldo.example.com \
+  --env ARALDO_API_KEY=ald_test_… -- araldo mcp
+```
+
+Claude Desktop (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "araldo": {
+      "command": "araldo",
+      "args": ["mcp"],
+      "env": { "ARALDO_URL": "https://araldo.example.com", "ARALDO_API_KEY": "ald_test_…" }
+    }
+  }
+}
+```
+
+The key needs `brands:read`, `channels:read` and `posts:read`/`posts:write`
+(and `templates:read` for templates); a key with no scopes listed has them
+all. It does not need, and should not have, an administrative scope.
+
 ## Members and org settings
 
 Members, their roles and the org's settings are for people, not API keys:

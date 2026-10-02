@@ -26,6 +26,8 @@
 - Images on posts: uploads or URLs, checked against each platform's limits,
   stored in Postgres or S3-compatible storage
   ([ADR 0017](adr/0017-media.md)).
+- An MCP server (`araldo mcp`, ADR 0020): assistants draft, check,
+  schedule and follow up on posts through the API.
 - Administration by API (ADR 0019): channel recovery, brand slots, attempt
   history, keys managing keys, approval and the audit log behind
   explicit-only scopes; members and org settings in the CLI.
@@ -43,7 +45,7 @@
 3. **ar15.build as the first tenant**: its daily featured build and brand
    posts sent through the API.
 4. **Developer tooling**: `araldo listen` (webhooks to localhost), the MCP
-   server, TypeScript and Go SDKs generated from the contract, a request
+   server over HTTP for hosted assistants, TypeScript and Go SDKs generated from the contract, a request
    log in the dashboard.
 5. **Passkeys** (WebAuthn) and OIDC single sign-on.
 6. **Backups** built in ([ADR 0013](adr/0013-backups.md)), and the rest of

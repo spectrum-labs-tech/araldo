@@ -1,0 +1,323 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/spectrum-labs-tech/araldo/internal/platform"
+)
+
+// Tool is one MCP tool: its contract for the assistant, and how it calls
+// the API.
+type Tool struct {
+	Name        string
+	Title       string
+	Description string
+	Input       map[string]any // JSON Schema of the arguments
+	// Hints for the assistant (MCP tool annotations).
+	ReadOnly, Destructive, Idempotent bool
+	Run                               func(ctx context.Context, args map[string]any) (json.RawMessage, error)
+}
+
+func (t Tool) describe() map[string]any {
+	return map[string]any{
+		"name": t.Name, "title": t.Title, "description": t.Description, "inputSchema": t.Input,
+		"annotations": map[string]any{
+			"title": t.Title, "readOnlyHint": t.ReadOnly, "destructiveHint": t.Destructive, "idempotentHint": t.Idempotent,
+			// Only writing reaches the outside world: social platforms.
+			"openWorldHint": !t.ReadOnly,
+		},
+	}
+}
+
+// Schema helpers.
+
+func object(required []string, props map[string]any) map[string]any {
+	s := map[string]any{"type": "object", "properties": props, "additionalProperties": false}
+	if len(required) > 0 {
+		s["required"] = required
+	}
+	return s
+}
+
+func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+
+func strs(desc string) map[string]any {
+	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
+}
+
+func enum(desc string, values ...string) map[string]any {
+	return map[string]any{"type": "string", "enum": values, "description": desc}
+}
+
+const (
+	brandDesc = "Brand ID (brand_…) or slug, from list_brands."
+	postDesc  = "Post ID (post_…)."
+)
+
+// postProps are the arguments a post takes, for preview and create.
+func postProps() map[string]any {
+	return map[string]any{
+		"brand":    str(brandDesc),
+		"body":     str("The post's text, when not using a template. A line containing only {{thread}} starts a new part of a thread."),
+		"template": str(`A template: "key", "key@version" or its ID (tmpl_…). Use with data, instead of body.`),
+		"data":     map[string]any{"type": "object", "description": "The template's data, matching its variables (see get_template)."},
+		"overrides": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"},
+			"description": "Text for particular platforms instead of body, keyed by provider (bluesky, mastodon, x…), e.g. a shorter version."},
+		"fit": enum("What to do where the text is too long for a platform: refuse (error, the default), shorten it with an ellipsis "+
+			"(truncate), or split it into a thread (thread).", "error", "truncate", "thread"),
+		"channels": strs("Channel IDs (chan_…) to post to. Default: every active channel of the brand."),
+		"media":    strs("Media IDs (media_…) from upload_media_from_url, attached in order, on the first part of a thread."),
+	}
+}
+
+// postBody turns post arguments into the API's post body.
+func postBody(args map[string]any) map[string]any {
+	body := map[string]any{}
+	for _, k := range []string{"brand", "template", "data", "channels", "media", "publish_at", "publish_by", "metadata"} {
+		if v, ok := args[k]; ok {
+			body[k] = v
+		}
+	}
+	text, hasText := args["body"].(string)
+	overrides, hasOverrides := args["overrides"].(map[string]any)
+	fit, hasFit := args["fit"].(string)
+	if hasText || hasOverrides || hasFit {
+		content := map[string]any{"body": text}
+		if hasOverrides {
+			content["overrides"] = overrides
+		}
+		if hasFit {
+			byPlatform := map[string]string{}
+			for _, p := range platform.Emulable() {
+				byPlatform[string(p)] = fit
+			}
+			content["fit"] = byPlatform
+		}
+		body["content"] = content
+	}
+	return body
+}
+
+func argString(args map[string]any, key string) string {
+	s, _ := args[key].(string)
+	return strings.TrimSpace(s)
+}
+
+func required(args map[string]any, key string) (string, error) {
+	if s := argString(args, key); s != "" {
+		return s, nil
+	}
+	return "", fmt.Errorf("%s is required", key)
+}
+
+// query builds query parameters from the string arguments named.
+func query(args map[string]any, keys ...string) url.Values {
+	q := url.Values{}
+	for _, k := range keys {
+		switch v := args[k].(type) {
+		case string:
+			if v != "" {
+				q.Set(k, v)
+			}
+		case float64:
+			q.Set(k, strconv.FormatFloat(v, 'f', -1, 64))
+		}
+	}
+	return q
+}
+
+// tools are Araldo's tools, in the order an assistant meets them.
+func tools(api *Client) []Tool {
+	get := func(path string, q url.Values) func(ctx context.Context) (json.RawMessage, error) {
+		return func(ctx context.Context) (json.RawMessage, error) {
+			return api.Do(ctx, http.MethodGet, path, q, nil, "")
+		}
+	}
+	return []Tool{
+		{
+			Name: "list_platforms", Title: "List platforms and their rules", ReadOnly: true, Idempotent: true,
+			Description: "Each platform's limits: maximum length and how it is counted, threads, images (types, sizes, aspect " +
+				"ratios). preview_post applies them; read this to write text that fits the first time.",
+			Input: object(nil, map[string]any{}),
+			Run: func(ctx context.Context, _ map[string]any) (json.RawMessage, error) {
+				return get("/v1/platforms", nil)(ctx)
+			},
+		},
+		{
+			Name: "list_brands", Title: "List brands", ReadOnly: true, Idempotent: true,
+			Description: "The brands (products) this key can post for, with their slugs, time zones, approval policies and weekly slots.",
+			Input:       object(nil, map[string]any{}),
+			Run: func(ctx context.Context, _ map[string]any) (json.RawMessage, error) {
+				return get("/v1/brands", nil)(ctx)
+			},
+		},
+		{
+			Name: "list_channels", Title: "List channels", ReadOnly: true, Idempotent: true,
+			Description: "The connected accounts posts go to: each channel's platform (provider), account and status. Only " +
+				"active channels publish.",
+			Input: object(nil, map[string]any{"brand": str("Only this brand's channels. " + brandDesc)}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				return get("/v1/channels", query(args, "brand"))(ctx)
+			},
+		},
+		{
+			Name: "list_templates", Title: "List templates", ReadOnly: true, Idempotent: true,
+			Description: "Saved post templates (without their bodies; get_template has those).",
+			Input: object(nil, map[string]any{
+				"brand": str("Only this brand's templates. " + brandDesc),
+				"key":   str("Only the template with this key."),
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				return get("/v1/templates", query(args, "brand", "key"))(ctx)
+			},
+		},
+		{
+			Name: "get_template", Title: "Get a template", ReadOnly: true, Idempotent: true,
+			Description: "A template's body, per-platform overrides, the JSON Schema its data must match, and examples.",
+			Input: object([]string{"template"}, map[string]any{
+				"template": str("The template's ID (tmpl_…), or its key together with brand."),
+				"brand":    str("The brand, when template is a key. " + brandDesc),
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				ref, err := required(args, "template")
+				if err != nil {
+					return nil, err
+				}
+				if !strings.HasPrefix(ref, "tmpl_") {
+					brand := argString(args, "brand")
+					if brand == "" {
+						return nil, errors.New("give the template's ID, or its key with brand")
+					}
+					list, err := api.Do(ctx, http.MethodGet, "/v1/templates", url.Values{"brand": {brand}, "key": {ref}}, nil, "")
+					if err != nil {
+						return nil, err
+					}
+					var found struct {
+						Data []struct {
+							ID string `json:"id"`
+						} `json:"data"`
+					}
+					if err := json.Unmarshal(list, &found); err != nil || len(found.Data) == 0 {
+						return nil, fmt.Errorf("no template with key %q in brand %q", ref, brand)
+					}
+					ref = found.Data[0].ID
+				}
+				return get("/v1/templates/"+url.PathEscape(ref), nil)(ctx)
+			},
+		},
+		{
+			Name: "upload_media_from_url", Title: "Add an image",
+			Description: "Fetches a JPEG, PNG, GIF or WebP image (up to 16 MiB) from a public URL and stores it for posts to " +
+				"attach. Returns its media ID. preview_post checks it against each platform's limits.",
+			Input: object([]string{"brand", "url"}, map[string]any{
+				"brand": str(brandDesc),
+				"url":   str("The image's public http(s) URL."),
+				"alt":   str("Alt text describing the image, for people who cannot see it (up to 1,000 characters). Please give it."),
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				body := map[string]any{"brand": argString(args, "brand"), "url": argString(args, "url")}
+				if alt := argString(args, "alt"); alt != "" {
+					body["alt"] = alt
+				}
+				return api.Do(ctx, http.MethodPost, "/v1/media", nil, body, "")
+			},
+		},
+		{
+			Name: "preview_post", Title: "Preview a post", ReadOnly: true, Idempotent: true,
+			Description: "Renders a post for each channel without saving it, and lists every rule it breaks (too long, too many " +
+				"images…) per channel. Fix every violation, then call create_post with the same arguments.",
+			Input: object([]string{"brand"}, postProps()),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				return api.Do(ctx, http.MethodPost, "/v1/posts/preview", nil, postBody(args), "")
+			},
+		},
+		{
+			Name: "create_post", Title: "Schedule a post",
+			Description: "Schedules a post to every chosen channel; the text is frozen as previewed. It may wait for approval " +
+				"if the brand requires it. With a test key it reaches only sandbox channels.",
+			Input: func() map[string]any {
+				props := postProps()
+				props["publish_at"] = str(`"now" (default), "next_slot" (the brand's next free weekly slot), or an RFC 3339 time.`)
+				props["publish_by"] = str("RFC 3339 time to give up publishing by (default: a day after publish_at).")
+				props["metadata"] = map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"},
+					"description": "Up to 50 string key-value pairs of your own, e.g. {\"campaign\": \"launch\"}."}
+				props["idempotency_key"] = str("Any unique string. Sending the same key again returns the first post instead of " +
+					"posting twice; give one when you might retry.")
+				return object([]string{"brand"}, props)
+			}(),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				key := argString(args, "idempotency_key")
+				if key == "" {
+					key = uuid.NewString()
+				}
+				return api.Do(ctx, http.MethodPost, "/v1/posts", nil, postBody(args), key)
+			},
+		},
+		{
+			Name: "list_posts", Title: "List posts", ReadOnly: true, Idempotent: true,
+			Description: "Posts, newest first, with each channel's status and latest engagement.",
+			Input: object(nil, map[string]any{
+				"brand":  str(brandDesc),
+				"status": enum("Only posts in this state.", "pending_approval", "scheduled", "publishing", "published", "partially_published", "failed", "canceled", "rejected"),
+				"q":      str("Only posts whose text contains this."),
+				"limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "How many (default 20)."},
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				return get("/v1/posts", query(args, "brand", "status", "q", "limit"))(ctx)
+			},
+		},
+		{
+			Name: "get_post", Title: "Get a post", ReadOnly: true, Idempotent: true,
+			Description: "A post with each channel's copy, status, link, last error and engagement.",
+			Input:       object([]string{"post"}, map[string]any{"post": str(postDesc)}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				id, err := required(args, "post")
+				if err != nil {
+					return nil, err
+				}
+				return get("/v1/posts/"+url.PathEscape(id), nil)(ctx)
+			},
+		},
+		{
+			Name: "cancel_post", Title: "Cancel a post", Destructive: true, Idempotent: true,
+			Description: "Stops every channel of a post that has not published yet. What has published stays published.",
+			Input:       object([]string{"post"}, map[string]any{"post": str(postDesc)}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				id, err := required(args, "post")
+				if err != nil {
+					return nil, err
+				}
+				return api.Do(ctx, http.MethodPost, "/v1/posts/"+url.PathEscape(id)+"/cancel", nil, map[string]any{}, "")
+			},
+		},
+		{
+			Name: "engagement_summary", Title: "Summarize engagement", ReadOnly: true, Idempotent: true,
+			Description: "Likes, reposts, replies and quotes of posts published in the last days, by post, channel or template, " +
+				"most engaging first. Use it to see what works. Clicks are in the brand's web analytics (UTM parameters).",
+			Input: object(nil, map[string]any{
+				"brand":    str(brandDesc),
+				"group_by": enum("How to group (default post).", "post", "channel", "template"),
+				"days":     map[string]any{"type": "integer", "minimum": 1, "maximum": 365, "description": "How far back (default 30)."},
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				q := query(args, "brand", "group_by")
+				if d, ok := args["days"].(float64); ok && d >= 1 {
+					q.Set("since", time.Now().Add(-time.Duration(d)*24*time.Hour).UTC().Format(time.RFC3339))
+				}
+				return get("/v1/engagement/summary", q)(ctx)
+			},
+		},
+	}
+}

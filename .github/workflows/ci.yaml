@@ -90,7 +90,7 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U araldo" --health-interval 2s --health-timeout 3s --health-retries 30
     env:
-      ARALDO_TEST_DSN: postgres://araldo:araldo@localhost:5432/araldo?sslmode=disable
+      ARALDO_TEST_DSN: postgres://araldo:araldo@localhost:5432/araldo?sslmode=disable&pool_max_conns=4
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7

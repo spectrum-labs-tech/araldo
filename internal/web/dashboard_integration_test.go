@@ -6,6 +6,7 @@ package web_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"html"
 	"image"
@@ -19,6 +20,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +34,14 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform/sandbox"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
 	"github.com/spectrum-labs-tech/araldo/internal/web"
+)
+
+// One store for the package's tests: a pool per test would exhaust
+// Postgres's connections when every package runs at once.
+var (
+	setupOnce sync.Once
+	shared    *store.Store
+	setupErr  error
 )
 
 // dash is a signed-in owner's dashboard over a fresh org with one brand
@@ -52,14 +62,16 @@ func newDash(t *testing.T) *dash {
 		t.Skip("ARALDO_TEST_DSN not set (task db:up && task test:integration)")
 	}
 	ctx := t.Context()
-	st, err := store.Open(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
+	setupOnce.Do(func() {
+		shared, setupErr = store.Open(context.Background(), dsn)
+		if setupErr == nil {
+			setupErr = shared.Migrate(context.Background())
+		}
+	})
+	if setupErr != nil {
+		t.Fatal(setupErr)
 	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx); err != nil {
-		t.Fatal(err)
-	}
+	st := shared
 	mk, err := keyring.ParseMasterKeys("test:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 	if err != nil {
 		t.Fatal(err)

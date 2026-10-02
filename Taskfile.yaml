@@ -70,7 +70,9 @@ tasks:
   test:integration:
     desc: Run integration tests against the local Postgres (task db:up first); they never clean up
     env:
-      ARALDO_TEST_DSN: "{{.DEV_DSN}}"
+      # Every test package opens its own pool; a small one each keeps them
+      # all under Postgres's connection limit.
+      ARALDO_TEST_DSN: "{{.DEV_DSN}}&pool_max_conns=4"
     cmd: go test -tags=integration -count=1 ./...
 
   test:cover:

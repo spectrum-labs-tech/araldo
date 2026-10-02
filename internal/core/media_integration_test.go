@@ -133,7 +133,8 @@ func TestImageOnlyPost(t *testing.T) {
 		t.Fatalf("a post with an image and no text: %v", err)
 	}
 	if got := settle(t, w, p.ID); got.Status != model.PostPublished {
-		t.Fatalf("status %s", got.Status)
+		tg := got.Targets[0]
+		t.Fatalf("status %s; target %s, attempts %d, error %s: %s", got.Status, tg.Status, tg.Attempts, tg.ErrorCode, tg.ErrorMessage)
 	}
 	if _, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{}}); !hasProblem(err, "content_empty") {
 		t.Fatalf("a post with neither: %v", err)

@@ -1,0 +1,149 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+//go:build integration
+
+package core_test
+
+import (
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/spectrum-labs-tech/araldo/internal/apperr"
+	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/store"
+)
+
+func TestEngagementIsReadOnSchedule(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	p, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "Launch day"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := settle(t, w, p.ID)
+	tg := got.Targets[0]
+	if tg.Status != model.TargetPublished || tg.Engagement == nil || tg.Engagement.State != model.EngagementCollecting ||
+		tg.Engagement.ReadAt != nil || tg.Engagement.NextReadAt == nil {
+		t.Fatalf("after publishing: %s, engagement %+v", tg.Status, tg.Engagement)
+	}
+	firstRead := *tg.Engagement.NextReadAt
+	if d := firstRead.Sub(*tg.PublishedAt); d < 59*time.Minute || d > 61*time.Minute {
+		t.Fatalf("first reading %s after publishing, want an hour", d)
+	}
+
+	// Nothing is due yet.
+	if n, err := core.CollectEngagementOrg(w.s, w.org.ID); err != nil || n != 0 {
+		t.Fatalf("collecting before the first reading: %d, %v", n, err)
+	}
+
+	// Two hours later the first reading happens; the next is at six hours.
+	w.s.Now = func() time.Time { return tg.PublishedAt.Add(2 * time.Hour) }
+	if n, err := core.CollectEngagementOrg(w.s, w.org.ID); err != nil || n != 1 {
+		t.Fatalf("collecting at +2h: %d, %v", n, err)
+	}
+	got, err = w.s.Post(ctx, w.owner, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := got.Targets[0].Engagement
+	if e.ReadAt == nil || e.NextReadAt == nil || !e.NextReadAt.Equal(tg.PublishedAt.Add(6*time.Hour)) || e.Views == nil {
+		t.Fatalf("after the first reading: %+v", e)
+	}
+	if v := core.ViewPost(got).Targets[0].Engagement; v == nil || v.Total != e.Total() || v.State != model.EngagementCollecting {
+		t.Fatalf("view %+v", v)
+	}
+
+	// Past the last scheduled reading, the schedule ends.
+	w.s.Now = func() time.Time { return tg.PublishedAt.Add(31 * 24 * time.Hour) }
+	if n, err := core.CollectEngagementOrg(w.s, w.org.ID); err != nil || n != 1 {
+		t.Fatalf("collecting at +31d: %d, %v", n, err)
+	}
+	readings, err := w.s.EngagementReadings(ctx, w.owner, tg.ID)
+	if err != nil || len(readings) != 2 {
+		t.Fatalf("readings: %d, %v", len(readings), err)
+	}
+	got, _ = w.s.Post(ctx, w.owner, p.ID)
+	if e := got.Targets[0].Engagement; e.State != model.EngagementDone || e.NextReadAt != nil {
+		t.Fatalf("after the schedule: %+v", e)
+	}
+	if n, _ := core.CollectEngagementOrg(w.s, w.org.ID); n != 0 {
+		t.Fatalf("collected %d after the schedule ended", n)
+	}
+}
+
+func TestEngagementSummary(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	var published time.Time
+	var target uuid.UUID
+	for _, body := range []string{"First", "Second", "Third"} {
+		p, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: body}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tg := settle(t, w, p.ID).Targets[0]
+		published, target = *tg.PublishedAt, tg.ID
+	}
+	w.s.Now = func() time.Time { return published.Add(2 * time.Hour) }
+	if n, err := core.CollectEngagementOrg(w.s, w.org.ID); err != nil || n != 3 {
+		t.Fatalf("collected %d, %v", n, err)
+	}
+	window := core.EngagementFilter{Since: published.Add(-time.Hour), Until: published.Add(time.Hour)}
+
+	posts, err := w.s.EngagementSummary(ctx, w.owner, window)
+	if err != nil || len(posts) != 3 {
+		t.Fatalf("by post: %d rows, %v", len(posts), err)
+	}
+	for i := 1; i < len(posts); i++ {
+		if posts[i].Total() > posts[i-1].Total() {
+			t.Fatalf("rows not sorted by engagement: %+v", posts)
+		}
+	}
+	var sum int64
+	for _, r := range posts {
+		sum += r.Total()
+		if r.Posts != 1 || r.Label == "" {
+			t.Fatalf("post row %+v", r)
+		}
+	}
+	window.GroupBy = store.GroupByChannel
+	chans, err := w.s.EngagementSummary(ctx, w.owner, window)
+	if err != nil || len(chans) != 1 || chans[0].Posts != 3 || chans[0].Total() != sum || chans[0].Label != w.channel.DisplayName ||
+		chans[0].Provider != "sandbox" || *chans[0].ID != w.channel.ID {
+		t.Fatalf("by channel: %+v, %v (total want %d)", chans, err, sum)
+	}
+	window.GroupBy = store.GroupByTemplate
+	tmpls, err := w.s.EngagementSummary(ctx, w.owner, window)
+	if err != nil || len(tmpls) != 1 || tmpls[0].ID != nil || tmpls[0].Posts != 3 {
+		t.Fatalf("by template: %+v, %v", tmpls, err)
+	}
+
+	// Another org sees none of it.
+	other := newWorld(t)
+	if rows, err := other.s.EngagementSummary(ctx, other.owner, window); err != nil || len(rows) != 0 {
+		t.Fatalf("another org's summary: %d rows, %v", len(rows), err)
+	}
+	if _, err := other.s.EngagementReadings(ctx, other.owner, target); kind(err) != apperr.KindNotFound {
+		t.Fatalf("another org's readings: %v, want not found", err)
+	}
+}
+
+func TestEngagementSummaryValidates(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	now := time.Now()
+	for _, f := range []core.EngagementFilter{
+		{GroupBy: "day"},
+		{Since: now, Until: now.Add(-time.Hour)},
+		{Since: now.Add(-400 * 24 * time.Hour), Until: now},
+	} {
+		if _, err := w.s.EngagementSummary(t.Context(), w.owner, f); kind(err) != apperr.KindInvalid {
+			t.Errorf("summary %+v: %v, want invalid", f, err)
+		}
+	}
+}

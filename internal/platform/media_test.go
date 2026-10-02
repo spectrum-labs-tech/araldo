@@ -70,3 +70,17 @@ func TestMultipart(t *testing.T) {
 		t.Fatalf("file %q %q %v", fh.Filename, fh.Header.Get("Content-Type"), data)
 	}
 }
+
+func TestCountsAdd(t *testing.T) {
+	t.Parallel()
+	v := int64(10)
+	a := Counts{Likes: 1, Reposts: 2, Replies: 3, Quotes: 4}
+	b := Counts{Likes: 10, Views: &v}
+	sum := a.Add(b)
+	if sum.Likes != 11 || sum.Total() != 20 || sum.Views == nil || *sum.Views != 10 {
+		t.Fatalf("sum %+v", sum)
+	}
+	if a.Add(a).Views != nil {
+		t.Fatal("views appeared from nowhere")
+	}
+}

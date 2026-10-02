@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/media"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
 // MaxPostForm bounds the new-post form, which can carry four images at
@@ -449,6 +451,24 @@ var funcs = template.FuncMap{
 	"userID":     func(u uuid.UUID) string { return id.Format(id.User, u) },
 	"deliveryID": func(u uuid.UUID) string { return id.Format(id.Delivery, u) },
 	"mediaID":    func(u uuid.UUID) string { return id.Format(id.Media, u) },
+	"rowID": func(group string, u *uuid.UUID) string {
+		return core.EngagementRowID(store.EngagementGroup(group), u)
+	},
+	// engagement adds up a post's latest readings; "" before any.
+	"engagement": func(ts []model.Target) string {
+		var total int64
+		read := false
+		for _, t := range ts {
+			if t.Engagement != nil && t.Engagement.ReadAt != nil {
+				total += t.Engagement.Total()
+				read = true
+			}
+		}
+		if !read {
+			return ""
+		}
+		return strconv.FormatInt(total, 10)
+	},
 	"fileSize": func(n int64) string {
 		switch {
 		case n >= 1_000_000:

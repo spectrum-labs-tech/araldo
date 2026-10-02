@@ -62,6 +62,13 @@
     {{if eq .Status "queued"}}<dt>Next attempt</dt><dd>{{fmtTime .NextAttemptAt}}</dd>{{end}}
     {{if .PublishedAt}}<dt>Published</dt><dd>{{fmtTime .PublishedAt}}</dd>{{end}}
     {{if .Permalink}}<dt>Link</dt><dd><a href="{{safeURL .Permalink}}" rel="noopener" target="_blank">{{.Permalink}}</a></dd>{{end}}
+    {{with .Engagement}}<dt>Engagement</dt><dd>
+      {{if eq .State "unsupported"}}<span class="text-muted">This platform does not report engagement.</span>
+      {{else if .ReadAt}}{{.Likes}} likes · {{.Reposts}} reposts · {{.Replies}} replies · {{.Quotes}} quotes{{with .Views}} · {{.}} views{{end}}
+        <span class="text-muted">({{if eq .State "deleted"}}the post was deleted; {{end}}read {{ago (derefTime .ReadAt)}}{{if .NextReadAt}}, next {{ago (derefTime .NextReadAt)}}{{end}})</span>
+      {{else if .NextReadAt}}<span class="text-muted">First reading {{ago (derefTime .NextReadAt)}}.</span>{{end}}
+      {{if .Error}}<span class="text-sm text-muted">Last try: {{.Error}}</span>{{end}}
+    </dd>{{end}}
     {{if .ErrorCode}}<dt>Last error</dt><dd><code>{{.ErrorCode}}</code> {{.ErrorMessage}}</dd>{{end}}
   </dl>
   {{if eq .Status "needs_attention"}}

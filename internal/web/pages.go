@@ -110,6 +110,7 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /sandbox/{id}", s.app("posts", s.sandboxPost))
 	s.mux.HandleFunc("GET /media/{id}", s.app("posts", s.mediaFile))
+	s.mux.HandleFunc("GET /performance", s.app("performance", s.performance))
 }
 
 func cacheStatic(h http.Handler) http.Handler {
@@ -403,6 +404,49 @@ func (s *Server) mediaFile(c *reqCtx) error {
 	h.Set("Content-Disposition", "inline")
 	_, _ = io.Copy(c.w, rc)
 	return nil
+}
+
+type performanceData struct {
+	Brands    []*model.Brand
+	Brand     string
+	Days      int
+	Since     time.Time
+	Posts     []core.EngagementRow
+	Channels  []core.EngagementRow
+	Templates []core.EngagementRow
+}
+
+// performance ranks posts, channels and templates by engagement over the
+// last days (ADR 0018).
+func (s *Server) performance(c *reqCtx) error {
+	q := c.r.URL.Query()
+	d := performanceData{Days: 30, Brand: q.Get("brand")}
+	if n, err := strconv.Atoi(q.Get("days")); err == nil && n >= 1 && n <= 365 {
+		d.Days = n
+	}
+	var err error
+	if d.Brands, err = s.svc.Brands(c.ctx(), c.actor); err != nil {
+		return err
+	}
+	now := time.Now()
+	d.Since = now.Add(-time.Duration(d.Days) * 24 * time.Hour)
+	f := core.EngagementFilter{Since: d.Since, Until: now}
+	if d.Brand != "" {
+		b, err := s.svc.ResolveBrand(c.ctx(), c.actor, d.Brand)
+		if err != nil {
+			return err
+		}
+		f.BrandID = &b.ID
+	}
+	for group, dst := range map[store.EngagementGroup]*[]core.EngagementRow{
+		store.GroupByPost: &d.Posts, store.GroupByChannel: &d.Channels, store.GroupByTemplate: &d.Templates,
+	} {
+		f.GroupBy = group
+		if *dst, err = s.svc.EngagementSummary(c.ctx(), c.actor, f); err != nil {
+			return err
+		}
+	}
+	return s.page(c, "performance", "performance", "Performance", d)
 }
 
 type postDetailData struct {

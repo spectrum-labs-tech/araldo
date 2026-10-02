@@ -53,6 +53,11 @@ every problem in `errors`, each with its own `code` and `param`.
 - **simulation_in_live_mode**, **simulation_invalid**:
   `metadata.araldo_simulate` is for test mode, with a known value.
 
+## Engagement
+
+- **group_by_invalid**: group a summary by `post`, `channel` or `template`.
+- **window_invalid**: `since` must be before `until`, at most a year apart.
+
 ## Media
 
 - **file_missing** (400): upload the image as `multipart/form-data` in a

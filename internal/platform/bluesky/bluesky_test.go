@@ -4,6 +4,7 @@ package bluesky
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -224,5 +225,47 @@ func TestUnreadableImageIsTransient(t *testing.T) {
 	_, err := a.Publish(t.Context(), creds, p, nil)
 	if platform.KindOf(err) != platform.Transient || f.creates != 0 {
 		t.Fatalf("Publish = %v with %d creates; want a transient error and no post", err, f.creates)
+	}
+}
+
+func TestEngagementBatchesPublicReads(t *testing.T) {
+	t.Parallel()
+	var calls [][]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/xrpc/app.bsky.feed.getPosts" || r.Header.Get("Authorization") != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		uris := r.URL.Query()["uris"]
+		calls = append(calls, uris)
+		var posts []map[string]any
+		for i, u := range uris {
+			if strings.HasSuffix(u, "/gone") {
+				continue // deleted posts are left out of the answer
+			}
+			posts = append(posts, map[string]any{"uri": u, "likeCount": i + 1, "repostCount": 2, "replyCount": 3, "quoteCount": 4})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"posts": posts})
+	}))
+	defer srv.Close()
+	a := New(srv.Client())
+	a.AppView = srv.URL
+	var refs []platform.RemoteRef
+	for i := range 30 {
+		refs = append(refs, platform.RemoteRef{ID: fmt.Sprintf("at://did:plc:abc/app.bsky.feed.post/%d", i)})
+	}
+	refs = append(refs, platform.RemoteRef{ID: "at://did:plc:abc/app.bsky.feed.post/gone"})
+	got, err := a.Engagement(t.Context(), nil, refs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 || len(calls[0]) != 25 || len(calls[1]) != 6 {
+		t.Fatalf("calls of %d and %d URIs, want 25 and 6", len(calls[0]), len(calls[len(calls)-1]))
+	}
+	if len(got) != 30 {
+		t.Fatalf("%d posts read, want 30 (the deleted one missing)", len(got))
+	}
+	if c := got[refs[0].ID]; c != (platform.Counts{Likes: 1, Reposts: 2, Replies: 3, Quotes: 4}) {
+		t.Fatalf("counts %+v", c)
 	}
 }

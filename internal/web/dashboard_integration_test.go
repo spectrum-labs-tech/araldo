@@ -18,23 +18,33 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
+	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/sandbox"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
 	"github.com/spectrum-labs-tech/araldo/internal/web"
 )
 
-// TestPostFormCarriesImages drives the new-post form as a browser would: an
-// upload with a preview, which must keep the image (browsers forget files),
-// then scheduling with an edited alt text.
-func TestPostFormCarriesImages(t *testing.T) {
-	t.Parallel()
+// dash is a signed-in owner's dashboard over a fresh org with one brand
+// and a sandbox channel imitating Bluesky. Tests never clean up.
+type dash struct {
+	s     *core.Service
+	st    *store.Store
+	login *core.LoginResult
+	owner core.Actor
+	brand *model.Brand
+	send  func(*http.Request) *httptest.ResponseRecorder
+}
+
+func newDash(t *testing.T) *dash {
+	t.Helper()
 	dsn := os.Getenv("ARALDO_TEST_DSN")
 	if dsn == "" {
 		t.Skip("ARALDO_TEST_DSN not set (task db:up && task test:integration)")
@@ -78,16 +88,27 @@ func TestPostFormCarriesImages(t *testing.T) {
 	if _, err := s.ConnectChannel(ctx, owner, core.ConnectInput{BrandID: b.ID, Provider: platform.Sandbox, Fields: map[string]string{"emulates": "bluesky"}}); err != nil {
 		t.Fatal(err)
 	}
-	dash, err := web.New(s, log, web.Config{})
+	srv, err := web.New(s, log, web.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	send := func(r *http.Request) *httptest.ResponseRecorder {
 		r.AddCookie(&http.Cookie{Name: "araldo_session", Value: login.Token})
 		rec := httptest.NewRecorder()
-		dash.ServeHTTP(rec, r)
+		srv.ServeHTTP(rec, r)
 		return rec
 	}
+	return &dash{s: s, st: st, login: login, owner: owner, brand: b, send: send}
+}
+
+// TestPostFormCarriesImages drives the new-post form as a browser would: an
+// upload with a preview, which must keep the image (browsers forget files),
+// then scheduling with an edited alt text.
+func TestPostFormCarriesImages(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	s, login, b, owner, send := d.s, d.login, d.brand, d.owner, d.send
 	post := func(fields [][2]string, file []byte) *httptest.ResponseRecorder {
 		var buf bytes.Buffer
 		w := multipart.NewWriter(&buf)
@@ -144,5 +165,57 @@ func TestPostFormCarriesImages(t *testing.T) {
 	rec = send(httptest.NewRequest(http.MethodGet, loc, nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `src="/media/`+mediaRef+`"`) {
 		t.Fatalf("post page: %d, shows the image: %v", rec.Code, strings.Contains(rec.Body.String(), mediaRef))
+	}
+}
+
+func TestPerformancePage(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	p, err := d.s.CreatePost(ctx, d.owner, core.PostInput{BrandID: d.brand.ID, Content: &model.Content{Body: "Launch day for the new site"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tg model.Target
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := d.s.PublishDue(ctx, "web-test"); err != nil {
+			t.Fatal(err)
+		}
+		got, err := d.s.Post(ctx, d.owner, p.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tg = got.Targets[0]; tg.Status == model.TargetPublished {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("not published: %s", tg.Status)
+		}
+	}
+
+	// Before any reading the pages say so.
+	rec := d.send(httptest.NewRequest(http.MethodGet, "/performance", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Nothing read yet") {
+		t.Fatalf("performance before readings: %d\n%s", rec.Code, rec.Body)
+	}
+
+	// The collector's work, on this test's own target.
+	views := int64(900)
+	if err := d.st.RecordEngagement(ctx, tg.OrgID, tg.ID, time.Now(), platform.Counts{Likes: 41, Reposts: 7, Replies: 3, Quotes: 1, Views: &views}, nil); err != nil {
+		t.Fatal(err)
+	}
+	rec = d.send(httptest.NewRequest(http.MethodGet, "/performance?days=7&brand="+id.Format(id.Brand, d.brand.ID), nil))
+	page := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(page, "Launch day for the new site") || !strings.Contains(page, `<td class="text-right">52</td>`) ||
+		!strings.Contains(page, "Written by hand") || !strings.Contains(page, "Sandbox Bluesky") {
+		t.Fatalf("performance with a reading: %d\n%s", rec.Code, page)
+	}
+	rec = d.send(httptest.NewRequest(http.MethodGet, "/posts/"+id.Format(id.Post, p.ID), nil))
+	if !strings.Contains(rec.Body.String(), "41 likes · 7 reposts · 3 replies · 1 quotes · 900 views") {
+		t.Fatalf("post page lacks its engagement:\n%s", rec.Body)
+	}
+	rec = d.send(httptest.NewRequest(http.MethodGet, "/posts", nil))
+	if !strings.Contains(rec.Body.String(), "<td>52</td>") {
+		t.Fatalf("posts list lacks the engagement total:\n%s", rec.Body)
 	}
 }

@@ -196,3 +196,33 @@ func TestMediaScopeMissing(t *testing.T) {
 		t.Fatal("posted without the image")
 	}
 }
+
+func TestEngagement(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Header.Get("Authorization") != "Bearer tok":
+			w.WriteHeader(http.StatusUnauthorized)
+		case r.URL.Path == "/api/v1/statuses/1":
+			_, _ = w.Write([]byte(`{"id":"1","favourites_count":7,"reblogs_count":3,"replies_count":2}`)) //nolint:misspell // the API's spelling
+		case r.URL.Path == "/api/v1/statuses/2":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"Record not found"}`))
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+	a := New(srv.Client())
+	creds := platform.Credentials{"instance": srv.URL, "access_token": "tok"}
+	got, err := a.Engagement(t.Context(), creds, []platform.RemoteRef{{ID: "1"}, {ID: "2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got["1"] != (platform.Counts{Likes: 7, Reposts: 3, Replies: 2}) {
+		t.Fatalf("Engagement = %+v, want status 1's counts and status 2 missing", got)
+	}
+	if _, err := a.Engagement(t.Context(), creds, []platform.RemoteRef{{ID: "3"}}); platform.KindOf(err) != platform.Transient {
+		t.Fatalf("a server error: %v", err)
+	}
+}

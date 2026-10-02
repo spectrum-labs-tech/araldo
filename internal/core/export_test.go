@@ -25,3 +25,9 @@ func InstrumentOrg(s *Service, mp metric.MeterProvider, org uuid.UUID) error {
 func PruneUnusedMediaOrg(s *Service, org uuid.UUID) (int, error) {
 	return s.pruneUnusedMedia(context.Background(), &org)
 }
+
+// CollectEngagementOrg is CollectEngagement for one org, so a test reads
+// only its own targets.
+func CollectEngagementOrg(s *Service, org uuid.UUID) (int, error) {
+	return s.collectEngagement(context.Background(), &org)
+}

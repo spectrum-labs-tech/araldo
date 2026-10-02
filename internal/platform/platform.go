@@ -235,3 +235,42 @@ func (r *Registry) Providers() []Provider {
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
 }
+
+// Counts is a post's engagement (ADR 0018). Views is nil where the
+// platform does not report it.
+type Counts struct {
+	Likes   int64  `json:"likes"`
+	Reposts int64  `json:"reposts"`
+	Replies int64  `json:"replies"`
+	Quotes  int64  `json:"quotes"`
+	Views   *int64 `json:"views,omitempty"`
+}
+
+// Total is likes, reposts, replies and quotes together.
+func (c Counts) Total() int64 { return c.Likes + c.Reposts + c.Replies + c.Quotes }
+
+// Add returns c plus o; views stay unknown unless one side knows them.
+func (c Counts) Add(o Counts) Counts {
+	out := Counts{Likes: c.Likes + o.Likes, Reposts: c.Reposts + o.Reposts, Replies: c.Replies + o.Replies, Quotes: c.Quotes + o.Quotes}
+	if c.Views != nil || o.Views != nil {
+		v := deref(c.Views) + deref(o.Views)
+		out.Views = &v
+	}
+	return out
+}
+
+func deref(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// EngagementReader is implemented by adapters whose platform reports
+// engagement (ADR 0018).
+type EngagementReader interface {
+	// Engagement returns the counts of each ref the platform still has, by
+	// RemoteRef.ID; a ref missing from the result was deleted. An error is
+	// a *Error.
+	Engagement(ctx context.Context, c Credentials, refs []RemoteRef) (map[string]Counts, error)
+}

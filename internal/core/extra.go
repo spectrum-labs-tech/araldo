@@ -107,6 +107,7 @@ func (s *Service) Tasks() []opsched.Task {
 			return s.store.PruneSessions(ctx, s.Now())
 		}},
 		{Name: "media.prune", Interval: time.Hour, Run: s.PruneUnusedMedia},
+		{Name: "engagement.collect", Interval: 2 * time.Minute, Timeout: 5 * time.Minute, Run: s.CollectEngagement},
 	}
 }
 

@@ -184,3 +184,32 @@ func (a *Adapter) upload(ctx context.Context, base string, c platform.Credential
 	}
 	return ids, nil
 }
+
+// Engagement reads each status's like, boost, reply and quote counts
+// (https://docs.joinmastodon.org/entities/Status/). A status the server
+// answers 404 for was deleted.
+func (a *Adapter) Engagement(ctx context.Context, c platform.Credentials, refs []platform.RemoteRef) (map[string]platform.Counts, error) {
+	base, err := instance(c)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]platform.Counts{}
+	for _, r := range refs {
+		var st struct {
+			Likes   int64 `json:"favourites_count"` //nolint:misspell // the API's spelling
+			Reblogs int64 `json:"reblogs_count"`
+			Replies int64 `json:"replies_count"`
+			Quotes  int64 `json:"quotes_count"`
+		}
+		err := platform.JSON(ctx, a.Client, http.MethodGet, base+"/api/v1/statuses/"+url.PathEscape(r.ID), headers(c), nil, &st)
+		var pe *platform.Error
+		if errors.As(err, &pe) && pe.Kind == platform.Rejected && strings.HasPrefix(pe.Msg, "HTTP 404") {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out[r.ID] = platform.Counts{Likes: st.Likes, Reposts: st.Reblogs, Replies: st.Replies, Quotes: st.Quotes}
+	}
+	return out, nil
+}

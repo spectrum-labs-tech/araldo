@@ -55,6 +55,7 @@ posts on every platform your users read. This page is the map; the
 | Template | Versioned text with a JSON Schema for its data and per-platform bodies. |
 | Post | Something to publish, to one or more channels. |
 | Media | An uploaded image a post attaches; checked against each channel's platform. |
+| Engagement | A published target's likes, reposts, replies and quotes, read on a schedule ([ADR 0018](adr/0018-engagement.md)). |
 | Target | One channel's copy of a post: the unit of publishing work. |
 | Event | A record of something that happened, kept 30 days, delivered to webhooks. |
 | Mode | Test or live. Decided by the API key (or the dashboard switch). |

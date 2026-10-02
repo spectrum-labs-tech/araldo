@@ -8,6 +8,8 @@ package sandbox
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"strings"
 	"time"
@@ -114,4 +116,17 @@ func (a *Adapter) Publish(ctx context.Context, _ platform.Credentials, p platfor
 	}
 	res.Permalink = a.BaseURL + "/sandbox/" + p.Key
 	return res, nil
+}
+
+// Engagement invents counts, the same for a ref every time, so test mode
+// has numbers to report on (ADR 0018). They mean nothing.
+func (a *Adapter) Engagement(_ context.Context, _ platform.Credentials, refs []platform.RemoteRef) (map[string]platform.Counts, error) {
+	out := map[string]platform.Counts{}
+	for _, r := range refs {
+		sum := sha256.Sum256([]byte(r.ID))
+		n := func(i int, mod uint16) int64 { return int64(binary.BigEndian.Uint16(sum[2*i:]) % mod) }
+		views := 100 + n(4, 5000)
+		out[r.ID] = platform.Counts{Likes: n(0, 60), Reposts: n(1, 15), Replies: n(2, 8), Quotes: n(3, 4), Views: &views}
+	}
+	return out, nil
 }

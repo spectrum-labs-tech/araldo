@@ -89,3 +89,20 @@ func TestPublishReadsImages(t *testing.T) {
 		t.Fatalf("Publish with an unreadable image = %v, want transient", err)
 	}
 }
+
+func TestEngagementIsStable(t *testing.T) {
+	t.Parallel()
+	a := New("https://araldo.test")
+	refs := []platform.RemoteRef{{ID: "sbx_a_1"}, {ID: "sbx_b_1"}}
+	first, err := a.Engagement(t.Context(), nil, refs)
+	if err != nil || len(first) != 2 {
+		t.Fatalf("Engagement = %v, %v", first, err)
+	}
+	again, _ := a.Engagement(t.Context(), nil, refs)
+	for _, r := range refs {
+		f, g := first[r.ID], again[r.ID]
+		if f.Total() != g.Total() || f.Views == nil || *f.Views != *g.Views {
+			t.Fatalf("%s: %+v then %+v, want the same invented counts", r.ID, f, g)
+		}
+	}
+}

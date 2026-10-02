@@ -58,6 +58,8 @@ func (h *Handler) routes() {
 	h.handle("POST /v1/posts/{id}/cancel", h.cancelPost)
 	h.handle("POST /v1/post_targets/{id}/retry", h.retryTarget)
 	h.handle("POST /v1/post_targets/{id}/mark_published", h.markPublished)
+	h.handle("GET /v1/post_targets/{id}/engagement", h.listEngagement)
+	h.handle("GET /v1/engagement/summary", h.engagementSummary)
 
 	h.handle("GET /v1/events", h.listEvents)
 	h.handle("GET /v1/events/{id}", h.getEvent)

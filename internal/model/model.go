@@ -369,6 +369,32 @@ type Target struct {
 	UpdatedAt     time.Time
 	// Filled by some reads.
 	ChannelName string
+	// Engagement is the latest reading, once the target is published.
+	Engagement *Engagement
+}
+
+// Engagement states (ADR 0018).
+const (
+	EngagementCollecting  = "collecting"
+	EngagementDone        = "done"
+	EngagementDeleted     = "deleted"
+	EngagementUnsupported = "unsupported"
+)
+
+// Engagement is a published target's latest engagement reading (ADR 0018).
+type Engagement struct {
+	platform.Counts
+	State string
+	// ReadAt is nil until the first reading.
+	ReadAt     *time.Time
+	NextReadAt *time.Time
+	Error      string
+}
+
+// EngagementReading is one reading of a target's engagement.
+type EngagementReading struct {
+	platform.Counts
+	ReadAt time.Time
 }
 
 // Attempt is one try at publishing a target.

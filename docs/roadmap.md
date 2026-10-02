@@ -26,6 +26,10 @@
 - Images on posts: uploads or URLs, checked against each platform's limits,
   stored in Postgres or S3-compatible storage
   ([ADR 0017](adr/0017-media.md)).
+- Engagement: likes, reposts, replies and quotes read from Bluesky and
+  Mastodon on a schedule after publishing, with a summary by post, channel
+  and template and the dashboard's Performance page
+  ([ADR 0018](adr/0018-engagement.md)).
 
 ## Next
 

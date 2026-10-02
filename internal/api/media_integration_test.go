@@ -237,3 +237,32 @@ func TestImportByURL(t *testing.T) {
 		t.Fatalf("import: %d %v", status, m)
 	}
 }
+
+func TestEngagementEndpoints(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	status, got := c.do(http.MethodGet, "/v1/engagement/summary?group_by=channel&brand="+c.brand, "", nil, nil)
+	if data, ok := got["data"].([]any); status != http.StatusOK || !ok || len(data) != 0 || got["group_by"] != "channel" {
+		t.Fatalf("summary of a new org: %d %v", status, got)
+	}
+	tests := []struct {
+		query  string
+		status int
+		code   string
+	}{
+		{"group_by=day", http.StatusUnprocessableEntity, "group_by_invalid"},
+		{"since=yesterday", http.StatusBadRequest, "parameter_invalid"},
+		{"limit=0", http.StatusBadRequest, "parameter_invalid"},
+		{"since=2026-10-02T00:00:00Z&until=2026-10-01T00:00:00Z", http.StatusUnprocessableEntity, "window_invalid"},
+	}
+	for _, tt := range tests {
+		status, got := c.do(http.MethodGet, "/v1/engagement/summary?"+tt.query, "", nil, nil)
+		if status != tt.status || got["code"] != tt.code {
+			t.Errorf("summary?%s: %d %v, want %d %s", tt.query, status, got["code"], tt.status, tt.code)
+		}
+	}
+	status, got = c.do(http.MethodGet, "/v1/post_targets/"+id.Make(id.Target)+"/engagement", "", nil, nil)
+	if status != http.StatusNotFound {
+		t.Fatalf("readings of an unknown target: %d %v", status, got)
+	}
+}

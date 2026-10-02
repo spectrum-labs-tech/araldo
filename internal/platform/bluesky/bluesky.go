@@ -25,6 +25,9 @@ import (
 // DefaultService is Bluesky's main PDS entry point.
 const DefaultService = "https://bsky.social"
 
+// DefaultAppView serves public reads (engagement) without signing in.
+const DefaultAppView = "https://public.api.bsky.app"
+
 const postCollection = "app.bsky.feed.post"
 
 // Adapter publishes to Bluesky.
@@ -32,11 +35,13 @@ type Adapter struct {
 	Client *http.Client
 	// Web is the public web app, for permalinks.
 	Web string
+	// AppView answers public reads; tests replace it.
+	AppView string
 }
 
 // New returns a Bluesky adapter.
 func New(client *http.Client) *Adapter {
-	return &Adapter{Client: client, Web: "https://bsky.app"}
+	return &Adapter{Client: client, Web: "https://bsky.app", AppView: DefaultAppView}
 }
 
 func (a *Adapter) Provider() platform.Provider { return platform.Bluesky }
@@ -288,4 +293,37 @@ func RichText(raw string) (string, []facet) {
 		out = append(out, facet{Index: byteSlice{start, end}, Features: []feature{{Type: "app.bsky.richtext.facet#tag", Tag: text[m[4]:m[5]]}}})
 	}
 	return text, out
+}
+
+// getPostsBatch is the most URIs app.bsky.feed.getPosts takes.
+const getPostsBatch = 25
+
+// Engagement reads like, repost, reply and quote counts from the public
+// AppView, which needs no session: sign-ins are rate limited far more
+// tightly than reads
+// (https://docs.bsky.app/docs/api/app-bsky-feed-get-posts).
+func (a *Adapter) Engagement(ctx context.Context, _ platform.Credentials, refs []platform.RemoteRef) (map[string]platform.Counts, error) {
+	out := map[string]platform.Counts{}
+	for start := 0; start < len(refs); start += getPostsBatch {
+		q := url.Values{}
+		for _, r := range refs[start:min(start+getPostsBatch, len(refs))] {
+			q.Add("uris", r.ID)
+		}
+		var res struct {
+			Posts []struct {
+				URI         string `json:"uri"`
+				LikeCount   int64  `json:"likeCount"`
+				RepostCount int64  `json:"repostCount"`
+				ReplyCount  int64  `json:"replyCount"`
+				QuoteCount  int64  `json:"quoteCount"`
+			} `json:"posts"`
+		}
+		if err := platform.JSON(ctx, a.Client, http.MethodGet, strings.TrimRight(a.AppView, "/")+"/xrpc/app.bsky.feed.getPosts?"+q.Encode(), nil, nil, &res); err != nil {
+			return nil, err
+		}
+		for _, p := range res.Posts {
+			out[p.URI] = platform.Counts{Likes: p.LikeCount, Reposts: p.RepostCount, Replies: p.ReplyCount, Quotes: p.QuoteCount}
+		}
+	}
+	return out, nil
 }

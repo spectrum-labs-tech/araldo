@@ -13,7 +13,7 @@
 </nav>
 {{if .Data.Posts}}
 <table>
-  <thead><tr><th>Post</th><th>Status</th><th>Publish at</th><th>Targets</th><th>Created</th></tr></thead>
+  <thead><tr><th>Post</th><th>Status</th><th>Publish at</th><th>Targets</th><th title="Likes, reposts, replies and quotes, as last read">Engagement</th><th>Created</th></tr></thead>
   <tbody>
   {{range .Data.Posts}}
   <tr>
@@ -22,6 +22,7 @@
     <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
     <td>{{fmtTime .PublishAt}}</td>
     <td>{{range .Targets}}<span class="pill {{statusClass .Status}} inline-flex items-center gap-1" title="{{.ChannelName}}: {{.Status}}">{{icon .Provider}} {{.Provider}}</span> {{end}}</td>
+    <td>{{with engagement .Targets}}{{.}}{{else}}<span class="text-muted">—</span>{{end}}</td>
     <td>{{ago .CreatedAt}}</td>
   </tr>
   {{end}}

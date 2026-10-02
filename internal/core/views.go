@@ -127,21 +127,39 @@ type ErrorView struct {
 
 // TargetView is one channel's copy of a post.
 type TargetView struct {
-	ID            string     `json:"id"`
-	Object        string     `json:"object"`
-	Post          string     `json:"post"`
-	Channel       string     `json:"channel"`
-	ChannelName   string     `json:"channel_name,omitempty"`
-	Provider      string     `json:"provider"`
-	Parts         []string   `json:"parts"`
-	Status        string     `json:"status"`
-	Attempts      int        `json:"attempts"`
-	NextAttemptAt *time.Time `json:"next_attempt_at,omitempty"`
-	PublishBy     time.Time  `json:"publish_by"`
-	Permalink     string     `json:"permalink,omitempty"`
-	Error         *ErrorView `json:"error,omitempty"`
-	PublishedAt   *time.Time `json:"published_at,omitempty"`
-	Livemode      bool       `json:"livemode"`
+	ID            string          `json:"id"`
+	Object        string          `json:"object"`
+	Post          string          `json:"post"`
+	Channel       string          `json:"channel"`
+	ChannelName   string          `json:"channel_name,omitempty"`
+	Provider      string          `json:"provider"`
+	Parts         []string        `json:"parts"`
+	Status        string          `json:"status"`
+	Attempts      int             `json:"attempts"`
+	NextAttemptAt *time.Time      `json:"next_attempt_at,omitempty"`
+	PublishBy     time.Time       `json:"publish_by"`
+	Permalink     string          `json:"permalink,omitempty"`
+	Error         *ErrorView      `json:"error,omitempty"`
+	PublishedAt   *time.Time      `json:"published_at,omitempty"`
+	Engagement    *EngagementView `json:"engagement,omitempty"`
+	Livemode      bool            `json:"livemode"`
+}
+
+// EngagementView is a published target's latest engagement (ADR 0018).
+type EngagementView struct {
+	platform.Counts
+	Total      int64      `json:"total"`
+	State      string     `json:"state"`
+	ReadAt     *time.Time `json:"read_at,omitempty"`
+	NextReadAt *time.Time `json:"next_read_at,omitempty"`
+}
+
+// ViewEngagement renders engagement.
+func ViewEngagement(e *model.Engagement) *EngagementView {
+	if e == nil {
+		return nil
+	}
+	return &EngagementView{Counts: e.Counts, Total: e.Total(), State: e.State, ReadAt: utc(e.ReadAt), NextReadAt: utc(e.NextReadAt)}
 }
 
 // ViewTarget renders a target.
@@ -155,6 +173,7 @@ func ViewTarget(t *model.Target) TargetView {
 	if t.ErrorCode != "" {
 		v.Error = &ErrorView{Code: t.ErrorCode, Message: t.ErrorMessage}
 	}
+	v.Engagement = ViewEngagement(t.Engagement)
 	return v
 }
 

@@ -100,6 +100,9 @@ func (s *Store) complete(ctx context.Context, orgID uuid.UUID, p *model.Post) er
 	if p.Targets, err = s.Targets(ctx, orgID, p.ID); err != nil {
 		return err
 	}
+	if err := s.attachEngagement(ctx, orgID, []*model.Post{p}); err != nil {
+		return err
+	}
 	return s.attachMedia(ctx, orgID, []*model.Post{p})
 }
 
@@ -136,6 +139,9 @@ func (s *Store) Posts(ctx context.Context, orgID uuid.UUID, livemode bool, f Pos
 	}
 	posts, more := trimPage(page, posts)
 	if err := s.attachTargets(ctx, orgID, posts); err != nil {
+		return nil, false, err
+	}
+	if err := s.attachEngagement(ctx, orgID, posts); err != nil {
 		return nil, false, err
 	}
 	if err := s.attachMedia(ctx, orgID, posts); err != nil {

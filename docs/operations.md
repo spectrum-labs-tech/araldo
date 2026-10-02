@@ -77,6 +77,17 @@ must both have them, since one stores files and the other reads them.
 Mastodon channels need an access token with the `write:media` scope to
 post images; one made before images were supported must be replaced.
 
+## Engagement
+
+The `engagement.collect` task reads each published post's likes, reposts,
+replies and quotes 1 hour, 6 hours, 1, 3, 7 and 30 days after publishing
+([ADR 0018](adr/0018-engagement.md)): Bluesky through its public AppView
+(no sign-in), Mastodon with the channel's token. Discord and Telegram do not
+report engagement. Posts published before an upgrade to a version with
+engagement are read once soon after it, then on the schedule. A failed
+reading is retried later and never affects publishing; see the target's
+`engagement.state` and the task on Organization → Background tasks.
+
 ## Health
 
 - `GET /healthz`: the process is up.

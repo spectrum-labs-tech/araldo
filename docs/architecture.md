@@ -20,12 +20,15 @@ posts on every platform your users read. This page is the map; the
   both in one process.
 - **Postgres is the only dependency.** The publishing queue and webhook
   queue are rows claimed with `FOR UPDATE SKIP LOCKED` and leases; periodic
-  tasks use lease rows too, so any number of workers can run.
+  tasks use lease rows too, so any number of workers can run. Images are
+  stored there too, unless S3-compatible storage is configured
+  ([ADR 0017](adr/0017-media.md)).
 
 ## The life of a post
 
 1. A product calls `POST /v1/posts` with a template and data (or finished
-   text) and a time: `now`, `next_slot`, or a timestamp.
+   text), any images it uploaded to `/v1/media`, and a time: `now`,
+   `next_slot`, or a timestamp.
 2. `core` renders the text for every channel with that platform's rules
    ([ADR 0010](adr/0010-templates.md)), refuses it with every problem listed
    if anything does not fit, and otherwise stores the post and one
@@ -51,6 +54,7 @@ posts on every platform your users read. This page is the map; the
 | Channel | A connected account on a platform, under a brand. Test mode has sandbox channels only. |
 | Template | Versioned text with a JSON Schema for its data and per-platform bodies. |
 | Post | Something to publish, to one or more channels. |
+| Media | An uploaded image a post attaches; checked against each channel's platform. |
 | Target | One channel's copy of a post: the unit of publishing work. |
 | Event | A record of something that happened, kept 30 days, delivered to webhooks. |
 | Mode | Test or live. Decided by the API key (or the dashboard switch). |

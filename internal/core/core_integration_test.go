@@ -61,7 +61,7 @@ func open(t *testing.T) *store.Store {
 
 const testMasterKey = "test:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
-func service(t *testing.T) *core.Service {
+func service(t *testing.T, opts ...func(*core.Config)) *core.Service {
 	t.Helper()
 	st := open(t)
 	mk, err := keyring.ParseMasterKeys(testMasterKey)
@@ -69,8 +69,11 @@ func service(t *testing.T) *core.Service {
 		t.Fatal(err)
 	}
 	reg := platform.NewRegistry(sandbox.New("https://araldo.test"))
-	s := core.New(st, keyring.New(mk, st), reg, slog.New(slog.NewTextHandler(io.Discard, nil)), core.Config{BaseURL: "https://araldo.test", AllowPrivateWebhooks: true})
-	return s
+	cfg := core.Config{BaseURL: "https://araldo.test", AllowPrivateWebhooks: true}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	return core.New(st, keyring.New(mk, st), reg, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
 }
 
 type world struct {
@@ -83,9 +86,9 @@ type world struct {
 	channel *model.Channel
 }
 
-func newWorld(t *testing.T) *world {
+func newWorld(t *testing.T, opts ...func(*core.Config)) *world {
 	t.Helper()
-	s := service(t)
+	s := service(t, opts...)
 	ctx := t.Context()
 	email := fmt.Sprintf("owner-%s@example.com", uuid.NewString()[:8])
 	u, err := s.CreateUser(ctx, email, "Owner", "correct horse battery")
@@ -231,7 +234,16 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	m, err := a.s.CreateMedia(ctx, a.owner, core.MediaInput{BrandID: a.brand.ID, Data: pngOf(t, 4, 3)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	checks := map[string]error{}
+	_, checks["media"] = b.s.Media(ctx, b.owner, m.ID)
+	_, _, checks["media content"] = b.s.MediaContent(ctx, b.owner, m.ID)
+	_, checks["media alt"] = b.s.UpdateMediaAlt(ctx, b.owner, m.ID, "mine now")
+	checks["delete media"] = b.s.DeleteMedia(ctx, b.owner, m.ID)
+	_, checks["media for their brand"] = b.s.CreateMedia(ctx, b.owner, core.MediaInput{BrandID: a.brand.ID, Data: pngOf(t, 4, 3)})
 	_, checks["post"] = b.s.Post(ctx, b.owner, p.ID)
 	_, checks["brand"] = b.s.Brand(ctx, b.owner, a.brand.ID)
 	_, checks["channel"] = b.s.Channel(ctx, b.owner, a.channel.ID)
@@ -251,6 +263,14 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	_, err = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: b.brand.ID, Content: &model.Content{Body: "x"}, Channels: []uuid.UUID{a.channel.ID}})
 	if kind(err) != apperr.KindInvalid {
 		t.Errorf("targeting another org's channel: %v", err)
+	}
+	// Nor can another org's media be attached.
+	_, err = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: b.brand.ID, Content: &model.Content{Body: "x"}, Media: []uuid.UUID{m.ID}})
+	if !hasProblem(err, "media_missing") {
+		t.Errorf("attaching another org's media: %v", err)
+	}
+	if list, _, err := b.s.MediaList(ctx, b.owner, core.MediaFilter{}, store.Page{}); err != nil || slices.ContainsFunc(list, func(x *model.Media) bool { return x.ID == m.ID }) {
+		t.Errorf("another org's media listing shows ours (%v)", err)
 	}
 }
 

@@ -3,6 +3,7 @@
 package core
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"time"
 
@@ -181,6 +182,7 @@ type PostView struct {
 	Slot            bool              `json:"slot"`
 	Metadata        map[string]string `json:"metadata"`
 	Approval        ApprovalView      `json:"approval"`
+	Media           []MediaView       `json:"media"`
 	Targets         []TargetView      `json:"targets"`
 	CreatedAt       time.Time         `json:"created_at"`
 	UpdatedAt       time.Time         `json:"updated_at"`
@@ -192,7 +194,11 @@ func ViewPost(p *model.Post) PostView {
 		TemplateVersion: p.TemplateVersion, Data: p.Data, Content: p.Content, PublishAt: p.PublishAt.UTC(), PublishBy: p.PublishBy.UTC(),
 		Slot: p.SlotAt != nil, Metadata: p.Metadata, CreatedAt: p.CreatedAt.UTC(), UpdatedAt: p.UpdatedAt.UTC(),
 		Approval: ApprovalView{Required: p.ApprovalNeeded, ReviewedAt: utc(p.ReviewedAt), Note: p.ReviewNote},
+		Media:    make([]MediaView, 0, len(p.Media)),
 		Targets:  make([]TargetView, 0, len(p.Targets))}
+	for _, m := range p.Media {
+		v.Media = append(v.Media, ViewMedia(m))
+	}
 	if p.TemplateID != nil {
 		v.Template = id.Format(id.Template, *p.TemplateID)
 	}
@@ -206,6 +212,29 @@ func ViewPost(p *model.Post) PostView {
 		v.Targets = append(v.Targets, ViewTarget(&p.Targets[i]))
 	}
 	return v
+}
+
+// MediaView is an uploaded image (ADR 0017).
+type MediaView struct {
+	ID        string    `json:"id"`
+	Object    string    `json:"object"`
+	Brand     string    `json:"brand"`
+	Livemode  bool      `json:"livemode"`
+	Type      string    `json:"type"`
+	Size      int64     `json:"size"`
+	Width     int       `json:"width"`
+	Height    int       `json:"height"`
+	Alt       string    `json:"alt"`
+	Filename  string    `json:"filename,omitempty"`
+	SHA256    string    `json:"sha256"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ViewMedia renders media. Where the file is stored is not shown.
+func ViewMedia(m *model.Media) MediaView {
+	return MediaView{ID: id.Format(id.Media, m.ID), Object: "media", Brand: id.Format(id.Brand, m.BrandID), Livemode: m.Livemode,
+		Type: m.ContentType, Size: m.Size, Width: m.Width, Height: m.Height, Alt: m.Alt, Filename: m.Filename,
+		SHA256: hex.EncodeToString(m.SHA256), CreatedAt: m.CreatedAt.UTC()}
 }
 
 // EventView is an event.

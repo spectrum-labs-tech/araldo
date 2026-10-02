@@ -3,6 +3,8 @@
 package core
 
 import (
+	"context"
+
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -16,4 +18,10 @@ func InstrumentOrg(s *Service, mp metric.MeterProvider, org uuid.UUID) error {
 	}
 	s.metrics.cache = 0
 	return nil
+}
+
+// PruneUnusedMediaOrg is PruneUnusedMedia for one org, so a test prunes
+// only media it created.
+func PruneUnusedMediaOrg(s *Service, org uuid.UUID) (int, error) {
+	return s.pruneUnusedMedia(context.Background(), &org)
 }

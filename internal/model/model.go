@@ -295,6 +295,35 @@ type Post struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	Targets         []Target
+	// Media are attached in this order (ADR 0017).
+	Media []*Media
+}
+
+// Media storage backends (ADR 0017).
+const (
+	StoragePostgres = "postgres"
+	StorageS3       = "s3"
+)
+
+// Media is an uploaded image (ADR 0017). The file never changes; Alt can.
+type Media struct {
+	ID            uuid.UUID
+	OrgID         uuid.UUID
+	BrandID       uuid.UUID
+	Livemode      bool
+	ContentType   string
+	Size          int64
+	Width, Height int
+	SHA256        []byte
+	Alt           string
+	Filename      string
+	// Storage is where the file is: StoragePostgres, or StorageS3 at
+	// StorageKey.
+	Storage       string
+	StorageKey    string
+	CreatedByUser *uuid.UUID
+	CreatedByKey  *uuid.UUID
+	CreatedAt     time.Time
 }
 
 // TargetStatus is where one channel's copy of a post stands (ADR 0011).

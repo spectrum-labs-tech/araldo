@@ -43,7 +43,9 @@ type apiOp struct {
 	Params      []apiField
 	Body        []apiField
 	BodyRef     string
-	Responses   []apiResponse
+	// Form lists the fields of a multipart/form-data body (uploads).
+	Form      []apiField
+	Responses []apiResponse
 }
 
 type apiField struct {
@@ -113,6 +115,9 @@ func buildAPIDoc() (*apiDoc, error) {
 				if mt := op.RequestBody.Value.Content.Get("application/json"); mt != nil && mt.Schema != nil {
 					o.BodyRef = refAnchor(mt.Schema.Ref)
 					o.Body = fieldsOf(mt.Schema)
+				}
+				if mt := op.RequestBody.Value.Content.Get("multipart/form-data"); mt != nil && mt.Schema != nil {
+					o.Form = fieldsOf(mt.Schema)
 				}
 			}
 			for _, status := range sortedKeys(op.Responses.Map()) {

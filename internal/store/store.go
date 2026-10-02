@@ -27,6 +27,8 @@ var (
 	ErrNotFound = errors.New("store: not found")
 	// ErrConflict is a unique constraint violation.
 	ErrConflict = errors.New("store: conflict")
+	// ErrReferenced is a foreign key violation: the row is still in use.
+	ErrReferenced = errors.New("store: still referenced")
 )
 
 //go:embed migrations/*.sql
@@ -168,6 +170,9 @@ func mapErr(err error) error {
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) && pe.Code == "23505" {
 		return fmt.Errorf("%w: %s", ErrConflict, pe.ConstraintName)
+	}
+	if errors.As(err, &pe) && pe.Code == "23503" {
+		return fmt.Errorf("%w: %s", ErrReferenced, pe.ConstraintName)
 	}
 	return err
 }

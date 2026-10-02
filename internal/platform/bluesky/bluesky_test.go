@@ -4,6 +4,7 @@ package bluesky
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,6 +21,7 @@ type fakePDS struct {
 	records map[string]map[string]any // rkey → record
 	creates int
 	badAuth bool
+	blobs   []string // uploaded bytes, in order
 }
 
 func (f *fakePDS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -43,6 +45,15 @@ func (f *fakePDS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"uri": "at://did:plc:abc/app.bsky.feed.post/" + rkey, "cid": "cid-" + rkey})
+	case "/xrpc/com.atproto.repo.uploadBlob":
+		if r.Header.Get("Authorization") != "Bearer jwt" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		f.blobs = append(f.blobs, string(b))
+		_ = json.NewEncoder(w).Encode(map[string]any{"blob": map[string]any{"$type": "blob", "ref": map[string]string{"$link": "bafk" + string(b)},
+			"mimeType": r.Header.Get("Content-Type"), "size": len(b)}})
 	case "/xrpc/com.atproto.repo.createRecord":
 		if r.Header.Get("Authorization") != "Bearer jwt" {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -162,5 +173,56 @@ func TestRichText(t *testing.T) {
 	tag := fs[2]
 	if got := text[tag.Index.ByteStart:tag.Index.ByteEnd]; got != "#tag" || tag.Features[0].Tag != "tag" {
 		t.Fatalf("tag facet covers %q (%+v)", got, tag)
+	}
+}
+
+func TestPublishImages(t *testing.T) {
+	t.Parallel()
+	f, a, creds := setup(t)
+	when := time.Unix(1_700_000_000, 0)
+	media := []platform.Media{
+		platform.Media{Type: "image/png", Width: 1200, Height: 800, Alt: "a rifle on a bench"}.WithData([]byte("png-1")),
+		platform.Media{Type: "image/jpeg", Width: 10, Height: 10}.WithData([]byte("jpg-2")),
+	}
+	p := platform.Payload{Key: "ptgt_img", KeyTime: when, Parts: []string{"look", "and more"}, Media: media}
+	if _, err := a.Publish(t.Context(), creds, p, nil); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(f.blobs, ",") != "png-1,jpg-2" {
+		t.Fatalf("uploaded %q", f.blobs)
+	}
+	embed, _ := f.records[TID(when, "ptgt_img", 0)]["embed"].(map[string]any)
+	imgs, _ := embed["images"].([]any)
+	if embed["$type"] != "app.bsky.embed.images" || len(imgs) != 2 {
+		t.Fatalf("first part's embed = %v", embed)
+	}
+	first, _ := imgs[0].(map[string]any)
+	blob, _ := first["image"].(map[string]any)
+	ratio, _ := first["aspectRatio"].(map[string]any)
+	if first["alt"] != "a rifle on a bench" || blob["mimeType"] != "image/png" || ratio["width"] != float64(1200) || ratio["height"] != float64(800) {
+		t.Fatalf("first image = %v", first)
+	}
+	if _, ok := f.records[TID(when, "ptgt_img", 1)]["embed"]; ok {
+		t.Fatal("images belong on the first part only")
+	}
+
+	// A retry finds both records and uploads nothing again.
+	p.Attempt = 2
+	if _, err := a.Publish(t.Context(), creds, p, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.blobs) != 2 || f.creates != 2 {
+		t.Fatalf("after a retry: %d uploads, %d creates; want 2 and 2", len(f.blobs), f.creates)
+	}
+}
+
+func TestUnreadableImageIsTransient(t *testing.T) {
+	t.Parallel()
+	f, a, creds := setup(t)
+	p := platform.Payload{Key: "ptgt_lost", KeyTime: time.Unix(1_700_000_000, 0), Parts: []string{"x"},
+		Media: []platform.Media{{Type: "image/png", Size: 5}}}
+	_, err := a.Publish(t.Context(), creds, p, nil)
+	if platform.KindOf(err) != platform.Transient || f.creates != 0 {
+		t.Fatalf("Publish = %v with %d creates; want a transient error and no post", err, f.creates)
 	}
 }

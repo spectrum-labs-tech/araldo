@@ -123,7 +123,13 @@ func (s *Service) publishTarget(ctx context.Context, owner string, ct store.Clai
 			pubErr = &platform.Error{Kind: platform.Transient, Code: "credentials_unreadable", Msg: "could not decrypt the channel's credentials", Err: err}
 			break
 		}
-		payload := platform.Payload{Key: id.Format(id.Target, t.ID), KeyTime: t.CreatedAt, Parts: t.Parts, Posted: t.Posted, Attempt: t.Attempts}
+		media, err := s.store.PostMedia(ctx, t.OrgID, t.PostID)
+		if err != nil {
+			pubErr = &platform.Error{Kind: platform.Transient, Code: "media_unreadable", Msg: "could not read the post's media", Err: err}
+			break
+		}
+		payload := platform.Payload{Key: id.Format(id.Target, t.ID), KeyTime: t.CreatedAt, Parts: t.Parts, Posted: t.Posted, Attempt: t.Attempts,
+			Media: s.payloadMedia(media)}
 		if !t.Livemode {
 			payload.Simulate = ct.Metadata["araldo_simulate"]
 		}

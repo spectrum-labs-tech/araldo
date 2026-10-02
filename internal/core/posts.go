@@ -46,6 +46,8 @@ type PostInput struct {
 	PublishAt string
 	PublishBy *time.Time
 	Metadata  map[string]string
+	// Media are attached in order (ADR 0017).
+	Media []uuid.UUID
 }
 
 // plan is a validated, rendered post, ready to store.
@@ -54,6 +56,7 @@ type plan struct {
 	template *model.Template
 	version  *model.TemplateVersion
 	channels []*model.Channel
+	media    []*model.Media
 	renders  []Rendition
 }
 
@@ -94,8 +97,8 @@ func (s *Service) prepare(ctx context.Context, a Actor, in *PostInput, postID uu
 			return nil, err
 		}
 	case in.Content != nil:
-		if strings.TrimSpace(in.Content.Body) == "" && len(in.Content.Parts) == 0 {
-			ps.Add("content_empty", "content.body", "Content needs a body or parts.")
+		if strings.TrimSpace(in.Content.Body) == "" && len(in.Content.Parts) == 0 && len(in.Media) == 0 {
+			ps.Add("content_empty", "content.body", "Content needs a body, parts or media.")
 		}
 		for p, f := range in.Content.Fit {
 			if !f.Valid() {
@@ -105,6 +108,8 @@ func (s *Service) prepare(ctx context.Context, a Actor, in *PostInput, postID uu
 	default:
 		ps.Add("content_missing", "template", "Send a template (with data) or content.")
 	}
+
+	pl.media = s.postMedia(ctx, a, b.ID, in.Media, &ps)
 
 	// Metadata.
 	if len(in.Metadata) > maxMetadataKeys {
@@ -173,9 +178,11 @@ func (s *Service) prepare(ctx context.Context, a Actor, in *PostInput, postID uu
 	if pl.template != nil {
 		campaign = pl.template.Key
 	}
+	media := ruleMedia(pl.media)
 	for _, ch := range pl.channels {
 		rp := ch.RulesProvider()
 		rules, _ := platform.RulesFor(rp)
+		rules = rules.ForMedia(len(media))
 		tag := func(text string) string {
 			return utm.Tag(text, b.UTMDomains, utm.Params{Source: string(ch.Provider), Medium: "social", Campaign: campaign,
 				Content: id.Format(id.Post, postID)})
@@ -197,11 +204,14 @@ func (s *Service) prepare(ctx context.Context, a Actor, in *PostInput, postID uu
 			}
 			parts = rules.Split(tag(text), fitOf(in.Content, rp))
 		}
-		r := rendition(rules, parts, id.Format(id.Channel, ch.ID))
+		r := rendition(rules, parts, id.Format(id.Channel, ch.ID), media)
 		pl.renders = append(pl.renders, r)
 		for _, v := range r.Violations {
-			ps = append(ps, apperr.Problem{Code: v.Code, Param: "channels." + r.Channel, Message: ch.DisplayName + ": " + v.Message,
-				Detail: map[string]any{"channel": r.Channel, "provider": rp, "part": v.Part, "length": v.Length, "limit": v.Limit}})
+			detail := map[string]any{"channel": r.Channel, "provider": rp, "part": v.Part, "length": v.Length, "limit": v.Limit}
+			if v.Media > 0 {
+				detail["media"] = id.Format(id.Media, pl.media[v.Media-1].ID)
+			}
+			ps = append(ps, apperr.Problem{Code: v.Code, Param: "channels." + r.Channel, Message: ch.DisplayName + ": " + v.Message, Detail: detail})
 		}
 	}
 	return pl, ps.Err("The content does not fit every channel's rules.")
@@ -237,7 +247,7 @@ func (s *Service) CreatePost(ctx context.Context, a Actor, in PostInput) (*model
 	}
 	now := s.Now()
 	p := &model.Post{ID: postID, OrgID: a.OrgID, BrandID: pl.brand.ID, Livemode: a.Livemode, Data: in.Data, Content: in.Content,
-		Metadata: in.Metadata, CreatedByUser: a.UserID, CreatedByKey: a.KeyID}
+		Metadata: in.Metadata, CreatedByUser: a.UserID, CreatedByKey: a.KeyID, Media: pl.media}
 	if pl.template != nil {
 		p.TemplateID, p.TemplateVersion = &pl.template.ID, &pl.version.Version
 		p.Content = nil

@@ -2,7 +2,7 @@
 <h1>New post</h1>
 {{if not .Data.Brands}}<p>First <a href="/brands/new">create a brand</a> and connect a channel.</p>{{else}}
 {{$radio := "flex-row items-center gap-1.5 font-normal"}}
-<form method="post" action="/posts" class="flex flex-col gap-4">
+<form method="post" action="/posts" enctype="multipart/form-data" class="flex flex-col gap-4">
   <input type="hidden" name="csrf" value="{{.CSRF}}">
   <fieldset class="flex flex-wrap gap-5">
     <legend>Content</legend>
@@ -33,6 +33,25 @@
     </label>
     <label>Data (JSON) <textarea name="data" rows="5" class="font-mono" placeholder='{"name": "…"}'>{{index .Data.Form "data"}}</textarea></label>
   </div>
+
+  <fieldset class="flex flex-col gap-3">
+    <legend>Images <span class="text-sm font-normal text-muted">(JPEG, PNG, GIF or WebP; preview checks each platform's limits)</span></legend>
+    {{if .Data.Media}}
+    <div class="thumbs">
+      {{range .Data.Media}}
+      <div class="thumb">
+        <img src="/media/{{mediaID .ID}}" alt="{{.Alt}}" width="{{.Width}}" height="{{.Height}}">
+        <span class="text-xs text-muted">{{.Width}}×{{.Height}} · {{fileSize .Size}}</span>
+        <input type="hidden" name="media" value="{{mediaID .ID}}">
+        <label class="text-sm">Alt text <input name="alt_{{mediaID .ID}}" value="{{.Alt}}" maxlength="1000"></label>
+        <label class="{{$radio}} text-sm"><input type="checkbox" name="remove_media" value="{{mediaID .ID}}"> Remove</label>
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+    <label>Add images <input type="file" name="images" accept="image/jpeg,image/png,image/gif,image/webp" multiple></label>
+    <label>Alt text for the new images <input name="new_alt" value="{{index .Data.Form "new_alt"}}" maxlength="1000" placeholder="What the image shows, for people who cannot see it"></label>
+  </fieldset>
 
   <fieldset>
     <legend>Channels <span class="text-sm font-normal text-muted">(none checked: every active channel of the brand)</span></legend>

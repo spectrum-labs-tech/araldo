@@ -29,6 +29,14 @@ every problem in `errors`, each with its own `code` and `param`.
   part, measured length and limit. Shorten it, or set `fit` to `truncate`
   or `thread`.
 - **media_required**: the platform needs an image or video.
+- **too_much_media**: more images than the platform (or a post, at most
+  ten) takes.
+- **media_too_large**, **media_type_unsupported**, **media_aspect_ratio**,
+  **media_dimensions**: an image breaks a platform's rules. `detail` names
+  the channel and the media; `/v1/platforms` lists each platform's `images`
+  limits.
+- **media_missing**, **media_other_brand**, **media_duplicate**,
+  **media_invalid**: a listed media ID cannot be used.
 - **threads_unsupported**: several parts were given to a platform without
   threads.
 - **empty**: the rendered text is empty.
@@ -44,6 +52,19 @@ every problem in `errors`, each with its own `code` and `param`.
 - **no_slots**, **slots_full**: `next_slot` found nothing.
 - **simulation_in_live_mode**, **simulation_invalid**:
   `metadata.araldo_simulate` is for test mode, with a known value.
+
+## Media
+
+- **file_missing** (400): upload the image as `multipart/form-data` in a
+  part named `file`, or send JSON with a `url`.
+- **form_invalid** (400): the multipart form could not be read.
+- **media_empty**, **media_too_large**: the file is empty, or over 16 MiB.
+- **media_type_unsupported**: not a JPEG, PNG, GIF or WebP image (the
+  bytes decide, not the file name).
+- **alt_too_long**: alt text is at most 1,000 characters.
+- **url_invalid**, **url_unreachable**: the `url` is not http(s), or could
+  not be fetched (private addresses are refused).
+- **media_in_use** (409): a post uses this media, so it cannot be deleted.
 
 ## Channels
 

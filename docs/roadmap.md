@@ -23,13 +23,16 @@
   GHCR.
 - Metrics through OpenTelemetry (Prometheus or OTLP), with the Helm chart's
   optional PodMonitor and alerts ([operations](operations.md#metrics)).
+- Images on posts: uploads or URLs, checked against each platform's limits,
+  stored in Postgres or S3-compatible storage
+  ([ADR 0017](adr/0017-media.md)).
 
 ## Next
 
 1. **X, Facebook Pages, Instagram, Threads** (ported from ar15.build's
    `pkg/social`), with provider apps stored in the database
    ([ADR 0009](adr/0009-platform-adapters.md)) and OAuth connect flows.
-2. **Media**: uploads to S3-compatible storage, validation per platform.
+2. **More media**: video, and resizing images to fit each platform.
 3. **ar15.build as the first tenant**: its daily featured build and brand
    posts sent through the API.
 4. **Developer tooling**: `araldo listen` (webhooks to localhost), the MCP

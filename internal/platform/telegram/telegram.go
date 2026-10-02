@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,11 +59,20 @@ type reply struct {
 }
 
 func (a *Adapter) call(ctx context.Context, c platform.Credentials, method string, in, out any) error {
+	b, err := json.Marshal(in)
+	if err != nil {
+		return &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+	}
+	return a.send(ctx, c, method, b, "application/json", out)
+}
+
+// send calls method with a body already encoded as contentType.
+func (a *Adapter) send(ctx context.Context, c platform.Credentials, method string, body []byte, contentType string, out any) error {
 	token := strings.TrimSpace(c["bot_token"])
 	if token == "" {
 		return platform.Errorf(platform.AuthRevoked, "bot token is required")
 	}
-	err := a.do(ctx, a.API+"/bot"+token+"/"+method, in, out)
+	err := a.do(ctx, a.API+"/bot"+token+"/"+method, body, contentType, out)
 	var pe *platform.Error
 	if errors.As(err, &pe) {
 		// The token is part of the URL: keep it out of every message.
@@ -74,16 +84,12 @@ func (a *Adapter) call(ctx context.Context, c platform.Credentials, method strin
 	return err
 }
 
-func (a *Adapter) do(ctx context.Context, u string, in, out any) error {
-	b, err := json.Marshal(in)
-	if err != nil {
-		return &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(b))
+func (a *Adapter) do(ctx context.Context, u string, body []byte, contentType string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
 	if err != nil {
 		return &platform.Error{Kind: platform.Rejected, Code: "request", Err: err}
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	resp, err := platform.Do(a.Client, req)
 	if err != nil {
 		return err
@@ -156,7 +162,13 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 	res := platform.Result{Parts: append([]platform.RemoteRef(nil), p.Posted...)}
 	for i := len(p.Posted); i < len(p.Parts); i++ {
 		var m message
-		if err := a.call(ctx, c, "sendMessage", map[string]any{"chat_id": c["chat_id"], "text": p.Parts[i]}, &m); err != nil {
+		var err error
+		if i == 0 && len(p.Media) > 0 {
+			m, err = a.sendPhotos(ctx, c, p.Parts[i], p.Media)
+		} else {
+			err = a.call(ctx, c, "sendMessage", map[string]any{"chat_id": c["chat_id"], "text": p.Parts[i]}, &m)
+		}
+		if err != nil {
 			return res, err
 		}
 		ref := platform.RemoteRef{ID: fmt.Sprint(m.MessageID)}
@@ -174,4 +186,55 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		res.Permalink = res.Parts[0].URL
 	}
 	return res, nil
+}
+
+// sendPhotos posts the images with text as the caption: one with
+// sendPhoto, several as an album with sendMediaGroup, which shows the
+// first item's caption (https://core.telegram.org/bots/api#sendmediagroup).
+// It returns the first message.
+func (a *Adapter) sendPhotos(ctx context.Context, c platform.Credentials, caption string, media []platform.Media) (message, error) {
+	fields := [][2]string{{"chat_id", c["chat_id"]}}
+	files := make([]platform.File, 0, len(media))
+	items := make([]map[string]string, 0, len(media))
+	for i, m := range media {
+		data, err := m.Read(ctx)
+		if err != nil {
+			return message{}, err
+		}
+		field := "photo" + strconv.Itoa(i)
+		files = append(files, platform.File{Field: field, Name: m.Filename(i), Type: m.Type, Data: data})
+		item := map[string]string{"type": "photo", "media": "attach://" + field}
+		if i == 0 && caption != "" {
+			item["caption"] = caption
+		}
+		items = append(items, item)
+	}
+	if len(media) == 1 {
+		files[0].Field = "photo"
+		if caption != "" {
+			fields = append(fields, [2]string{"caption", caption})
+		}
+		body, contentType, err := platform.Multipart(fields, files)
+		if err != nil {
+			return message{}, &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+		}
+		var m message
+		return m, a.send(ctx, c, "sendPhoto", body, contentType, &m)
+	}
+	album, err := json.Marshal(items)
+	if err != nil {
+		return message{}, &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+	}
+	body, contentType, err := platform.Multipart(append(fields, [2]string{"media", string(album)}), files)
+	if err != nil {
+		return message{}, &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+	}
+	var ms []message
+	if err := a.send(ctx, c, "sendMediaGroup", body, contentType, &ms); err != nil {
+		return message{}, err
+	}
+	if len(ms) == 0 {
+		return message{}, &platform.Error{Kind: platform.Uncertain, Code: "decode", Msg: "sendMediaGroup returned no messages"}
+	}
+	return ms[0], nil
 }

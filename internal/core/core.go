@@ -32,9 +32,12 @@ type Config struct {
 	// BaseURL is the server's public URL (sandbox permalinks, links in
 	// events).
 	BaseURL string
-	// AllowPrivateWebhooks lets webhook deliveries reach private networks
-	// (for self-hosters, ADR 0012).
+	// AllowPrivateWebhooks lets webhook deliveries, and media fetched by
+	// URL, reach private networks (for self-hosters, ADR 0012).
 	AllowPrivateWebhooks bool
+	// Blobs, when set, stores new media files; otherwise they go in
+	// Postgres (ADR 0017).
+	Blobs Blobs
 }
 
 // Service is the application.
@@ -48,6 +51,9 @@ type Service struct {
 	Now func() time.Time
 	// HTTP is the client for webhook deliveries.
 	HTTP *http.Client
+	// MediaHTTP fetches media by URL.
+	MediaHTTP *http.Client
+	blobs     Blobs
 	// metrics records nothing until Instrument.
 	metrics *metrics
 }
@@ -55,7 +61,9 @@ type Service struct {
 // New returns the application.
 func New(st *store.Store, keys *keyring.Keyring, platforms *platform.Registry, log *slog.Logger, cfg Config) *Service {
 	return &Service{store: st, keys: keys, platforms: platforms, log: log, cfg: cfg, Now: time.Now,
-		HTTP: netguard.Client(cfg.AllowPrivateWebhooks, deliveryTimeout), metrics: noopMetrics()}
+		HTTP:      netguard.Client(cfg.AllowPrivateWebhooks, deliveryTimeout),
+		MediaHTTP: mediaClient(cfg.AllowPrivateWebhooks, netguard.Client(cfg.AllowPrivateWebhooks, mediaFetchTimeout)),
+		blobs:     cfg.Blobs, metrics: noopMetrics()}
 }
 
 // Store exposes the store to the composition root (health checks).

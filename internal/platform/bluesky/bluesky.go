@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -109,7 +110,25 @@ type post struct {
 	CreatedAt string    `json:"createdAt"`
 	Facets    []facet   `json:"facets,omitempty"`
 	Reply     *replyRef `json:"reply,omitempty"`
+	Embed     *images   `json:"embed,omitempty"`
 	Langs     []string  `json:"langs,omitempty"`
+}
+
+// images is an app.bsky.embed.images embed.
+type images struct {
+	Type   string  `json:"$type"`
+	Images []image `json:"images"`
+}
+
+type image struct {
+	Alt         string          `json:"alt"`
+	Image       json.RawMessage `json:"image"`
+	AspectRatio *aspectRatio    `json:"aspectRatio,omitempty"`
+}
+
+type aspectRatio struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
 
 type facet struct {
@@ -153,6 +172,11 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 			if root != nil {
 				rec.Reply = &replyRef{Root: *root, Parent: *parent}
 			}
+			if i == 0 && len(p.Media) > 0 {
+				if rec.Embed, err = a.upload(ctx, c, auth, p.Media); err != nil {
+					return res, err
+				}
+			}
 			var out strongRef
 			err := platform.JSON(ctx, a.Client, http.MethodPost, service(c)+"/xrpc/com.atproto.repo.createRecord", auth,
 				map[string]any{"repo": s.DID, "collection": postCollection, "rkey": rkey, "record": rec}, &out)
@@ -181,6 +205,34 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		res.Permalink = res.Parts[0].URL
 	}
 	return res, nil
+}
+
+// upload stores each image as a blob and returns the embed that shows
+// them. A blob no record uses is deleted by the server, so an upload
+// before a failed post costs nothing.
+func (a *Adapter) upload(ctx context.Context, c platform.Credentials, auth map[string]string, media []platform.Media) (*images, error) {
+	embed := &images{Type: "app.bsky.embed.images"}
+	for _, m := range media {
+		data, err := m.Read(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var out struct {
+			Blob json.RawMessage `json:"blob"`
+		}
+		if err := platform.Send(ctx, a.Client, http.MethodPost, service(c)+"/xrpc/com.atproto.repo.uploadBlob", auth, data, m.Type, &out); err != nil {
+			return nil, err
+		}
+		if len(out.Blob) == 0 {
+			return nil, platform.Errorf(platform.Transient, "uploadBlob returned no blob")
+		}
+		img := image{Alt: m.Alt, Image: out.Blob}
+		if m.Width > 0 && m.Height > 0 {
+			img.AspectRatio = &aspectRatio{Width: m.Width, Height: m.Height}
+		}
+		embed.Images = append(embed.Images, img)
+	}
+	return embed, nil
 }
 
 // existing returns the record at rkey if an earlier attempt created it.

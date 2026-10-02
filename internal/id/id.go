@@ -33,6 +33,7 @@ const (
 	APIKey          Prefix = "key"
 	Request         Prefix = "req"
 	Slot            Prefix = "slot"
+	Media           Prefix = "media"
 )
 
 // ErrInvalid is returned for a malformed ID or one of another type.

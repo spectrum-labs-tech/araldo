@@ -45,13 +45,26 @@ func TestAPIDocCoversTheContract(t *testing.T) {
 			}
 		}
 	}
-	var post apiOp
+	var post, upload apiOp
 	for _, tag := range d.Tags {
 		for _, op := range tag.Ops {
-			if op.Method == http.MethodPost && op.Path == "/v1/posts" {
+			switch {
+			case op.Method == http.MethodPost && op.Path == "/v1/posts":
 				post = op
+			case op.Method == http.MethodPost && op.Path == "/v1/media":
+				upload = op
+			}
+			for _, f := range op.Form {
+				check(f.Ref, op.Anchor+"/form/"+f.Name)
 			}
 		}
+	}
+	var form []string
+	for _, f := range upload.Form {
+		form = append(form, f.Name)
+	}
+	if strings.Join(form, ",") != "alt,brand,file" || len(upload.Body) == 0 {
+		t.Errorf("POST /v1/media: form fields %v and %d JSON fields; want the upload form and the URL body", form, len(upload.Body))
 	}
 	if d.Tags[0].Name != "Brands" || d.Tags[0].Ops[0].Path != "/v1/brands" || d.Tags[0].Ops[0].Method != http.MethodGet {
 		t.Errorf("first operation %s %s in %s, want the contract's order", d.Tags[0].Ops[0].Method, d.Tags[0].Ops[0].Path, d.Tags[0].Name)

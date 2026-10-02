@@ -56,6 +56,12 @@ func (s *Store) CreatePost(ctx context.Context, p *model.Post) error {
 	if err != nil {
 		return mapErr(err)
 	}
+	for i, m := range p.Media {
+		if _, err := s.q.Exec(ctx, `INSERT INTO post_media (org_id, post_id, position, media_id) VALUES ($1, $2, $3, $4)`,
+			p.OrgID, p.ID, i, m.ID); err != nil {
+			return mapErr(err)
+		}
+	}
 	for i := range p.Targets {
 		t := &p.Targets[i]
 		if t.Posted == nil {
@@ -70,14 +76,13 @@ func (s *Store) CreatePost(ctx context.Context, p *model.Post) error {
 	return nil
 }
 
-// Post returns a post with its targets.
+// Post returns a post with its targets and media.
 func (s *Store) Post(ctx context.Context, orgID, id uuid.UUID) (*model.Post, error) {
 	p, err := scanPost(s.q.QueryRow(ctx, `SELECT `+postCols+` FROM posts WHERE org_id = $1 AND id = $2`, orgID, id))
 	if err != nil {
 		return nil, err
 	}
-	p.Targets, err = s.Targets(ctx, orgID, id)
-	return p, err
+	return p, s.complete(ctx, orgID, p)
 }
 
 // PostForUpdate locks a post row.
@@ -86,8 +91,23 @@ func (s *Store) PostForUpdate(ctx context.Context, orgID, id uuid.UUID) (*model.
 	if err != nil {
 		return nil, err
 	}
-	p.Targets, err = s.Targets(ctx, orgID, id)
-	return p, err
+	return p, s.complete(ctx, orgID, p)
+}
+
+// complete loads a post's targets and media.
+func (s *Store) complete(ctx context.Context, orgID uuid.UUID, p *model.Post) error {
+	var err error
+	if p.Targets, err = s.Targets(ctx, orgID, p.ID); err != nil {
+		return err
+	}
+	return s.attachMedia(ctx, orgID, []*model.Post{p})
+}
+
+// PostMedia returns a post's media, in order.
+func (s *Store) PostMedia(ctx context.Context, orgID, postID uuid.UUID) ([]*model.Media, error) {
+	p := &model.Post{ID: postID}
+	err := s.attachMedia(ctx, orgID, []*model.Post{p})
+	return p.Media, err
 }
 
 // PostFilter narrows a post listing.
@@ -116,6 +136,9 @@ func (s *Store) Posts(ctx context.Context, orgID uuid.UUID, livemode bool, f Pos
 	}
 	posts, more := trimPage(page, posts)
 	if err := s.attachTargets(ctx, orgID, posts); err != nil {
+		return nil, false, err
+	}
+	if err := s.attachMedia(ctx, orgID, posts); err != nil {
 		return nil, false, err
 	}
 	return posts, more, nil

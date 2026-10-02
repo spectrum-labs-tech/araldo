@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/spectrum-labs-tech/araldo/internal/api"
+	"github.com/spectrum-labs-tech/araldo/internal/blob"
 	"github.com/spectrum-labs-tech/araldo/internal/buildinfo"
 	"github.com/spectrum-labs-tech/araldo/internal/config"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
@@ -89,7 +90,16 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 		discord.New(client),
 		telegram.New(client),
 	)
-	a.Svc = core.New(st, a.Keys, reg, log, core.Config{BaseURL: cfg.BaseURL, AllowPrivateWebhooks: cfg.AllowPrivateNetworks})
+	ccfg := core.Config{BaseURL: cfg.BaseURL, AllowPrivateWebhooks: cfg.AllowPrivateNetworks}
+	if s := cfg.S3; s.Bucket != "" {
+		b, err := blob.NewS3(s.Endpoint, s.Bucket, s.Region, s.AccessKeyID, s.SecretAccessKey, s.Prefix)
+		if err != nil {
+			st.Close()
+			return nil, err
+		}
+		ccfg.Blobs = b
+	}
+	a.Svc = core.New(st, a.Keys, reg, log, ccfg)
 	return a, nil
 }
 

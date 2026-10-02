@@ -93,6 +93,15 @@ func (a *Adapter) Publish(ctx context.Context, _ platform.Credentials, p platfor
 			return platform.Result{}, &platform.Error{Kind: platform.Transient, Code: "network", Err: err}
 		}
 	}
+	if len(p.Posted) == 0 {
+		// Read every image as a real adapter would upload it, so test mode
+		// finds an unreadable file before live mode does.
+		for _, m := range p.Media {
+			if _, err := m.Read(ctx); err != nil {
+				return platform.Result{}, err
+			}
+		}
+	}
 	res := platform.Result{Parts: append([]platform.RemoteRef(nil), p.Posted...)}
 	for i := len(p.Posted); i < len(p.Parts); i++ {
 		ref := platform.RemoteRef{ID: fmt.Sprintf("sbx_%s_%d", p.Key, i+1), URL: fmt.Sprintf("%s/sandbox/%s#part-%d", a.BaseURL, p.Key, i+1)}

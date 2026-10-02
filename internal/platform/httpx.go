@@ -8,8 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptrace"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -40,20 +43,31 @@ func Do(client *http.Client, req *http.Request) (*http.Response, error) {
 // JSON sends a JSON request and decodes a JSON response into out (if not
 // nil). A non-2xx response becomes a classified *Error.
 func JSON(ctx context.Context, client *http.Client, method, url string, headers map[string]string, in, out any) error {
-	var body io.Reader
+	var body []byte
+	contentType := ""
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
 			return &Error{Kind: Rejected, Code: "encode", Err: err}
 		}
-		body = bytes.NewReader(b)
+		body, contentType = b, "application/json"
 	}
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	return Send(ctx, client, method, url, headers, body, contentType, out)
+}
+
+// Send sends body (if not nil) as contentType and decodes a JSON response
+// into out (if not nil). A non-2xx response becomes a classified *Error.
+func Send(ctx context.Context, client *http.Client, method, url string, headers map[string]string, body []byte, contentType string, out any) error {
+	var r io.Reader
+	if body != nil {
+		r = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, r)
 	if err != nil {
 		return &Error{Kind: Rejected, Code: "request", Err: err}
 	}
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "Araldo (+https://github.com/spectrum-labs-tech/araldo)")
@@ -80,6 +94,40 @@ func JSON(ctx context.Context, client *http.Client, method, url string, headers 
 		}
 	}
 	return nil
+}
+
+// File is one file in a multipart request.
+type File struct {
+	Field, Name, Type string
+	Data              []byte
+}
+
+// Multipart encodes fields, in order, then files as multipart/form-data.
+// Each field is a name and a value.
+func Multipart(fields [][2]string, files []File) (body []byte, contentType string, err error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	for _, f := range fields {
+		if err := w.WriteField(f[0], f[1]); err != nil {
+			return nil, "", err
+		}
+	}
+	for _, f := range files {
+		h := textproto.MIMEHeader{}
+		h.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": f.Field, "filename": f.Name}))
+		h.Set("Content-Type", f.Type)
+		part, err := w.CreatePart(h)
+		if err != nil {
+			return nil, "", err
+		}
+		if _, err := part.Write(f.Data); err != nil {
+			return nil, "", err
+		}
+	}
+	if err := w.Close(); err != nil {
+		return nil, "", err
+	}
+	return buf.Bytes(), w.FormDataContentType(), nil
 }
 
 // Classify turns an error response into a *Error.

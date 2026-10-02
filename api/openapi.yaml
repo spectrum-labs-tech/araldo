@@ -34,6 +34,7 @@ tags:
   - name: Brands
   - name: Channels
   - name: Templates
+  - name: Media
   - name: Posts
   - name: Events
   - name: Webhooks
@@ -330,6 +331,105 @@ paths:
         "201":
           description: The template with its new version.
           content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/media:
+    get:
+      summary: List media
+      description: Media in the key's mode, newest first.
+      tags: [Media]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+        - $ref: "#/components/parameters/EndingBefore"
+        - { name: brand, in: query, schema: { type: string }, description: Brand ID or slug. }
+      responses:
+        "200":
+          description: Media.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Media" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Upload an image
+      description: |
+        Stores a JPEG, PNG, GIF or WebP image of at most 16 MiB for posts
+        to attach (`media` on a post). Upload the file as
+        `multipart/form-data`, or send JSON with a `url` for Araldo to
+        fetch (public addresses only). The type comes from the file's
+        bytes. Each platform's own limits (size, type, aspect ratio) are
+        checked when a post uses the image; see `images` in
+        `/v1/platforms`. Media no post uses is deleted after 24 hours.
+        Needs the `posts:write` scope.
+      tags: [Media]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [brand, file]
+              properties:
+                brand: { type: string, description: Brand ID or slug. }
+                file: { type: string, format: binary }
+                alt: { type: string, maxLength: 1000, description: "Alt text, sent to every platform that takes it." }
+          application/json:
+            schema:
+              type: object
+              required: [brand, url]
+              properties:
+                brand: { type: string, description: Brand ID or slug. }
+                url: { type: string, example: https://ar15.build/images/builds/8812.jpg }
+                alt: { type: string, maxLength: 1000 }
+      responses:
+        "201":
+          description: The media.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Media" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/media/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Retrieve media
+      tags: [Media]
+      responses:
+        "200":
+          description: The media.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Media" } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Update media
+      description: Changes the alt text. The file itself never changes.
+      tags: [Media]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [alt]
+              properties:
+                alt: { type: string, maxLength: 1000 }
+      responses:
+        "200":
+          description: The media.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Media" } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Delete media
+      description: Only media no post uses can be deleted (otherwise `409 media_in_use`).
+      tags: [Media]
+      responses:
+        "200":
+          description: Deleted.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/posts:
@@ -699,6 +799,19 @@ components:
         media_required: { type: boolean }
         max_media: { type: integer }
         source: { type: string }
+        images:
+          type: object
+          properties:
+            max_bytes:
+              type: object
+              additionalProperties: { type: integer }
+              description: Each image type the platform takes, with its size limit in bytes (0 when none is documented).
+              example: { image/jpeg: 1000000, image/png: 1000000 }
+            min_aspect_ratio: { type: number, description: "Width divided by height, at least." }
+            max_aspect_ratio: { type: number, description: "Width divided by height, at most." }
+            max_width_plus_height: { type: integer }
+            max_length_with_media: { type: integer, description: "The text limit when the post has media (it becomes a caption)." }
+            source: { type: string }
         connect_fields:
           type: array
           items:
@@ -837,6 +950,30 @@ components:
             Up to 50 keys of your own. In test mode, `araldo_simulate`
             imitates a failure: rate_limited, auth_revoked, rejected,
             timeout_after_send or slow.
+        media:
+          type: array
+          maxItems: 10
+          items: { type: string, example: media_01j9x3k2v7e8f9g0h1j2k3m4n5 }
+          description: |
+            Images to attach, in order, from `/v1/media`, of the post's brand
+            and mode. They go on the first part of a thread. With media, the
+            text may be empty.
+
+    Media:
+      type: object
+      properties:
+        id: { type: string, example: media_01j9x3k2v7e8f9g0h1j2k3m4n5 }
+        object: { type: string, enum: [media] }
+        brand: { type: string }
+        livemode: { type: boolean }
+        type: { type: string, enum: [image/jpeg, image/png, image/gif, image/webp] }
+        size: { type: integer, description: Bytes. }
+        width: { type: integer }
+        height: { type: integer }
+        alt: { type: string }
+        filename: { type: string }
+        sha256: { type: string }
+        created_at: { type: string, format: date-time }
 
     PostStatus:
       type: string
@@ -865,6 +1002,7 @@ components:
             reviewed_by: { type: string }
             reviewed_at: { type: string, format: date-time }
             note: { type: string }
+        media: { type: array, items: { $ref: "#/components/schemas/Media" } }
         targets: { type: array, items: { $ref: "#/components/schemas/PostTarget" } }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -916,6 +1054,7 @@ components:
                     code: { type: string, example: too_long }
                     message: { type: string }
                     part: { type: integer }
+                    media: { type: integer, description: "The position (from 1) of the media item at fault." }
                     length: { type: integer }
                     limit: { type: integer }
 

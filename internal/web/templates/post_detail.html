@@ -37,6 +37,18 @@
 </section>
 {{else if $p.ReviewedAt}}<p class="text-muted">Reviewed {{fmtTime $p.ReviewedAt}}{{if $p.ReviewNote}}: “{{$p.ReviewNote}}”{{end}}</p>{{end}}
 
+{{if $p.Media}}
+<h2 class="mt-6">Images</h2>
+<div class="thumbs">
+  {{range $p.Media}}
+  <figure class="thumb">
+    <a href="/media/{{mediaID .ID}}" target="_blank" rel="noopener"><img src="/media/{{mediaID .ID}}" alt="{{.Alt}}" width="{{.Width}}" height="{{.Height}}"></a>
+    <figcaption class="text-sm text-muted">{{if .Alt}}{{.Alt}}{{else}}No alt text{{end}} · {{.Width}}×{{.Height}} · {{fileSize .Size}}</figcaption>
+  </figure>
+  {{end}}
+</div>
+{{end}}
+
 <h2 class="mt-6">Targets</h2>
 {{range $p.Targets}}
 <section class="card">

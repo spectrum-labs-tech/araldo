@@ -38,6 +38,19 @@ type Config struct {
 	ClientIPHeader string
 	// LogLevel is debug, info, warn or error (ARALDO_LOG_LEVEL).
 	LogLevel string
+	// S3 stores new media files in S3-compatible storage when its Bucket
+	// is set; otherwise they go in Postgres (ADR 0017).
+	S3 S3
+}
+
+// S3 is an S3-compatible bucket (ARALDO_S3_*).
+type S3 struct {
+	Endpoint        string // ARALDO_S3_ENDPOINT, e.g. https://<account>.r2.cloudflarestorage.com
+	Bucket          string // ARALDO_S3_BUCKET
+	Region          string // ARALDO_S3_REGION (default auto)
+	AccessKeyID     string // ARALDO_S3_ACCESS_KEY_ID
+	SecretAccessKey string // ARALDO_S3_SECRET_ACCESS_KEY
+	Prefix          string // ARALDO_S3_PREFIX (default media/)
 }
 
 // Load reads the environment. needKeys requires master keys (server and
@@ -51,6 +64,14 @@ func Load(needKeys bool) (Config, error) {
 		ClientIPHeader: os.Getenv("ARALDO_CLIENT_IP_HEADER"),
 		LogLevel:       first(os.Getenv("ARALDO_LOG_LEVEL"), "info"),
 		AutoMigrate:    true,
+		S3: S3{
+			Endpoint:        os.Getenv("ARALDO_S3_ENDPOINT"),
+			Bucket:          os.Getenv("ARALDO_S3_BUCKET"),
+			Region:          first(os.Getenv("ARALDO_S3_REGION"), "auto"),
+			AccessKeyID:     os.Getenv("ARALDO_S3_ACCESS_KEY_ID"),
+			SecretAccessKey: os.Getenv("ARALDO_S3_SECRET_ACCESS_KEY"),
+			Prefix:          first(os.Getenv("ARALDO_S3_PREFIX"), "media/"),
+		},
 	}
 	var errs []error
 	var err error
@@ -78,6 +99,9 @@ func Load(needKeys bool) (Config, error) {
 	}
 	if u, err := url.Parse(c.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
 		errs = append(errs, fmt.Errorf("ARALDO_BASE_URL %q is not an absolute URL", c.BaseURL))
+	}
+	if s := c.S3; s.Bucket != "" && (s.Endpoint == "" || s.AccessKeyID == "" || s.SecretAccessKey == "") {
+		errs = append(errs, errors.New("ARALDO_S3_BUCKET needs ARALDO_S3_ENDPOINT, ARALDO_S3_ACCESS_KEY_ID and ARALDO_S3_SECRET_ACCESS_KEY"))
 	}
 	return c, errors.Join(errs...)
 }

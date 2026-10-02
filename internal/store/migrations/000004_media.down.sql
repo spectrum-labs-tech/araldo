@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS post_media;
+DROP TABLE IF EXISTS media_blobs;
+DROP TABLE IF EXISTS media;

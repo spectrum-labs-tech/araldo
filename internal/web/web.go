@@ -30,8 +30,13 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/buildinfo"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/media"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
+
+// MaxPostForm bounds the new-post form, which can carry four images at
+// their largest.
+const MaxPostForm = 4*media.MaxBytes + 1<<20
 
 //go:embed templates/*.html
 var templateFS embed.FS
@@ -188,6 +193,15 @@ func (s *Server) app(nav string, fn pageFunc) http.HandlerFunc {
 		if c.org.RequireMFA && !c.user.MFAEnabled() && nav != "account" {
 			http.Redirect(w, r, "/account?mfa_required=1", http.StatusSeeOther)
 			return
+		}
+		if r.Method == http.MethodPost && strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			// In memory: the container's file system is read-only.
+			r.Body = http.MaxBytesReader(w, r.Body, MaxPostForm)
+			if err := r.ParseMultipartForm(MaxPostForm); err != nil { //nolint:gosec // G120: the body is bounded on the line above
+				s.renderError(c, http.StatusRequestEntityTooLarge, fmt.Sprintf("The upload is too large: images are up to %d MiB each, and %d MiB in all.",
+					media.MaxBytes>>20, MaxPostForm>>20))
+				return
+			}
 		}
 		if r.Method == http.MethodPost && !s.checkCSRF(c) {
 			s.renderError(c, http.StatusForbidden, "This form expired. Go back, reload the page and try again.")
@@ -434,7 +448,17 @@ var funcs = template.FuncMap{
 	"keyID":      func(u uuid.UUID) string { return id.Format(id.APIKey, u) },
 	"userID":     func(u uuid.UUID) string { return id.Format(id.User, u) },
 	"deliveryID": func(u uuid.UUID) string { return id.Format(id.Delivery, u) },
-	"join":       strings.Join,
+	"mediaID":    func(u uuid.UUID) string { return id.Format(id.Media, u) },
+	"fileSize": func(n int64) string {
+		switch {
+		case n >= 1_000_000:
+			return fmt.Sprintf("%.1f MB", float64(n)/1_000_000)
+		case n >= 1000:
+			return fmt.Sprintf("%d kB", n/1000)
+		}
+		return fmt.Sprintf("%d bytes", n)
+	},
+	"join": strings.Join,
 	"icon": func(provider any) template.HTML {
 		p := fmt.Sprint(provider)
 		if !iconNames[p] {

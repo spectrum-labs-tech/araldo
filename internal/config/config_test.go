@@ -45,3 +45,23 @@ func TestLoadReportsEveryProblem(t *testing.T) {
 		t.Fatalf("Load(false): %v", err)
 	}
 }
+
+func TestLoadS3(t *testing.T) {
+	t.Setenv("ARALDO_DATABASE_URL", "postgres://x")
+	t.Setenv("ARALDO_BASE_URL", "https://araldo.example")
+	c, err := Load(false)
+	if err != nil || c.S3.Bucket != "" {
+		t.Fatalf("without S3: %+v, %v", c.S3, err)
+	}
+	t.Setenv("ARALDO_S3_BUCKET", "media")
+	if _, err := Load(false); err == nil || !strings.Contains(err.Error(), "ARALDO_S3_ENDPOINT") {
+		t.Fatalf("a bucket alone: %v", err)
+	}
+	t.Setenv("ARALDO_S3_ENDPOINT", "https://acct.r2.cloudflarestorage.com")
+	t.Setenv("ARALDO_S3_ACCESS_KEY_ID", "ak")
+	t.Setenv("ARALDO_S3_SECRET_ACCESS_KEY", "sk")
+	c, err = Load(false)
+	if err != nil || c.S3.Region != "auto" || c.S3.Prefix != "media/" || c.S3.Bucket != "media" {
+		t.Fatalf("with S3: %+v, %v", c.S3, err)
+	}
+}

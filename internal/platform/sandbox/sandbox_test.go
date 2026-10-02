@@ -75,3 +75,17 @@ func TestVerify(t *testing.T) {
 		t.Fatalf("Verify(myspace) = %v", err)
 	}
 }
+
+func TestPublishReadsImages(t *testing.T) {
+	t.Parallel()
+	a := New("https://araldo.test")
+	ok := platform.Media{Type: "image/png"}.WithData([]byte("png"))
+	if _, err := a.Publish(t.Context(), nil, platform.Payload{Key: "ptgt_1", Parts: []string{"x"}, Media: []platform.Media{ok}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	lost := platform.Media{Type: "image/png", Size: 3}
+	_, err := a.Publish(t.Context(), nil, platform.Payload{Key: "ptgt_2", Parts: []string{"x"}, Media: []platform.Media{ok, lost}}, nil)
+	if platform.KindOf(err) != platform.Transient {
+		t.Fatalf("Publish with an unreadable image = %v, want transient", err)
+	}
+}

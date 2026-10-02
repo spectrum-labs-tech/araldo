@@ -132,7 +132,7 @@ func (h *Handler) authenticate(r *http.Request) (core.Actor, error) {
 
 // idempotent runs a POST at most once per Idempotency-Key (ADR 0005).
 func (h *Handler) idempotent(w http.ResponseWriter, r *http.Request, a core.Actor, key string) {
-	body, err := readBody(r)
+	body, err := readBody(r, bodyLimit(r))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -162,11 +162,11 @@ type readCloser struct{ *bytes.Reader }
 
 func (readCloser) Close() error { return nil }
 
-func readBody(r *http.Request) ([]byte, error) {
+func readBody(r *http.Request, limit int64) ([]byte, error) {
 	var buf bytes.Buffer
-	n, err := buf.ReadFrom(http.MaxBytesReader(nil, r.Body, maxBody+1))
-	if err != nil || n > maxBody {
-		return nil, badRequest("body_too_large", "", "Request bodies are limited to 1 MiB.")
+	n, err := buf.ReadFrom(http.MaxBytesReader(nil, r.Body, limit+1))
+	if err != nil || n > limit {
+		return nil, badRequest("body_too_large", "", "Request bodies are limited to %d MiB.", limit>>20)
 	}
 	return buf.Bytes(), nil
 }

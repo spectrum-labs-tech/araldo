@@ -15,6 +15,11 @@ Everything comes from environment variables.
 | `ARALDO_ALLOW_PRIVATE_NETWORKS` | | Let webhooks and adapters reach private addresses. Off by default. |
 | `ARALDO_INSECURE_COOKIES` | | Plain-HTTP development only. |
 | `ARALDO_LOG_LEVEL` | | `debug`, `info` (default), `warn`, `error`. |
+| `ARALDO_S3_BUCKET` | | Store new media in this S3-compatible bucket instead of Postgres (see Media). |
+| `ARALDO_S3_ENDPOINT` | with a bucket | The service URL, e.g. `https://<account>.r2.cloudflarestorage.com`. |
+| `ARALDO_S3_ACCESS_KEY_ID`, `ARALDO_S3_SECRET_ACCESS_KEY` | with a bucket | Credentials that can put, get and delete objects. |
+| `ARALDO_S3_REGION` | | Default `auto` (R2); AWS needs the bucket's region. |
+| `ARALDO_S3_PREFIX` | | Key prefix, default `media/`. |
 
 ## First run
 
@@ -55,6 +60,22 @@ araldo apikeys create --email you@example.com --brand your-product \
 
 The key acts for the member named by `--email` and needs their permission to
 manage keys. Add `--live` for a live key and `--expires 8760h` to expire it.
+
+## Media
+
+Images attached to posts ([ADR 0017](adr/0017-media.md)) are stored in
+Postgres by default, so server and worker share them with nothing more to
+set up, and database backups include them. An install posting many large
+images should use S3-compatible storage instead (the `ARALDO_S3_*`
+variables): new files go there, files stored earlier stay readable where
+they are, and files in a bucket need their own backups. Media no post uses
+is deleted after a day (the `media.prune` task); media a post uses is kept
+as long as the post. With the Helm chart, put the S3 keys in the
+`existingSecret` and the rest in `extraEnv`; the server and the worker
+must both have them, since one stores files and the other reads them.
+
+Mastodon channels need an access token with the `write:media` scope to
+post images; one made before images were supported must be replaced.
 
 ## Health
 

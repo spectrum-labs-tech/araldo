@@ -32,15 +32,20 @@
       <h3 class="mb-2">{{.Summary}}</h3>
       {{if .Description}}<div class="prose-doc">{{.Description}}</div>{{end}}
       <pre class="json my-3 whitespace-pre-wrap">curl{{if ne .Method "GET"}} -X {{.Method}}{{end}} {{$base}}{{.Path}}{{if not .Public}} \
-  -H "Authorization: Bearer $ARALDO_KEY"{{end}}{{if .Body}} \
+  -H "Authorization: Bearer $ARALDO_KEY"{{end}}{{if .Form}}{{range .Form}} \
+  -F {{.Name}}={{if eq .Name "file"}}@image.jpg{{else}}…{{end}}{{end}}{{else if .Body}} \
   -H "Content-Type: application/json" \
   -d '{…}'{{end}}</pre>
       {{if .Params}}
       <h4 class="doc-h4">Parameters</h4>
       <dl class="doc-fields">{{range .Params}}{{template "field" .}}{{end}}</dl>
       {{end}}
+      {{if .Form}}
+      <h4 class="doc-h4">Upload (multipart/form-data)</h4>
+      <dl class="doc-fields">{{range .Form}}{{template "field" .}}{{end}}</dl>
+      {{end}}
       {{if or .Body .BodyRef}}
-      <h4 class="doc-h4">Request body {{if .BodyRef}}<a class="font-mono text-xs font-normal" href="#{{.BodyRef}}">{{.BodyRef | trimSchema}}</a>{{end}}</h4>
+      <h4 class="doc-h4">{{if .Form}}Or fetch from a URL (JSON){{else}}Request body{{end}} {{if .BodyRef}}<a class="font-mono text-xs font-normal" href="#{{.BodyRef}}">{{.BodyRef | trimSchema}}</a>{{end}}</h4>
       {{if .Body}}<dl class="doc-fields">{{range .Body}}{{template "field" .}}{{end}}</dl>{{end}}
       {{end}}
       <h4 class="doc-h4">Responses</h4>

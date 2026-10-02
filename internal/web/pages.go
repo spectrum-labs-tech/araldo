@@ -4,7 +4,9 @@ package web
 
 import (
 	"encoding/json"
+	"io"
 	"io/fs"
+	"mime/multipart"
 	"net/http"
 	"slices"
 	"sort"
@@ -18,6 +20,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/media"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
@@ -106,6 +109,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /account/password", s.app("account", s.accountPassword))
 
 	s.mux.HandleFunc("GET /sandbox/{id}", s.app("posts", s.sandboxPost))
+	s.mux.HandleFunc("GET /media/{id}", s.app("posts", s.mediaFile))
 }
 
 func cacheStatic(h http.Handler) http.Handler {
@@ -210,6 +214,9 @@ type newPostData struct {
 	Form       map[string]string
 	Chosen     []string
 	Renditions []core.Rendition
+	// Media are the images attached so far: a preview or an error keeps
+	// them, since a browser forgets the files it sent.
+	Media []*model.Media
 }
 
 func (s *Server) newPostData(c *reqCtx) (*newPostData, error) {
@@ -244,7 +251,7 @@ func (s *Server) createPost(c *reqCtx) error {
 		return err
 	}
 	f := c.r.PostForm
-	for _, k := range []string{"brand", "mode", "body", "template", "data", "publish", "publish_at", "fit"} {
+	for _, k := range []string{"brand", "mode", "body", "template", "data", "publish", "publish_at", "fit", "new_alt"} {
 		d.Form[k] = f.Get(k)
 	}
 	d.Chosen = f["channels"]
@@ -288,6 +295,12 @@ func (s *Server) createPost(c *reqCtx) error {
 			in.Channels = append(in.Channels, u)
 		}
 	}
+	if err := s.postFormMedia(c, d, in.BrandID); err != nil {
+		return s.formErr(c, "post_new", "posts", "New post", d, err)
+	}
+	for _, m := range d.Media {
+		in.Media = append(in.Media, m.ID)
+	}
 	if in.PublishAt == "at" {
 		t, err := time.Parse("2006-01-02T15:04", f.Get("publish_at"))
 		if err != nil {
@@ -315,6 +328,81 @@ func (s *Server) createPost(c *reqCtx) error {
 		return s.formErr(c, "post_new", "posts", "New post", d, err)
 	}
 	return redirect(c, "/posts/"+id.Format(id.Post, p.ID), "Post scheduled.")
+}
+
+// postFormMedia gathers the post form's images into d.Media: those
+// attached before (with any alt text edits, less any removed), then new
+// uploads, stored for brandID.
+func (s *Server) postFormMedia(c *reqCtx, d *newPostData, brandID uuid.UUID) error {
+	f := c.r.PostForm
+	removed := f["remove_media"]
+	for _, ref := range f["media"] {
+		mid, err := id.Parse(id.Media, ref)
+		if err != nil || slices.Contains(removed, ref) {
+			continue
+		}
+		m, err := s.svc.Media(c.ctx(), c.actor, mid)
+		if err != nil {
+			continue // deleted meanwhile
+		}
+		if alt, ok := f["alt_"+ref]; ok && strings.TrimSpace(alt[0]) != m.Alt {
+			if m, err = s.svc.UpdateMediaAlt(c.ctx(), c.actor, mid, alt[0]); err != nil {
+				return err
+			}
+		}
+		d.Media = append(d.Media, m)
+	}
+	if c.r.MultipartForm == nil {
+		return nil
+	}
+	for _, fh := range c.r.MultipartForm.File["images"] {
+		if fh.Size == 0 {
+			continue // the file input, left empty
+		}
+		data, err := readFile(fh)
+		if err != nil {
+			return err
+		}
+		m, err := s.svc.CreateMedia(c.ctx(), c.actor, core.MediaInput{BrandID: brandID, Data: data, Filename: fh.Filename, Alt: f.Get("new_alt")})
+		if err != nil {
+			return err
+		}
+		d.Media = append(d.Media, m)
+	}
+	d.Form["new_alt"] = ""
+	return nil
+}
+
+func readFile(fh *multipart.FileHeader) ([]byte, error) {
+	if fh.Size > media.MaxBytes {
+		return nil, apperr.Invalid("media_too_large", "images", "%s is larger than %d MiB.", fh.Filename, media.MaxBytes>>20)
+	}
+	f, err := fh.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return io.ReadAll(io.LimitReader(f, media.MaxBytes+1))
+}
+
+// mediaFile serves an image to members, for thumbnails.
+func (s *Server) mediaFile(c *reqCtx) error {
+	mid, err := pathUUID(c, id.Media, "media")
+	if err != nil {
+		return err
+	}
+	m, rc, err := s.svc.MediaContent(c.ctx(), c.actor, mid)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rc.Close() }()
+	h := c.w.Header()
+	h.Set("Content-Type", m.ContentType)
+	h.Set("Content-Length", strconv.FormatInt(m.Size, 10))
+	h.Set("Cache-Control", "private, max-age=86400, immutable") // the file never changes
+	h.Set("Content-Disposition", "inline")
+	_, _ = io.Copy(c.w, rc)
+	return nil
 }
 
 type postDetailData struct {
@@ -406,7 +494,14 @@ func (s *Server) sandboxPost(c *reqCtx) error {
 	if t.OrgID != c.actor.OrgID {
 		return apperr.NotFound("post target")
 	}
-	return s.page(c, "sandbox", "posts", "Sandbox post", t)
+	p, err := s.svc.Post(c.ctx(), c.actor, t.PostID)
+	if err != nil {
+		return err
+	}
+	return s.page(c, "sandbox", "posts", "Sandbox post", struct {
+		*model.Target
+		Media []*model.Media
+	}{t, p.Media})
 }
 
 // Templates.

@@ -325,14 +325,16 @@ func (s *Service) PreviewTemplate(ctx context.Context, a Actor, src tmpl.Source,
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, rendition(rules, rules.Split(text, c.FitFor(p)), ""))
+		out = append(out, rendition(rules, rules.Split(text, c.FitFor(p)), "", nil))
 	}
 	return out, nil
 }
 
-func rendition(rules platform.Rules, parts []string, channel string) Rendition {
+// rendition checks parts and media against rules, which must already be
+// rules.ForMedia(len(media)).
+func rendition(rules platform.Rules, parts []string, channel string, media []platform.Media) Rendition {
 	r := Rendition{Provider: rules.Provider, Channel: channel, Parts: parts, Limit: rules.MaxLength, Counting: string(rules.Counting),
-		Violations: rules.Check(parts, 0)}
+		Violations: rules.Check(parts, media)}
 	for _, p := range parts {
 		r.Lengths = append(r.Lengths, rules.Length(p))
 	}

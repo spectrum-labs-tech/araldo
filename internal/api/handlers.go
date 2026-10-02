@@ -45,6 +45,12 @@ func (h *Handler) routes() {
 	h.handle("POST /v1/templates/{id}/versions", h.addTemplateVersion)
 	h.handle("DELETE /v1/templates/{id}", h.deleteTemplate)
 
+	h.handle("GET /v1/media", h.listMedia)
+	h.handle("POST /v1/media", h.createMedia)
+	h.handle("GET /v1/media/{id}", h.getMedia)
+	h.handle("POST /v1/media/{id}", h.updateMedia)
+	h.handle("DELETE /v1/media/{id}", h.deleteMedia)
+
 	h.handle("GET /v1/posts", h.listPosts)
 	h.handle("POST /v1/posts", h.createPost)
 	h.handle("POST /v1/posts/preview", h.previewPost)
@@ -85,7 +91,20 @@ type platformView struct {
 	MediaRequired  bool             `json:"media_required"`
 	MaxMedia       int              `json:"max_media"`
 	Source         string           `json:"source"`
+	Images         imagesView       `json:"images"`
 	Fields         []platform.Field `json:"connect_fields,omitempty"`
+}
+
+// imagesView is what a platform takes as images (ADR 0017).
+type imagesView struct {
+	// MaxBytes maps each accepted type to its size limit; 0 means none is
+	// documented.
+	MaxBytes      map[string]int64 `json:"max_bytes"`
+	MinAspect     float64          `json:"min_aspect_ratio,omitempty"`
+	MaxAspect     float64          `json:"max_aspect_ratio,omitempty"`
+	MaxDimensions int              `json:"max_width_plus_height,omitempty"`
+	MaxCaption    int              `json:"max_length_with_media,omitempty"`
+	Source        string           `json:"source"`
 }
 
 func (h *Handler) listPlatforms(w http.ResponseWriter, r *http.Request) error {
@@ -94,7 +113,9 @@ func (h *Handler) listPlatforms(w http.ResponseWriter, r *http.Request) error {
 	for _, p := range platform.Emulable() {
 		rules, _ := platform.RulesFor(p)
 		v := platformView{Provider: string(p), Name: rules.Name, MaxLength: rules.MaxLength, Counting: string(rules.Counting),
-			Threads: rules.Threads, MaxThreadParts: rules.MaxThreadParts, MediaRequired: rules.MediaRequired, MaxMedia: rules.MaxMedia, Source: rules.Source}
+			Threads: rules.Threads, MaxThreadParts: rules.MaxThreadParts, MediaRequired: rules.MediaRequired, MaxMedia: rules.MaxMedia, Source: rules.Source,
+			Images: imagesView{MaxBytes: rules.Images, MinAspect: rules.MinAspect, MaxAspect: rules.MaxAspect, MaxDimensions: rules.MaxDimensions,
+				MaxCaption: rules.MaxCaption, Source: rules.ImageSource}}
 		if ad, ok := h.svc.Platforms().Get(p); ok && a.Livemode {
 			v.Fields = ad.Fields()
 		}
@@ -457,6 +478,7 @@ type postBody struct {
 	PublishAt string            `json:"publish_at"`
 	PublishBy *time.Time        `json:"publish_by"`
 	Metadata  map[string]string `json:"metadata"`
+	Media     []string          `json:"media"`
 }
 
 func (h *Handler) postInput(r *http.Request) (core.PostInput, error) {
@@ -481,6 +503,14 @@ func (h *Handler) postInput(r *http.Request) (core.PostInput, error) {
 			continue
 		}
 		in.Channels = append(in.Channels, cid)
+	}
+	for i, m := range body.Media {
+		mid, err := id.Parse(id.Media, m)
+		if err != nil {
+			ps.Add("media_invalid", "media["+strconv.Itoa(i)+"]", "%q is not a media ID.", m)
+			continue
+		}
+		in.Media = append(in.Media, mid)
 	}
 	return in, ps.Err("The post is not valid.")
 }

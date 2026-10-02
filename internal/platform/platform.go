@@ -7,11 +7,15 @@
 package platform
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"time"
+
+	"github.com/spectrum-labs-tech/araldo/internal/media"
 )
 
 // Provider names a platform.
@@ -79,6 +83,53 @@ type Payload struct {
 	// Simulate asks the sandbox to imitate a failure (ADR 0006). Real
 	// adapters ignore it.
 	Simulate string
+	// Media goes on the first part (ADR 0017). An adapter resuming after
+	// the first part has nothing to upload.
+	Media []Media
+}
+
+// Media is an image attached to a post (ADR 0017).
+type Media struct {
+	// Type is the MIME type, read from the file itself.
+	Type          string
+	Size          int64
+	Width, Height int
+	Alt           string
+	// Open returns the file. Rule checks leave it nil.
+	Open func(ctx context.Context) (io.ReadCloser, error)
+}
+
+// WithData returns m serving data, which also sets its size.
+func (m Media) WithData(data []byte) Media {
+	m.Size = int64(len(data))
+	m.Open = func(context.Context) (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(data)), nil }
+	return m
+}
+
+// Read returns the whole file, or a Transient error if it cannot be read
+// (storage is ours, not the platform's, so trying again may work).
+func (m Media) Read(ctx context.Context) ([]byte, error) {
+	if m.Open == nil {
+		return nil, &Error{Kind: Transient, Code: "media_unreadable", Msg: "the image is not available"}
+	}
+	rc, err := m.Open(ctx)
+	if err != nil {
+		return nil, &Error{Kind: Transient, Code: "media_unreadable", Msg: "reading the image", Err: err}
+	}
+	defer func() { _ = rc.Close() }()
+	b, err := io.ReadAll(io.LimitReader(rc, m.Size+1))
+	if err != nil {
+		return nil, &Error{Kind: Transient, Code: "media_unreadable", Msg: "reading the image", Err: err}
+	}
+	if int64(len(b)) != m.Size {
+		return nil, &Error{Kind: Transient, Code: "media_unreadable", Msg: fmt.Sprintf("the image has %d bytes, not %d", len(b), m.Size)}
+	}
+	return b, nil
+}
+
+// Filename is a name for an upload, for platforms that want one.
+func (m Media) Filename(i int) string {
+	return fmt.Sprintf("image%d%s", i+1, media.Extension(m.Type))
 }
 
 // Result is a successful publish.

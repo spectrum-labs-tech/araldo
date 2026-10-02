@@ -207,6 +207,21 @@
     @apply mx-2.5 mt-4 mb-1 hidden text-xs tracking-wider text-muted uppercase md:block;
   }
 
+  /* Media */
+  .thumbs {
+    @apply flex flex-wrap gap-3;
+  }
+  .thumb {
+    @apply m-0 flex w-48 flex-col gap-1.5;
+  }
+  .thumb img,
+  .thumb-img {
+    @apply h-auto max-h-40 w-full rounded-md border border-line bg-subtle object-contain;
+  }
+  .thumb-img {
+    @apply w-48;
+  }
+
   /* Blocks */
   .card {
     @apply my-4 rounded-lg border border-line bg-panel px-5 py-4;

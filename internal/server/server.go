@@ -16,6 +16,7 @@ import (
 
 	"github.com/spectrum-labs-tech/araldo/internal/api"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/web"
 )
 
 // Readiness reports whether the server can take traffic.
@@ -82,7 +83,11 @@ func middleware(next http.Handler, log *slog.Logger) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		// The dashboard sets its own Content-Security-Policy, with a nonce.
 		if r.Method == http.MethodPost && !strings.HasPrefix(r.URL.Path, "/v1/") {
-			r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+			limit := int64(1 << 20)
+			if r.URL.Path == "/posts" {
+				limit = web.MaxPostForm // it can carry images
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		sw := &statusWriter{ResponseWriter: w}
 		r = r.WithContext(api.WithRequestID(r.Context(), rid))

@@ -7,8 +7,10 @@ package discord
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
@@ -90,7 +92,13 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 	for i := len(p.Posted); i < len(p.Parts); i++ {
 		var m message
 		body := map[string]any{"content": p.Parts[i], "allowed_mentions": map[string]any{"parse": []string{}}}
-		if err := platform.JSON(ctx, a.Client, http.MethodPost, u+"?wait=true", nil, body, &m); err != nil {
+		var err error
+		if i == 0 && len(p.Media) > 0 {
+			err = a.sendWithFiles(ctx, u+"?wait=true", body, p.Media, &m)
+		} else {
+			err = platform.JSON(ctx, a.Client, http.MethodPost, u+"?wait=true", nil, body, &m)
+		}
+		if err != nil {
 			if platform.KindOf(err) == platform.Rejected && strings.Contains(err.Error(), "404") {
 				err = platform.Errorf(platform.AuthRevoked, "the webhook no longer exists")
 			}
@@ -105,4 +113,35 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		res.Parts = append(res.Parts, ref)
 	}
 	return res, nil
+}
+
+// sendWithFiles posts body with the images attached, alt text as each
+// attachment's description
+// (https://discord.com/developers/docs/reference#uploading-files).
+func (a *Adapter) sendWithFiles(ctx context.Context, u string, body map[string]any, media []platform.Media, out any) error {
+	files := make([]platform.File, 0, len(media))
+	attachments := make([]map[string]any, 0, len(media))
+	for i, m := range media {
+		data, err := m.Read(ctx)
+		if err != nil {
+			return err
+		}
+		name := m.Filename(i)
+		files = append(files, platform.File{Field: "files[" + strconv.Itoa(i) + "]", Name: name, Type: m.Type, Data: data})
+		att := map[string]any{"id": i, "filename": name}
+		if m.Alt != "" {
+			att["description"] = m.Alt
+		}
+		attachments = append(attachments, att)
+	}
+	body["attachments"] = attachments
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+	}
+	raw, contentType, err := platform.Multipart([][2]string{{"payload_json", string(payload)}}, files)
+	if err != nil {
+		return &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+	}
+	return platform.Send(ctx, a.Client, http.MethodPost, u, nil, raw, contentType, out)
 }

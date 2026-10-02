@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 )
 
@@ -156,5 +157,151 @@ func TestTemplatesByKey(t *testing.T) {
 	status, got = c.json(http.MethodPost, "/v1/templates/release/versions", map[string]any{"body": "x"})
 	if status != http.StatusNotFound || !strings.Contains(fmt.Sprint(got["detail"]), "GET /v1/templates?brand=") {
 		t.Fatalf("a key in the path: %d %v", status, got)
+	}
+}
+
+// keyWith creates a key for this client's org holding scopes, as a member
+// would in the dashboard, and returns a client using it.
+func (c *client) keyWith(scopes ...string) *client {
+	c.t.Helper()
+	plain, _, err := c.s.CreateOperatorAPIKey(c.t.Context(), c.owner, core.APIKeyInput{Name: "admin " + strings.Join(scopes, ","), Scopes: scopes})
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	k := *c
+	k.key = plain
+	return &k
+}
+
+func TestKeysManageKeys(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	admin := c.keyWith("posts:read", "posts:write", "keys:write")
+
+	status, got := admin.do(http.MethodGet, "/v1/api_keys", "", nil, nil)
+	if data, _ := got["data"].([]any); status != http.StatusOK || len(data) < 2 {
+		t.Fatalf("list: %d %v", status, got)
+	}
+	status, made := admin.json(http.MethodPost, "/v1/api_keys", map[string]any{"name": "reader", "scopes": []string{"posts:read"}})
+	secret, _ := made["secret"].(string)
+	if status != http.StatusCreated || !strings.HasPrefix(secret, "ald_test_") {
+		t.Fatalf("create: %d %v", status, made)
+	}
+	reader := *c
+	reader.key = secret
+	if status, _ := reader.do(http.MethodGet, "/v1/posts", "", nil, nil); status != http.StatusOK {
+		t.Fatalf("the new key reading posts: %d", status)
+	}
+	for _, tt := range []struct {
+		body map[string]any
+		code string
+	}{
+		{map[string]any{"name": "everything"}, "scope_not_held"},
+		{map[string]any{"name": "admin", "scopes": []string{"keys:write"}}, "scope_not_grantable"},
+		{map[string]any{"name": "channels", "scopes": []string{"channels:write"}}, "scope_not_held"},
+	} {
+		status, got := admin.json(http.MethodPost, "/v1/api_keys", tt.body)
+		if status != http.StatusUnprocessableEntity || !strings.Contains(fmt.Sprint(got["errors"]), tt.code) {
+			t.Errorf("create %v: %d %v, want %s", tt.body, status, got, tt.code)
+		}
+	}
+
+	// Roll: a new secret, and the old one works during the overlap.
+	status, rolled := admin.json(http.MethodPost, "/v1/api_keys/"+made["id"].(string)+"/roll", map[string]any{})
+	if status != http.StatusOK || rolled["secret"] == nil || rolled["id"] == made["id"] {
+		t.Fatalf("roll: %d %v", status, rolled)
+	}
+	if status, _ := reader.do(http.MethodGet, "/v1/posts", "", nil, nil); status != http.StatusOK {
+		t.Fatalf("the old secret during the overlap: %d", status)
+	}
+	// Revoke: it stops at once.
+	status, revoked := admin.json(http.MethodPost, "/v1/api_keys/"+rolled["id"].(string)+"/revoke", map[string]any{})
+	if status != http.StatusOK || revoked["revoked_at"] == nil {
+		t.Fatalf("revoke: %d %v", status, revoked)
+	}
+
+	// Full access is not administration.
+	if status, got := c.do(http.MethodGet, "/v1/api_keys", "", nil, nil); status != http.StatusForbidden || got["code"] != "scope_missing" {
+		t.Fatalf("a full-access key listing keys: %d %v", status, got)
+	}
+}
+
+func TestSelfRoll(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	old := c.keyWith("posts:read")
+	status, rolled := old.json(http.MethodPost, "/v1/api_keys/self/roll", map[string]any{"overlap_hours": 0})
+	if status != http.StatusOK || rolled["secret"] == nil || fmt.Sprint(rolled["scopes"]) != "[posts:read]" {
+		t.Fatalf("self roll: %d %v", status, rolled)
+	}
+	fresh := *c
+	fresh.key = rolled["secret"].(string)
+	if status, _ := fresh.do(http.MethodGet, "/v1/posts", "", nil, nil); status != http.StatusOK {
+		t.Fatalf("the new key: %d", status)
+	}
+	if status, _ := old.do(http.MethodGet, "/v1/posts", "", nil, nil); status != http.StatusUnauthorized {
+		t.Fatalf("the old key with no overlap: %d", status)
+	}
+	// A key holding an admin scope keeps it when it rolls itself.
+	admin := c.keyWith("keys:write")
+	if status, got := admin.json(http.MethodPost, "/v1/api_keys/self/roll", map[string]any{}); status != http.StatusOK || fmt.Sprint(got["scopes"]) != "[keys:write]" {
+		t.Fatalf("an admin key rolling itself: %d %v", status, got)
+	}
+}
+
+func TestApprovalByKey(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	if status, got := c.json(http.MethodPost, "/v1/brands/"+c.brand, map[string]any{"approval_policy": "required_for_all"}); status != http.StatusOK {
+		t.Fatalf("policy: %d %v", status, got)
+	}
+	status, post := c.json(http.MethodPost, "/v1/posts", map[string]any{"brand": c.brand, "content": map[string]any{"body": "needs a look"}, "publish_at": "next_slot"})
+	if status != http.StatusCreated || post["status"] != "pending_approval" {
+		t.Fatalf("post: %d %v", status, post["status"])
+	}
+	pid := post["id"].(string)
+	if status, got := c.json(http.MethodPost, "/v1/posts/"+pid+"/approve", map[string]any{}); status != http.StatusForbidden || got["code"] != "scope_missing" {
+		t.Fatalf("a full-access key approving: %d %v", status, got)
+	}
+	approver := c.keyWith("posts:read", "posts:write", "posts:approve")
+	status, got := approver.json(http.MethodPost, "/v1/posts/"+pid+"/approve", map[string]any{"note": "from Slack"})
+	approval, _ := got["approval"].(map[string]any)
+	if status != http.StatusOK || got["status"] != "scheduled" || !strings.HasPrefix(fmt.Sprint(approval["reviewed_by_key"]), "key_") || approval["note"] != "from Slack" {
+		t.Fatalf("approve: %d %v", status, got)
+	}
+	// Never its own post.
+	status, own := approver.json(http.MethodPost, "/v1/posts", map[string]any{"brand": c.brand, "content": map[string]any{"body": "mine"}, "publish_at": "next_slot"})
+	if status != http.StatusCreated {
+		t.Fatalf("approver's post: %d %v", status, own)
+	}
+	if status, got := approver.json(http.MethodPost, "/v1/posts/"+own["id"].(string)+"/approve", map[string]any{}); status != http.StatusForbidden {
+		t.Fatalf("approving its own post: %d %v", status, got)
+	}
+	if status, got := approver.json(http.MethodPost, "/v1/posts/"+own["id"].(string)+"/reject", map[string]any{}); status != http.StatusForbidden {
+		t.Fatalf("rejecting its own post: %d %v", status, got)
+	}
+}
+
+func TestAuditByKey(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	if status, got := c.do(http.MethodGet, "/v1/audit_events", "", nil, nil); status != http.StatusForbidden || got["code"] != "scope_missing" {
+		t.Fatalf("a full-access key reading the audit log: %d %v", status, got)
+	}
+	auditor := c.keyWith("audit:read")
+	status, got := auditor.do(http.MethodGet, "/v1/audit_events?limit=50", "", nil, nil)
+	data, _ := got["data"].([]any)
+	if status != http.StatusOK || len(data) == 0 {
+		t.Fatalf("audit: %d %v", status, got)
+	}
+	actions := fmt.Sprint(data)
+	for _, want := range []string{"brand.create", "api_key.create", "channel.connect"} {
+		if !strings.Contains(actions, want) {
+			t.Errorf("audit log lacks %s", want)
+		}
+	}
+	first := data[0].(map[string]any)
+	if !strings.HasPrefix(fmt.Sprint(first["id"]), "audit_") || first["object"] != "audit_event" {
+		t.Fatalf("entry %v", first)
 	}
 }

@@ -238,10 +238,11 @@ func ViewAttempt(at *model.Attempt) AttemptView {
 
 // ApprovalView is a post's review state.
 type ApprovalView struct {
-	Required   bool       `json:"required"`
-	ReviewedBy string     `json:"reviewed_by,omitempty"`
-	ReviewedAt *time.Time `json:"reviewed_at,omitempty"`
-	Note       string     `json:"note,omitempty"`
+	Required      bool       `json:"required"`
+	ReviewedBy    string     `json:"reviewed_by,omitempty"`
+	ReviewedByKey string     `json:"reviewed_by_key,omitempty"`
+	ReviewedAt    *time.Time `json:"reviewed_at,omitempty"`
+	Note          string     `json:"note,omitempty"`
 }
 
 // PostView is a post and its targets.
@@ -282,6 +283,9 @@ func ViewPost(p *model.Post) PostView {
 	}
 	if p.ReviewedBy != nil {
 		v.Approval.ReviewedBy = id.Format(id.User, *p.ReviewedBy)
+	}
+	if p.ReviewedByKey != nil {
+		v.Approval.ReviewedByKey = id.Format(id.APIKey, *p.ReviewedByKey)
 	}
 	if v.Metadata == nil {
 		v.Metadata = map[string]string{}
@@ -394,6 +398,34 @@ type APIKeyView struct {
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
+}
+
+// AuditEventView is one entry in the org's audit log: who (a member or an
+// API key) did what to which object.
+type AuditEventView struct {
+	ID        string         `json:"id"`
+	Object    string         `json:"object"`
+	Action    string         `json:"action"`
+	Target    string         `json:"target,omitempty"`
+	User      string         `json:"user,omitempty"`
+	APIKey    string         `json:"api_key,omitempty"`
+	Outcome   string         `json:"outcome,omitempty"`
+	RequestID string         `json:"request_id,omitempty"`
+	Detail    map[string]any `json:"detail,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
+}
+
+// ViewAuditEvent renders an audit entry.
+func ViewAuditEvent(e *model.AuditEvent) AuditEventView {
+	v := AuditEventView{ID: id.Format(id.AuditEvent, e.ID), Object: "audit_event", Action: e.Action, Target: e.Target, Outcome: e.Outcome,
+		RequestID: e.RequestID, Detail: e.Detail, CreatedAt: e.CreatedAt.UTC()}
+	if e.ActorUser != nil {
+		v.User = id.Format(id.User, *e.ActorUser)
+	}
+	if e.ActorKey != nil {
+		v.APIKey = id.Format(id.APIKey, *e.ActorKey)
+	}
+	return v
 }
 
 // ViewAPIKey renders a key.

@@ -15,13 +15,13 @@ import (
 )
 
 const postCols = `id, org_id, brand_id, livemode, status, template_id, template_version, data, content, publish_at, publish_by, slot_at,
-	metadata, approval_needed, reviewed_by, reviewed_at, review_note, created_by_user, created_by_key, created_at, updated_at`
+	metadata, approval_needed, reviewed_by, reviewed_by_key, reviewed_at, review_note, created_by_user, created_by_key, created_at, updated_at`
 
 func scanPost(r pgx.Row) (*model.Post, error) {
 	var p model.Post
 	var data, content []byte
 	err := r.Scan(&p.ID, &p.OrgID, &p.BrandID, &p.Livemode, &p.Status, &p.TemplateID, &p.TemplateVersion, &data, &content,
-		&p.PublishAt, &p.PublishBy, &p.SlotAt, &p.Metadata, &p.ApprovalNeeded, &p.ReviewedBy, &p.ReviewedAt, &p.ReviewNote,
+		&p.PublishAt, &p.PublishBy, &p.SlotAt, &p.Metadata, &p.ApprovalNeeded, &p.ReviewedBy, &p.ReviewedByKey, &p.ReviewedAt, &p.ReviewNote,
 		&p.CreatedByUser, &p.CreatedByKey, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, mapErr(err)
@@ -181,9 +181,10 @@ func (s *Store) SetPostStatus(ctx context.Context, orgID, id uuid.UUID, status m
 }
 
 // ReviewPost records an approval or rejection.
-func (s *Store) ReviewPost(ctx context.Context, orgID, id, reviewer uuid.UUID, status model.PostStatus, note string, at time.Time) error {
-	return s.execOne(ctx, `UPDATE posts SET status = $3, reviewed_by = $4, reviewed_at = $5, review_note = $6, updated_at = now()
-		WHERE org_id = $1 AND id = $2`, orgID, id, status, reviewer, at, note)
+// The reviewer is a member or an API key.
+func (s *Store) ReviewPost(ctx context.Context, orgID, id uuid.UUID, user, key *uuid.UUID, status model.PostStatus, note string, at time.Time) error {
+	return s.execOne(ctx, `UPDATE posts SET status = $3, reviewed_by = $4, reviewed_by_key = $5, reviewed_at = $6, review_note = $7,
+		updated_at = now() WHERE org_id = $1 AND id = $2`, orgID, id, status, user, key, at, note)
 }
 
 // Targets.

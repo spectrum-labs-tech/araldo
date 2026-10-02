@@ -39,6 +39,8 @@ func commands() []command {
 		{name: "users", summary: "Manage users: create, reset-password", run: runUsers},
 		{name: "keys", summary: "Master keys: generate, rotate", run: runKeys},
 		{name: "apikeys", summary: "API keys: create (prints only the key, for piping into a secret store)", run: runAPIKeys},
+		{name: "members", summary: "Org members: list, add, role, remove (acting as a member)", run: runMembers},
+		{name: "org", summary: "Org settings: update (acting as an owner)", run: runOrg},
 		{name: "version", summary: "Print the araldo version", run: runVersion},
 	}
 }

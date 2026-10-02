@@ -60,6 +60,8 @@ func (h *Handler) routes() {
 	h.handle("POST /v1/posts/preview", h.previewPost)
 	h.handle("GET /v1/posts/{id}", h.getPost)
 	h.handle("POST /v1/posts/{id}/cancel", h.cancelPost)
+	h.handle("POST /v1/posts/{id}/approve", h.reviewPost(true))
+	h.handle("POST /v1/posts/{id}/reject", h.reviewPost(false))
 	h.handle("POST /v1/post_targets/{id}/retry", h.retryTarget)
 	h.handle("POST /v1/post_targets/{id}/mark_published", h.markPublished)
 	h.handle("GET /v1/post_targets/{id}/engagement", h.listEngagement)
@@ -67,6 +69,13 @@ func (h *Handler) routes() {
 	h.handle("GET /v1/engagement/summary", h.engagementSummary, "group_by", "brand", "since", "until", "limit")
 
 	h.handle("GET /v1/events", h.listEvents, paged("type")...)
+
+	h.handle("GET /v1/api_keys", h.listKeys)
+	h.handle("POST /v1/api_keys", h.createKey)
+	h.handle("POST /v1/api_keys/self/roll", h.rollOwnKey)
+	h.handle("POST /v1/api_keys/{id}/roll", h.rollKey)
+	h.handle("POST /v1/api_keys/{id}/revoke", h.revokeKey)
+	h.handle("GET /v1/audit_events", h.listAudit, paged()...)
 	h.handle("GET /v1/events/{id}", h.getEvent)
 
 	h.handle("GET /v1/webhook_endpoints", h.listEndpoints)

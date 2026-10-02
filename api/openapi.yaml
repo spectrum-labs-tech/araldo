@@ -13,6 +13,12 @@ info:
     `Authorization: Bearer ald_test_…`. Test keys (`ald_test_`) only ever
     reach sandbox channels; live keys (`ald_live_`) reach real accounts.
 
+    **Scopes.** A key with no scopes listed holds every integration scope;
+    one with scopes holds those it lists. The administrative scopes
+    `keys:write`, `posts:approve` and `audit:read` are held only when listed
+    by name, and only a member (the dashboard, or `araldo apikeys create`)
+    can create a key with them.
+
     **Idempotency.** Every `POST` accepts an `Idempotency-Key` header. A
     retry with the same key and body returns the first response (with
     `Idempotent-Replayed: true`) for 24 hours. Only a request that took
@@ -46,6 +52,8 @@ tags:
   - name: Engagement
   - name: Events
   - name: Webhooks
+  - name: API keys
+  - name: Audit
   - name: Platforms
 
 paths:
@@ -577,6 +585,43 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Post" } } }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/posts/{id}/approve:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Approve a post
+      description: |
+        Approves a post waiting for review (`pending_approval`), which then
+        publishes on schedule. Needs the explicit `posts:approve` scope. A
+        key cannot review a post it created.
+      tags: [Posts]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewInput" }
+      responses:
+        "200":
+          description: The post.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Post" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/posts/{id}/reject:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Reject a post
+      description: Rejects a post waiting for review; it will not publish. Needs the explicit `posts:approve` scope.
+      tags: [Posts]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewInput" }
+      responses:
+        "200":
+          description: The post.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Post" } } }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/post_targets/{id}/retry:
     parameters: [{ $ref: "#/components/parameters/ID" }]
     post:
@@ -727,6 +772,121 @@ paths:
         "200":
           description: The event.
           content: { application/json: { schema: { $ref: "#/components/schemas/Event" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/api_keys:
+    get:
+      summary: List API keys
+      description: Keys in the calling key's mode (and brand, if it is limited to one). Needs the explicit `keys:write` scope.
+      tags: [API keys]
+      responses:
+        "200":
+          description: Keys, without their secrets.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/APIKey" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Create an API key
+      description: |
+        Needs the explicit `keys:write` scope. The new key is in the calling
+        key's mode, limited to its brand if it is limited to one, and holds
+        only scopes the calling key holds; it can never hold an
+        administrative scope. The secret is returned once.
+      tags: [API keys]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+                scopes: { type: array, items: { type: string }, description: Empty means every scope the caller can grant. }
+                brand: { type: string, description: Brand ID or slug to limit the key to. }
+                expires_at: { type: string, format: date-time }
+      responses:
+        "201":
+          description: The key, with its secret.
+          content: { application/json: { schema: { $ref: "#/components/schemas/APIKey" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/api_keys/self/roll:
+    post:
+      summary: Roll the calling key
+      description: |
+        Replaces the calling key's secret with a new key holding the same
+        scopes; the old secret keeps working for `overlap_hours` (default
+        24), so rotation needs no downtime. Any key may roll itself.
+      tags: [API keys]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RollInput" }
+      responses:
+        "200":
+          description: The new key, with its secret.
+          content: { application/json: { schema: { $ref: "#/components/schemas/APIKey" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/api_keys/{id}/roll:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Roll an API key
+      description: Like rolling the calling key, for a key this one could create. Needs the explicit `keys:write` scope.
+      tags: [API keys]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RollInput" }
+      responses:
+        "200":
+          description: The new key, with its secret.
+          content: { application/json: { schema: { $ref: "#/components/schemas/APIKey" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/api_keys/{id}/revoke:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Revoke an API key
+      description: Stops the key working at once. Needs the explicit `keys:write` scope.
+      tags: [API keys]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "200":
+          description: The revoked key (or, when a key revoked itself, a deletion notice).
+          content: { application/json: { schema: { $ref: "#/components/schemas/APIKey" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/audit_events:
+    get:
+      summary: List the audit log
+      description: Who (a member or an API key) did what, newest first. Needs the explicit `audit:read` scope.
+      tags: [Audit]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+        - $ref: "#/components/parameters/EndingBefore"
+      responses:
+        "200":
+          description: Audit entries.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/AuditEvent" } }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/webhook_endpoints:
@@ -1163,7 +1323,8 @@ components:
           type: object
           properties:
             required: { type: boolean }
-            reviewed_by: { type: string }
+            reviewed_by: { type: string, description: The member who reviewed it. }
+            reviewed_by_key: { type: string, description: The API key that reviewed it. }
             reviewed_at: { type: string, format: date-time }
             note: { type: string }
         media: { type: array, items: { $ref: "#/components/schemas/Media" } }
@@ -1213,6 +1374,46 @@ components:
           description: "done: the schedule is over; deleted: the post is gone from the platform; unsupported: the platform reports no engagement."
         read_at: { type: string, format: date-time, description: Absent until the first reading. }
         next_read_at: { type: string, format: date-time }
+
+    ReviewInput:
+      type: object
+      properties:
+        note: { type: string, maxLength: 500 }
+
+    RollInput:
+      type: object
+      properties:
+        overlap_hours: { type: integer, minimum: 0, maximum: 168, default: 24, description: How long the old secret keeps working. }
+
+    APIKey:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [api_key] }
+        name: { type: string }
+        hint: { type: string, description: The key's last characters. }
+        livemode: { type: boolean }
+        scopes: { type: array, items: { type: string }, description: Empty means every integration scope. }
+        brand: { type: string }
+        secret: { type: string, description: The full key; only when it is created or rolled. }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time }
+
+    AuditEvent:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [audit_event] }
+        action: { type: string, example: api_key.create }
+        target: { type: string, description: The object acted on. }
+        user: { type: string, description: The member who acted. }
+        api_key: { type: string, description: The API key that acted. }
+        outcome: { type: string }
+        request_id: { type: string }
+        detail: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
 
     PublishAttempt:
       type: object

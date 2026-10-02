@@ -92,20 +92,27 @@ const (
 	PermKeysWrite      Permission = "keys:write"
 	PermMembersWrite   Permission = "members:write"
 	PermOrgWrite       Permission = "org:write"
+	PermAuditRead      Permission = "audit:read"
 )
 
-// KeyScopes are the permissions an API key may be restricted to.
+// KeyScopes are the integration permissions: an API key with no scopes
+// listed holds them all, or it holds those it lists.
 var KeyScopes = []Permission{
 	PermPostsRead, PermPostsWrite, PermTemplatesRead, PermTemplatesWrite, PermChannelsRead, PermChannelsWrite,
 	PermBrandsRead, PermBrandsWrite, PermEventsRead, PermWebhooksRead, PermWebhooksWrite,
 }
+
+// AdminScopes are explicit-only (ADR 0019): a key holds one only when it
+// lists it by name, never through "no scopes, full access", and only a
+// member can create a key holding one.
+var AdminScopes = []Permission{PermKeysWrite, PermPostsApprove, PermAuditRead}
 
 var roleMin = map[Permission]model.Role{
 	PermPostsRead: model.RoleViewer, PermTemplatesRead: model.RoleViewer, PermChannelsRead: model.RoleViewer,
 	PermBrandsRead: model.RoleViewer, PermEventsRead: model.RoleViewer, PermWebhooksRead: model.RoleViewer,
 	PermPostsWrite: model.RoleEditor, PermTemplatesWrite: model.RoleEditor,
 	PermChannelsWrite: model.RoleAdmin, PermBrandsWrite: model.RoleAdmin, PermWebhooksWrite: model.RoleAdmin,
-	PermKeysWrite: model.RoleAdmin, PermMembersWrite: model.RoleAdmin, PermPostsApprove: model.RoleAdmin,
+	PermKeysWrite: model.RoleAdmin, PermMembersWrite: model.RoleAdmin, PermPostsApprove: model.RoleAdmin, PermAuditRead: model.RoleAdmin,
 	PermOrgWrite: model.RoleOwner,
 }
 
@@ -130,9 +137,11 @@ func (a Actor) IsKey() bool { return a.KeyID != nil }
 // Can reports whether the actor has permission p.
 func (a Actor) Can(p Permission) bool {
 	if a.IsKey() {
-		switch p {
-		case PermKeysWrite, PermMembersWrite, PermOrgWrite, PermPostsApprove:
+		switch {
+		case p == PermMembersWrite, p == PermOrgWrite:
 			return false // people only
+		case slices.Contains(AdminScopes, p):
+			return slices.Contains(a.Scopes, string(p)) // explicit only
 		}
 		return len(a.Scopes) == 0 || slices.Contains(a.Scopes, string(p))
 	}

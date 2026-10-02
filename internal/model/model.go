@@ -290,6 +290,7 @@ type Post struct {
 	Metadata        map[string]string
 	ApprovalNeeded  bool
 	ReviewedBy      *uuid.UUID
+	ReviewedByKey   *uuid.UUID
 	ReviewedAt      *time.Time
 	ReviewNote      string
 	CreatedByUser   *uuid.UUID

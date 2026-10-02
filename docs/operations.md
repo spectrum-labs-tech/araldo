@@ -61,6 +61,50 @@ araldo apikeys create --email you@example.com --brand your-product \
 The key acts for the member named by `--email` and needs their permission to
 manage keys. Add `--live` for a live key and `--expires 8760h` to expire it.
 
+### Administration by key
+
+A key with no scopes holds every integration scope. Three administrative
+scopes are held only when listed by name, and only a member (here, or the
+dashboard) can grant them ([ADR 0019](adr/0019-administration-api.md)):
+
+| Scope | Lets the key |
+|---|---|
+| `keys:write` | List, create, roll and revoke keys in its mode, with no more access than its own (`/v1/api_keys`). For a Terraform provider or a secrets rotator. |
+| `posts:approve` | Approve or reject posts waiting for review (`/v1/posts/{id}/approve`, `/reject`), never one it created. For approving from Slack or your own tools. |
+| `audit:read` | Read the audit log (`/v1/audit_events`). For exporting to a SIEM. |
+
+```bash
+araldo apikeys create --email you@example.com --name "terraform" \
+  --scopes brands:read,brands:write,channels:read,channels:write,templates:read,templates:write,webhooks:read,webhooks:write,keys:write
+```
+
+Listing any scope ends "full access", so a key that needs integration work
+and administration lists both.
+
+### Rotating keys
+
+Roll a key in the dashboard, or have it roll itself with
+`POST /v1/api_keys/self/roll`: the new secret has the same scopes, and the
+old one keeps working for 24 hours (`overlap_hours`, up to 168) so the new
+one can be deployed without downtime.
+
+## Members and org settings
+
+Members, their roles and the org's settings are for people, not API keys:
+the dashboard, or these commands, which act as the member named by `--as`
+and need that member's role to allow the change:
+
+```bash
+araldo members list   --as you@example.com
+araldo members add    --as you@example.com --email them@example.com --role editor
+araldo members role   --as you@example.com --email them@example.com --role admin
+araldo members remove --as you@example.com --email them@example.com
+araldo org update     --as you@example.com --name "Spectrum Labs" --require-mfa true
+```
+
+`members add` prints a temporary password for someone without an account
+(or reads one with `--password-stdin`).
+
 ## Media
 
 Images attached to posts ([ADR 0017](adr/0017-media.md)) are stored in

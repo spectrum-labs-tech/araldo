@@ -130,8 +130,8 @@ func (s *Service) QueueStats(ctx context.Context, a Actor) (store.QueueStats, er
 
 // AuditEvents lists the org's audit trail.
 func (s *Service) AuditEvents(ctx context.Context, a Actor, page store.Page) ([]model.AuditEvent, bool, error) {
-	if !a.Can(PermMembersWrite) {
-		return nil, false, apperr.Forbidden("Only admins can read the audit log.")
+	if err := a.require(PermAuditRead); err != nil {
+		return nil, false, err
 	}
 	return s.store.AuditEvents(ctx, a.OrgID, page)
 }

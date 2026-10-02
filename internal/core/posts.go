@@ -471,6 +471,9 @@ func (s *Service) ReviewPost(ctx context.Context, a Actor, postID uuid.UUID, app
 		if p.Status != model.PostPendingApproval {
 			return apperr.Conflict("post_not_pending", "This post is not waiting for approval.")
 		}
+		if a.IsKey() && p.CreatedByKey != nil && *p.CreatedByKey == *a.KeyID {
+			return apperr.Forbidden("A key cannot review a post it created (ADR 0019).")
+		}
 		now := s.Now()
 		status, action := model.PostScheduled, "post.approved"
 		if !approve {
@@ -481,7 +484,7 @@ func (s *Service) ReviewPost(ctx context.Context, a Actor, postID uuid.UUID, app
 		} else if err := tx.ReleaseHeldTargets(ctx, a.OrgID, p.ID); err != nil {
 			return err
 		}
-		if err := tx.ReviewPost(ctx, a.OrgID, p.ID, *a.UserID, status, strings.TrimSpace(note), now); err != nil {
+		if err := tx.ReviewPost(ctx, a.OrgID, p.ID, a.UserID, a.KeyID, status, strings.TrimSpace(note), now); err != nil {
 			return err
 		}
 		if out, err = tx.Post(ctx, a.OrgID, p.ID); err != nil {

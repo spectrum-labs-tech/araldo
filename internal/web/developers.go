@@ -20,9 +20,11 @@ import (
 // API keys.
 
 type keysData struct {
-	Keys    []*model.APIKey
-	Brands  []*model.Brand
-	Scopes  []core.Permission
+	Keys   []*model.APIKey
+	Brands []*model.Brand
+	Scopes []core.Permission
+	// Admin are the explicit-only scopes a member can add (ADR 0019).
+	Admin   []core.Permission
 	NewKey  string
 	NewName string
 	// Rolled says NewKey replaced a key whose old secret still works.
@@ -35,7 +37,7 @@ func (s *Server) keysData(c *reqCtx) (*keysData, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &keysData{Scopes: core.KeyScopes, BaseURL: baseURL(c)}
+	d := &keysData{Scopes: core.KeyScopes, Admin: core.AdminScopes, BaseURL: baseURL(c)}
 	for _, k := range keys {
 		if k.Livemode == c.actor.Livemode {
 			d.Keys = append(d.Keys, k)
@@ -71,6 +73,16 @@ func (s *Server) createKey(c *reqCtx) error {
 	in := core.APIKeyInput{Name: c.r.PostFormValue("name"), Livemode: c.actor.Livemode, Scopes: c.r.PostForm["scopes"]}
 	if c.r.PostFormValue("access") == "full" {
 		in.Scopes = nil
+	}
+	if admin := c.r.PostForm["admin"]; len(admin) > 0 {
+		// Admin scopes are held only when listed, and listing any scope
+		// ends "full access": spell the integration scopes out.
+		if len(in.Scopes) == 0 {
+			for _, p := range core.KeyScopes {
+				in.Scopes = append(in.Scopes, string(p))
+			}
+		}
+		in.Scopes = append(in.Scopes, admin...)
 	}
 	expires, err := keyExpiry(c.r.PostFormValue("expires"), c.r.PostFormValue("expires_on"), time.Now())
 	if err != nil {

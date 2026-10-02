@@ -410,6 +410,10 @@ type APIKeyInput struct {
 	Scopes   []string
 	BrandID  *uuid.UUID
 	Expires  *time.Time
+	// createdBy carries a rolled key's creator over to its replacement.
+	createdBy *uuid.UUID
+	// self marks a key replacing itself: it keeps what it has.
+	self bool
 }
 
 // CreateAPIKey makes a key and returns it in full, the only time it is
@@ -442,7 +446,7 @@ func (s *Service) createAPIKey(ctx context.Context, a Actor, in APIKeyInput) (st
 		ps.Add("name_invalid", "name", "A key needs a name of 1 to 100 characters.")
 	}
 	for _, sc := range in.Scopes {
-		if !slices.Contains(KeyScopes, Permission(sc)) {
+		if !slices.Contains(KeyScopes, Permission(sc)) && !slices.Contains(AdminScopes, Permission(sc)) {
 			ps.Add("scope_invalid", "scopes", "Unknown scope %q.", sc)
 		}
 	}
@@ -451,12 +455,19 @@ func (s *Service) createAPIKey(ctx context.Context, a Actor, in APIKeyInput) (st
 			ps.Add("brand_invalid", "brand", "No such brand.")
 		}
 	}
+	if a.IsKey() && !in.self {
+		checkGrant(a, in, &ps)
+	}
 	if err := ps.Err("The key is not valid."); err != nil {
 		return "", nil, err
 	}
 	plain := authn.NewAPIKey(in.Livemode)
+	createdBy := a.UserID
+	if in.createdBy != nil {
+		createdBy = in.createdBy
+	}
 	k := &model.APIKey{ID: id.New(), OrgID: a.OrgID, Livemode: in.Livemode, Name: in.Name, Hint: authn.KeyHint(plain),
-		Scopes: in.Scopes, BrandID: in.BrandID, CreatedBy: a.UserID, ExpiresAt: in.Expires}
+		Scopes: in.Scopes, BrandID: in.BrandID, CreatedBy: createdBy, ExpiresAt: in.Expires}
 	err := s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.CreateAPIKey(ctx, k, authn.HashToken(plain)); err != nil {
 			return err
@@ -466,18 +477,82 @@ func (s *Service) createAPIKey(ctx context.Context, a Actor, in APIKeyInput) (st
 	return plain, k, err
 }
 
-// APIKeys lists the org's keys.
+// checkGrant applies ADR 0019's rule to a key creating a key: only in its
+// own mode, for its own brand if it has one, with scopes it holds itself,
+// and never an admin scope.
+func checkGrant(a Actor, in APIKeyInput, ps *apperr.Problems) {
+	if in.Livemode != a.Livemode {
+		ps.Add("livemode_mismatch", "livemode", "A key can only create keys in its own mode.")
+	}
+	if a.BrandID != nil && (in.BrandID == nil || *in.BrandID != *a.BrandID) {
+		ps.Add("brand_required", "brand", "This key is limited to one brand, so the keys it creates must be too.")
+	}
+	scopes := in.Scopes
+	if len(scopes) == 0 {
+		for _, p := range KeyScopes {
+			scopes = append(scopes, string(p))
+		}
+	}
+	for _, sc := range scopes {
+		switch {
+		case slices.Contains(AdminScopes, Permission(sc)):
+			ps.Add("scope_not_grantable", "scopes", "Only a member can create a key with %s.", sc)
+		case !a.Can(Permission(sc)):
+			ps.Add("scope_not_held", "scopes", "This key cannot grant %s, which it does not hold.", sc)
+		}
+	}
+}
+
+// keyVisible reports whether a key caller may see or act on k: same mode,
+// and its own brand if it is limited to one.
+func keyVisible(a Actor, k *model.APIKey) bool {
+	if !a.IsKey() {
+		return true
+	}
+	return k.Livemode == a.Livemode && (a.BrandID == nil || k.BrandID != nil && *k.BrandID == *a.BrandID)
+}
+
+// APIKeys lists the org's keys (a key sees those of its mode and brand).
 func (s *Service) APIKeys(ctx context.Context, a Actor) ([]*model.APIKey, error) {
 	if err := a.require(PermKeysWrite); err != nil {
 		return nil, err
 	}
-	return s.store.APIKeys(ctx, a.OrgID)
+	all, err := s.store.APIKeys(ctx, a.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	out := all[:0]
+	for _, k := range all {
+		if keyVisible(a, k) {
+			out = append(out, k)
+		}
+	}
+	return out, nil
+}
+
+// CreateKeyWithKey is CreateAPIKey for an API key with keys:write: no
+// session to re-authenticate, and the grant rule applies (ADR 0019).
+func (s *Service) CreateKeyWithKey(ctx context.Context, a Actor, in APIKeyInput) (string, *model.APIKey, error) {
+	if err := a.require(PermKeysWrite); err != nil {
+		return "", nil, err
+	}
+	if !a.IsKey() {
+		return "", nil, apperr.Forbidden("Members create keys in the dashboard.")
+	}
+	in.Livemode = a.Livemode
+	return s.createAPIKey(ctx, a, in)
 }
 
 // RevokeAPIKey stops a key working immediately.
 func (s *Service) RevokeAPIKey(ctx context.Context, a Actor, keyID uuid.UUID) error {
 	if err := a.require(PermKeysWrite); err != nil {
 		return err
+	}
+	if a.IsKey() {
+		k, err := s.store.APIKey(ctx, a.OrgID, keyID)
+		if err != nil || !keyVisible(a, k) {
+			return apperr.NotFound("API key")
+		}
 	}
 	return s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.ExpireAPIKey(ctx, a.OrgID, keyID, s.Now(), true); err != nil {
@@ -488,25 +563,46 @@ func (s *Service) RevokeAPIKey(ctx context.Context, a Actor, keyID uuid.UUID) er
 }
 
 // RollAPIKey issues a replacement key with the same settings and lets the
-// old one keep working for overlap (at most 7 days).
+// old one keep working for overlap (at most 7 days). A member needs a recent
+// re-authentication; a key may roll only keys it could create.
 func (s *Service) RollAPIKey(ctx context.Context, a Actor, ss *model.Session, keyID uuid.UUID, overlap time.Duration) (string, *model.APIKey, error) {
 	if err := a.require(PermKeysWrite); err != nil {
 		return "", nil, err
 	}
+	if !a.IsKey() {
+		if err := s.requireSudo(ss); err != nil {
+			return "", nil, err
+		}
+	}
+	return s.rollKey(ctx, a, keyID, overlap, false)
+}
+
+// RollOwnKey replaces the calling key's secret; the old one keeps working
+// for overlap. Any key may: it gains nothing it did not have.
+func (s *Service) RollOwnKey(ctx context.Context, a Actor, overlap time.Duration) (string, *model.APIKey, error) {
+	if !a.IsKey() {
+		return "", nil, apperr.Forbidden("Only an API key can roll itself.")
+	}
+	return s.rollKey(ctx, a, *a.KeyID, overlap, true)
+}
+
+// rollKey creates the replacement and expires the old key after overlap.
+// self skips the grant rule: a key replacing itself keeps what it has.
+func (s *Service) rollKey(ctx context.Context, a Actor, keyID uuid.UUID, overlap time.Duration, self bool) (string, *model.APIKey, error) {
 	old, err := s.store.APIKey(ctx, a.OrgID, keyID)
-	if err != nil {
-		return "", nil, notFound(err, "API key")
+	if err != nil || !keyVisible(a, old) {
+		return "", nil, apperr.NotFound("API key")
 	}
 	if !old.Active(s.Now()) {
 		return "", nil, apperr.Conflict("key_inactive", "That key is no longer active.")
 	}
 	overlap = min(max(overlap, 0), 7*24*time.Hour)
-	in := APIKeyInput{Name: old.Name, Livemode: old.Livemode, Scopes: old.Scopes, BrandID: old.BrandID}
+	in := APIKeyInput{Name: old.Name, Livemode: old.Livemode, Scopes: old.Scopes, BrandID: old.BrandID, createdBy: old.CreatedBy, self: self}
 	if old.ExpiresAt != nil {
 		// The new key lasts as long as the old one was meant to.
 		in.Expires = ptr(s.Now().Add(old.ExpiresAt.Sub(old.CreatedAt)))
 	}
-	plain, k, err := s.CreateAPIKey(ctx, a, ss, in)
+	plain, k, err := s.createAPIKey(ctx, a, in)
 	if err != nil {
 		return "", nil, err
 	}

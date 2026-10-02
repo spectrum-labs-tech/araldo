@@ -34,6 +34,7 @@ const (
 	Request         Prefix = "req"
 	Slot            Prefix = "slot"
 	Media           Prefix = "media"
+	AuditEvent      Prefix = "audit"
 )
 
 // ErrInvalid is returned for a malformed ID or one of another type.

@@ -10,6 +10,8 @@ every problem in `errors`, each with its own `code` and `param`.
 - **api_key_invalid** (401): the key is malformed or unknown.
 - **api_key_expired** (401): the key was revoked or has expired.
 - **scope_missing** (403): a restricted key lacks the scope this needs.
+  Administrative scopes (`keys:write`, `posts:approve`, `audit:read`) are
+  held only when a key lists them.
 - **forbidden** (403): the caller may not do this.
 - **rate_limited** (429): slow down; see `Retry-After`.
 
@@ -70,6 +72,17 @@ every problem in `errors`, each with its own `code` and `param`.
 
 - **group_by_invalid**: group a summary by `post`, `channel` or `template`.
 - **window_invalid**: `since` must be before `until`, at most a year apart.
+
+## API keys
+
+- **scope_not_grantable**: only a member can create a key with an
+  administrative scope.
+- **scope_not_held**: a key can only create (or roll) keys with scopes it
+  holds itself; with no scopes listed, the new key would hold them all.
+- **brand_required**: a key limited to one brand creates keys for that
+  brand only.
+- **livemode_mismatch**: a key creates keys in its own mode only.
+- **key_inactive** (409): the key to roll has expired or was revoked.
 
 ## Media
 

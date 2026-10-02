@@ -26,6 +26,9 @@
 - Images on posts: uploads or URLs, checked against each platform's limits,
   stored in Postgres or S3-compatible storage
   ([ADR 0017](adr/0017-media.md)).
+- Administration by API (ADR 0019): channel recovery, brand slots, attempt
+  history, keys managing keys, approval and the audit log behind
+  explicit-only scopes; members and org settings in the CLI.
 - Engagement: likes, reposts, replies and quotes read from Bluesky and
   Mastodon on a schedule after publishing, with a summary by post, channel
   and template and the dashboard's Performance page

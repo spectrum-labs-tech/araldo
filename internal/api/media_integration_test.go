@@ -42,9 +42,13 @@ var (
 // channel imitating Bluesky. Tests never clean up.
 type client struct {
 	t     *testing.T
+	s     *core.Service
+	owner core.Actor
 	h     http.Handler
 	key   string
 	brand string
+	// channel is the sandbox channel's ID.
+	channel string
 }
 
 func newClient(t *testing.T) *client {
@@ -87,14 +91,15 @@ func newClient(t *testing.T) *client {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ConnectChannel(ctx, owner, core.ConnectInput{BrandID: b.ID, Provider: platform.Sandbox, Fields: map[string]string{"emulates": "bluesky"}}); err != nil {
-		t.Fatal(err)
-	}
-	key, _, err := s.CreateOperatorAPIKey(ctx, owner, core.APIKeyInput{Name: "test", Scopes: []string{"posts:read", "posts:write"}})
+	ch, err := s.ConnectChannel(ctx, owner, core.ConnectInput{BrandID: b.ID, Provider: platform.Sandbox, Fields: map[string]string{"emulates": "bluesky"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &client{t: t, h: api.New(s, log), key: key, brand: id.Format(id.Brand, b.ID)}
+	key, _, err := s.CreateOperatorAPIKey(ctx, owner, core.APIKeyInput{Name: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &client{t: t, s: s, owner: owner, h: api.New(s, log), key: key, brand: id.Format(id.Brand, b.ID), channel: id.Format(id.Channel, ch.ID)}
 }
 
 // do sends a request and decodes the JSON answer.

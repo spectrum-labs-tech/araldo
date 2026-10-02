@@ -197,10 +197,16 @@ type BrandInput struct {
 	Timezone       string
 	ApprovalPolicy model.ApprovalPolicy
 	UTMDomains     []string
+	// Slots replaces the weekly slots when not nil. A new brand without
+	// them gets weekdays at 09:00 and 13:00.
+	Slots *[]model.Slot
 }
 
 func (in *BrandInput) check() error {
 	var ps apperr.Problems
+	if in.Slots != nil {
+		checkSlots(*in.Slots, &ps)
+	}
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" || len(in.Name) > 100 {
 		ps.Add("name_invalid", "name", "A brand needs a name of 1 to 100 characters.")
@@ -234,6 +240,18 @@ func (in *BrandInput) check() error {
 		in.UTMDomains = domains
 	}
 	return ps.Err("The brand is not valid.")
+}
+
+// checkSlots adds a problem for each invalid slot.
+func checkSlots(slots []model.Slot, ps *apperr.Problems) {
+	for i, sl := range slots {
+		if sl.Weekday < time.Sunday || sl.Weekday > time.Saturday || sl.MinuteOfDay < 0 || sl.MinuteOfDay >= 24*60 {
+			ps.Add("slot_invalid", "slots["+strconv.Itoa(i)+"]", "Slots need a weekday and a time of day.")
+		}
+	}
+	if len(slots) > 200 {
+		ps.Add("too_many_slots", "slots", "A brand can have at most 200 weekly slots.")
+	}
 }
 
 // Slugify makes a slug from a name.
@@ -274,13 +292,22 @@ func (s *Service) CreateBrand(ctx context.Context, a Actor, in BrandInput) (*mod
 			return err
 		}
 		var slots []model.Slot
-		for d := time.Monday; d <= time.Friday; d++ {
-			slots = append(slots, model.Slot{Weekday: d, MinuteOfDay: 9 * 60}, model.Slot{Weekday: d, MinuteOfDay: 13 * 60})
+		if in.Slots != nil {
+			slots = *in.Slots
+		} else {
+			for d := time.Monday; d <= time.Friday; d++ {
+				slots = append(slots, model.Slot{Weekday: d, MinuteOfDay: 9 * 60}, model.Slot{Weekday: d, MinuteOfDay: 13 * 60})
+			}
 		}
 		if err := tx.ReplaceSlots(ctx, a.OrgID, b.ID, slots); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, a, "brand.create", id.Format(id.Brand, b.ID), map[string]any{"name": b.Name})
+		if err := s.audit(ctx, tx, a, "brand.create", id.Format(id.Brand, b.ID), map[string]any{"name": b.Name}); err != nil {
+			return err
+		}
+		var err error
+		b.Slots, err = tx.Slots(ctx, a.OrgID, b.ID)
+		return err
 	})
 	return b, err
 }
@@ -307,6 +334,14 @@ func (s *Service) UpdateBrand(ctx context.Context, a Actor, brandID uuid.UUID, i
 				return apperr.Invalid("slug_taken", "slug", "Another brand already uses the slug %q.", b.Slug)
 			}
 			return err
+		}
+		if in.Slots != nil {
+			if err := tx.ReplaceSlots(ctx, a.OrgID, b.ID, *in.Slots); err != nil {
+				return err
+			}
+			if b.Slots, err = tx.Slots(ctx, a.OrgID, b.ID); err != nil {
+				return err
+			}
 		}
 		return s.audit(ctx, tx, a, "brand.update", id.Format(id.Brand, b.ID), nil)
 	})
@@ -354,14 +389,7 @@ func (s *Service) SetSlots(ctx context.Context, a Actor, brandID uuid.UUID, slot
 		return err
 	}
 	var ps apperr.Problems
-	for i, sl := range slots {
-		if sl.Weekday < time.Sunday || sl.Weekday > time.Saturday || sl.MinuteOfDay < 0 || sl.MinuteOfDay >= 24*60 {
-			ps.Add("slot_invalid", "slots["+strconv.Itoa(i)+"]", "Slots need a weekday and a time of day.")
-		}
-	}
-	if len(slots) > 200 {
-		ps.Add("too_many_slots", "slots", "A brand can have at most 200 weekly slots.")
-	}
+	checkSlots(slots, &ps)
 	if err := ps.Err("The slots are not valid."); err != nil {
 		return err
 	}
@@ -473,7 +501,12 @@ func (s *Service) RollAPIKey(ctx context.Context, a Actor, ss *model.Session, ke
 		return "", nil, apperr.Conflict("key_inactive", "That key is no longer active.")
 	}
 	overlap = min(max(overlap, 0), 7*24*time.Hour)
-	plain, k, err := s.CreateAPIKey(ctx, a, ss, APIKeyInput{Name: old.Name, Livemode: old.Livemode, Scopes: old.Scopes, BrandID: old.BrandID})
+	in := APIKeyInput{Name: old.Name, Livemode: old.Livemode, Scopes: old.Scopes, BrandID: old.BrandID}
+	if old.ExpiresAt != nil {
+		// The new key lasts as long as the old one was meant to.
+		in.Expires = ptr(s.Now().Add(old.ExpiresAt.Sub(old.CreatedAt)))
+	}
+	plain, k, err := s.CreateAPIKey(ctx, a, ss, in)
 	if err != nil {
 		return "", nil, err
 	}

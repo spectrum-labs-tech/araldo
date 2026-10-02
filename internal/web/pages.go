@@ -78,6 +78,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /keys", s.app("developers", s.keys))
 	s.mux.HandleFunc("POST /keys", s.app("developers", s.createKey))
 	s.mux.HandleFunc("POST /keys/{id}/revoke", s.app("developers", s.revokeKey))
+	s.mux.HandleFunc("POST /keys/{id}/roll", s.app("developers", s.rollKey))
 	s.mux.HandleFunc("GET /webhooks", s.app("developers", s.webhooks))
 	s.mux.HandleFunc("POST /webhooks", s.app("developers", s.createWebhook))
 	s.mux.HandleFunc("GET /webhooks/{id}", s.app("developers", s.webhookDetail))

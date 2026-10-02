@@ -240,11 +240,44 @@ func (c *Compiled) Render(p platform.Provider, data json.RawMessage, loc *time.L
 		return "", err
 	}
 	t.Funcs(template.FuncMap{"date": dateIn(loc)})
+	declareOptional(m, c.schema, 0)
 	var out limitedBuffer
 	if err := t.Execute(&out, m); err != nil {
 		return "", renderError(err)
 	}
-	return strings.TrimSpace(out.String()), nil
+	text := out.String()
+	if strings.Contains(text, noValue) && !bytes.Contains(data, []byte(noValue)) {
+		return "", apperr.Invalid("variable_unguarded", "body",
+			"The template prints an optional field the data leaves out; wrap it in {{if .field}}…{{end}} or {{with .field}}…{{end}}.")
+	}
+	return strings.TrimSpace(text), nil
+}
+
+// noValue is what text/template prints for a nil value.
+const noValue = "<no value>"
+
+// declareOptional sets each property the schema declares but the data
+// leaves out to null, in m and the objects nested in it (ADR 0019): with
+// missingkey=error a guard like {{if .field}} would otherwise fail on an
+// optional field. A field the schema does not declare is still an error.
+func declareOptional(m map[string]any, s *jsonschema.Schema, depth int) {
+	if s == nil || depth > 16 {
+		return
+	}
+	declareOptional(m, s.Ref, depth+1)
+	for _, sub := range s.AllOf {
+		declareOptional(m, sub, depth+1)
+	}
+	for name, ps := range s.Properties {
+		v, ok := m[name]
+		if !ok {
+			m[name] = nil
+			continue
+		}
+		if obj, isObj := v.(map[string]any); isObj {
+			declareOptional(obj, ps, depth+1)
+		}
+	}
 }
 
 var missingKeyRE = regexp.MustCompile(`map has no entry for key "([^"]+)"`)

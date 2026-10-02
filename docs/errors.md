@@ -16,10 +16,15 @@ every problem in `errors`, each with its own `code` and `param`.
 ## Requests
 
 - **json_invalid**, **parameter_unknown**, **parameter_invalid**,
-  **body_too_large** (400): the request itself is malformed.
-- **resource_missing** (404): no such object in this org and mode.
+  **body_too_large** (400): the request itself is malformed. An unknown
+  query parameter is refused like an unknown body field, so a misspelled
+  filter never passes silently.
+- **resource_missing** (404): no such object in this org and mode. Paths
+  take IDs (and a brand's slug); find a template by key with
+  `GET /v1/templates?brand=…&key=…`.
 - **idempotency_key_reused** (409): the key was used with a different
-  request.
+  request that succeeded. A request that failed does not keep its key, so
+  it can be sent again, corrected, with the same key.
 - **idempotency_key_in_use** (409): the first request with this key is still
   running; retry shortly.
 
@@ -40,7 +45,12 @@ every problem in `errors`, each with its own `code` and `param`.
 - **threads_unsupported**: several parts were given to a platform without
   threads.
 - **empty**: the rendered text is empty.
-- **variable_missing**: the template uses a field the data does not have.
+- **variable_missing**: the template uses a field that its schema does not
+  declare and the data does not have. A field the schema declares but the
+  data leaves out is null, so `{{if .field}}…{{end}}` and
+  `{{with .field}}…{{end}}` handle optional fields.
+- **variable_unguarded**: the template prints an optional field the data
+  leaves out; wrap it in `{{if}}` or `{{with}}`.
 - **data_invalid**: the data does not match the template's JSON Schema.
 - **example_required**: a preview without data needs the template to have
   an example that matches its variables.
@@ -49,7 +59,10 @@ every problem in `errors`, each with its own `code` and `param`.
 - **no_channels**: the brand has no active channels in this mode.
 - **channel_missing**, **channel_inactive**, **channel_other_brand**: a
   listed channel cannot be used.
-- **no_slots**, **slots_full**: `next_slot` found nothing.
+- **no_slots**, **slots_full**: `next_slot` found nothing. Set the brand's
+  `slots` with `POST /v1/brands/{id}`.
+- **slot_invalid**, **too_many_slots**: a slot is a weekday (`monday`) and a
+  24-hour time (`09:00`); a brand has at most 200.
 - **simulation_in_live_mode**, **simulation_invalid**:
   `metadata.araldo_simulate` is for test mode, with a known value.
 

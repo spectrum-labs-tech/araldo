@@ -14,6 +14,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -217,5 +218,30 @@ func TestPerformancePage(t *testing.T) {
 	rec = d.send(httptest.NewRequest(http.MethodGet, "/posts", nil))
 	if !strings.Contains(rec.Body.String(), "<td>52</td>") {
 		t.Fatalf("posts list lacks the engagement total:\n%s", rec.Body)
+	}
+}
+
+func TestRollKeyKeepsTheOldSecretForADay(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	oldKey, k, err := d.s.CreateAPIKey(ctx, d.owner, d.login.Session, core.APIKeyInput{Name: "ci"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"csrf": {d.login.Session.CSRFToken}}
+	r := httptest.NewRequest(http.MethodPost, "/keys/"+id.Format(id.APIKey, k.ID)+"/roll", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := d.send(r)
+	page := rec.Body.String()
+	m := regexp.MustCompile(`id="new-key" class="copy-box">(ald_test_[^<]+)<`).FindStringSubmatch(page)
+	if rec.Code != http.StatusOK || m == nil || !strings.Contains(page, "keeps working for 24 hours") {
+		t.Fatalf("roll: %d\n%s", rec.Code, page)
+	}
+	if _, err := d.s.AuthenticateKey(ctx, m[1], ""); err != nil {
+		t.Fatalf("the new key: %v", err)
+	}
+	if _, err := d.s.AuthenticateKey(ctx, oldKey, ""); err != nil {
+		t.Fatalf("the old key during the overlap: %v", err)
 	}
 }

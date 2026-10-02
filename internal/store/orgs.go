@@ -113,11 +113,21 @@ func (s *Store) UpdateBrand(ctx context.Context, b *model.Brand) error {
 }
 
 func (s *Store) Brand(ctx context.Context, orgID, id uuid.UUID) (*model.Brand, error) {
-	return scanBrand(s.q.QueryRow(ctx, `SELECT `+brandCols+` FROM brands WHERE org_id = $1 AND id = $2`, orgID, id))
+	return s.brandWithSlots(ctx, s.q.QueryRow(ctx, `SELECT `+brandCols+` FROM brands WHERE org_id = $1 AND id = $2`, orgID, id))
 }
 
 func (s *Store) BrandBySlug(ctx context.Context, orgID uuid.UUID, slug string) (*model.Brand, error) {
-	return scanBrand(s.q.QueryRow(ctx, `SELECT `+brandCols+` FROM brands WHERE org_id = $1 AND slug = $2`, orgID, slug))
+	return s.brandWithSlots(ctx, s.q.QueryRow(ctx, `SELECT `+brandCols+` FROM brands WHERE org_id = $1 AND slug = $2`, orgID, slug))
+}
+
+// brandWithSlots reads a brand row and its slots.
+func (s *Store) brandWithSlots(ctx context.Context, row pgx.Row) (*model.Brand, error) {
+	b, err := scanBrand(row)
+	if err != nil {
+		return nil, err
+	}
+	b.Slots, err = s.Slots(ctx, b.OrgID, b.ID)
+	return b, err
 }
 
 func (s *Store) Brands(ctx context.Context, orgID uuid.UUID) ([]*model.Brand, error) {
@@ -125,7 +135,29 @@ func (s *Store) Brands(ctx context.Context, orgID uuid.UUID) ([]*model.Brand, er
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Brand, error) { return scanBrand(r) })
+	brands, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Brand, error) { return scanBrand(r) })
+	if err != nil || len(brands) == 0 {
+		return brands, err
+	}
+	byID := map[uuid.UUID]*model.Brand{}
+	for _, b := range brands {
+		byID[b.ID] = b
+	}
+	srows, err := s.q.Query(ctx, `SELECT id, org_id, brand_id, weekday, minute_of_day FROM schedule_slots
+		WHERE org_id = $1 ORDER BY weekday, minute_of_day`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	slots, err := pgx.CollectRows(srows, scanSlot)
+	if err != nil {
+		return nil, err
+	}
+	for _, sl := range slots {
+		if b := byID[sl.BrandID]; b != nil {
+			b.Slots = append(b.Slots, sl)
+		}
+	}
+	return brands, nil
 }
 
 func (s *Store) DeleteBrand(ctx context.Context, orgID, id uuid.UUID) error {
@@ -140,13 +172,15 @@ func (s *Store) Slots(ctx context.Context, orgID, brandID uuid.UUID) ([]model.Sl
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (model.Slot, error) {
-		var sl model.Slot
-		var wd int16
-		err := r.Scan(&sl.ID, &sl.OrgID, &sl.BrandID, &wd, &sl.MinuteOfDay)
-		sl.Weekday = time.Weekday(wd)
-		return sl, err
-	})
+	return pgx.CollectRows(rows, scanSlot)
+}
+
+func scanSlot(r pgx.CollectableRow) (model.Slot, error) {
+	var sl model.Slot
+	var wd int16
+	err := r.Scan(&sl.ID, &sl.OrgID, &sl.BrandID, &wd, &sl.MinuteOfDay)
+	sl.Weekday = time.Weekday(wd)
+	return sl, err
 }
 
 // ReplaceSlots sets a brand's weekly slots.

@@ -25,6 +25,8 @@ type keysData struct {
 	Scopes  []core.Permission
 	NewKey  string
 	NewName string
+	// Rolled says NewKey replaced a key whose old secret still works.
+	Rolled  bool
 	BaseURL string
 }
 
@@ -119,6 +121,31 @@ func keyExpiry(choice, on string, now time.Time) (*time.Time, error) {
 		return nil, apperr.Invalid("expires_invalid", "expires_on", "The expiry date must be in the future.")
 	}
 	return &t, nil
+}
+
+// RollOverlap is how long a rolled key's old secret keeps working, so the
+// new one can be deployed without downtime.
+const RollOverlap = 24 * time.Hour
+
+// rollKey replaces a key's secret; the old one works for RollOverlap.
+func (s *Server) rollKey(c *reqCtx) error {
+	kid, err := pathUUID(c, id.APIKey, "API key")
+	if err != nil {
+		return err
+	}
+	plain, k, err := s.svc.RollAPIKey(c.ctx(), c.actor, c.session, kid, RollOverlap)
+	if err != nil {
+		if apperr.As(err).Code == "reauthentication_required" {
+			return redirect(c, "/confirm?next=/keys", "Confirm your password to roll a key.")
+		}
+		return err
+	}
+	d, err := s.keysData(c)
+	if err != nil {
+		return err
+	}
+	d.NewKey, d.NewName, d.Rolled = plain, k.Name, true
+	return s.page(c, "keys", "developers", "API keys", d)
 }
 
 func (s *Server) revokeKey(c *reqCtx) error {

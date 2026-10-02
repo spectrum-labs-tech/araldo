@@ -15,7 +15,14 @@ info:
 
     **Idempotency.** Every `POST` accepts an `Idempotency-Key` header. A
     retry with the same key and body returns the first response (with
-    `Idempotent-Replayed: true`) for 24 hours.
+    `Idempotent-Replayed: true`) for 24 hours. Only a request that took
+    effect (2xx) keeps its key: after an error, nothing happened, so the
+    same key can be sent again with a corrected request.
+
+    **Strict parameters.** An unknown body field or query parameter is a
+    `400 parameter_unknown`, so a typo never passes as a filter. Paths take
+    IDs (and a brand's slug); find a template by key with
+    `GET /v1/templates?brand=…&key=…`.
 
     **Errors** are RFC 9457 problem details with a stable `code`, the
     `param` at fault, and every validation problem in `errors`.
@@ -192,6 +199,26 @@ paths:
           description: The channel.
           content: { application/json: { schema: { $ref: "#/components/schemas/Channel" } } }
         default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Enable or disable a channel
+      description: |
+        A disabled channel keeps its credentials but takes no new posts. A
+        channel that needs reauthorization is enabled by reconnecting it.
+      tags: [Channels]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [active, disabled] }
+      responses:
+        "200":
+          description: The channel.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Channel" } } }
+        default: { $ref: "#/components/responses/Error" }
     delete:
       summary: Disconnect a channel
       tags: [Channels]
@@ -201,12 +228,41 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/channels/{id}/reconnect:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Reconnect a channel
+      description: |
+        Replaces a channel's credentials after the platform revoked them (the
+        `channel.needs_reauth` event), checks them with the platform, and
+        makes the channel active again. Send the secret fields; settings left
+        out keep their current values.
+      tags: [Channels]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fields:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: The platform's connect fields (see /v1/platforms).
+      responses:
+        "200":
+          description: The channel.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Channel" } } }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/templates:
     get:
       summary: List templates
       tags: [Templates]
       parameters:
-        - { name: brand, in: query, schema: { type: string } }
+        - { name: brand, in: query, schema: { type: string }, description: Brand ID or slug. }
+        - { name: key, in: query, schema: { type: string }, description: "Only the template with this key (unique within a brand)." }
       responses:
         "200":
           description: Templates (without their bodies).
@@ -577,6 +633,25 @@ paths:
                       data: { type: array, items: { $ref: "#/components/schemas/EngagementReading" } }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/post_targets/{id}/attempts:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: List a target's publish attempts
+      description: Every try at publishing the target, oldest first, with the platform's error when it failed.
+      tags: [Posts]
+      responses:
+        "200":
+          description: Attempts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/PublishAttempt" } }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/engagement/summary:
     get:
       summary: Summarize engagement
@@ -910,6 +985,14 @@ components:
             (social), utm_campaign (the template's key) and utm_content (the
             post's ID), unless it already has a utm_ parameter. Empty: no
             tagging.
+        slots:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/Slot" }
+          description: |
+            Weekly publishing times, used by `publish_at: "next_slot"`.
+            Replaces them all when present. A new brand without slots gets
+            weekdays at 09:00 and 13:00.
 
     Brand:
       type: object
@@ -921,7 +1004,16 @@ components:
         timezone: { type: string }
         approval_policy: { type: string }
         utm_domains: { type: array, items: { type: string } }
+        slots: { type: array, items: { $ref: "#/components/schemas/Slot" } }
         created_at: { type: string, format: date-time }
+
+    Slot:
+      type: object
+      description: A weekly publishing time in the brand's time zone.
+      required: [weekday, time]
+      properties:
+        weekday: { type: string, enum: [sunday, monday, tuesday, wednesday, thursday, friday, saturday] }
+        time: { type: string, example: "09:00", description: 24-hour HH:MM. }
 
     Channel:
       type: object
@@ -935,6 +1027,10 @@ components:
         display_name: { type: string }
         handle: { type: string }
         profile_url: { type: string }
+        settings:
+          type: object
+          additionalProperties: { type: string }
+          description: The non-secret connect fields. Secrets are write-only and never returned.
         status: { type: string, enum: [active, needs_reauth, disabled] }
         status_note: { type: string }
         created_at: { type: string, format: date-time }
@@ -1117,6 +1213,22 @@ components:
           description: "done: the schedule is over; deleted: the post is gone from the platform; unsupported: the platform reports no engagement."
         read_at: { type: string, format: date-time, description: Absent until the first reading. }
         next_read_at: { type: string, format: date-time }
+
+    PublishAttempt:
+      type: object
+      properties:
+        object: { type: string, enum: [publish_attempt] }
+        attempt: { type: integer }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        outcome:
+          type: string
+          description: "published, or the failure's kind: rate_limited, auth_revoked, rejected, transient, uncertain; unknown for an unclassified error; running while it is in progress."
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
 
     EngagementReading:
       type: object

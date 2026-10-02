@@ -147,3 +147,36 @@ func TestEngagementSummaryValidates(t *testing.T) {
 		}
 	}
 }
+
+// A key limited to one brand cannot read another brand's history.
+func TestBrandKeysSeeOnlyTheirBrandsHistory(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	p, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "history"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tg := settle(t, w, p.ID).Targets[0]
+	other, err := w.s.CreateBrand(ctx, w.owner, core.BrandInput{Name: "Other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, _, err := w.s.CreateOperatorAPIKey(ctx, w.owner, core.APIKeyInput{Name: "other brand", BrandID: &other.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := w.s.AuthenticateKey(ctx, plain, "req_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.s.Attempts(ctx, key, tg.ID); kind(err) != apperr.KindNotFound {
+		t.Errorf("attempts of another brand's target: %v, want not found", err)
+	}
+	if _, err := w.s.EngagementReadings(ctx, key, tg.ID); kind(err) != apperr.KindNotFound {
+		t.Errorf("engagement of another brand's target: %v, want not found", err)
+	}
+	if at, err := w.s.Attempts(ctx, w.owner, tg.ID); err != nil || len(at) == 0 {
+		t.Errorf("the owner's own attempts: %d, %v", len(at), err)
+	}
+}

@@ -4,7 +4,9 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -32,26 +34,28 @@ func (h *Handler) routes() {
 	h.handle("GET /v1/brands/{id}", h.getBrand)
 	h.handle("POST /v1/brands/{id}", h.updateBrand)
 
-	h.handle("GET /v1/channels", h.listChannels)
+	h.handle("GET /v1/channels", h.listChannels, "brand")
 	h.handle("POST /v1/channels", h.createChannel)
 	h.handle("GET /v1/channels/{id}", h.getChannel)
+	h.handle("POST /v1/channels/{id}", h.updateChannel)
+	h.handle("POST /v1/channels/{id}/reconnect", h.reconnectChannel)
 	h.handle("DELETE /v1/channels/{id}", h.deleteChannel)
 
-	h.handle("GET /v1/templates", h.listTemplates)
+	h.handle("GET /v1/templates", h.listTemplates, "brand", "key")
 	h.handle("POST /v1/templates", h.createTemplate)
 	h.handle("POST /v1/templates/preview", h.previewTemplate)
-	h.handle("GET /v1/templates/{id}", h.getTemplate)
+	h.handle("GET /v1/templates/{id}", h.getTemplate, "version")
 	h.handle("POST /v1/templates/{id}", h.updateTemplate)
 	h.handle("POST /v1/templates/{id}/versions", h.addTemplateVersion)
 	h.handle("DELETE /v1/templates/{id}", h.deleteTemplate)
 
-	h.handle("GET /v1/media", h.listMedia)
+	h.handle("GET /v1/media", h.listMedia, paged("brand")...)
 	h.handle("POST /v1/media", h.createMedia)
 	h.handle("GET /v1/media/{id}", h.getMedia)
 	h.handle("POST /v1/media/{id}", h.updateMedia)
 	h.handle("DELETE /v1/media/{id}", h.deleteMedia)
 
-	h.handle("GET /v1/posts", h.listPosts)
+	h.handle("GET /v1/posts", h.listPosts, paged("brand", "status", "metadata")...)
 	h.handle("POST /v1/posts", h.createPost)
 	h.handle("POST /v1/posts/preview", h.previewPost)
 	h.handle("GET /v1/posts/{id}", h.getPost)
@@ -59,9 +63,10 @@ func (h *Handler) routes() {
 	h.handle("POST /v1/post_targets/{id}/retry", h.retryTarget)
 	h.handle("POST /v1/post_targets/{id}/mark_published", h.markPublished)
 	h.handle("GET /v1/post_targets/{id}/engagement", h.listEngagement)
-	h.handle("GET /v1/engagement/summary", h.engagementSummary)
+	h.handle("GET /v1/post_targets/{id}/attempts", h.listAttempts)
+	h.handle("GET /v1/engagement/summary", h.engagementSummary, "group_by", "brand", "since", "until", "limit")
 
-	h.handle("GET /v1/events", h.listEvents)
+	h.handle("GET /v1/events", h.listEvents, paged("type")...)
 	h.handle("GET /v1/events/{id}", h.getEvent)
 
 	h.handle("GET /v1/webhook_endpoints", h.listEndpoints)
@@ -70,7 +75,7 @@ func (h *Handler) routes() {
 	h.handle("POST /v1/webhook_endpoints/{id}", h.updateEndpoint)
 	h.handle("DELETE /v1/webhook_endpoints/{id}", h.deleteEndpoint)
 	h.handle("POST /v1/webhook_endpoints/{id}/roll_secret", h.rollSecret)
-	h.handle("GET /v1/webhook_endpoints/{id}/deliveries", h.listDeliveries)
+	h.handle("GET /v1/webhook_endpoints/{id}/deliveries", h.listDeliveries, paged()...)
 	h.handle("POST /v1/webhook_deliveries/{id}/resend", h.resendDelivery)
 }
 
@@ -135,6 +140,26 @@ type brandBody struct {
 	Timezone       *string   `json:"timezone"`
 	ApprovalPolicy *string   `json:"approval_policy"`
 	UTMDomains     *[]string `json:"utm_domains"`
+	// Slots replace the brand's weekly slots when present.
+	Slots *[]core.SlotView `json:"slots"`
+}
+
+// slots parses the body's slots, if any.
+func (b brandBody) slots() (*[]model.Slot, error) {
+	if b.Slots == nil {
+		return nil, nil
+	}
+	var ps apperr.Problems
+	out := make([]model.Slot, 0, len(*b.Slots))
+	for i, sv := range *b.Slots {
+		sl, ok := core.ParseSlot(sv.Weekday, sv.Time)
+		if !ok {
+			ps.Add("slot_invalid", "slots["+strconv.Itoa(i)+"]", `A slot is a weekday ("monday") and a 24-hour time ("09:00").`)
+			continue
+		}
+		out = append(out, sl)
+	}
+	return &out, ps.Err("The slots are not valid.")
 }
 
 func (b brandBody) input(base *model.Brand) core.BrandInput {
@@ -178,7 +203,12 @@ func (h *Handler) createBrand(w http.ResponseWriter, r *http.Request) error {
 	if err := decode(r, &body); err != nil {
 		return err
 	}
-	b, err := h.svc.CreateBrand(r.Context(), actor(r), body.input(nil))
+	in := body.input(nil)
+	var err error
+	if in.Slots, err = body.slots(); err != nil {
+		return err
+	}
+	b, err := h.svc.CreateBrand(r.Context(), actor(r), in)
 	if err != nil {
 		return err
 	}
@@ -205,7 +235,11 @@ func (h *Handler) updateBrand(w http.ResponseWriter, r *http.Request) error {
 	if err := decode(r, &body); err != nil {
 		return err
 	}
-	b, err = h.svc.UpdateBrand(r.Context(), a, b.ID, body.input(b))
+	in := body.input(b)
+	if in.Slots, err = body.slots(); err != nil {
+		return err
+	}
+	b, err = h.svc.UpdateBrand(r.Context(), a, b.ID, in)
 	if err != nil {
 		return err
 	}
@@ -279,6 +313,57 @@ func (h *Handler) getChannel(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// updateChannel enables or disables a channel (ADR 0019).
+func (h *Handler) updateChannel(w http.ResponseWriter, r *http.Request) error {
+	cid, err := pathID(r, id.Channel, "channel")
+	if err != nil {
+		return err
+	}
+	var body struct {
+		Status *string `json:"status"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	if body.Status != nil {
+		switch model.ChannelStatus(*body.Status) {
+		case model.ChannelActive, model.ChannelDisabled:
+		default:
+			return badRequest("parameter_invalid", "status", `status is "active" or "disabled"; reconnect a channel that needs reauthorization.`)
+		}
+		if err := h.svc.SetChannelEnabled(r.Context(), actor(r), cid, model.ChannelStatus(*body.Status) == model.ChannelActive); err != nil {
+			return err
+		}
+	}
+	ch, err := h.svc.Channel(r.Context(), actor(r), cid)
+	if err != nil {
+		return err
+	}
+	ok(w, http.StatusOK, core.ViewChannel(ch))
+	return nil
+}
+
+// reconnectChannel replaces a channel's credentials, checking them with the
+// platform, and makes it active again (ADR 0019).
+func (h *Handler) reconnectChannel(w http.ResponseWriter, r *http.Request) error {
+	cid, err := pathID(r, id.Channel, "channel")
+	if err != nil {
+		return err
+	}
+	var body struct {
+		Fields map[string]string `json:"fields"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	ch, err := h.svc.ReconnectChannel(r.Context(), actor(r), cid, body.Fields)
+	if err != nil {
+		return err
+	}
+	ok(w, http.StatusOK, core.ViewChannel(ch))
+	return nil
+}
+
 func (h *Handler) deleteChannel(w http.ResponseWriter, r *http.Request) error {
 	cid, err := pathID(r, id.Channel, "channel")
 	if err != nil {
@@ -323,9 +408,12 @@ func (h *Handler) listTemplates(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	key := r.URL.Query().Get("key")
 	out := make([]core.TemplateView, 0, len(ts))
 	for _, t := range ts {
-		out = append(out, core.ViewTemplate(t, nil))
+		if key == "" || t.Key == key {
+			out = append(out, core.ViewTemplate(t, nil))
+		}
 	}
 	ok(w, http.StatusOK, list{Object: "list", Data: out, URL: "/v1/templates"})
 	return nil
@@ -357,7 +445,7 @@ func (h *Handler) createTemplate(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handler) getTemplate(w http.ResponseWriter, r *http.Request) error {
-	tid, err := pathID(r, id.Template, "template")
+	tid, err := templatePathID(r)
 	if err != nil {
 		return err
 	}
@@ -378,7 +466,7 @@ func (h *Handler) getTemplate(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handler) updateTemplate(w http.ResponseWriter, r *http.Request) error {
-	tid, err := pathID(r, id.Template, "template")
+	tid, err := templatePathID(r)
 	if err != nil {
 		return err
 	}
@@ -403,7 +491,7 @@ func (h *Handler) updateTemplate(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handler) addTemplateVersion(w http.ResponseWriter, r *http.Request) error {
-	tid, err := pathID(r, id.Template, "template")
+	tid, err := templatePathID(r)
 	if err != nil {
 		return err
 	}
@@ -423,7 +511,7 @@ func (h *Handler) addTemplateVersion(w http.ResponseWriter, r *http.Request) err
 }
 
 func (h *Handler) deleteTemplate(w http.ResponseWriter, r *http.Request) error {
-	tid, err := pathID(r, id.Template, "template")
+	tid, err := templatePathID(r)
 	if err != nil {
 		return err
 	}
@@ -467,6 +555,19 @@ func (h *Handler) previewTemplate(w http.ResponseWriter, r *http.Request) error 
 	}
 	ok(w, http.StatusOK, map[string]any{"object": "preview", "renditions": renders})
 	return nil
+}
+
+// templatePathID reads a template ID from the path. A template's key is
+// unique only within its brand, so paths take IDs; the error says how to
+// find one by key.
+func templatePathID(r *http.Request) (uuid.UUID, error) {
+	ref := r.PathValue("id")
+	tid, err := id.Parse(id.Template, ref)
+	if err != nil {
+		return uuid.Nil, &apperr.Error{Kind: apperr.KindNotFound, Code: "resource_missing", Param: "id",
+			Message: fmt.Sprintf("No such template: %q. Paths take template IDs (tmpl_…); find one by key with GET /v1/templates?brand=…&key=%s.", ref, url.QueryEscape(ref))}
+	}
+	return tid, nil
 }
 
 // Posts.
@@ -620,6 +721,23 @@ func (h *Handler) retryTarget(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ok(w, http.StatusOK, core.ViewPost(p))
+	return nil
+}
+
+func (h *Handler) listAttempts(w http.ResponseWriter, r *http.Request) error {
+	tid, err := pathID(r, id.Target, "post target")
+	if err != nil {
+		return err
+	}
+	attempts, err := h.svc.Attempts(r.Context(), actor(r), tid)
+	if err != nil {
+		return err
+	}
+	out := make([]core.AttemptView, 0, len(attempts))
+	for i := range attempts {
+		out = append(out, core.ViewAttempt(&attempts[i]))
+	}
+	ok(w, http.StatusOK, list{Object: "list", Data: out, URL: "/v1/post_targets/" + r.PathValue("id") + "/attempts"})
 	return nil
 }
 

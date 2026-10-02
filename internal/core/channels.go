@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/google/uuid"
@@ -115,7 +116,13 @@ func (s *Service) ReconnectChannel(ctx context.Context, a Actor, channelID uuid.
 	if !ok {
 		return nil, apperr.Invalid("provider_unsupported", "provider", "Araldo cannot connect to %q.", ch.Provider)
 	}
-	settings, secrets, err := splitFields(adapter, fields)
+	// Settings left out keep their current values; secrets must be sent.
+	merged := maps.Clone(ch.Settings)
+	if merged == nil {
+		merged = map[string]string{}
+	}
+	maps.Copy(merged, fields)
+	settings, secrets, err := splitFields(adapter, merged)
 	if err != nil {
 		return nil, err
 	}

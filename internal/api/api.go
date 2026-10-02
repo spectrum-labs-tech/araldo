@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -56,24 +57,55 @@ type Handler struct {
 	limiter *limiter
 	// Routes lists "METHOD /path" for every route, for the contract test.
 	Routes []string
+	// Query lists each route's query parameters, for the contract test.
+	Query map[string][]string
 }
 
 // New returns the API handler.
 func New(svc *core.Service, log *slog.Logger) *Handler {
-	h := &Handler{svc: svc, log: log, mux: http.NewServeMux(), limiter: newLimiter(25, 100)}
+	h := &Handler{svc: svc, log: log, mux: http.NewServeMux(), limiter: newLimiter(25, 100), Query: map[string][]string{}}
 	h.routes()
 	return h
 }
 
 type handlerFunc func(w http.ResponseWriter, r *http.Request) error
 
-func (h *Handler) handle(pattern string, fn handlerFunc) {
+// handle registers a route and the query parameters it takes; any other
+// query parameter is refused, as unknown body fields are (ADR 0019). A
+// parameter named "metadata" also allows metadata[key].
+func (h *Handler) handle(pattern string, fn handlerFunc, query ...string) {
 	h.Routes = append(h.Routes, pattern)
+	h.Query[pattern] = query
 	h.mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		if err := checkQuery(r, query); err != nil {
+			h.fail(w, r, err)
+			return
+		}
 		if err := fn(w, r); err != nil {
 			h.fail(w, r, err)
 		}
 	})
+}
+
+// pageQuery are the cursor pagination parameters (ADR 0005).
+var pageQuery = []string{"limit", "starting_after", "ending_before"}
+
+func paged(extra ...string) []string { return append(slices.Clone(pageQuery), extra...) }
+
+func checkQuery(r *http.Request, allowed []string) error {
+	for k := range r.URL.Query() {
+		if slices.Contains(allowed, k) {
+			continue
+		}
+		if name, ok := strings.CutPrefix(k, "metadata["); ok && strings.HasSuffix(name, "]") && slices.Contains(allowed, "metadata") {
+			continue
+		}
+		if len(allowed) == 0 {
+			return badRequest("parameter_unknown", k, "Unknown query parameter %q: this operation takes none.", k)
+		}
+		return badRequest("parameter_unknown", k, "Unknown query parameter %q. This operation takes: %s.", k, strings.Join(allowed, ", "))
+	}
+	return nil
 }
 
 // public registers a route that needs no API key.

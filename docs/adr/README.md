@@ -24,3 +24,4 @@ open a pull request.
 | [0016](0016-link-tagging.md) | Tag links with UTM parameters at render time; leave clicks to web analytics | proposed |
 | [0017](0017-media.md) | Images are uploaded once, checked against every platform's rules, and stored in Postgres unless S3 is configured | proposed |
 | [0018](0018-engagement.md) | Read each published post's engagement on a fixed schedule and keep every reading | proposed |
+| [0019](0019-administration-api.md) | The API manages everything a declarative tool needs; admin powers are explicit-only scopes | proposed |

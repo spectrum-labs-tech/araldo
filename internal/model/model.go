@@ -135,6 +135,8 @@ type Brand struct {
 	// UTMDomains are the sites whose links get UTM parameters (empty: none).
 	UTMDomains []string
 	CreatedAt  time.Time
+	// Slots are its weekly publishing times, filled by reads.
+	Slots []Slot
 }
 
 // Slot is a weekly publishing time in the brand's time zone.

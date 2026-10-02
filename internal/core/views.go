@@ -5,6 +5,8 @@ package core
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,43 +21,81 @@ import (
 
 // BrandView is a brand.
 type BrandView struct {
-	ID             string    `json:"id"`
-	Object         string    `json:"object"`
-	Name           string    `json:"name"`
-	Slug           string    `json:"slug"`
-	Timezone       string    `json:"timezone"`
-	ApprovalPolicy string    `json:"approval_policy"`
-	UTMDomains     []string  `json:"utm_domains"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID             string     `json:"id"`
+	Object         string     `json:"object"`
+	Name           string     `json:"name"`
+	Slug           string     `json:"slug"`
+	Timezone       string     `json:"timezone"`
+	ApprovalPolicy string     `json:"approval_policy"`
+	UTMDomains     []string   `json:"utm_domains"`
+	Slots          []SlotView `json:"slots"`
+	CreatedAt      time.Time  `json:"created_at"`
+}
+
+// SlotView is a weekly publishing time in the brand's time zone.
+type SlotView struct {
+	Weekday string `json:"weekday"`
+	Time    string `json:"time"`
 }
 
 // ViewBrand renders a brand.
 func ViewBrand(b *model.Brand) BrandView {
-	return BrandView{ID: id.Format(id.Brand, b.ID), Object: "brand", Name: b.Name, Slug: b.Slug, Timezone: b.Timezone,
-		ApprovalPolicy: string(b.ApprovalPolicy), UTMDomains: nonNilList(b.UTMDomains), CreatedAt: b.CreatedAt.UTC()}
+	v := BrandView{ID: id.Format(id.Brand, b.ID), Object: "brand", Name: b.Name, Slug: b.Slug, Timezone: b.Timezone,
+		ApprovalPolicy: string(b.ApprovalPolicy), UTMDomains: nonNilList(b.UTMDomains), Slots: make([]SlotView, 0, len(b.Slots)),
+		CreatedAt: b.CreatedAt.UTC()}
+	for _, sl := range b.Slots {
+		v.Slots = append(v.Slots, SlotView{Weekday: strings.ToLower(sl.Weekday.String()),
+			Time: fmt.Sprintf("%02d:%02d", sl.MinuteOfDay/60, sl.MinuteOfDay%60)})
+	}
+	return v
+}
+
+// ParseSlot reads a slot as SlotView writes it: a weekday name ("monday")
+// and a 24-hour time ("09:00").
+func ParseSlot(weekday, hhmm string) (model.Slot, bool) {
+	for d := time.Sunday; d <= time.Saturday; d++ {
+		if !strings.EqualFold(weekday, d.String()) {
+			continue
+		}
+		t, err := time.Parse("15:04", hhmm)
+		if err != nil {
+			return model.Slot{}, false
+		}
+		return model.Slot{Weekday: d, MinuteOfDay: t.Hour()*60 + t.Minute()}, true
+	}
+	return model.Slot{}, false
 }
 
 // ChannelView is a connected account.
 type ChannelView struct {
-	ID          string    `json:"id"`
-	Object      string    `json:"object"`
-	Brand       string    `json:"brand"`
-	Livemode    bool      `json:"livemode"`
-	Provider    string    `json:"provider"`
-	Emulates    string    `json:"emulates,omitempty"`
-	DisplayName string    `json:"display_name"`
-	Handle      string    `json:"handle"`
-	ProfileURL  string    `json:"profile_url,omitempty"`
-	Status      string    `json:"status"`
-	StatusNote  string    `json:"status_note,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          string `json:"id"`
+	Object      string `json:"object"`
+	Brand       string `json:"brand"`
+	Livemode    bool   `json:"livemode"`
+	Provider    string `json:"provider"`
+	Emulates    string `json:"emulates,omitempty"`
+	DisplayName string `json:"display_name"`
+	Handle      string `json:"handle"`
+	ProfileURL  string `json:"profile_url,omitempty"`
+	// Settings are the non-secret connect fields; secrets are write-only.
+	Settings   map[string]string `json:"settings"`
+	Status     string            `json:"status"`
+	StatusNote string            `json:"status_note,omitempty"`
+	CreatedAt  time.Time         `json:"created_at"`
 }
 
 // ViewChannel renders a channel. Credentials never leave the server.
 func ViewChannel(c *model.Channel) ChannelView {
 	return ChannelView{ID: id.Format(id.Channel, c.ID), Object: "channel", Brand: id.Format(id.Brand, c.BrandID), Livemode: c.Livemode,
 		Provider: string(c.Provider), Emulates: string(c.Emulates), DisplayName: c.DisplayName, Handle: c.Handle, ProfileURL: c.ProfileURL,
-		Status: string(c.Status), StatusNote: c.StatusNote, CreatedAt: c.CreatedAt.UTC()}
+		Settings: nonNilSettings(c.Settings), Status: string(c.Status), StatusNote: c.StatusNote, CreatedAt: c.CreatedAt.UTC()}
+}
+
+func nonNilSettings(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
 }
 
 // TemplateVersionView is one version of a template.
@@ -174,6 +214,25 @@ func ViewTarget(t *model.Target) TargetView {
 		v.Error = &ErrorView{Code: t.ErrorCode, Message: t.ErrorMessage}
 	}
 	v.Engagement = ViewEngagement(t.Engagement)
+	return v
+}
+
+// AttemptView is one try at publishing a target.
+type AttemptView struct {
+	Object     string     `json:"object"`
+	Attempt    int        `json:"attempt"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	Outcome    string     `json:"outcome"`
+	Error      *ErrorView `json:"error,omitempty"`
+}
+
+// ViewAttempt renders an attempt.
+func ViewAttempt(at *model.Attempt) AttemptView {
+	v := AttemptView{Object: "publish_attempt", Attempt: at.Attempt, StartedAt: at.StartedAt.UTC(), FinishedAt: utc(at.FinishedAt), Outcome: at.Outcome}
+	if at.ErrorCode != "" || at.Error != "" {
+		v.Error = &ErrorView{Code: at.ErrorCode, Message: at.Error}
+	}
 	return v
 }
 

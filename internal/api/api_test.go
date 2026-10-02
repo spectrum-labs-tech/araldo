@@ -61,6 +61,57 @@ func TestRoutesMatchContract(t *testing.T) {
 	}
 }
 
+// Every route takes exactly the query parameters the contract lists, so a
+// parameter the server would ignore is refused instead (ADR 0019).
+func TestQueryParametersMatchContract(t *testing.T) {
+	t.Parallel()
+	doc, err := openapi3.NewLoader().LoadFromData(contract.OpenAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	for _, route := range h.Routes {
+		method, path, _ := strings.Cut(route, " ")
+		item := doc.Paths.Value(path)
+		if item == nil || item.GetOperation(method) == nil {
+			continue // TestRoutesMatchContract reports it
+		}
+		var inContract []string
+		for _, p := range append(item.Parameters, item.GetOperation(method).Parameters...) {
+			if p.Value != nil && p.Value.In == "query" {
+				inContract = append(inContract, p.Value.Name)
+			}
+		}
+		served := slices.Clone(h.Query[route])
+		sort.Strings(inContract)
+		sort.Strings(served)
+		if !slices.Equal(inContract, served) {
+			t.Errorf("%s: the server takes query parameters %v, the contract lists %v", route, served, inContract)
+		}
+	}
+}
+
+func TestUnknownQueryParametersAreRefused(t *testing.T) {
+	t.Parallel()
+	allowed := paged("brand", "metadata")
+	tests := map[string]string{
+		"/x?brand=a&limit=5":         "",
+		"/x?metadata[build_id]=8812": "",
+		"/x?brnd=a":                  "parameter_unknown",
+		"/x?metadata=1":              "",
+		"/x?metadatafoo=1":           "parameter_unknown",
+	}
+	for target, want := range tests {
+		err := checkQuery(httptest.NewRequest(http.MethodGet, target, nil), allowed)
+		if got := apperr.As(err).Code; err != nil && got != want || err == nil && want != "" {
+			t.Errorf("%s: %v, want %q", target, err, want)
+		}
+	}
+	if err := checkQuery(httptest.NewRequest(http.MethodGet, "/x?brand=a", nil), nil); apperr.As(err).Code != "parameter_unknown" {
+		t.Errorf("a route without query parameters accepted one: %v", err)
+	}
+}
+
 func TestUnauthenticatedRequestsGetAProblem(t *testing.T) {
 	t.Parallel()
 	h := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))

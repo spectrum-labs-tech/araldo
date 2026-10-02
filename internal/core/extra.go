@@ -74,13 +74,14 @@ func (s *Service) BeginIdempotent(ctx context.Context, a Actor, key string, fing
 	return &IdempotentReplay{Status: rec.ResponseStatus, Body: rec.ResponseBody}, nil
 }
 
-// FinishIdempotent stores the response for a claimed key. Server errors
-// release the key so the request can be retried.
+// FinishIdempotent stores the response for a claimed key. Only a
+// request that took effect (2xx) is kept: an error had no side effects, so
+// releasing the key lets a corrected retry run (ADR 0019, as Stripe does).
 func (s *Service) FinishIdempotent(ctx context.Context, a Actor, key string, status int, body []byte) error {
 	if a.KeyID == nil {
 		return nil
 	}
-	if status >= 500 {
+	if status < 200 || status > 299 {
 		status = 0
 	}
 	return s.store.FinishIdempotent(context.WithoutCancel(ctx), *a.KeyID, key, status, body)
@@ -143,6 +144,9 @@ func (s *Service) Attempts(ctx context.Context, a Actor, targetID uuid.UUID) ([]
 	t, err := s.store.Target(ctx, a.OrgID, targetID)
 	if err != nil || t.Livemode != a.Livemode {
 		return nil, apperr.NotFound("post target")
+	}
+	if _, err := s.Post(ctx, a, t.PostID); err != nil {
+		return nil, err // a key limited to another brand
 	}
 	return s.store.Attempts(ctx, a.OrgID, targetID)
 }

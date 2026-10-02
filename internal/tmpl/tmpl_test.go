@@ -184,3 +184,32 @@ func TestHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestOptionalFields(t *testing.T) {
+	t.Parallel()
+	vars := json.RawMessage(`{"type":"object","required":["name"],"properties":{
+		"name":{"type":"string"},"tagline":{"type":"string"},
+		"price":{"type":"object","properties":{"amount":{"type":"string"},"sale":{"type":"string"}}}}}`)
+	tests := []struct {
+		name, body, data, want, code string
+	}{
+		{"guarded optional, absent", "{{.name}}{{if .tagline}}: {{.tagline}}{{end}}", `{"name":"Recce"}`, "Recce", ""},
+		{"guarded optional, present", "{{.name}}{{if .tagline}}: {{.tagline}}{{end}}", `{"name":"Recce","tagline":"light"}`, "Recce: light", ""},
+		{"with on a nested optional", "{{.name}}{{with .price}}{{with .sale}} now {{.}}{{end}}{{end}}", `{"name":"Recce","price":{"amount":"$900"}}`, "Recce", ""},
+		{"unguarded optional, absent", "{{.name}} {{.tagline}}", `{"name":"Recce"}`, "", "variable_unguarded"},
+		{"undeclared field", "{{.name}} {{.color}}", `{"name":"Recce"}`, "", "variable_missing"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c, err := Compile(Source{Variables: vars, Body: tt.body})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := c.Render(platform.Bluesky, json.RawMessage(tt.data), nil)
+			if code := apperr.As(err).Code; tt.code != "" && code != tt.code || tt.code == "" && (err != nil || got != tt.want) {
+				t.Fatalf("Render = %q, %v; want %q %s", got, err, tt.want, tt.code)
+			}
+		})
+	}
+}

@@ -314,6 +314,10 @@
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-panel px-2.5 py-1 text-sm font-semibold text-muted;
   }
+  .chip-count {
+    @apply rounded-full bg-subtle px-1.5 text-xs font-normal text-muted;
+  }
+  .chip[aria-current="true"],
   .chip[aria-pressed="true"] {
     @apply border-accent bg-accent-soft text-accent;
   }

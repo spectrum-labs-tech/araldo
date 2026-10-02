@@ -427,7 +427,22 @@ func (s *Service) Posts(ctx context.Context, a Actor, f PostFilter, page store.P
 	if a.BrandID != nil {
 		f.BrandID = a.BrandID
 	}
+	if len(f.Query) > 200 {
+		return nil, false, apperr.Invalid("query_too_long", "q", "Search for at most 200 characters.")
+	}
 	return s.store.Posts(ctx, a.OrgID, a.Livemode, f, page)
+}
+
+// PostStatusCounts counts the posts a filter matches, by status, ignoring
+// the filter's own status (for the status filter's labels).
+func (s *Service) PostStatusCounts(ctx context.Context, a Actor, f PostFilter) (map[model.PostStatus]int, error) {
+	if err := a.require(PermPostsRead); err != nil {
+		return nil, err
+	}
+	if a.BrandID != nil {
+		f.BrandID = a.BrandID
+	}
+	return s.store.PostStatusCounts(ctx, a.OrgID, a.Livemode, f)
 }
 
 // CancelPost stops a post's targets that have not been published.

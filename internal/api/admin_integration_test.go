@@ -124,6 +124,11 @@ func TestStrictQueryAndIdempotencyAfterErrors(t *testing.T) {
 	if status, _ := c.do(http.MethodGet, "/v1/posts?metadata[build_id]=1&limit=5", "", nil, nil); status != http.StatusOK {
 		t.Fatalf("metadata filter: %d", status)
 	}
+	c.json(http.MethodPost, "/v1/posts", map[string]any{"brand": c.brand, "content": map[string]any{"body": "Searchable text"}, "publish_at": "next_slot"})
+	status, got = c.do(http.MethodGet, "/v1/posts?q=SEARCHABLE", "", nil, nil)
+	if data, _ := got["data"].([]any); status != http.StatusOK || len(data) != 1 {
+		t.Fatalf("search: %d %v", status, got)
+	}
 
 	// A failed request releases its key, so the corrected one can use it.
 	key := map[string]string{"Idempotency-Key": uuid.NewString()}

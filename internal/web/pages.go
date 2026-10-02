@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"strconv"
@@ -186,27 +187,82 @@ func (s *Server) home(c *reqCtx) error {
 // Posts.
 
 type postsData struct {
-	Posts   []*model.Post
-	HasMore bool
-	Status  string
-	Next    string
+	Posts  []*model.Post
+	Brands []*model.Brand
+	// The filters, as the URL has them.
+	Status, Brand, Query string
+	Counts               map[model.PostStatus]int
+	Total                int
+	Statuses             []model.PostStatus
+	// Older and Newer are the neighboring pages' URLs, if any.
+	Older, Newer string
 }
 
-func (s *Server) posts(c *reqCtx) error {
-	q := c.r.URL.Query()
-	pg := store.Page{Limit: 25}
-	if v := q.Get("after"); v != "" {
-		if u, err := id.Parse(id.Post, v); err == nil {
-			pg.StartingAfter = u
+// link is the posts page's URL with these filters and a page cursor.
+func (d *postsData) link(status, cursor, ref string) string {
+	v := url.Values{}
+	for k, val := range map[string]string{"status": status, "brand": d.Brand, "q": d.Query, cursor: ref} {
+		if k != "" && val != "" {
+			v.Set(k, val)
 		}
 	}
-	posts, more, err := s.svc.Posts(c.ctx(), c.actor, core.PostFilter{Status: q.Get("status")}, pg)
+	if len(v) == 0 {
+		return "/posts"
+	}
+	return "/posts?" + v.Encode()
+}
+
+// StatusLink is the URL for a status filter, keeping the others.
+func (d *postsData) StatusLink(status string) string { return d.link(status, "", "") }
+
+// postsPageSize is how many posts the list shows at once.
+const postsPageSize = 25
+
+// posts lists posts, filtered by the URL (status, brand, text) and paged
+// by cursor, all in the database.
+func (s *Server) posts(c *reqCtx) error {
+	q := c.r.URL.Query()
+	d := &postsData{Status: q.Get("status"), Brand: q.Get("brand"), Query: strings.TrimSpace(q.Get("q")),
+		Statuses: []model.PostStatus{model.PostPendingApproval, model.PostScheduled, model.PostPublishing, model.PostPublished,
+			model.PostPartiallyPublished, model.PostFailed, model.PostCanceled, model.PostRejected}}
+	f := core.PostFilter{Status: d.Status, Query: d.Query}
+	var err error
+	if d.Brands, err = s.svc.Brands(c.ctx(), c.actor); err != nil {
+		return err
+	}
+	if d.Brand != "" {
+		b, err := s.svc.ResolveBrand(c.ctx(), c.actor, d.Brand)
+		if err != nil {
+			return err
+		}
+		f.BrandID = &b.ID
+	}
+	pg := store.Page{Limit: postsPageSize}
+	if u, err := id.Parse(id.Post, q.Get("starting_after")); err == nil {
+		pg.StartingAfter = u
+	} else if u, err := id.Parse(id.Post, q.Get("ending_before")); err == nil {
+		pg.EndingBefore = u
+	}
+	posts, more, err := s.svc.Posts(c.ctx(), c.actor, f, pg)
 	if err != nil {
 		return err
 	}
-	d := postsData{Posts: posts, HasMore: more, Status: q.Get("status")}
-	if more && len(posts) > 0 {
-		d.Next = id.Format(id.Post, posts[len(posts)-1].ID)
+	d.Posts = posts
+	if len(posts) > 0 {
+		first, last := id.Format(id.Post, posts[0].ID), id.Format(id.Post, posts[len(posts)-1].ID)
+		backward := pg.EndingBefore != uuid.Nil
+		if backward && more || !backward && pg.StartingAfter != uuid.Nil {
+			d.Newer = d.link(d.Status, "ending_before", first)
+		}
+		if backward || more {
+			d.Older = d.link(d.Status, "starting_after", last)
+		}
+	}
+	if d.Counts, err = s.svc.PostStatusCounts(c.ctx(), c.actor, f); err != nil {
+		return err
+	}
+	for _, n := range d.Counts {
+		d.Total += n
 	}
 	return s.page(c, "posts", "posts", "Posts", d)
 }

@@ -5,6 +5,7 @@
 package core_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -178,5 +179,37 @@ func TestBrandKeysSeeOnlyTheirBrandsHistory(t *testing.T) {
 	}
 	if at, err := w.s.Attempts(ctx, w.owner, tg.ID); err != nil || len(at) == 0 {
 		t.Errorf("the owner's own attempts: %d, %v", len(at), err)
+	}
+}
+
+func TestPostSearch(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	for _, body := range []string{"Launch: 100% off", "Launch: 100x faster", "under_score sale", "Nothing here"} {
+		if _, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: body}, PublishAt: "next_slot"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tests := map[string]int{
+		"launch":      2, // case insensitive
+		"100%":        1, // % is a character, not a wildcard
+		"under_score": 1,
+		"under score": 0,
+		"g_h":         0, // _ is a character too: as a wildcard it would match "Nothing here"
+		"absent":      0,
+	}
+	for q, want := range tests {
+		got, _, err := w.s.Posts(ctx, w.owner, core.PostFilter{Query: q}, store.Page{})
+		if err != nil || len(got) != want {
+			t.Errorf("search %q: %d posts, %v; want %d", q, len(got), err, want)
+		}
+	}
+	counts, err := w.s.PostStatusCounts(ctx, w.owner, core.PostFilter{Query: "launch", Status: "published"})
+	if err != nil || counts[model.PostScheduled] != 2 {
+		t.Fatalf("counts ignoring status: %v, %v", counts, err)
+	}
+	if _, _, err := w.s.Posts(ctx, w.owner, core.PostFilter{Query: strings.Repeat("x", 201)}, store.Page{}); kind(err) != apperr.KindInvalid {
+		t.Fatalf("a 201-character search: %v", err)
 	}
 }

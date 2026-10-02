@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,6 +17,9 @@ import (
 
 const postCols = `id, org_id, brand_id, livemode, status, template_id, template_version, data, content, publish_at, publish_by, slot_at,
 	metadata, approval_needed, reviewed_by, reviewed_by_key, reviewed_at, review_note, created_by_user, created_by_key, created_at, updated_at`
+
+// prefixedPostCols are postCols for a query that names posts p.
+var prefixedPostCols = "p." + strings.ReplaceAll(strings.ReplaceAll(postCols, "\n\t", " "), ", ", ", p.")
 
 func scanPost(r pgx.Row) (*model.Post, error) {
 	var p model.Post
@@ -121,19 +125,44 @@ type PostFilter struct {
 	// CreatedByUser or CreatedByKey keep the posts a member or a key made.
 	CreatedByUser *uuid.UUID
 	CreatedByKey  *uuid.UUID
+	// Query keeps posts whose text, on any channel, contains it (case
+	// insensitive).
+	Query string
 }
 
-// Posts lists posts newest first, each with its targets.
-func (s *Store) Posts(ctx context.Context, orgID uuid.UUID, livemode bool, f PostFilter, page Page) ([]*model.Post, bool, error) {
-	where, order, extra := pageClause(page, "id", 8)
+// postWhere is the condition for f, with its arguments numbered from $3
+// ($1 is the org and $2 the mode). withStatus false leaves the status out,
+// for counting by status.
+func postWhere(f PostFilter, withStatus bool) (string, []any) {
 	var meta any
 	if len(f.Metadata) > 0 {
 		meta = f.Metadata
 	}
-	args := append([]any{orgID, livemode, f.BrandID, f.Status, meta, f.CreatedByUser, f.CreatedByKey}, extra...)
-	rows, err := s.q.Query(ctx, `SELECT `+postCols+` FROM posts WHERE org_id = $1 AND livemode = $2
-		AND ($3::uuid IS NULL OR brand_id = $3) AND ($4 = '' OR status = $4) AND ($5::jsonb IS NULL OR metadata @> $5)
-		AND ($6::uuid IS NULL OR created_by_user = $6) AND ($7::uuid IS NULL OR created_by_key = $7)`+where+order, args...)
+	status := ""
+	if withStatus {
+		status = f.Status
+	}
+	pattern := ""
+	if q := strings.TrimSpace(f.Query); q != "" {
+		pattern = "%" + likeEscaper.Replace(q) + "%"
+	}
+	return ` WHERE p.org_id = $1 AND p.livemode = $2
+		AND ($3::uuid IS NULL OR p.brand_id = $3) AND ($4 = '' OR p.status = $4) AND ($5::jsonb IS NULL OR p.metadata @> $5)
+		AND ($6::uuid IS NULL OR p.created_by_user = $6) AND ($7::uuid IS NULL OR p.created_by_key = $7)
+		AND ($8 = '' OR EXISTS (SELECT 1 FROM post_targets t, jsonb_array_elements_text(t.parts) part
+			WHERE t.post_id = p.id AND part ILIKE $8))`,
+		[]any{f.BrandID, status, meta, f.CreatedByUser, f.CreatedByKey, pattern}
+}
+
+// likeEscaper makes text match itself in a LIKE pattern.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// Posts lists posts newest first, each with its targets.
+func (s *Store) Posts(ctx context.Context, orgID uuid.UUID, livemode bool, f PostFilter, page Page) ([]*model.Post, bool, error) {
+	cond, fargs := postWhere(f, true)
+	where, order, extra := pageClause(page, "p.id", 3+len(fargs))
+	args := append(append([]any{orgID, livemode}, fargs...), extra...)
+	rows, err := s.q.Query(ctx, `SELECT `+prefixedPostCols+` FROM posts p`+cond+where+order, args...)
 	if err != nil {
 		return nil, false, err
 	}
@@ -152,6 +181,27 @@ func (s *Store) Posts(ctx context.Context, orgID uuid.UUID, livemode bool, f Pos
 		return nil, false, err
 	}
 	return posts, more, nil
+}
+
+// PostStatusCounts counts the posts f matches, ignoring its status, by
+// status.
+func (s *Store) PostStatusCounts(ctx context.Context, orgID uuid.UUID, livemode bool, f PostFilter) (map[model.PostStatus]int, error) {
+	cond, fargs := postWhere(f, false)
+	rows, err := s.q.Query(ctx, `SELECT p.status, count(*) FROM posts p`+cond+` GROUP BY p.status`, append([]any{orgID, livemode}, fargs...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[model.PostStatus]int{}
+	for rows.Next() {
+		var st model.PostStatus
+		var n int
+		if err := rows.Scan(&st, &n); err != nil {
+			return nil, err
+		}
+		out[st] = n
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) attachTargets(ctx context.Context, orgID uuid.UUID, posts []*model.Post) error {

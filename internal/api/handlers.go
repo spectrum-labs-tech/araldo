@@ -55,7 +55,7 @@ func (h *Handler) routes() {
 	h.handle("POST /v1/media/{id}", h.updateMedia)
 	h.handle("DELETE /v1/media/{id}", h.deleteMedia)
 
-	h.handle("GET /v1/posts", h.listPosts, paged("brand", "status", "metadata")...)
+	h.handle("GET /v1/posts", h.listPosts, paged("brand", "status", "metadata", "q")...)
 	h.handle("POST /v1/posts", h.createPost)
 	h.handle("POST /v1/posts/preview", h.previewPost)
 	h.handle("GET /v1/posts/{id}", h.getPost)
@@ -666,7 +666,7 @@ func (h *Handler) listPosts(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	q := r.URL.Query()
-	f := core.PostFilter{Status: q.Get("status")}
+	f := core.PostFilter{Status: q.Get("status"), Query: q.Get("q")}
 	if ref := q.Get("brand"); ref != "" {
 		b, err := h.svc.ResolveBrand(r.Context(), a, ref)
 		if err != nil {

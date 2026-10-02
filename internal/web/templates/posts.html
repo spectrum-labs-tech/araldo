@@ -1,21 +1,35 @@
 {{define "content"}}
+{{$d := .Data}}
 <div class="mb-2 flex flex-wrap items-start justify-between gap-4">
   <h1>Posts</h1>
   <a class="btn btn-primary" href="/posts/new">New post</a>
 </div>
-<nav class="mt-2 mb-4 flex flex-wrap gap-1.5" aria-label="Filter by status">
-  {{$chip := "rounded-full border border-line px-2.5 py-0.5 text-sm text-ink no-underline hover:no-underline"}}
-  {{$on := "border-ink bg-ink text-bg"}}
-  <a href="/posts" class="{{$chip}} {{if eq .Data.Status ""}}{{$on}}{{end}}">All</a>
-  {{range $s := (list "pending_approval" "scheduled" "publishing" "published" "partially_published" "failed" "canceled")}}
-  <a href="/posts?status={{$s}}" class="{{$chip}} {{if eq $.Data.Status $s}}{{$on}}{{end}}">{{$s}}</a>
-  {{end}}
+
+<form method="get" action="/posts" class="mb-3 flex flex-wrap items-end gap-3" role="search">
+  {{if $d.Status}}<input type="hidden" name="status" value="{{$d.Status}}">{{end}}
+  <label class="min-w-0 grow">Search
+    <input type="search" name="q" value="{{$d.Query}}" maxlength="200" placeholder="Text in any channel's copy"></label>
+  <label>Brand
+    <select name="brand" data-autosubmit>
+      <option value="">All brands</option>
+      {{range $d.Brands}}<option value="{{.Slug}}" {{if eq $d.Brand .Slug (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}
+    </select></label>
+  <button>Filter</button>
+  {{if or $d.Query $d.Brand $d.Status}}<a class="btn" href="/posts">Clear</a>{{end}}
+</form>
+
+<nav class="mb-4 flex flex-wrap gap-1.5" aria-label="Filter by status">
+  <a href="{{$d.StatusLink ""}}" class="chip no-underline hover:no-underline" {{if eq $d.Status ""}}aria-current="true"{{end}}>All <span class="chip-count">{{$d.Total}}</span></a>
+  {{range $s := $d.Statuses}}{{with index $d.Counts $s}}
+  <a href="{{$d.StatusLink (printf "%s" $s)}}" class="chip no-underline hover:no-underline" {{if eq $d.Status (printf "%s" $s)}}aria-current="true"{{end}}>{{$s}} <span class="chip-count">{{.}}</span></a>
+  {{end}}{{end}}
 </nav>
-{{if .Data.Posts}}
+
+{{if $d.Posts}}
 <table>
   <thead><tr><th>Post</th><th>Status</th><th>Publish at</th><th>Targets</th><th title="Likes, reposts, replies and quotes, as last read">Engagement</th><th>Created</th></tr></thead>
   <tbody>
-  {{range .Data.Posts}}
+  {{range $d.Posts}}
   <tr>
     <td><a href="/posts/{{postID .ID}}">{{with index .Targets 0}}{{index .Parts 0 | printf "%.90s"}}{{end}}</a>
       {{if .SlotAt}}<span class="tag">slot</span>{{end}}{{range $k, $v := .Metadata}} <span class="tag">{{$k}}={{$v}}</span>{{end}}</td>
@@ -28,6 +42,11 @@
   {{end}}
   </tbody>
 </table>
-{{if .Data.HasMore}}<p class="mt-3"><a href="/posts?status={{.Data.Status}}&after={{.Data.Next}}">Older posts →</a></p>{{end}}
-{{else}}<p class="text-muted">No posts.</p>{{end}}
+{{if or $d.Newer $d.Older}}
+<nav class="mt-3 flex justify-between gap-3" aria-label="Pages">
+  <span>{{if $d.Newer}}<a class="btn" href="{{$d.Newer}}" rel="prev">← Newer</a>{{end}}</span>
+  <span>{{if $d.Older}}<a class="btn" href="{{$d.Older}}" rel="next">Older →</a>{{end}}</span>
+</nav>
+{{end}}
+{{else}}<p class="text-muted">{{if or $d.Query $d.Brand $d.Status}}No posts match. <a href="/posts">Clear the filters</a>.{{else}}No posts yet.{{end}}</p>{{end}}
 {{end}}

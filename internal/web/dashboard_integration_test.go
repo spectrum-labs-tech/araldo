@@ -7,6 +7,7 @@ package web_test
 import (
 	"bytes"
 	"fmt"
+	"html"
 	"image"
 	"image/png"
 	"io"
@@ -291,5 +292,76 @@ func TestCreatorsLinkToTheirPages(t *testing.T) {
 	page = get(memberHref)
 	if !strings.Contains(page, "Posted by a person") || strings.Contains(page, "Posted by the key") || !strings.Contains(page, ">you<") {
 		t.Fatalf("member page:\n%s", page)
+	}
+}
+
+func TestPostsListFiltersAndPages(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	other, err := d.s.CreateBrand(ctx, d.owner, core.BrandInput{Name: "Otium " + uuid.NewString()[:6]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.s.ConnectChannel(ctx, d.owner, core.ConnectInput{BrandID: other.ID, Provider: platform.Sandbox, Fields: map[string]string{"emulates": "bluesky"}}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 27 {
+		if _, err := d.s.CreatePost(ctx, d.owner, core.PostInput{BrandID: d.brand.ID, Content: &model.Content{Body: fmt.Sprintf("Build %02d", i)}, PublishAt: "next_slot"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := d.s.CreatePost(ctx, d.owner, core.PostInput{BrandID: other.ID, Content: &model.Content{Body: "Otium launch"}, PublishAt: "next_slot"}); err != nil {
+		t.Fatal(err)
+	}
+	get := func(path string) string {
+		t.Helper()
+		rec := d.send(httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: %d\n%s", path, rec.Code, rec.Body)
+		}
+		return rec.Body.String()
+	}
+	rows := func(page string) int { return strings.Count(page, `<td><a href="/posts/post_`) }
+	href := regexp.MustCompile(`href="(/posts\?[^"]+)" rel="(prev|next)"`)
+	links := func(page string) map[string]string {
+		out := map[string]string{}
+		for _, m := range href.FindAllStringSubmatch(page, -1) {
+			out[m[2]] = html.UnescapeString(m[1])
+		}
+		return out
+	}
+
+	first := get("/posts")
+	if rows(first) != 25 || links(first)["next"] == "" || links(first)["prev"] != "" || !strings.Contains(first, `<span class="chip-count">28</span>`) {
+		t.Fatalf("first page: %d rows, links %v", rows(first), links(first))
+	}
+	second := get(links(first)["next"])
+	if rows(second) != 3 || links(second)["prev"] == "" || links(second)["next"] != "" {
+		t.Fatalf("second page: %d rows, links %v", rows(second), links(second))
+	}
+	back := get(links(second)["prev"])
+	if rows(back) != 25 || !strings.Contains(back, "Otium launch") {
+		t.Fatalf("back to the first page: %d rows", rows(back))
+	}
+
+	// Filters live in the URL and survive paging.
+	page := get("/posts?brand=" + other.Slug)
+	if rows(page) != 1 || !strings.Contains(page, "Otium launch") || !strings.Contains(page, `selected>`+other.Name) {
+		t.Fatalf("brand filter: %d rows", rows(page))
+	}
+	page = get("/posts?q=build+0")
+	if rows(page) != 10 || strings.Contains(page, "Otium launch") || !strings.Contains(page, `value="build 0"`) {
+		t.Fatalf("search: %d rows", rows(page))
+	}
+	page = get("/posts?status=scheduled&q=build")
+	if rows(page) != 25 || !strings.Contains(links(page)["next"], "q=build") || !strings.Contains(links(page)["next"], "status=scheduled") {
+		t.Fatalf("filtered paging: %d rows, links %v", rows(page), links(page))
+	}
+	if !strings.Contains(page, `class="chip no-underline hover:no-underline" aria-current="true">scheduled`) {
+		t.Fatal("the chosen status chip is not marked current")
+	}
+	if page := get("/posts?status=failed"); rows(page) != 0 || !strings.Contains(page, "No posts match") {
+		t.Fatal("an empty filter does not say so")
 	}
 }

@@ -513,6 +513,7 @@ paths:
           explode: true
           schema: { type: object, additionalProperties: { type: string } }
           description: "Filter by metadata, e.g. metadata[build_id]=8812."
+        - { name: q, in: query, schema: { type: string, maxLength: 200 }, description: "Posts whose text, on any channel, contains this (case insensitive)." }
       responses:
         "200":
           description: Posts, newest first.

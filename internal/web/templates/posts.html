@@ -32,9 +32,9 @@
   {{range $d.Posts}}
   <tr>
     <td><a href="/posts/{{postID .ID}}">{{with index .Targets 0}}{{index .Parts 0 | printf "%.90s"}}{{end}}</a>
-      {{if .SlotAt}}<span class="tag">slot</span>{{end}}{{range $k, $v := .Metadata}} <span class="tag">{{$k}}={{$v}}</span>{{end}}</td>
+      {{if .Slotted}}<span class="tag">slot</span>{{end}}{{range $k, $v := .Metadata}} <span class="tag">{{$k}}={{$v}}</span>{{end}}</td>
     <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
-    <td>{{fmtTime .PublishAt}}</td>
+    <td>{{if .PublishAt}}{{fmtTime .PublishAt}}{{else}}<span class="text-muted">Next slot when approved</span>{{end}}</td>
     <td>{{range .Targets}}<span class="pill {{statusClass .Status}} inline-flex items-center gap-1" title="{{.ChannelName}}: {{.Status}}">{{icon .Provider}} {{.Provider}}</span> {{end}}</td>
     <td>{{with engagement .Targets}}{{.}}{{else}}<span class="text-muted">—</span>{{end}}</td>
     <td>{{ago .CreatedAt}}</td>

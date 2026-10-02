@@ -62,6 +62,7 @@ func (h *Handler) routes() {
 	h.handle("POST /v1/posts/preview", h.previewPost)
 	h.handle("GET /v1/posts/{id}", h.getPost)
 	h.handle("POST /v1/posts/{id}/cancel", h.cancelPost)
+	h.handle("POST /v1/posts/{id}/reschedule", h.reschedulePost)
 	h.handle("POST /v1/posts/{id}/approve", h.reviewPost(true))
 	h.handle("POST /v1/posts/{id}/reject", h.reviewPost(false))
 	h.handle("POST /v1/post_targets/{id}/retry", h.retryTarget)
@@ -719,6 +720,35 @@ func (h *Handler) cancelPost(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ok(w, http.StatusOK, core.ViewPost(p))
+	return nil
+}
+
+func (h *Handler) reschedulePost(w http.ResponseWriter, r *http.Request) error {
+	pid, err := pathID(r, id.Post, "post")
+	if err != nil {
+		return err
+	}
+	var body struct {
+		PublishAt string     `json:"publish_at"`
+		PublishBy *time.Time `json:"publish_by"`
+		SwapWith  string     `json:"swap_with"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	in := core.RescheduleInput{PublishAt: body.PublishAt, PublishBy: body.PublishBy}
+	if body.SwapWith != "" {
+		other, err := id.Parse(id.Post, body.SwapWith)
+		if err != nil {
+			return badRequest("parameter_invalid", "swap_with", "swap_with must be a post ID.")
+		}
+		in.SwapWith = &other
+	}
+	moved, err := h.svc.ReschedulePost(r.Context(), actor(r), pid, in)
+	if err != nil {
+		return err
+	}
+	ok(w, http.StatusOK, core.ViewPost(moved[0]))
 	return nil
 }
 

@@ -257,6 +257,12 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	_, checks["brand"] = b.s.Brand(ctx, b.owner, a.brand.ID)
 	_, checks["channel"] = b.s.Channel(ctx, b.owner, a.channel.ID)
 	_, checks["cancel"] = b.s.CancelPost(ctx, b.owner, p.ID)
+	_, checks["reschedule"] = b.s.ReschedulePost(ctx, b.owner, p.ID, core.RescheduleInput{PublishAt: "now"})
+	theirs, err := b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: b.brand.ID, Content: &model.Content{Body: "theirs"}, PublishAt: "next_slot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, checks["swap"] = b.s.ReschedulePost(ctx, b.owner, theirs.ID, core.RescheduleInput{SwapWith: &p.ID})
 	_, checks["retry"] = b.s.RetryTarget(ctx, b.owner, p.Targets[0].ID)
 	_, checks["post to their brand"] = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: a.brand.ID, Content: &model.Content{Body: "x"}})
 	for what, err := range checks {
@@ -312,10 +318,10 @@ func TestNextSlotsAreUnique(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if seen[p.PublishAt] {
+		if seen[*p.PublishAt] {
 			t.Fatalf("slot %s given twice", p.PublishAt)
 		}
-		seen[p.PublishAt] = true
+		seen[*p.PublishAt] = true
 		local := p.PublishAt.In(mustLoc(t, "America/Denver"))
 		if h := local.Hour(); (h != 9 && h != 13) || local.Minute() != 0 || local.Weekday() == time.Saturday || local.Weekday() == time.Sunday {
 			t.Fatalf("slot %s is not a weekday 9:00 or 13:00 in Denver", local)

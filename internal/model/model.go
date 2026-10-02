@@ -314,23 +314,30 @@ type Post struct {
 	TemplateVersion *int
 	Data            json.RawMessage
 	Content         *Content
-	PublishAt       time.Time
-	PublishBy       time.Time
-	SlotAt          *time.Time
-	Metadata        map[string]string
-	ApprovalNeeded  bool
-	ReviewedBy      *uuid.UUID
-	ReviewedByKey   *uuid.UUID
-	ReviewedAt      *time.Time
-	ReviewNote      string
-	CreatedByUser   *uuid.UUID
-	CreatedByKey    *uuid.UUID
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	Targets         []Target
+	// PublishAt is nil while a next_slot post waits for approval; it takes
+	// its slot when approved (ADR 0022). PublishBy is nil with it, unless
+	// the caller gave one.
+	PublishAt      *time.Time
+	PublishBy      *time.Time
+	SlotAt         *time.Time
+	Metadata       map[string]string
+	ApprovalNeeded bool
+	ReviewedBy     *uuid.UUID
+	ReviewedByKey  *uuid.UUID
+	ReviewedAt     *time.Time
+	ReviewNote     string
+	CreatedByUser  *uuid.UUID
+	CreatedByKey   *uuid.UUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	Targets        []Target
 	// Media are attached in this order (ADR 0017).
 	Media []*Media
 }
+
+// Slotted reports whether the post holds one of its brand's slots, or
+// takes one when approved.
+func (p *Post) Slotted() bool { return p.SlotAt != nil || p.PublishAt == nil }
 
 // Media storage backends (ADR 0017).
 const (
@@ -380,17 +387,19 @@ func (s TargetStatus) Final() bool {
 
 // Target is one channel's copy of a post: the unit of publishing.
 type Target struct {
-	ID            uuid.UUID
-	OrgID         uuid.UUID
-	PostID        uuid.UUID
-	ChannelID     uuid.UUID
-	Livemode      bool
-	Provider      platform.Provider
-	Parts         []string
-	Status        TargetStatus
-	Attempts      int
-	NextAttemptAt time.Time
-	PublishBy     time.Time
+	ID        uuid.UUID
+	OrgID     uuid.UUID
+	PostID    uuid.UUID
+	ChannelID uuid.UUID
+	Livemode  bool
+	Provider  platform.Provider
+	Parts     []string
+	Status    TargetStatus
+	Attempts  int
+	// NextAttemptAt and PublishBy are nil on a held target whose post
+	// waits for a slot (ADR 0022).
+	NextAttemptAt *time.Time
+	PublishBy     *time.Time
 	LeaseOwner    string
 	LeaseUntil    *time.Time
 	Posted        []platform.RemoteRef

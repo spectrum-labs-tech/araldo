@@ -65,6 +65,13 @@ func TestPagesAreAccessible(t *testing.T) {
 			break
 		}
 	}
+	// Two scheduled posts: the post page's move form, with a swap.
+	var scheduled *model.Post
+	for range 2 {
+		if scheduled, err = d.s.CreatePost(ctx, d.owner, core.PostInput{BrandID: d.brand.ID, Content: &model.Content{Body: "Later"}, PublishAt: "next_slot"}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	_, key, err := d.s.CreateOperatorAPIKey(ctx, d.owner, core.APIKeyInput{Name: "ci", Scopes: []string{"posts:read"}})
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +90,7 @@ func TestPagesAreAccessible(t *testing.T) {
 	}
 
 	pages := []string{
-		"/", "/posts", "/posts?q=accessible&status=published", "/posts/new", "/posts/" + id.Format(id.Post, p.ID),
+		"/", "/posts", "/posts?q=accessible&status=published", "/posts/new", "/posts/" + id.Format(id.Post, p.ID), "/posts/" + id.Format(id.Post, scheduled.ID),
 		"/sandbox/" + id.Format(id.Target, target.ID), "/performance",
 		"/templates", "/templates/new", "/templates/" + id.Format(id.Template, tpl.ID),
 		"/channels", "/channels/apps", "/channels/new", "/channels/new?provider=bluesky", "/channels/" + id.Format(id.Channel, chans[0].ID) + "/reconnect",

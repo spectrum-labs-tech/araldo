@@ -261,8 +261,9 @@ func TestApprovalByKey(t *testing.T) {
 		t.Fatalf("policy: %d %v", status, got)
 	}
 	status, post := c.json(http.MethodPost, "/v1/posts", map[string]any{"brand": c.brand, "content": map[string]any{"body": "needs a look"}, "publish_at": "next_slot"})
-	if status != http.StatusCreated || post["status"] != "pending_approval" {
-		t.Fatalf("post: %d %v", status, post["status"])
+	// It takes its slot when approved (ADR 0022).
+	if at, present := post["publish_at"]; status != http.StatusCreated || post["status"] != "pending_approval" || !present || at != nil || post["slot"] != true {
+		t.Fatalf("post: %d %v, publish_at %v, slot %v", status, post["status"], post["publish_at"], post["slot"])
 	}
 	pid := post["id"].(string)
 	if status, got := c.json(http.MethodPost, "/v1/posts/"+pid+"/approve", map[string]any{}); status != http.StatusForbidden || got["code"] != "scope_missing" {
@@ -273,6 +274,9 @@ func TestApprovalByKey(t *testing.T) {
 	approval, _ := got["approval"].(map[string]any)
 	if status != http.StatusOK || got["status"] != "scheduled" || !strings.HasPrefix(fmt.Sprint(approval["reviewed_by_key"]), "key_") || approval["note"] != "from Slack" {
 		t.Fatalf("approve: %d %v", status, got)
+	}
+	if at, err := time.Parse(time.RFC3339, fmt.Sprint(got["publish_at"])); err != nil || !at.After(time.Now()) || got["slot"] != true {
+		t.Fatalf("approved post's slot: %v %v", got["publish_at"], got["slot"])
 	}
 	// Never its own post.
 	status, own := approver.json(http.MethodPost, "/v1/posts", map[string]any{"brand": c.brand, "content": map[string]any{"body": "mine"}, "publish_at": "next_slot"})
@@ -308,5 +312,50 @@ func TestAuditByKey(t *testing.T) {
 	first := data[0].(map[string]any)
 	if !strings.HasPrefix(fmt.Sprint(first["id"]), "audit_") || first["object"] != "audit_event" {
 		t.Fatalf("entry %v", first)
+	}
+}
+
+func TestRescheduleOverTheAPI(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	if status, got := c.json(http.MethodPost, "/v1/brands/"+c.brand, map[string]any{"slots": []map[string]string{{"weekday": "saturday", "time": "10:30"}}}); status != http.StatusOK {
+		t.Fatalf("slots: %d %v", status, got)
+	}
+	_, a := c.json(http.MethodPost, "/v1/posts", map[string]any{"brand": c.brand, "content": map[string]any{"body": "slotted"}, "publish_at": "next_slot"})
+	slot, _ := time.Parse(time.RFC3339, fmt.Sprint(a["publish_at"]))
+	plain := slot.Add(26 * time.Hour).Format(time.RFC3339)
+	_, b := c.json(http.MethodPost, "/v1/posts", map[string]any{"brand": c.brand, "content": map[string]any{"body": "plain"}, "publish_at": plain})
+	aID, bID := a["id"].(string), b["id"].(string)
+
+	status, got := c.json(http.MethodPost, "/v1/posts/"+bID+"/reschedule", map[string]any{"publish_at": a["publish_at"]})
+	problems, _ := got["errors"].([]any)
+	if status != http.StatusConflict || got["code"] != "slot_taken" || len(problems) != 1 ||
+		problems[0].(map[string]any)["detail"].(map[string]any)["post"] != aID {
+		t.Fatalf("onto a held slot: %d %v", status, got)
+	}
+	status, got = c.json(http.MethodPost, "/v1/posts/"+aID+"/reschedule", map[string]any{"swap_with": bID})
+	if status != http.StatusOK || got["publish_at"] != plain || got["slot"] != false {
+		t.Fatalf("swap: %d %v", status, got)
+	}
+	if _, got = c.json(http.MethodGet, "/v1/posts/"+bID, nil); got["publish_at"] != a["publish_at"] || got["slot"] != true {
+		t.Fatalf("the other post after the swap: %v %v", got["publish_at"], got["slot"])
+	}
+	_, events := c.json(http.MethodGet, "/v1/events?type=post.rescheduled&limit=100", nil)
+	moved := map[string]bool{}
+	for _, e := range events["data"].([]any) {
+		data, _ := e.(map[string]any)["data"].(map[string]any)
+		object, _ := data["object"].(map[string]any)
+		moved[fmt.Sprint(object["id"])] = true
+	}
+	if !moved[aID] || !moved[bID] {
+		t.Fatalf("post.rescheduled for %v, want both", moved)
+	}
+	for body, code := range map[string]map[string]any{
+		"parameter_invalid":  {"swap_with": "nope"},
+		"reschedule_invalid": {},
+	} {
+		if status, got := c.json(http.MethodPost, "/v1/posts/"+aID+"/reschedule", code); got["code"] != body {
+			t.Errorf("%v: %d %v", code, status, got)
+		}
 	}
 }

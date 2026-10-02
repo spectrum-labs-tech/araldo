@@ -206,12 +206,18 @@ func (s *Store) ReplaceSlots(ctx context.Context, orgID, brandID uuid.UUID, slot
 	return nil
 }
 
-// SlotTaken reports whether a live post already holds the brand's slot at t.
-func (s *Store) SlotTaken(ctx context.Context, brandID uuid.UUID, livemode bool, at time.Time) (bool, error) {
-	var taken bool
-	err := s.q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM posts WHERE brand_id = $1 AND livemode = $2 AND slot_at = $3
-		AND status NOT IN ('canceled', 'rejected'))`, brandID, livemode, at).Scan(&taken)
-	return taken, err
+// SlotHolder returns the live post that holds the brand's slot at t, or nil.
+func (s *Store) SlotHolder(ctx context.Context, brandID uuid.UUID, livemode bool, at time.Time) (*uuid.UUID, error) {
+	var holder uuid.UUID
+	err := s.q.QueryRow(ctx, `SELECT id FROM posts WHERE brand_id = $1 AND livemode = $2 AND slot_at = $3
+		AND status NOT IN ('canceled', 'rejected')`, brandID, livemode, at).Scan(&holder)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &holder, nil
 }
 
 // API keys.

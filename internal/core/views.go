@@ -177,7 +177,7 @@ type TargetView struct {
 	Status        string          `json:"status"`
 	Attempts      int             `json:"attempts"`
 	NextAttemptAt *time.Time      `json:"next_attempt_at,omitempty"`
-	PublishBy     time.Time       `json:"publish_by"`
+	PublishBy     *time.Time      `json:"publish_by"`
 	Permalink     string          `json:"permalink,omitempty"`
 	Error         *ErrorView      `json:"error,omitempty"`
 	PublishedAt   *time.Time      `json:"published_at,omitempty"`
@@ -206,9 +206,9 @@ func ViewEngagement(e *model.Engagement) *EngagementView {
 func ViewTarget(t *model.Target) TargetView {
 	v := TargetView{ID: id.Format(id.Target, t.ID), Object: "post_target", Post: id.Format(id.Post, t.PostID), Channel: id.Format(id.Channel, t.ChannelID),
 		ChannelName: t.ChannelName, Provider: string(t.Provider), Parts: t.Parts, Status: string(t.Status), Attempts: t.Attempts,
-		PublishBy: t.PublishBy.UTC(), Permalink: t.Permalink, PublishedAt: utc(t.PublishedAt), Livemode: t.Livemode}
+		PublishBy: utc(t.PublishBy), Permalink: t.Permalink, PublishedAt: utc(t.PublishedAt), Livemode: t.Livemode}
 	if t.Status == model.TargetQueued {
-		v.NextAttemptAt = utc(&t.NextAttemptAt)
+		v.NextAttemptAt = utc(t.NextAttemptAt)
 	}
 	if t.ErrorCode != "" {
 		v.Error = &ErrorView{Code: t.ErrorCode, Message: t.ErrorMessage}
@@ -256,8 +256,8 @@ type PostView struct {
 	TemplateVersion *int              `json:"template_version,omitempty"`
 	Data            json.RawMessage   `json:"data,omitempty"`
 	Content         *model.Content    `json:"content,omitempty"`
-	PublishAt       time.Time         `json:"publish_at"`
-	PublishBy       time.Time         `json:"publish_by"`
+	PublishAt       *time.Time        `json:"publish_at"`
+	PublishBy       *time.Time        `json:"publish_by"`
 	Slot            bool              `json:"slot"`
 	Metadata        map[string]string `json:"metadata"`
 	Approval        ApprovalView      `json:"approval"`
@@ -270,8 +270,8 @@ type PostView struct {
 // ViewPost renders a post.
 func ViewPost(p *model.Post) PostView {
 	v := PostView{ID: id.Format(id.Post, p.ID), Object: "post", Brand: id.Format(id.Brand, p.BrandID), Livemode: p.Livemode, Status: string(p.Status),
-		TemplateVersion: p.TemplateVersion, Data: p.Data, Content: p.Content, PublishAt: p.PublishAt.UTC(), PublishBy: p.PublishBy.UTC(),
-		Slot: p.SlotAt != nil, Metadata: p.Metadata, CreatedAt: p.CreatedAt.UTC(), UpdatedAt: p.UpdatedAt.UTC(),
+		TemplateVersion: p.TemplateVersion, Data: p.Data, Content: p.Content, PublishAt: utc(p.PublishAt), PublishBy: utc(p.PublishBy),
+		Slot: p.Slotted(), Metadata: p.Metadata, CreatedAt: p.CreatedAt.UTC(), UpdatedAt: p.UpdatedAt.UTC(),
 		Approval: ApprovalView{Required: p.ApprovalNeeded, ReviewedAt: utc(p.ReviewedAt), Note: p.ReviewNote},
 		Media:    make([]MediaView, 0, len(p.Media)),
 		Targets:  make([]TargetView, 0, len(p.Targets))}

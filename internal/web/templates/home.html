@@ -30,7 +30,7 @@
       <tr>
         <td><a href="/posts/{{postID .ID}}">{{with index .Targets 0}}{{index .Parts 0 | printf "%.80s"}}{{end}}</a></td>
         <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
-        <td>{{fmtTime .PublishAt}}</td>
+        <td>{{if .PublishAt}}{{fmtTime .PublishAt}}{{else}}<span class="text-muted">Next slot when approved</span>{{end}}</td>
         <td>{{len .Targets}}</td>
       </tr>
     {{end}}

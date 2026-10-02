@@ -234,6 +234,25 @@ func (s *Store) SetPostStatus(ctx context.Context, orgID, id uuid.UUID, status m
 	return s.execOne(ctx, `UPDATE posts SET status = $3, updated_at = now() WHERE org_id = $1 AND id = $2`, orgID, id, status)
 }
 
+// SchedulePost sets when a post publishes, when it gives up and the slot
+// it holds, and the same times on its targets that have not started
+// (ADR 0022). Nil times mean it takes a slot when approved.
+func (s *Store) SchedulePost(ctx context.Context, orgID, id uuid.UUID, at, by, slot *time.Time) error {
+	if err := s.execOne(ctx, `UPDATE posts SET publish_at = $3, publish_by = $4, slot_at = $5, updated_at = now() WHERE org_id = $1 AND id = $2`,
+		orgID, id, at, by, slot); err != nil {
+		return err
+	}
+	_, err := s.q.Exec(ctx, `UPDATE post_targets SET next_attempt_at = $3, publish_by = $4, updated_at = now()
+		WHERE org_id = $1 AND post_id = $2 AND status IN ('queued', 'held')`, orgID, id, at, by)
+	return mapErr(err)
+}
+
+// ReleaseSlot frees the slot a post holds, keeping its times.
+func (s *Store) ReleaseSlot(ctx context.Context, orgID, id uuid.UUID) error {
+	_, err := s.q.Exec(ctx, `UPDATE posts SET slot_at = NULL, updated_at = now() WHERE org_id = $1 AND id = $2`, orgID, id)
+	return err
+}
+
 // ReviewPost records an approval or rejection.
 // The reviewer is a member or an API key.
 func (s *Store) ReviewPost(ctx context.Context, orgID, id uuid.UUID, user, key *uuid.UUID, status model.PostStatus, note string, at time.Time) error {

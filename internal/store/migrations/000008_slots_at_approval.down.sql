@@ -1,0 +1,10 @@
+ALTER TABLE post_targets DROP CONSTRAINT IF EXISTS post_targets_next_attempt_at_check;
+ALTER TABLE posts DROP CONSTRAINT IF EXISTS posts_publish_at_check;
+UPDATE posts SET publish_at = created_at WHERE publish_at IS NULL;
+UPDATE posts SET publish_by = publish_at + interval '24 hours' WHERE publish_by IS NULL;
+UPDATE post_targets t SET next_attempt_at = p.publish_at FROM posts p WHERE p.id = t.post_id AND t.next_attempt_at IS NULL;
+UPDATE post_targets t SET publish_by = p.publish_by FROM posts p WHERE p.id = t.post_id AND t.publish_by IS NULL;
+ALTER TABLE post_targets ALTER COLUMN publish_by SET NOT NULL;
+ALTER TABLE post_targets ALTER COLUMN next_attempt_at SET NOT NULL;
+ALTER TABLE posts ALTER COLUMN publish_by SET NOT NULL;
+ALTER TABLE posts ALTER COLUMN publish_at SET NOT NULL;

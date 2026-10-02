@@ -149,6 +149,7 @@ live key limited to the brand it should post for.
 | `create_post` | Schedule it (with an idempotency key, so a retry does not post twice). |
 | `list_posts`, `get_post` | Follow up: status, links, errors, engagement (read-only). |
 | `cancel_post` | Stop what has not published yet (marked destructive). |
+| `reschedule_post` | Move a post to another time or slot, or swap it with another. |
 | `engagement_summary` | What did best, by post, channel or template (read-only). |
 
 Claude Code:

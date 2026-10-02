@@ -176,7 +176,7 @@ func (s *Service) finishPublish(ctx context.Context, owner string, t *model.Targ
 		default: // Rejected
 			o.Status, event = model.TargetFailed, "post_target.failed"
 		}
-		if o.Status == model.TargetQueued && o.NextAttemptAt.After(t.PublishBy) {
+		if o.Status == model.TargetQueued && t.PublishBy != nil && o.NextAttemptAt.After(*t.PublishBy) {
 			o.Status, event = model.TargetFailed, "post_target.failed"
 			o.ErrorMessage = "Gave up at the publish_by deadline. Last error: " + o.ErrorMessage
 		}

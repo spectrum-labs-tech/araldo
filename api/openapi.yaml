@@ -608,6 +608,39 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Post" } } }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/posts/{id}/reschedule:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Move a post
+      description: |
+        Moves a post that has not started publishing (`scheduled` or
+        `pending_approval`, with no attempts yet) to another time, or swaps
+        it with another such post of the same brand and mode. Approval is
+        kept: an approved post stays approved.
+
+        - `publish_at` a time, or `"now"`: a time on one of the brand's
+          slots takes that slot, and fails with `409 slot_taken`, naming the
+          post that holds it, when another post has it.
+        - `publish_at: "next_slot"`: the brand's next free slot. A post
+          waiting for approval goes back to taking its slot when approved.
+        - `swap_with`: the two posts trade times, deadlines and slots in
+          one step.
+
+        `publish_by` defaults to the new `publish_at` + 24h. Emits
+        `post.rescheduled`. Needs `posts:write`.
+      tags: [Posts]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RescheduleInput" }
+      responses:
+        "200":
+          description: The post.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Post" } } }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/posts/{id}/approve:
     parameters: [{ $ref: "#/components/parameters/ID" }]
     post:
@@ -616,6 +649,13 @@ paths:
         Approves a post waiting for review (`pending_approval`), which then
         publishes on schedule. Needs the explicit `posts:approve` scope. A
         key cannot review a post it created.
+
+        A `next_slot` post takes the brand's next free slot now, so posts
+        are slotted in the order they are approved, and `post.approved`
+        carries the time. When every slot in the next 56 days is taken it
+        fails with `409 slots_full`, and when no free slot comes before
+        the post's `publish_by` with `409 no_slot_before_publish_by`; the
+        post stays pending either way.
       tags: [Posts]
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:
@@ -1285,11 +1325,17 @@ components:
           description: Default every active channel of the brand in this mode.
         publish_at:
           type: string
-          description: '"now" (default), "next_slot", or an RFC 3339 time.'
+          description: |
+            "now" (default), "next_slot", or an RFC 3339 time. A
+            `next_slot` post that needs approval takes its slot when it is
+            approved, not when it is created.
         publish_by:
           type: string
           format: date-time
-          description: Give up after this (default publish_at + 24h).
+          description: |
+            Give up after this (default publish_at + 24h). For a
+            `next_slot` post waiting for approval, its slot must come
+            before this.
         metadata:
           type: object
           additionalProperties: { type: string }
@@ -1305,6 +1351,22 @@ components:
             Images to attach, in order, from `/v1/media`, of the post's brand
             and mode. They go on the first part of a thread. With media, the
             text may be empty.
+
+    RescheduleInput:
+      type: object
+      description: Give `publish_at` or `swap_with`.
+      properties:
+        publish_at:
+          type: string
+          description: '"now", "next_slot", or an RFC 3339 time.'
+        publish_by:
+          type: string
+          format: date-time
+          description: Give up after this (default publish_at + 24h).
+        swap_with:
+          type: string
+          description: Another post of the same brand and mode to trade places with.
+          example: post_01j9x3k2v7e8f9g0h1j2k3m4n5
 
     Media:
       type: object
@@ -1338,9 +1400,21 @@ components:
         template_version: { type: integer }
         data: { type: object, additionalProperties: true }
         content: { $ref: "#/components/schemas/Content" }
-        publish_at: { type: string, format: date-time }
-        publish_by: { type: string, format: date-time }
-        slot: { type: boolean }
+        publish_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            When it publishes. Null while a `next_slot` post waits for
+            approval: it takes the brand's next free slot when approved.
+        publish_by:
+          type: string
+          format: date-time
+          nullable: true
+          description: When it gives up. Null with `publish_at`, unless it was given.
+        slot:
+          type: boolean
+          description: Holds one of the brand's slots, or takes one when approved.
         metadata: { type: object, additionalProperties: { type: string } }
         approval:
           type: object
@@ -1368,7 +1442,7 @@ components:
         status: { type: string, enum: [held, queued, publishing, published, failed, needs_attention, canceled] }
         attempts: { type: integer }
         next_attempt_at: { type: string, format: date-time }
-        publish_by: { type: string, format: date-time }
+        publish_by: { type: string, format: date-time, nullable: true }
         permalink: { type: string }
         error:
           type: object
@@ -1500,6 +1574,7 @@ components:
         - post.created
         - post.approval_requested
         - post.approved
+        - post.rescheduled
         - post.rejected
         - post.published
         - post.partially_published

@@ -3,6 +3,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -254,38 +255,32 @@ func (s *Service) CreatePost(ctx context.Context, a Actor, in PostInput) (*model
 	}
 	p.ApprovalNeeded = approvalNeeded(pl.brand.ApprovalPolicy, pl.template, a)
 
-	useSlot := false
-	switch at := strings.TrimSpace(in.PublishAt); at {
-	case "", "now":
-		p.PublishAt = now
-	case "next_slot":
-		useSlot = true
-	default:
-		t, err := time.Parse(time.RFC3339, at)
-		if err != nil {
-			return nil, apperr.Invalid("publish_at_invalid", "publish_at", `publish_at is "now", "next_slot" or an RFC 3339 time.`)
+	at, useSlot, err := parsePublishAt(in.PublishAt, now)
+	if err != nil {
+		return nil, err
+	}
+	p.PublishAt = at
+	if useSlot && p.ApprovalNeeded {
+		// It takes its slot when approved (ADR 0022).
+		if in.PublishBy != nil && !in.PublishBy.After(now) {
+			return nil, apperr.Invalid("publish_by_invalid", "publish_by", "publish_by must be in the future.")
 		}
-		if t.After(now.Add(maxScheduleAhead)) {
-			return nil, apperr.Invalid("publish_at_invalid", "publish_at", "Posts can be scheduled at most a year ahead.")
-		}
-		p.PublishAt = maxTime(t, now)
+		useSlot, p.PublishBy = false, in.PublishBy
 	}
 
 	var created *model.Post
-	for try := 0; try < 5; try++ {
+	for try := 0; try < slotTries; try++ {
 		if useSlot {
-			slot, err := s.nextSlot(ctx, pl.brand, a.Livemode, now, try)
+			slot, err := s.nextSlot(ctx, s.store, pl.brand, a.Livemode, now, in.PublishBy)
 			if err != nil {
 				return nil, err
 			}
-			p.PublishAt, p.SlotAt = slot, &slot
+			p.PublishAt, p.SlotAt = &slot, &slot
 		}
-		p.PublishBy = p.PublishAt.Add(DefaultPublishWindow)
-		if in.PublishBy != nil {
-			if !in.PublishBy.After(p.PublishAt) {
-				return nil, apperr.Invalid("publish_by_invalid", "publish_by", "publish_by must be after publish_at.")
+		if p.PublishAt != nil {
+			if p.PublishBy, err = publishBy(*p.PublishAt, in.PublishBy); err != nil {
+				return nil, err
 			}
-			p.PublishBy = *in.PublishBy
 		}
 		p.Status = model.PostScheduled
 		targetStatus := model.TargetQueued
@@ -324,10 +319,56 @@ func (s *Service) CreatePost(ctx context.Context, a Actor, in PostInput) (*model
 		if err != nil {
 			return nil, err
 		}
-		s.wake(ctx, p.PublishAt)
+		s.wakeFor(ctx, created)
 		return created, nil
 	}
-	return nil, apperr.Conflict("slot_contention", "Could not reserve a publishing slot; try again.")
+	return nil, errSlotContention
+}
+
+// slotTries bounds the retries when another post takes the slot first.
+const slotTries = 5
+
+var errSlotContention = apperr.Conflict("slot_contention", "Could not reserve a publishing slot; try again.")
+
+// parsePublishAt reads "now", "next_slot" or a time. For next_slot it
+// returns no time: the caller finds the slot.
+func parsePublishAt(s string, now time.Time) (*time.Time, bool, error) {
+	switch s = strings.TrimSpace(s); s {
+	case "", "now":
+		return &now, false, nil
+	case "next_slot":
+		return nil, true, nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return nil, false, apperr.Invalid("publish_at_invalid", "publish_at", `publish_at is "now", "next_slot" or an RFC 3339 time.`)
+	}
+	if t.After(now.Add(maxScheduleAhead)) {
+		return nil, false, apperr.Invalid("publish_at_invalid", "publish_at", "Posts can be scheduled at most a year ahead.")
+	}
+	t = maxTime(t, now)
+	return &t, false, nil
+}
+
+// publishBy is the given deadline, which must come after at, or at plus
+// the default window.
+func publishBy(at time.Time, given *time.Time) (*time.Time, error) {
+	if given == nil {
+		by := at.Add(DefaultPublishWindow)
+		return &by, nil
+	}
+	if !given.After(at) {
+		return nil, apperr.Invalid("publish_by_invalid", "publish_by", "publish_by must be after publish_at.")
+	}
+	by := *given
+	return &by, nil
+}
+
+// wakeFor wakes the publisher if the post is due now.
+func (s *Service) wakeFor(ctx context.Context, p *model.Post) {
+	if p != nil && p.PublishAt != nil && p.Status == model.PostScheduled {
+		s.wake(ctx, *p.PublishAt)
+	}
 }
 
 // approvalNeeded applies the template's override, or else the brand's
@@ -357,10 +398,10 @@ func maxTime(a, b time.Time) time.Time {
 	return b
 }
 
-// nextSlot finds the brand's earliest free weekly slot after now, skipping
-// skip taken ones (for retries after a race).
-func (s *Service) nextSlot(ctx context.Context, b *model.Brand, livemode bool, now time.Time, skip int) (time.Time, error) {
-	slots, err := s.store.Slots(ctx, b.OrgID, b.ID)
+// nextSlot finds the brand's earliest free weekly slot after now, and
+// before by when given. q is the store or a transaction.
+func (s *Service) nextSlot(ctx context.Context, q *store.Store, b *model.Brand, livemode bool, now time.Time, by *time.Time) (time.Time, error) {
+	slots, err := q.Slots(ctx, b.OrgID, b.ID)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -384,18 +425,16 @@ func (s *Service) nextSlot(ctx context.Context, b *model.Brand, livemode bool, n
 			if t.Before(earliest) {
 				continue
 			}
-			taken, err := s.store.SlotTaken(ctx, b.ID, livemode, t)
+			if by != nil && !t.Before(*by) {
+				return time.Time{}, apperr.Conflict("no_slot_before_publish_by", "No free slot of brand %s comes before publish_by.", b.Name)
+			}
+			holder, err := q.SlotHolder(ctx, b.ID, livemode, t)
 			if err != nil {
 				return time.Time{}, err
 			}
-			if taken {
-				continue
+			if holder == nil {
+				return t.UTC(), nil
 			}
-			if skip > 0 {
-				skip--
-				continue
-			}
-			return t.UTC(), nil
 		}
 	}
 	return time.Time{}, apperr.Conflict("slots_full", "Every slot in the next %d days is taken.", slotSearchDays)
@@ -472,48 +511,288 @@ func (s *Service) CancelPost(ctx context.Context, a Actor, postID uuid.UUID) (*m
 	return out, err
 }
 
-// ReviewPost approves or rejects a post waiting for approval.
+// ReviewPost approves or rejects a post waiting for approval. Approving a
+// next_slot post gives it the brand's next free slot, so slots go in
+// approval order (ADR 0022).
 func (s *Service) ReviewPost(ctx context.Context, a Actor, postID uuid.UUID, approve bool, note string) (*model.Post, error) {
 	if err := a.require(PermPostsApprove); err != nil {
 		return nil, err
 	}
-	var out *model.Post
-	err := s.store.InTx(ctx, func(tx *store.Store) error {
-		p, err := s.lockPost(ctx, tx, a, postID)
-		if err != nil {
-			return err
-		}
-		if p.Status != model.PostPendingApproval {
-			return apperr.Conflict("post_not_pending", "This post is not waiting for approval.")
-		}
-		if a.IsKey() && p.CreatedByKey != nil && *p.CreatedByKey == *a.KeyID {
-			return apperr.Forbidden("A key cannot review a post it created (ADR 0019).")
-		}
-		now := s.Now()
-		status, action := model.PostScheduled, "post.approved"
-		if !approve {
-			status, action = model.PostRejected, "post.rejected"
-			if _, err := tx.CancelOpenTargets(ctx, a.OrgID, p.ID); err != nil {
+	for try := 0; try < slotTries; try++ {
+		var out *model.Post
+		err := s.store.InTx(ctx, func(tx *store.Store) error {
+			p, err := s.lockPost(ctx, tx, a, postID)
+			if err != nil {
 				return err
 			}
-		} else if err := tx.ReleaseHeldTargets(ctx, a.OrgID, p.ID); err != nil {
-			return err
+			if p.Status != model.PostPendingApproval {
+				return apperr.Conflict("post_not_pending", "This post is not waiting for approval.")
+			}
+			if a.IsKey() && p.CreatedByKey != nil && *p.CreatedByKey == *a.KeyID {
+				return apperr.Forbidden("A key cannot review a post it created (ADR 0019).")
+			}
+			now := s.Now()
+			status, action := model.PostScheduled, "post.approved"
+			if !approve {
+				status, action = model.PostRejected, "post.rejected"
+				if _, err := tx.CancelOpenTargets(ctx, a.OrgID, p.ID); err != nil {
+					return err
+				}
+			} else {
+				if p.PublishAt == nil {
+					if err := s.takeSlot(ctx, tx, p, now); err != nil {
+						return err
+					}
+				}
+				if err := tx.ReleaseHeldTargets(ctx, a.OrgID, p.ID); err != nil {
+					return err
+				}
+			}
+			if err := tx.ReviewPost(ctx, a.OrgID, p.ID, a.UserID, a.KeyID, status, strings.TrimSpace(note), now); err != nil {
+				return err
+			}
+			if out, err = tx.Post(ctx, a.OrgID, p.ID); err != nil {
+				return err
+			}
+			if err := s.audit(ctx, tx, a, action, id.Format(id.Post, p.ID), nil); err != nil {
+				return err
+			}
+			return s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, action, ViewPost(out))
+		})
+		if approve && store.ConflictOn(err, "posts_slot_idx") {
+			continue // another post took the slot; the next try sees it
 		}
-		if err := tx.ReviewPost(ctx, a.OrgID, p.ID, a.UserID, a.KeyID, status, strings.TrimSpace(note), now); err != nil {
-			return err
+		if err != nil {
+			return nil, err
 		}
-		if out, err = tx.Post(ctx, a.OrgID, p.ID); err != nil {
-			return err
-		}
-		if err := s.audit(ctx, tx, a, action, id.Format(id.Post, p.ID), nil); err != nil {
-			return err
-		}
-		return s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, action, ViewPost(out))
-	})
-	if err == nil && approve {
-		s.wake(ctx, out.PublishAt)
+		s.wakeFor(ctx, out)
+		return out, nil
 	}
-	return out, err
+	return nil, errSlotContention
+}
+
+// takeSlot gives a post waiting for a slot the brand's next free one, with
+// the caller's publish_by as the bound (ADR 0022).
+func (s *Service) takeSlot(ctx context.Context, tx *store.Store, p *model.Post, now time.Time) error {
+	b, err := tx.Brand(ctx, p.OrgID, p.BrandID)
+	if err != nil {
+		return err
+	}
+	slot, err := s.nextSlot(ctx, tx, b, p.Livemode, now, p.PublishBy)
+	if err != nil {
+		return err
+	}
+	by, err := publishBy(slot, p.PublishBy)
+	if err != nil {
+		return err
+	}
+	return tx.SchedulePost(ctx, p.OrgID, p.ID, &slot, by, &slot)
+}
+
+// RescheduleInput moves a post: to PublishAt ("now", "next_slot" or an
+// RFC 3339 time), or trading places with SwapWith (ADR 0022).
+type RescheduleInput struct {
+	PublishAt string
+	PublishBy *time.Time
+	SwapWith  *uuid.UUID
+}
+
+// ReschedulePost moves a post that has not started publishing, or swaps
+// it with another. Approval is kept: it changes when, not what.
+func (s *Service) ReschedulePost(ctx context.Context, a Actor, postID uuid.UUID, in RescheduleInput) ([]*model.Post, error) {
+	if err := a.require(PermPostsWrite); err != nil {
+		return nil, err
+	}
+	switch {
+	case (in.SwapWith == nil) == (strings.TrimSpace(in.PublishAt) == ""):
+		return nil, apperr.Invalid("reschedule_invalid", "publish_at", "Give publish_at or swap_with.")
+	case in.SwapWith != nil && in.PublishBy != nil:
+		return nil, apperr.Invalid("reschedule_invalid", "publish_by", "A swap trades deadlines too; leave out publish_by.")
+	case in.SwapWith != nil && *in.SwapWith == postID:
+		return nil, apperr.Invalid("reschedule_invalid", "swap_with", "A post cannot swap with itself.")
+	}
+	for try := 0; try < slotTries; try++ {
+		var moved []*model.Post
+		err := s.store.InTx(ctx, func(tx *store.Store) error {
+			var err error
+			if in.SwapWith != nil {
+				moved, err = s.swapPosts(ctx, tx, a, postID, *in.SwapWith)
+			} else {
+				moved, err = s.movePost(ctx, tx, a, postID, in)
+			}
+			if err != nil {
+				return err
+			}
+			for _, p := range moved {
+				if err := s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, "post.rescheduled", ViewPost(p)); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if store.ConflictOn(err, "posts_slot_idx") {
+			continue // another post took the slot; the next try sees it
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range moved {
+			s.wakeFor(ctx, p)
+		}
+		return moved, nil
+	}
+	return nil, errSlotContention
+}
+
+func (s *Service) movePost(ctx context.Context, tx *store.Store, a Actor, postID uuid.UUID, in RescheduleInput) ([]*model.Post, error) {
+	p, err := s.lockMovable(ctx, tx, a, postID)
+	if err != nil {
+		return nil, err
+	}
+	now := s.Now()
+	at, useSlot, err := parsePublishAt(in.PublishAt, now)
+	if err != nil {
+		return nil, err
+	}
+	b, err := tx.Brand(ctx, p.OrgID, p.BrandID)
+	if err != nil {
+		return nil, err
+	}
+	// Its own slot is free to take again.
+	if err := tx.ReleaseSlot(ctx, p.OrgID, p.ID); err != nil {
+		return nil, err
+	}
+	var by, slot *time.Time
+	switch {
+	case useSlot && p.Status == model.PostPendingApproval:
+		// Back to taking its slot when approved.
+		if in.PublishBy != nil && !in.PublishBy.After(now) {
+			return nil, apperr.Invalid("publish_by_invalid", "publish_by", "publish_by must be in the future.")
+		}
+		by = in.PublishBy
+	case useSlot:
+		t, err := s.nextSlot(ctx, tx, b, p.Livemode, now, in.PublishBy)
+		if err != nil {
+			return nil, err
+		}
+		at, slot = &t, &t
+	default:
+		isSlot, err := onSlot(ctx, tx, b, *at)
+		if err != nil {
+			return nil, err
+		}
+		if isSlot {
+			holder, err := tx.SlotHolder(ctx, b.ID, p.Livemode, *at)
+			if err != nil {
+				return nil, err
+			}
+			if holder != nil {
+				msg := fmt.Sprintf("Post %s holds that slot; move it or swap with it.", id.Format(id.Post, *holder))
+				return nil, &apperr.Error{Kind: apperr.KindConflict, Code: "slot_taken", Message: msg, Param: "publish_at",
+					Problems: []apperr.Problem{{Code: "slot_taken", Param: "publish_at", Message: msg, Detail: map[string]any{"post": id.Format(id.Post, *holder)}}}}
+			}
+			slot = at
+		}
+	}
+	if at != nil {
+		if by, err = publishBy(*at, in.PublishBy); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.SchedulePost(ctx, p.OrgID, p.ID, at, by, slot); err != nil {
+		return nil, err
+	}
+	out, err := tx.Post(ctx, p.OrgID, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	detail := map[string]any{"from": timeOrSlot(p.PublishAt), "to": timeOrSlot(out.PublishAt)}
+	return []*model.Post{out}, s.audit(ctx, tx, a, "post.reschedule", id.Format(id.Post, p.ID), detail)
+}
+
+// swapPosts trades two posts' times, deadlines and slots.
+func (s *Service) swapPosts(ctx context.Context, tx *store.Store, a Actor, postID, otherID uuid.UUID) ([]*model.Post, error) {
+	// Lock in a fixed order, so two opposite swaps cannot deadlock.
+	first, second := postID, otherID
+	if bytes.Compare(first[:], second[:]) > 0 {
+		first, second = second, first
+	}
+	locked := map[uuid.UUID]*model.Post{}
+	for _, pid := range []uuid.UUID{first, second} {
+		p, err := s.lockMovable(ctx, tx, a, pid)
+		if err != nil {
+			return nil, err
+		}
+		if p.PublishAt == nil {
+			return nil, apperr.Conflict("post_unscheduled", "Post %s has no time yet: it takes a slot when approved.", id.Format(id.Post, p.ID))
+		}
+		locked[pid] = p
+	}
+	p, o := locked[postID], locked[otherID]
+	if p.BrandID != o.BrandID {
+		return nil, apperr.Invalid("swap_other_brand", "swap_with", "Only posts of the same brand can swap.")
+	}
+	// Free one slot first: the slot index allows one holder at a time.
+	if err := tx.ReleaseSlot(ctx, p.OrgID, p.ID); err != nil {
+		return nil, err
+	}
+	if err := tx.SchedulePost(ctx, o.OrgID, o.ID, p.PublishAt, p.PublishBy, p.SlotAt); err != nil {
+		return nil, err
+	}
+	if err := tx.SchedulePost(ctx, p.OrgID, p.ID, o.PublishAt, o.PublishBy, o.SlotAt); err != nil {
+		return nil, err
+	}
+	var out []*model.Post
+	for _, pid := range []uuid.UUID{postID, otherID} {
+		moved, err := tx.Post(ctx, a.OrgID, pid)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, moved)
+	}
+	return out, s.audit(ctx, tx, a, "post.reschedule", id.Format(id.Post, p.ID), map[string]any{"swap_with": id.Format(id.Post, o.ID)})
+}
+
+// lockMovable locks a post that has not started publishing.
+func (s *Service) lockMovable(ctx context.Context, tx *store.Store, a Actor, postID uuid.UUID) (*model.Post, error) {
+	p, err := s.lockPost(ctx, tx, a, postID)
+	if err != nil {
+		return nil, err
+	}
+	if p.Status != model.PostScheduled && p.Status != model.PostPendingApproval {
+		return nil, apperr.Conflict("post_not_movable", "Only scheduled posts and posts waiting for approval can be moved.")
+	}
+	for _, t := range p.Targets {
+		if t.Attempts > 0 {
+			return nil, apperr.Conflict("post_not_movable", "Publishing has started on post %s.", id.Format(id.Post, p.ID))
+		}
+	}
+	return p, nil
+}
+
+// onSlot reports whether t is one of the brand's weekly slots.
+func onSlot(ctx context.Context, tx *store.Store, b *model.Brand, t time.Time) (bool, error) {
+	slots, err := tx.Slots(ctx, b.OrgID, b.ID)
+	if err != nil {
+		return false, err
+	}
+	local := t.In(location(b.Timezone))
+	if local.Second() != 0 || local.Nanosecond() != 0 {
+		return false, nil
+	}
+	for _, sl := range slots {
+		if sl.Weekday == local.Weekday() && sl.MinuteOfDay == local.Hour()*60+local.Minute() {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func timeOrSlot(t *time.Time) string {
+	if t == nil {
+		return "slot at approval"
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 // RetryTarget puts a failed or uncertain target back in the queue now. For

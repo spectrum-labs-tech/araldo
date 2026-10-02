@@ -303,6 +303,31 @@ func tools(api *Client) []Tool {
 			},
 		},
 		{
+			Name: "reschedule_post", Title: "Move a post",
+			Description: "Moves a post that has not started publishing to another time, or swaps it with another post of the same brand. " +
+				"A time on one of the brand's slots takes that slot. Approval is kept.",
+			Input: object([]string{"post"}, map[string]any{
+				"post": str(postDesc),
+				"publish_at": str(`"now", "next_slot" (the brand's next free slot; a post waiting for approval takes it when approved), ` +
+					"or an RFC 3339 time."),
+				"publish_by": str("RFC 3339 time to give up publishing by (default: a day after publish_at)."),
+				"swap_with":  str("Instead of publish_at: the ID of a post to trade places with."),
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				id, err := required(args, "post")
+				if err != nil {
+					return nil, err
+				}
+				body := map[string]any{}
+				for _, k := range []string{"publish_at", "publish_by", "swap_with"} {
+					if v := argString(args, k); v != "" {
+						body[k] = v
+					}
+				}
+				return api.Do(ctx, http.MethodPost, "/v1/posts/"+url.PathEscape(id)+"/reschedule", nil, body, "")
+			},
+		},
+		{
 			Name: "engagement_summary", Title: "Summarize engagement", ReadOnly: true, Idempotent: true,
 			Description: "Likes, reposts, replies and quotes of posts published in the last days, by post, channel or template, " +
 				"most engaging first. Use it to see what works. Clicks are in the brand's web analytics (UTM parameters).",

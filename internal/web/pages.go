@@ -50,6 +50,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /posts", s.app("posts", s.createPost))
 	s.mux.HandleFunc("GET /posts/{id}", s.app("posts", s.postDetail))
 	s.mux.HandleFunc("POST /posts/{id}/cancel", s.app("posts", s.cancelPost))
+	s.mux.HandleFunc("POST /posts/{id}/move", s.app("posts", s.movePost))
 	s.mux.HandleFunc("POST /posts/{id}/review", s.app("posts", s.reviewPost))
 	s.mux.HandleFunc("POST /targets/{id}/retry", s.app("posts", s.retryTarget))
 	s.mux.HandleFunc("POST /targets/{id}/published", s.app("posts", s.markPublished))
@@ -368,18 +369,12 @@ func (s *Server) createPost(c *reqCtx) error {
 		in.Media = append(in.Media, m.ID)
 	}
 	if in.PublishAt == "at" {
-		t, err := time.Parse("2006-01-02T15:04", f.Get("publish_at"))
-		if err != nil {
-			return s.formErr(c, "post_new", "posts", "New post", d, apperr.Invalid("publish_at_invalid", "publish_at", "Pick a date and time."))
-		}
 		b, _ := s.svc.Brand(c.ctx(), c.actor, in.BrandID)
-		loc := time.UTC
-		if b != nil {
-			if l, err := time.LoadLocation(b.Timezone); err == nil {
-				loc = l
-			}
+		at, err := brandTime(b, f.Get("publish_at"), "publish_at")
+		if err != nil {
+			return s.formErr(c, "post_new", "posts", "New post", d, err)
 		}
-		in.PublishAt = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, loc).Format(time.RFC3339)
+		in.PublishAt = at
 	}
 	if f.Get("action") == "preview" {
 		renders, err := s.svc.PreviewPost(c.ctx(), c.actor, in)
@@ -521,6 +516,13 @@ type postDetailData struct {
 	Attempts   map[uuid.UUID][]model.Attempt
 	JSON       string
 	CanApprove bool
+	// CanMove shows the move form: the time it has (MoveAt, in the brand's
+	// zone), and the posts it can swap with.
+	CanMove  bool
+	Move     string
+	MoveAt   string
+	Swap     string
+	SwapWith []*model.Post
 	// Who made and who reviewed the post: a member or an API key, nil
 	// when they are gone (a member who left the org).
 	Creator  *actorRef
@@ -557,27 +559,138 @@ func (s *Server) whoIs(c *reqCtx, user, key *uuid.UUID) *actorRef {
 	return nil
 }
 
+// brandTime reads a datetime-local value in the brand's time zone.
+func brandTime(b *model.Brand, v, param string) (string, error) {
+	t, err := time.Parse("2006-01-02T15:04", v)
+	if err != nil {
+		return "", apperr.Invalid("publish_at_invalid", param, "Pick a date and time.")
+	}
+	loc := time.UTC
+	if b != nil {
+		if l, err := time.LoadLocation(b.Timezone); err == nil {
+			loc = l
+		}
+	}
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, loc).Format(time.RFC3339), nil
+}
+
 func (s *Server) postDetail(c *reqCtx) error {
 	pid, err := pathUUID(c, id.Post, "post")
 	if err != nil {
 		return err
 	}
-	p, err := s.svc.Post(c.ctx(), c.actor, pid)
+	d, err := s.loadPostDetail(c, pid)
 	if err != nil {
 		return err
 	}
-	d := postDetailData{Post: p, View: core.ViewPost(p), Attempts: map[uuid.UUID][]model.Attempt{}, CanApprove: c.actor.Can(core.PermPostsApprove)}
+	return s.page(c, "post_detail", "posts", "Post", d)
+}
+
+func (s *Server) loadPostDetail(c *reqCtx, pid uuid.UUID) (*postDetailData, error) {
+	p, err := s.svc.Post(c.ctx(), c.actor, pid)
+	if err != nil {
+		return nil, err
+	}
+	d := &postDetailData{Post: p, View: core.ViewPost(p), Attempts: map[uuid.UUID][]model.Attempt{}, CanApprove: c.actor.Can(core.PermPostsApprove),
+		Move: "at"}
 	d.Brand, _ = s.svc.Brand(c.ctx(), c.actor, p.BrandID)
 	d.Creator = s.whoIs(c, p.CreatedByUser, p.CreatedByKey)
 	d.Reviewer = s.whoIs(c, p.ReviewedBy, p.ReviewedByKey)
 	for _, t := range p.Targets {
 		if d.Attempts[t.ID], err = s.svc.Attempts(c.ctx(), c.actor, t.ID); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	b, _ := json.MarshalIndent(d.View, "", "  ")
 	d.JSON = string(b)
-	return s.page(c, "post_detail", "posts", "Post", d)
+	if d.CanMove = movable(p) && c.actor.Can(core.PermPostsWrite); d.CanMove {
+		if p.PublishAt != nil && d.Brand != nil {
+			d.MoveAt = p.PublishAt.In(brandLoc(d.Brand)).Format("2006-01-02T15:04")
+		}
+		if d.SwapWith, err = s.swapCandidates(c, p); err != nil {
+			return nil, err
+		}
+	}
+	return d, nil
+}
+
+// movable reports whether a post can still be moved (ADR 0022).
+func movable(p *model.Post) bool {
+	if p.Status != model.PostScheduled && p.Status != model.PostPendingApproval {
+		return false
+	}
+	for _, t := range p.Targets {
+		if t.Attempts > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func brandLoc(b *model.Brand) *time.Location {
+	if l, err := time.LoadLocation(b.Timezone); err == nil {
+		return l
+	}
+	return time.UTC
+}
+
+// swapCandidates are the brand's other movable posts with a time, soonest
+// first.
+func (s *Server) swapCandidates(c *reqCtx, p *model.Post) ([]*model.Post, error) {
+	var out []*model.Post
+	if p.PublishAt == nil {
+		return nil, nil
+	}
+	for _, status := range []model.PostStatus{model.PostScheduled, model.PostPendingApproval} {
+		posts, _, err := s.svc.Posts(c.ctx(), c.actor, core.PostFilter{BrandID: &p.BrandID, Status: string(status)}, store.Page{Limit: 100})
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range posts {
+			if o.ID != p.ID && o.PublishAt != nil && movable(o) {
+				out = append(out, o)
+			}
+		}
+	}
+	slices.SortFunc(out, func(a, b *model.Post) int { return a.PublishAt.Compare(*b.PublishAt) })
+	return out, nil
+}
+
+func (s *Server) movePost(c *reqCtx) error {
+	pid, err := pathUUID(c, id.Post, "post")
+	if err != nil {
+		return err
+	}
+	f := c.r.PostForm
+	in := core.RescheduleInput{PublishAt: f.Get("move")}
+	p, err := s.svc.Post(c.ctx(), c.actor, pid)
+	if err != nil {
+		return err
+	}
+	switch in.PublishAt {
+	case "at":
+		b, _ := s.svc.Brand(c.ctx(), c.actor, p.BrandID)
+		in.PublishAt, err = brandTime(b, f.Get("move_at"), "move_at")
+	case "swap":
+		in.PublishAt = ""
+		var other uuid.UUID
+		if other, err = id.Parse(id.Post, f.Get("swap_with")); err != nil {
+			err = apperr.Invalid("swap_with_required", "swap_with", "Choose a post to swap with.")
+		}
+		in.SwapWith = &other
+	}
+	if err == nil {
+		_, err = s.svc.ReschedulePost(c.ctx(), c.actor, pid, in)
+	}
+	if err != nil {
+		d, derr := s.loadPostDetail(c, pid)
+		if derr != nil {
+			return derr
+		}
+		d.Move, d.MoveAt, d.Swap = f.Get("move"), f.Get("move_at"), f.Get("swap_with")
+		return s.formErr(c, "post_detail", "posts", "Post", d, err)
+	}
+	return redirect(c, "/posts/"+c.r.PathValue("id"), "Moved.")
 }
 
 func (s *Server) cancelPost(c *reqCtx) error {

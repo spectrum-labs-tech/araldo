@@ -1,6 +1,7 @@
 {{define "content"}}
 {{$p := .Data.Post}}
 {{$row := "flex flex-wrap items-center gap-2"}}
+{{$radio := "flex-row items-center gap-1.5 font-normal"}}
 <div class="mb-2 flex flex-wrap items-start justify-between gap-4">
   <div>
     <p class="mb-1 text-sm text-muted"><a href="/posts">Posts</a> / <code>{{postID $p.ID}}</code></p>
@@ -16,8 +17,8 @@
 
 <dl class="facts">
   <dt>Brand</dt><dd>{{with .Data.Brand}}<a href="/brands/{{brandID .ID}}">{{.Name}}</a>{{end}}</dd>
-  <dt>Publish at</dt><dd>{{fmtTime $p.PublishAt}}{{if $p.SlotAt}} <span class="tag">slot</span>{{end}}</dd>
-  <dt>Give up after</dt><dd>{{fmtTime $p.PublishBy}}</dd>
+  <dt>Publish at</dt><dd>{{if $p.PublishAt}}{{fmtTime $p.PublishAt}}{{else}}The brand's next free slot when approved{{end}}{{if $p.Slotted}} <span class="tag">slot</span>{{end}}</dd>
+  <dt>Give up after</dt><dd>{{if $p.PublishBy}}{{fmtTime $p.PublishBy}}{{else}}A day after its slot{{end}}</dd>
   {{if $p.TemplateID}}<dt>Template</dt><dd><a href="/templates/{{tmplID (derefUUID $p.TemplateID)}}?version={{deref $p.TemplateVersion}}">version {{deref $p.TemplateVersion}}</a></dd>{{end}}
   {{if $p.Metadata}}<dt>Metadata</dt><dd>{{range $k, $v := $p.Metadata}}<span class="tag">{{$k}}={{$v}}</span> {{end}}</dd>{{end}}
   <dt>Created</dt><dd>{{fmtTime $p.CreatedAt}}{{with .Data.Creator}} by {{template "actor" .}}{{end}}</dd>
@@ -36,6 +37,29 @@
   {{else}}<p class="text-muted">An admin or owner must approve this post.</p>{{end}}
 </section>
 {{else if $p.ReviewedAt}}<p class="text-muted">Reviewed {{fmtTime $p.ReviewedAt}}{{with .Data.Reviewer}} by {{template "actor" .}}{{end}}{{if $p.ReviewNote}}: “{{$p.ReviewNote}}”{{end}}</p>{{end}}
+
+{{if .Data.CanMove}}{{$d := .Data}}
+<section class="card">
+  <h2>Move</h2>
+  <form method="post" action="/posts/{{postID $p.ID}}/move" class="flex flex-col gap-3">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <fieldset class="flex flex-wrap gap-5">
+      <legend>To</legend>
+      <label class="{{$radio}}"><input type="radio" name="move" value="now" {{if eq $d.Move "now"}}checked{{end}}> Now</label>
+      <label class="{{$radio}}"><input type="radio" name="move" value="next_slot" {{if eq $d.Move "next_slot"}}checked{{end}}> Next free slot{{if eq $p.Status "pending_approval"}} when approved{{end}}</label>
+      <label class="{{$radio}}"><input type="radio" name="move" value="at" {{if eq $d.Move "at"}}checked{{end}}> At</label>
+      <input type="datetime-local" name="move_at" value="{{$d.MoveAt}}" aria-label="Date and time, in the brand's time zone">
+      {{if $d.SwapWith}}
+      <label class="{{$radio}}"><input type="radio" name="move" value="swap" {{if eq $d.Move "swap"}}checked{{end}}> Swap with</label>
+      <select name="swap_with" aria-label="Post to swap with">
+        {{range $d.SwapWith}}<option value="{{postID .ID}}" {{if eq $d.Swap (postID .ID)}}selected{{end}}>{{fmtTime .PublishAt}}: {{with index .Targets 0}}{{index .Parts 0 | printf "%.60s"}}{{end}}</option>{{end}}
+      </select>{{end}}
+    </fieldset>
+    <p class="text-sm text-muted">A time on one of the brand's slots takes that slot. Approval is kept.</p>
+    <div><button class="btn">Move</button></div>
+  </form>
+</section>
+{{end}}
 
 {{if $p.Media}}
 <h2 class="mt-6">Images</h2>

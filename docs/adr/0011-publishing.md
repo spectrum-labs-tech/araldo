@@ -25,6 +25,8 @@ mechanics we want.
      weekly slots in its time zone (for example weekdays at 09:00 and
      13:00); `next_slot` takes the earliest free slot for each channel,
      guarded by a unique constraint so two posts cannot take the same slot.
+     A post that needs approval takes its slot when approved, and posts
+     can be moved ([ADR 0022](0022-slots-at-approval.md)).
    - Each target has a **`publish_by` deadline** (by default
      `publish_at` plus 24 hours). Past it, the target fails as `expired`
      instead of posting stale content ("today's featured build", three days

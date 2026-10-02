@@ -62,7 +62,20 @@ every problem in `errors`, each with its own `code` and `param`.
 - **channel_missing**, **channel_inactive**, **channel_other_brand**: a
   listed channel cannot be used.
 - **no_slots**, **slots_full**: `next_slot` found nothing. Set the brand's
-  `slots` with `POST /v1/brands/{id}`.
+  `slots` with `POST /v1/brands/{id}`. A post waiting for approval takes
+  its slot when approved, so approval can fail with `slots_full` too; the
+  post stays pending.
+- **no_slot_before_publish_by**: no free slot comes before the post's
+  `publish_by`. Give a later deadline, or move the post.
+- **slot_taken**: moving a post onto a slot another post holds; the
+  problem's `detail.post` names it. Move that post, or swap with it.
+- **post_not_movable**: only posts that are `scheduled` or
+  `pending_approval`, with no attempts yet, can be moved.
+- **post_unscheduled**, **swap_other_brand**: a swap needs two posts of
+  the same brand, both with a time; a post waiting for approval with
+  `next_slot` has none yet.
+- **reschedule_invalid**: give `publish_at` or `swap_with` (and no
+  `publish_by` with a swap).
 - **slot_invalid**, **too_many_slots**: a slot is a weekday (`monday`) and a
   24-hour time (`09:00`); a brand has at most 200.
 - **simulation_in_live_mode**, **simulation_invalid**:

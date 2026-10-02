@@ -28,7 +28,9 @@ posts on every platform your users read. This page is the map; the
 
 1. A product calls `POST /v1/posts` with a template and data (or finished
    text), any images it uploaded to `/v1/media`, and a time: `now`,
-   `next_slot`, or a timestamp.
+   `next_slot`, or a timestamp. A `next_slot` post that needs approval
+   takes its slot when approved; posts can be moved or swapped until they
+   start publishing ([ADR 0022](adr/0022-slots-at-approval.md)).
 2. `core` renders the text for every channel with that platform's rules
    ([ADR 0010](adr/0010-templates.md)), refuses it with every problem listed
    if anything does not fit, and otherwise stores the post and one

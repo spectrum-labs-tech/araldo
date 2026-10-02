@@ -106,6 +106,7 @@ longer be renewed shows *needs reauth* and reconnects the same way.
 | X | The app's API key and secret, and the account's access token and secret (developer.x.com, read and write). |
 | LinkedIn | A member access token from the developer portal's token tools (openid, profile, w_member_social); it lasts 60 days. |
 | Threads | A sign-in through your Threads app, below. |
+| Facebook Pages, Instagram | A sign-in through your Meta app, below; you choose which Pages, or which Instagram accounts linked to them. |
 | Discord, Telegram | A webhook URL; a bot token and chat. |
 
 **Threads.** At developers.facebook.com, create an app with the *Access the
@@ -118,6 +119,19 @@ the Threads accounts you will connect as testers (they accept in Threads
 under Developer apps, then connect. Threads fetches images from a link to
 the install, so posts with images need `/v1` reachable from the internet;
 the engagement it reports includes views.
+
+**Facebook Pages and Instagram.** At developers.facebook.com, create a
+Business app with Facebook Login for Business; request `pages_show_list`,
+`pages_manage_posts`, `pages_read_engagement` (Pages) and
+`instagram_basic`, `instagram_content_publish`, `business_management`
+(Instagram, which must be a professional account linked to a Page); add
+Araldo's redirect URIs (`{ARALDO_BASE_URL}/connect/facebook/callback` and
+`…/connect/instagram/callback`) to the valid OAuth redirect URIs. While the
+app is in development it works for people with a role on it; publishing
+for others needs Meta's app review. The same app can serve both: add it
+under Developer apps once as Facebook and once as Instagram. Page tokens
+do not expire. Facebook images are uploaded; Instagram fetches them from a
+link to the install, like Threads.
 
 ## AI assistants (MCP)
 

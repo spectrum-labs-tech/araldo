@@ -30,6 +30,8 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/bluesky"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/discord"
+	"github.com/spectrum-labs-tech/araldo/internal/platform/facebook"
+	"github.com/spectrum-labs-tech/araldo/internal/platform/instagram"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/linkedin"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/mastodon"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/sandbox"
@@ -95,6 +97,8 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 		x.New(client),
 		linkedin.New(client),
 		threads.New(client),
+		facebook.New(client),
+		instagram.New(client),
 	)
 	ccfg := core.Config{BaseURL: cfg.BaseURL, AllowPrivateWebhooks: cfg.AllowPrivateNetworks}
 	if s := cfg.S3; s.Bucket != "" {

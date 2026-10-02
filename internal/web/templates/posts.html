@@ -10,7 +10,7 @@
   <label class="min-w-0 grow">Search
     <input type="search" name="q" value="{{$d.Query}}" maxlength="200" placeholder="Text in any channel's copy"></label>
   <label>Brand
-    <select name="brand" data-autosubmit>
+    <select name="brand">
       <option value="">All brands</option>
       {{range $d.Brands}}<option value="{{.Slug}}" {{if eq $d.Brand .Slug (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}
     </select></label>

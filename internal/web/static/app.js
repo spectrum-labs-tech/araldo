@@ -3,11 +3,6 @@
 (function () {
   "use strict";
 
-  // Selects that submit their form on change.
-  document.querySelectorAll("[data-autosubmit]").forEach(function (el) {
-    el.addEventListener("change", function () { el.form.requestSubmit(); });
-  });
-
   // The org/mode switch returns to the current page.
   document.querySelectorAll('form.ctx input[name="back"]').forEach(function (el) {
     el.value = location.pathname;
@@ -36,15 +31,20 @@
   document.querySelectorAll("[data-toggle]").forEach(function (el) { el.addEventListener("change", syncToggles); });
   syncToggles();
 
-  // Copy buttons.
+  // Copy buttons. The result is announced to screen readers too.
   document.querySelectorAll("[data-copy]").forEach(function (btn) {
+    var status = document.createElement("span");
+    status.className = "sr-only";
+    status.setAttribute("role", "status");
+    btn.after(status);
     btn.addEventListener("click", function () {
       var el = document.getElementById(btn.getAttribute("data-copy"));
       if (!el || !navigator.clipboard) { return; }
       navigator.clipboard.writeText(el.textContent.trim()).then(function () {
         var old = btn.textContent;
         btn.textContent = "Copied";
-        setTimeout(function () { btn.textContent = old; }, 1500);
+        status.textContent = "Copied to the clipboard.";
+        setTimeout(function () { btn.textContent = old; status.textContent = ""; }, 1500);
       });
     });
   });

@@ -9,6 +9,7 @@
 <script src="/static/app.js" defer></script>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
 {{template "icons"}}
 {{if .User}}
 {{if not .Livemode}}<div class="mode-banner" role="status">Test mode · posts go to sandbox channels only</div>{{end}}
@@ -18,10 +19,13 @@
   <form method="post" action="/context" class="ctx flex items-center gap-2.5">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <input type="hidden" name="back" value="">
+    {{if gt (len .Orgs) 1}}
     <label class="sr-only" for="org-switch">Organization</label>
-    <select id="org-switch" name="org" data-autosubmit>
+    <select id="org-switch" name="org">
       {{range .Orgs}}<option value="{{.OrgID}}" {{if eq .OrgID $.Org.OrgID}}selected{{end}}>{{.OrgName}}</option>{{end}}
     </select>
+    <button>Switch</button>
+    {{else}}<span class="font-semibold">{{.Org.OrgName}}</span>{{end}}
     <div class="mode-toggle" role="group" aria-label="Mode">
       <button name="mode" value="test" class="{{if not .Livemode}}on{{end}}" aria-pressed="{{not .Livemode}}">Test</button>
       <button name="mode" value="live" class="{{if .Livemode}}on live{{end}}" aria-pressed="{{.Livemode}}">Live</button>
@@ -35,20 +39,20 @@
 </header>
 <div class="grid min-h-[calc(100vh-110px)] md:grid-cols-[var(--spacing-sidebar)_minmax(0,1fr)]">
   <nav class="side-nav" aria-label="Main">
-    <a href="/" class="{{if eq .Nav "home"}}active{{end}}">Overview</a>
-    <a href="/posts" class="{{if eq .Nav "posts"}}active{{end}}">Posts</a>
-    <a href="/performance" class="{{if eq .Nav "performance"}}active{{end}}">Performance</a>
-    <a href="/templates" class="{{if eq .Nav "templates"}}active{{end}}">Templates</a>
-    <a href="/channels" class="{{if eq .Nav "channels"}}active{{end}}">Channels</a>
-    <a href="/brands" class="{{if eq .Nav "brands"}}active{{end}}">Brands</a>
+    <a href="/" {{if eq .Nav "home"}}class="active" aria-current="page"{{end}}>Overview</a>
+    <a href="/posts" {{if eq .Nav "posts"}}class="active" aria-current="page"{{end}}>Posts</a>
+    <a href="/performance" {{if eq .Nav "performance"}}class="active" aria-current="page"{{end}}>Performance</a>
+    <a href="/templates" {{if eq .Nav "templates"}}class="active" aria-current="page"{{end}}>Templates</a>
+    <a href="/channels" {{if eq .Nav "channels"}}class="active" aria-current="page"{{end}}>Channels</a>
+    <a href="/brands" {{if eq .Nav "brands"}}class="active" aria-current="page"{{end}}>Brands</a>
     <div class="side-head">Developers</div>
-    <a href="/keys" class="{{if and (eq .Nav "developers") (eq .Title "API keys")}}active{{end}}">API keys</a>
-    <a href="/webhooks" class="{{if and (eq .Nav "developers") (or (eq .Title "Webhooks") (eq .Title "Webhook endpoint"))}}active{{end}}">Webhooks</a>
-    <a href="/events" class="{{if and (eq .Nav "developers") (not (or (eq .Title "API keys") (eq .Title "Webhooks") (eq .Title "Webhook endpoint")))}}active{{end}}">Events</a>
-    <a href="/api-reference" class="{{if eq .Nav "reference"}}active{{end}}">API reference</a>
+    <a href="/keys" {{if and (eq .Nav "developers") (eq .Title "API keys")}}class="active" aria-current="page"{{end}}>API keys</a>
+    <a href="/webhooks" {{if and (eq .Nav "developers") (or (eq .Title "Webhooks") (eq .Title "Webhook endpoint"))}}class="active" aria-current="page"{{end}}>Webhooks</a>
+    <a href="/events" {{if and (eq .Nav "developers") (not (or (eq .Title "API keys") (eq .Title "Webhooks") (eq .Title "Webhook endpoint")))}}class="active" aria-current="page"{{end}}>Events</a>
+    <a href="/api-reference" {{if eq .Nav "reference"}}class="active" aria-current="page"{{end}}>API reference</a>
     <div class="side-head">Settings</div>
-    <a href="/org" class="{{if eq .Nav "org"}}active{{end}}">Organization</a>
-    <a href="/account" class="{{if eq .Nav "account"}}active{{end}}">Your account</a>
+    <a href="/org" {{if eq .Nav "org"}}class="active" aria-current="page"{{end}}>Organization</a>
+    <a href="/account" {{if eq .Nav "account"}}class="active" aria-current="page"{{end}}>Your account</a>
   </nav>
   <main id="main" class="{{if not .Wide}}max-w-[1100px] {{end}}min-w-0 px-4 py-6 md:px-8">
     {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
@@ -58,7 +62,7 @@
   </main>
 </div>
 {{else}}
-<main class="grid min-h-[90vh] place-items-center p-4">
+<main id="main" class="grid min-h-[90vh] place-items-center p-4">
   <div class="w-full max-w-sm rounded-xl border border-line bg-panel p-8">
     <a class="brandmark mb-4 text-2xl" href="/"><img src="/static/icon.svg" alt="" width="32" height="32"> Araldo</a>
     {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}

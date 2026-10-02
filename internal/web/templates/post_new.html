@@ -40,7 +40,7 @@
     <div class="thumbs">
       {{range .Data.Media}}
       <div class="thumb">
-        <img src="/media/{{mediaID .ID}}" alt="{{.Alt}}" width="{{.Width}}" height="{{.Height}}">
+        <img src="/media/{{mediaID .ID}}" alt="{{with .Alt}}{{.}}{{else}}Image without alt text{{end}}" width="{{.Width}}" height="{{.Height}}">
         <span class="text-xs text-muted">{{.Width}}×{{.Height}} · {{fileSize .Size}}</span>
         <input type="hidden" name="media" value="{{mediaID .ID}}">
         <label class="text-sm">Alt text <input name="alt_{{mediaID .ID}}" value="{{.Alt}}" maxlength="1000"></label>

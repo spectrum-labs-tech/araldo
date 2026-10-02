@@ -30,7 +30,11 @@ Self-hosting should remain "one binary and a Postgres".
    binary. Nobody needs Node to build or run Araldo unless they change
    styles, and CI fails if the committed output is stale. Application code
    is Go, never JavaScript beyond the small progressive-enhancement script.
-5. **Accessibility:** WCAG 2.1 AA. Forms work without JavaScript.
+5. **Accessibility:** WCAG 2.2 AA, checked by tests: `TestContrast`
+   measures the theme's colors (light and dark) and `TestPagesAreAccessible`
+   renders every page and checks names, alt text, headings, landmarks, the
+   skip link, references and that nothing submits on input. Forms work
+   without JavaScript.
    JavaScript only enhances: `static/app.js` is hand-written, and the
    template editor (CodeMirror, syntax highlighting, per-platform tabs, the
    live preview) is bundled from `internal/web/scripts` with esbuild into a

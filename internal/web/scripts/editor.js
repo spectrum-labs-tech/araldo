@@ -7,7 +7,7 @@
 // live preview.
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, placeholder } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { StreamLanguage, syntaxHighlighting, HighlightStyle, bracketMatching, indentOnInput } from "@codemirror/language";
 import { json } from "@codemirror/lang-json";
 import { tags as t } from "@lezer/highlight";
@@ -65,7 +65,7 @@ const theme = EditorView.theme({
   "&": {
     backgroundColor: "var(--panel)",
     color: "var(--ink)",
-    border: "1px solid var(--line)",
+    border: "1px solid var(--field)",
     borderRadius: "6px",
     fontSize: "0.9rem",
   },
@@ -98,7 +98,9 @@ function mountEditors(nonce) {
           bracketMatching(),
           indentOnInput(),
           EditorView.lineWrapping,
-          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+          // Tab is left alone so it moves focus on: an editor that keeps
+          // Tab for indenting traps keyboard users (WCAG 2.1.2).
+          keymap.of([...defaultKeymap, ...historyKeymap]),
           lang,
           syntaxHighlighting(highlight),
           theme,
@@ -119,7 +121,8 @@ function mountEditors(nonce) {
 }
 
 // Tabs for the default body and each platform's body. Without JS every
-// panel shows, stacked.
+// panel shows, stacked. With it they follow the WAI-ARIA tabs pattern: one
+// tab in the focus order, arrow keys (and Home, End) move between them.
 function mountTabs() {
   document.querySelectorAll("[data-tabs]").forEach((root) => {
     const tabs = [...root.querySelectorAll("[data-tab]")];
@@ -127,11 +130,25 @@ function mountTabs() {
     const bar = root.querySelector("[data-tabbar]");
     if (bar) bar.hidden = false;
     const show = (name) => {
-      tabs.forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+      tabs.forEach((b) => {
+        const on = b.dataset.tab === name;
+        b.setAttribute("aria-selected", String(on));
+        b.tabIndex = on ? 0 : -1;
+      });
       panels.forEach((p) => {
         p.hidden = p.dataset.panel !== name;
       });
     };
+    tabs.forEach((b, i) =>
+      b.addEventListener("keydown", (e) => {
+        const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+        if (to === undefined) return;
+        e.preventDefault();
+        const next = tabs[(to + tabs.length) % tabs.length];
+        show(next.dataset.tab);
+        next.focus();
+      }),
+    );
     const markFilled = () => {
       panels.forEach((p) => {
         const ta = p.querySelector("textarea");
@@ -208,10 +225,17 @@ function mountPreview() {
   );
   syncChips();
 
+  // A short summary is announced when it changes; the preview itself is
+  // not, so typing does not read every rendition aloud.
+  const status = document.getElementById("preview-status");
+  const announce = (text) => {
+    if (status && status.textContent !== text) status.textContent = text;
+  };
   const show = (res) => {
     out.replaceChildren();
     if (!res) return;
     if (res.error) {
+      announce(`The template has a problem: ${res.error}`);
       const box = el("div", "alert", res.error);
       (res.problems || []).forEach((pr) => box.appendChild(el("div", "text-sm", (pr.param ? `${pr.param}: ` : "") + pr.message)));
       out.appendChild(box);
@@ -220,8 +244,15 @@ function mountPreview() {
     const shown = (res.renditions || []).filter((r) => chosen.has(r.provider));
     if (!shown.length) {
       out.appendChild(el("p", "muted small", "Choose platforms above to preview."));
+      announce("No platforms chosen for the preview.");
       return;
     }
+    const failing = shown.filter((r) => r.violations.length > 0).map((r) => names[r.provider] || r.provider);
+    announce(
+      failing.length === 0
+        ? `All ${shown.length} platforms fit.`
+        : `${failing.length} of ${shown.length} platforms have problems: ${failing.join(", ")}.`,
+    );
     const grid = el("div", "preview-grid");
     shown.forEach((r) => {
       const bad = r.violations.length > 0;

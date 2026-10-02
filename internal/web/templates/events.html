@@ -2,11 +2,11 @@
 <h1>Events</h1>
 <form method="get" action="/events" class="mb-4 flex flex-wrap items-center gap-2">
   <label class="sr-only" for="type">Type</label>
-  <select id="type" name="type" data-autosubmit>
+  <select id="type" name="type">
     <option value="">All types</option>
     {{range .Data.Types}}<option value="{{.}}" {{if eq $.Data.Type .}}selected{{end}}>{{.}}</option>{{end}}
   </select>
-  <noscript><button>Filter</button></noscript>
+  <button>Filter</button>
 </form>
 {{if .Data.Events}}
 <table>

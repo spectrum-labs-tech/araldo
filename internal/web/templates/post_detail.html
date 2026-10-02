@@ -42,7 +42,7 @@
 <div class="thumbs">
   {{range $p.Media}}
   <figure class="thumb">
-    <a href="/media/{{mediaID .ID}}" target="_blank" rel="noopener"><img src="/media/{{mediaID .ID}}" alt="{{.Alt}}" width="{{.Width}}" height="{{.Height}}"></a>
+    <a href="/media/{{mediaID .ID}}" target="_blank" rel="noopener"><img src="/media/{{mediaID .ID}}" alt="{{with .Alt}}{{.}}{{else}}Image without alt text{{end}}" width="{{.Width}}" height="{{.Height}}"></a>
     <figcaption class="text-sm text-muted">{{if .Alt}}{{.Alt}}{{else}}No alt text{{end}} · {{.Width}}×{{.Height}} · {{fileSize .Size}}</figcaption>
   </figure>
   {{end}}

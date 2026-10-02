@@ -22,10 +22,13 @@
   --ink: #1d1b16;
   --muted: #6b6659;
   --line: #e4e0d6;
+  /* Form controls' edges: 3:1 against panel, bg and subtle (WCAG 1.4.11). */
+  --field: #858071;
   --accent: #8a3b12; /* herald's copper */
   --accent-ink: #ffffff;
   --accent-soft: #f6e7dc;
   --good: #1e6b3a;
+  --good-ink: #ffffff;
   --good-bg: #e2f2e7;
   --warn: #8a5a00;
   --warn-bg: #fbf0d6;
@@ -51,10 +54,12 @@
     --ink: #efece4;
     --muted: #a39d8f;
     --line: #35322a;
+    --field: #837d6e;
     --accent: #e08a55;
     --accent-ink: #1d1b16;
     --accent-soft: #3a2518;
     --good: #7fd49b;
+    --good-ink: #15140f;
     --good-bg: #183322;
     --warn: #f0c060;
     --warn-bg: #3a2e12;
@@ -80,10 +85,12 @@
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-line: var(--line);
+  --color-field: var(--field);
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
   --color-good: var(--good);
+  --color-good-ink: var(--good-ink);
   --color-good-bg: var(--good-bg);
   --color-warn: var(--warn);
   --color-warn-bg: var(--warn-bg);
@@ -153,7 +160,10 @@
   input,
   select,
   textarea {
-    @apply rounded-md border border-line bg-panel px-2.5 py-1.5 font-normal text-ink;
+    @apply rounded-md border border-field bg-panel px-2.5 py-1.5 font-normal text-ink;
+  }
+  ::placeholder {
+    @apply text-muted opacity-100;
   }
   textarea {
     @apply resize-y;
@@ -192,7 +202,11 @@
     @apply bg-test text-test-ink;
   }
   .mode-toggle button.on.live {
-    @apply bg-good text-white;
+    @apply bg-good text-good-ink;
+  }
+  /* The first thing to focus: hidden until it is (WCAG 2.4.1). */
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-10 focus:rounded-md focus:bg-panel focus:px-3 focus:py-2 focus:font-semibold;
   }
   .side-nav {
     @apply flex flex-row flex-wrap gap-0.5 border-b border-line p-3 md:flex-col md:border-r md:border-b-0;
@@ -289,7 +303,7 @@
   }
   .btn-link,
   button.btn-link {
-    @apply border-0 bg-transparent p-0 font-normal text-accent;
+    @apply min-h-6 border-0 bg-transparent p-0 font-normal text-accent;
   }
 
   /* Platform icons (templates/_icons.html) */

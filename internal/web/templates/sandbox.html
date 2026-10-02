@@ -8,7 +8,7 @@
     <div class="grid size-10 shrink-0 place-items-center rounded-full bg-accent font-bold text-accent-ink" aria-hidden="true">A</div>
     <div><div class="text-sm text-muted">{{$.Data.ChannelName}}{{if gt (len $.Data.Parts) 1}} · {{inc $i}}/{{len $.Data.Parts}}{{end}}</div>
     <p class="mt-1 break-words whitespace-pre-wrap">{{$part}}</p>
-    {{if and (eq $i 0) $.Data.Media}}<div class="thumbs mt-2">{{range $.Data.Media}}<img class="thumb-img" src="/media/{{mediaID .ID}}" alt="{{.Alt}}" width="{{.Width}}" height="{{.Height}}">{{end}}</div>{{end}}</div>
+    {{if and (eq $i 0) $.Data.Media}}<div class="thumbs mt-2">{{range $.Data.Media}}<img class="thumb-img" src="/media/{{mediaID .ID}}" alt="{{with .Alt}}{{.}}{{else}}Image without alt text{{end}}" width="{{.Width}}" height="{{.Height}}">{{end}}</div>{{end}}</div>
   </article>
   {{end}}
 </div>

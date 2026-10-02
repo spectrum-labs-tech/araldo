@@ -51,6 +51,12 @@ platforms from templates). Read `docs/architecture.md`, then the ADRs in
   `internal/web/static/editor.js` (CI checks it too). Pages must work
   without JavaScript. Styles that scripts inject need the per-request CSP
   nonce (`data-nonce`); never loosen the policy with `unsafe-inline`.
+- **Accessibility** ([ADR 0015](docs/adr/0015-dashboard.md)): WCAG 2.2 AA.
+  Every control has a label, every content image alt text, one `h1` and no
+  skipped heading levels; selects never submit on change (add a button);
+  new colors go through tokens that `TestContrast` checks (text 4.5:1,
+  control edges 3:1, both themes). Add a new page to the list in
+  `TestPagesAreAccessible`.
 - **Context** flows end to end; logging is `log/slog` only.
 - **Every Go file starts with** `// SPDX-License-Identifier: AGPL-3.0-or-later`.
 - **Dependencies**: standard library first; justify any new module.

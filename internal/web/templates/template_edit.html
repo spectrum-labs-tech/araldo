@@ -34,16 +34,16 @@
     <div class="mb-1 text-sm font-semibold">Body</div>
     <p class="mb-2 text-sm text-muted">Go template: <code>{{"{{.name}}"}}</code>, <code>{{"{{truncate 80 .summary}}"}}</code>, <code>{{"{{hashtags .tags}}"}}</code>, <code>{{"{{thread}}"}}</code> starts a new thread part.
       A platform tab replaces the default body there, e.g. a shorter version for X.</p>
-    <div class="tabbar" role="tablist" data-tabbar hidden>
-      <button type="button" class="tab" role="tab" data-tab="default">Default</button>
-      {{range $f.Providers}}<button type="button" class="tab" role="tab" data-tab="{{.Provider}}" title="{{.Name}}: {{.Limit}} {{.Counting}}">{{icon .Provider}}<span class="sr-only xl:not-sr-only">{{.Name}}</span></button>{{end}}
+    <div class="tabbar" role="tablist" aria-label="Body per platform" data-tabbar hidden>
+      <button type="button" class="tab" role="tab" id="tab-default" aria-controls="panel-default" data-tab="default">Default</button>
+      {{range $f.Providers}}<button type="button" class="tab" role="tab" id="tab-{{.Provider}}" aria-controls="panel-{{.Provider}}" data-tab="{{.Provider}}" title="{{.Name}}: {{.Limit}} {{.Counting}}">{{icon .Provider}}<span class="sr-only xl:not-sr-only">{{.Name}}</span></button>{{end}}
     </div>
-    <div data-panel="default" role="tabpanel">
+    <div id="panel-default" data-panel="default" role="tabpanel" aria-labelledby="tab-default">
       <label><span data-panel-title>Default body</span>
         <textarea name="body" rows="8" class="font-mono" data-editor="gotemplate" aria-label="Default body" required>{{$f.Body}}</textarea></label>
     </div>
     {{range $f.Providers}}
-    <div data-panel="{{.Provider}}" role="tabpanel" class="mt-3 flex flex-col gap-3">
+    <div id="panel-{{.Provider}}" data-panel="{{.Provider}}" role="tabpanel" aria-labelledby="tab-{{.Provider}}" class="mt-3 flex flex-col gap-3">
       <div data-panel-title class="flex items-center gap-1.5 font-semibold">{{icon .Provider}} {{.Name}}</div>
       <p class="text-sm text-muted">{{.Name}} allows {{.Limit}} {{.Counting}}{{if .Threads}} per post and supports threads{{end}}. Leave this empty to use the default body.</p>
       <textarea name="override_{{.Provider}}" rows="5" class="font-mono" data-editor="gotemplate" aria-label="{{.Name}} body" placeholder="Same as the default body">{{index $f.Overrides (printf "%s" .Provider)}}</textarea>
@@ -66,8 +66,9 @@
     {{if $f.Template}}<span class="ml-2 text-sm text-muted">Changing the text makes version {{inc $f.Template.LatestVersion}}; queued posts keep theirs.</span>{{end}}</div>
 </form>
 
-<aside class="min-w-0 rounded-lg border border-line bg-panel p-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-auto" aria-live="polite">
-  <h2 class="mb-1">Preview</h2>
+<aside class="min-w-0 rounded-lg border border-line bg-panel p-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-auto" aria-labelledby="preview-heading">
+  <h2 id="preview-heading" class="mb-1">Preview</h2>
+  <p id="preview-status" class="sr-only" role="status"></p>
   <p class="mb-3 text-sm text-muted">Rendered with the example data. Pick the platforms to show; this browser remembers them.</p>
   <div class="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Platforms to preview">
     {{range $f.Providers}}<button type="button" class="chip" data-preview-toggle="{{.Provider}}" data-name="{{.Name}}" aria-pressed="false">{{icon .Provider}} {{.Name}}</button>{{end}}

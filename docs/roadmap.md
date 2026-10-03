@@ -92,10 +92,7 @@ Principles every feature keeps:
 | 11 | AI drafting in the dashboard with the organization's own model key | ADR 0001 | Planned |
 | 12 | Built-in backups, and the rest of OpenTelemetry (traces, logs, publish lateness) | ADR 0013, 0014 | Planned |
 | 13 | Passkeys (WebAuthn) and OIDC single sign-on | ADR 0007 | Planned |
-| 14 | Hosted plan: a separate install with sign-up, billing and developer apps shared by every organization | ADR 0021 | Planned, after 1 to 7 |
-
-ar15.build is the first tenant: its daily featured build and brand posts go
-through the API, and its use drives item 1.
+| 14 | Hosted plan: a separate install with sign-up, billing and developer apps shared by every organization, at araldo.dev (the project's site and docs, `app.araldo.dev` for the dashboard, `api.araldo.dev` for the API) | ADR 0021 | Planned, after 1 to 7 |
 
 ## Not now
 

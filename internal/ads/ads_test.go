@@ -13,16 +13,16 @@ func TestSandboxIsStable(t *testing.T) {
 	t.Parallel()
 	s := SandboxAds{}
 	creds := platform.Credentials{"name": "Otium", "currency": "usd"}
-	acct, err := s.Verify(t.Context(), creds)
+	acct, err := s.Verify(t.Context(), platform.App{}, creds)
 	if err != nil || acct.Currency != "USD" || acct.Name != "Otium" || acct.ExternalID == "" {
 		t.Fatalf("Verify = %+v, %v", acct, err)
 	}
 	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	first, err := s.Report(t.Context(), creds, day, day.AddDate(0, 0, 2))
+	first, err := s.Report(t.Context(), platform.App{}, creds, day, day.AddDate(0, 0, 2))
 	if err != nil || len(first) != 3*len(sandboxCampaigns) {
 		t.Fatalf("Report = %d results, %v", len(first), err)
 	}
-	again, _ := s.Report(t.Context(), creds, day, day.AddDate(0, 0, 2))
+	again, _ := s.Report(t.Context(), platform.App{}, creds, day, day.AddDate(0, 0, 2))
 	for i := range first {
 		r := first[i]
 		if r != again[i] {
@@ -32,7 +32,7 @@ func TestSandboxIsStable(t *testing.T) {
 			t.Fatalf("implausible result %+v", r)
 		}
 	}
-	other, _ := s.Report(t.Context(), platform.Credentials{"name": "VCDS"}, day, day)
+	other, _ := s.Report(t.Context(), platform.App{}, platform.Credentials{"name": "VCDS"}, day, day)
 	if other[0].Spend == first[0].Spend && other[1].Spend == first[1].Spend {
 		t.Fatal("different accounts should report different numbers")
 	}
@@ -41,11 +41,11 @@ func TestSandboxIsStable(t *testing.T) {
 func TestSandboxFailures(t *testing.T) {
 	t.Parallel()
 	s := SandboxAds{}
-	if _, err := s.Verify(t.Context(), platform.Credentials{"currency": "dollars"}); platform.KindOf(err) != platform.Rejected {
+	if _, err := s.Verify(t.Context(), platform.App{}, platform.Credentials{"currency": "dollars"}); platform.KindOf(err) != platform.Rejected {
 		t.Fatalf("a bad currency: %v", err)
 	}
 	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	if _, err := s.Report(t.Context(), platform.Credentials{"simulate": "auth_revoked"}, day, day); platform.KindOf(err) != platform.AuthRevoked {
+	if _, err := s.Report(t.Context(), platform.App{}, platform.Credentials{"simulate": "auth_revoked"}, day, day); platform.KindOf(err) != platform.AuthRevoked {
 		t.Fatalf("simulated revocation: %v", err)
 	}
 }

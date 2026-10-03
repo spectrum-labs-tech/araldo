@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -32,6 +33,12 @@ func (s *Server) appsData(c *reqCtx) (*appsData, error) {
 		if p.OAuth {
 			d.Providers = append(d.Providers, p)
 			d.Redirects[p.Provider] = s.svc.ConnectRedirectURI(p.Provider)
+		}
+	}
+	for _, n := range s.svc.AdNetworks(true) {
+		if n.OAuth {
+			d.Providers = append(d.Providers, core.ProviderInfo{Provider: n.Provider, Name: s.svc.ProviderName(n.Provider), OAuth: true})
+			d.Redirects[n.Provider] = s.svc.ConnectRedirectURI(n.Provider)
 		}
 	}
 	return d, nil
@@ -89,10 +96,7 @@ func (s *Server) startConnect(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	name := c.r.PathValue("provider")
-	if r, ok := platform.RulesFor(platform.Provider(name)); ok {
-		name = r.Name
-	}
+	name := s.svc.ProviderName(platform.Provider(c.r.PathValue("provider")))
 	return s.page(c, "connect_redirect", "channels", "Sign in with "+name, map[string]string{"URL": target, "Name": name})
 }
 
@@ -108,36 +112,44 @@ func (s *Server) connectCallback(c *reqCtx) error {
 	q := c.r.URL.Query()
 	provider := platform.Provider(c.r.PathValue("provider"))
 	if e := q.Get("error"); e != "" {
-		return redirect(c, "/channels", "Not connected: "+firstNonEmpty(q.Get("error_description"), e)+".")
+		back := "/channels"
+		if _, ok := ads.NetworkOf(provider); ok {
+			back = "/ads"
+		}
+		return redirect(c, back, "Not connected: "+firstNonEmpty(q.Get("error_description"), e)+".")
 	}
 	res, err := s.svc.FinishConnect(c.ctx(), c.actor, provider, q.Get("state"), q.Get("code"))
 	if err != nil {
 		return err
 	}
 	if len(res.Choices) > 0 {
-		name := string(provider)
-		if r, ok := platform.RulesFor(provider); ok {
-			name = r.Name
-		}
-		return s.page(c, "connect_choose", "channels", "Choose accounts", chooseData{Provider: provider, Name: name, State: res.State, Choices: res.Choices})
+		return s.page(c, "connect_choose", "channels", "Choose accounts",
+			chooseData{Provider: provider, Name: s.svc.ProviderName(provider), State: res.State, Choices: res.Choices})
 	}
-	return redirect(c, "/channels", connectedNotice(res.Channels))
+	return connected(c, res)
 }
 
 func (s *Server) chooseConnections(c *reqCtx) error {
-	chs, err := s.svc.ChooseConnections(c.ctx(), c.actor, platform.Provider(c.r.PathValue("provider")), c.r.PostFormValue("state"),
+	res, err := s.svc.ChooseConnections(c.ctx(), c.actor, platform.Provider(c.r.PathValue("provider")), c.r.PostFormValue("state"),
 		c.r.PostForm["account"])
 	if err != nil {
 		return err
 	}
-	return redirect(c, "/channels", connectedNotice(chs))
+	return connected(c, res)
 }
 
-func connectedNotice(chs []*model.Channel) string {
-	if len(chs) == 1 {
-		return "Connected " + chs[0].DisplayName + "."
+// connected goes back to where the sign-in started: Ads for ad accounts,
+// Channels for channels.
+func connected(c *reqCtx, res *core.ConnectResult) error {
+	switch {
+	case len(res.AdAccounts) == 1:
+		return redirect(c, "/ads", "Connected "+res.AdAccounts[0].Name+". Its results are read within a few minutes, then daily.")
+	case len(res.AdAccounts) > 1:
+		return redirect(c, "/ads", "Connected "+itoa(len(res.AdAccounts))+" ad accounts. Their results are read within a few minutes, then daily.")
+	case len(res.Channels) == 1:
+		return redirect(c, "/channels", "Connected "+res.Channels[0].DisplayName+".")
 	}
-	return "Connected " + itoa(len(chs)) + " channels."
+	return redirect(c, "/channels", "Connected "+itoa(len(res.Channels))+" channels.")
 }
 
 func firstNonEmpty(vals ...string) string {

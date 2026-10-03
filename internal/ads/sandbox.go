@@ -33,7 +33,7 @@ func (SandboxAds) Fields() []platform.Field {
 	}
 }
 
-func (SandboxAds) Verify(_ context.Context, c platform.Credentials) (Account, error) {
+func (SandboxAds) Verify(_ context.Context, _ platform.App, c platform.Credentials) (Account, error) {
 	name := strings.TrimSpace(c["name"])
 	if name == "" {
 		name = "Sandbox ads"
@@ -49,11 +49,11 @@ func (SandboxAds) Verify(_ context.Context, c platform.Credentials) (Account, er
 	return Account{ExternalID: "act_" + hex.EncodeToString(sum[:6]), Name: name, Currency: currency, Timezone: "UTC"}, nil
 }
 
-func (s SandboxAds) Report(ctx context.Context, c platform.Credentials, from, to time.Time) ([]Result, error) {
+func (s SandboxAds) Report(ctx context.Context, app platform.App, c platform.Credentials, from, to time.Time) ([]Result, error) {
 	if c["simulate"] == "auth_revoked" {
 		return nil, platform.Errorf(platform.AuthRevoked, "the sandbox network revoked access (simulated)")
 	}
-	acct, err := s.Verify(ctx, c)
+	acct, err := s.Verify(ctx, app, c)
 	if err != nil {
 		return nil, err
 	}

@@ -135,9 +135,12 @@ func TestOAuthConnections(t *testing.T) {
 	if _, err := other.s.ChooseConnections(ctx, otherLive, platform.Threads, res.State, []string{"acct-a"}); kind(err) != apperr.KindInvalid {
 		t.Fatalf("another org choosing from this sign-in: %v", err)
 	}
-	chs, err := w.s.ChooseConnections(ctx, live, platform.Threads, res.State, []string{"acct-a", "acct-b"})
-	if err != nil || len(chs) != 2 {
-		t.Fatalf("ChooseConnections = %d, %v", len(chs), err)
+	chosen, err := w.s.ChooseConnections(ctx, live, platform.Threads, res.State, []string{"acct-a", "acct-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chosen.Channels) != 2 {
+		t.Fatalf("ChooseConnections connected %d channels, want 2", len(chosen.Channels))
 	}
 	all, err := w.s.Channels(ctx, live, &w.brand.ID)
 	if err != nil || len(all) != 2 {

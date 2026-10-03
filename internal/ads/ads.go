@@ -9,6 +9,7 @@ package ads
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
@@ -52,10 +53,26 @@ type Reporter interface {
 	// Fields are what connecting an account takes.
 	Fields() []platform.Field
 	// Verify checks credentials and describes the account they reach.
-	Verify(ctx context.Context, c platform.Credentials) (Account, error)
+	// app is the developer app a signed-in account connected through (zero
+	// for pasted credentials), for networks whose tokens it must renew.
+	Verify(ctx context.Context, app platform.App, c platform.Credentials) (Account, error)
 	// Report returns every campaign's results for each day from from to to,
 	// inclusive. Campaigns made in the network's own tools are included.
-	Report(ctx context.Context, c platform.Credentials, from, to time.Time) ([]Result, error)
+	Report(ctx context.Context, app platform.App, c platform.Credentials, from, to time.Time) ([]Result, error)
+}
+
+// A network whose accounts connect with a sign-in implements
+// platform.Connector too (ADR 0021); its developer apps are registered as
+// Provider(network).
+
+// Provider is the developer-app provider of an ad network's sign-in:
+// "reddit_ads" for "reddit", apart from the app that posts.
+func Provider(n Network) platform.Provider { return platform.Provider(string(n) + "_ads") }
+
+// NetworkOf is the ad network a developer-app provider signs in to.
+func NetworkOf(p platform.Provider) (Network, bool) {
+	n, ok := strings.CutSuffix(string(p), "_ads")
+	return Network(n), ok && n != ""
 }
 
 // Registry holds the networks an install can read.

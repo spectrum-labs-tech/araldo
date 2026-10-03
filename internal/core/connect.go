@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
@@ -49,9 +50,18 @@ func appSecretAAD(appID uuid.UUID) string {
 	return keyring.AAD("provider_apps", "client_secret", appID)
 }
 
-// connector returns provider's adapter when its channels connect with
-// OAuth.
+// connector returns the adapter that signs in for provider: a platform
+// whose channels connect with OAuth, or an ad network (ADR 0023) whose apps
+// are registered as ads.Provider(network).
 func (s *Service) connector(p platform.Provider) (platform.Connector, bool) {
+	if n, ok := ads.NetworkOf(p); ok {
+		r, ok := s.adNetworks.Get(n)
+		if !ok {
+			return nil, false
+		}
+		c, ok := r.(platform.Connector)
+		return c, ok
+	}
 	a, ok := s.platforms.Get(p)
 	if !ok {
 		return nil, false
@@ -60,7 +70,8 @@ func (s *Service) connector(p platform.Provider) (platform.Connector, bool) {
 	return c, ok
 }
 
-// OAuthProviders lists the providers whose channels connect with OAuth.
+// OAuthProviders lists the providers that connect with OAuth: platforms,
+// then ad networks.
 func (s *Service) OAuthProviders() []platform.Provider {
 	var out []platform.Provider
 	for _, p := range s.platforms.Providers() {
@@ -68,7 +79,35 @@ func (s *Service) OAuthProviders() []platform.Provider {
 			out = append(out, p)
 		}
 	}
+	for _, n := range s.adNetworks.Networks() {
+		if _, ok := s.connector(ads.Provider(n)); ok {
+			out = append(out, ads.Provider(n))
+		}
+	}
 	return out
+}
+
+// ProviderName is a sign-in provider's name for people: "Threads", or
+// "Reddit Ads" for an ad network.
+func (s *Service) ProviderName(p platform.Provider) string {
+	if n, ok := ads.NetworkOf(p); ok {
+		if r, ok := s.adNetworks.Get(n); ok {
+			return r.Name() + " Ads"
+		}
+	}
+	if r, ok := platform.RulesFor(p); ok {
+		return r.Name
+	}
+	return string(p)
+}
+
+// connectPermission is what managing provider's apps and connections
+// needs: ads:write for an ad network, channels:write otherwise.
+func connectPermission(p platform.Provider) Permission {
+	if _, ok := ads.NetworkOf(p); ok {
+		return PermAdsWrite
+	}
+	return PermChannelsWrite
 }
 
 // ConnectRedirectURI is the address to register with a platform's app.
@@ -86,7 +125,7 @@ func (s *Service) ProviderApps(ctx context.Context, a Actor) ([]*model.ProviderA
 
 // CreateProviderApp registers a developer app; its secret is encrypted.
 func (s *Service) CreateProviderApp(ctx context.Context, a Actor, in ProviderAppInput) (*model.ProviderApp, error) {
-	if err := a.require(PermChannelsWrite); err != nil {
+	if err := a.require(connectPermission(in.Provider)); err != nil {
 		return nil, err
 	}
 	var ps apperr.Problems
@@ -95,9 +134,7 @@ func (s *Service) CreateProviderApp(ctx context.Context, a Actor, in ProviderApp
 	}
 	in.Name, in.ClientID, in.ClientSecret = strings.TrimSpace(in.Name), strings.TrimSpace(in.ClientID), strings.TrimSpace(in.ClientSecret)
 	if in.Name == "" {
-		if r, ok := platform.RulesFor(in.Provider); ok {
-			in.Name = r.Name + " app"
-		}
+		in.Name = s.ProviderName(in.Provider) + " app"
 	}
 	if len(in.Name) > 100 {
 		ps.Add("name_invalid", "name", "Names are at most 100 characters.")
@@ -132,7 +169,11 @@ func (s *Service) CreateProviderApp(ctx context.Context, a Actor, in ProviderApp
 // DeleteProviderApp removes an app. Its channels keep working until their
 // tokens need refreshing, then need reconnecting through another app.
 func (s *Service) DeleteProviderApp(ctx context.Context, a Actor, appID uuid.UUID) error {
-	if err := a.require(PermChannelsWrite); err != nil {
+	app, err := s.store.ProviderApp(ctx, a.OrgID, appID)
+	if err != nil {
+		return notFound(err, "app")
+	}
+	if err := a.require(connectPermission(app.Provider)); err != nil {
 		return err
 	}
 	return s.store.InTx(ctx, func(tx *store.Store) error {
@@ -170,7 +211,11 @@ func stateHash(state string) []byte {
 // platform's address to send the member to. Only members connect, in live
 // mode.
 func (s *Service) BeginConnect(ctx context.Context, a Actor, brandID, appID uuid.UUID) (string, error) {
-	if err := a.require(PermChannelsWrite); err != nil {
+	app, err := s.store.ProviderApp(ctx, a.OrgID, appID)
+	if err != nil {
+		return "", notFound(err, "app")
+	}
+	if err := a.require(connectPermission(app.Provider)); err != nil {
 		return "", err
 	}
 	if a.UserID == nil {
@@ -181,10 +226,6 @@ func (s *Service) BeginConnect(ctx context.Context, a Actor, brandID, appID uuid
 	}
 	if _, err := s.Brand(ctx, a, brandID); err != nil {
 		return "", err
-	}
-	app, err := s.store.ProviderApp(ctx, a.OrgID, appID)
-	if err != nil {
-		return "", notFound(err, "app")
 	}
 	conn, ok := s.connector(app.Provider)
 	if !ok {
@@ -204,11 +245,12 @@ func (s *Service) BeginConnect(ctx context.Context, a Actor, brandID, appID uuid
 	return conn.AuthorizeURL(creds, s.ConnectRedirectURI(app.Provider), state, challenge), nil
 }
 
-// ConnectResult is what a finished sign-in did: connected channels, or
-// accounts to choose among.
+// ConnectResult is what a finished sign-in did: connected channels or ad
+// accounts, or accounts to choose among.
 type ConnectResult struct {
-	Channels []*model.Channel
-	Choices  []platform.Account
+	Channels   []*model.Channel
+	AdAccounts []*model.AdAccount
+	Choices    []platform.Account
 	// State goes back with the choice.
 	State string
 }
@@ -265,11 +307,11 @@ func (s *Service) FinishConnect(ctx context.Context, a Actor, provider platform.
 		return nil, apperr.Invalid("connect_empty", "code", "%s returned no account to connect.", provider)
 	}
 	if len(conns) == 1 {
-		chs, err := s.connectAll(ctx, a, st, conns)
+		res, err := s.connectChosen(ctx, a, st, conns)
 		if err == nil {
 			_ = s.store.DeleteOAuthState(ctx, hash)
 		}
-		return &ConnectResult{Channels: chs}, err
+		return res, err
 	}
 	raw, err := json.Marshal(conns)
 	if err != nil {
@@ -289,9 +331,20 @@ func (s *Service) FinishConnect(ctx context.Context, a Actor, provider platform.
 	return res, nil
 }
 
+// connectChosen connects a sign-in's accounts: as ad accounts for an ad
+// network, as channels otherwise.
+func (s *Service) connectChosen(ctx context.Context, a Actor, st *model.OAuthState, conns []platform.Connection) (*ConnectResult, error) {
+	if n, ok := ads.NetworkOf(st.Provider); ok {
+		accts, err := s.connectAdAccounts(ctx, a, st, n, conns)
+		return &ConnectResult{AdAccounts: accts}, err
+	}
+	chs, err := s.connectAll(ctx, a, st, conns)
+	return &ConnectResult{Channels: chs}, err
+}
+
 // ChooseConnections connects the accounts chosen (by external ID) from a
 // sign-in that returned several.
-func (s *Service) ChooseConnections(ctx context.Context, a Actor, provider platform.Provider, state string, externalIDs []string) ([]*model.Channel, error) {
+func (s *Service) ChooseConnections(ctx context.Context, a Actor, provider platform.Provider, state string, externalIDs []string) (*ConnectResult, error) {
 	st, err := s.oauthState(ctx, a, provider, state)
 	if err != nil || len(st.Connections) == 0 {
 		return nil, errConnectExpired
@@ -313,11 +366,11 @@ func (s *Service) ChooseConnections(ctx context.Context, a Actor, provider platf
 	if len(chosen) == 0 {
 		return nil, apperr.Invalid("choice_required", "accounts", "Choose at least one account to connect.")
 	}
-	chs, err := s.connectAll(ctx, a, st, chosen)
+	res, err := s.connectChosen(ctx, a, st, chosen)
 	if err == nil {
 		_ = s.store.DeleteOAuthState(ctx, hash)
 	}
-	return chs, err
+	return res, err
 }
 
 // connectAll turns connections into channels of the sign-in's brand. An

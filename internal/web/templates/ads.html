@@ -56,6 +56,19 @@
   <p class="text-muted">This install reads no ad networks in live mode yet. Each network is added once its ads API approves the install (ADR 0023).</p>
   {{else}}
   {{if gt (len $d.Networks) 1}}<p class="text-sm">Network: {{range $d.Networks}}<a href="/ads?network={{.Network}}" {{if eq .Network $d.Network.Network}}aria-current="true"{{end}}>{{.Name}}</a> {{end}}</p>{{end}}
+  {{if $d.Network.OAuth}}
+  {{if $d.Apps}}
+  <form method="get" action="/connect/{{$d.Network.Provider}}/start" class="flex max-w-xl flex-col gap-4">
+    <label>Brand
+      <select name="brand">{{range $d.Brands}}<option value="{{brandID .ID}}" {{if eq $d.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+    </label>
+    <label>Through
+      <select name="app">{{range $d.Apps}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+    <p class="text-sm text-muted">You sign in with {{$d.Network.Name}} and choose the ad accounts to read. Araldo asks only to read them; it stores the token encrypted. Connecting spends nothing.</p>
+    <div><button class="btn-primary">Sign in with {{$d.Network.Name}}</button></div>
+  </form>
+  {{else}}<p>{{$d.Network.Name}} connects through a developer app. <a href="/channels/apps">Add your {{$d.Network.Name}} Ads app</a> first.</p>{{end}}
+  {{else}}
   <form method="post" action="/ads/accounts" class="flex max-w-xl flex-col gap-4">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <input type="hidden" name="network" value="{{$d.Network.Network}}">
@@ -70,6 +83,7 @@
     <p class="text-sm text-muted">Araldo checks these with {{$d.Network.Name}} and stores secrets encrypted. Connecting spends nothing.</p>
     <div><button class="btn-primary">Connect</button></div>
   </form>
+  {{end}}
   {{end}}
 </section>
 {{end}}

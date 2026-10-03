@@ -17,12 +17,12 @@ import (
 // Ad accounts and their results (ADR 0023).
 
 const adAccountCols = `id, org_id, brand_id, livemode, network, external_id, name, currency, timezone, settings, credentials,
-	status, status_note, read_at, next_read_at, created_at`
+	app_id, status, status_note, read_at, next_read_at, created_at`
 
 func scanAdAccount(r pgx.Row) (*model.AdAccount, error) {
 	var a model.AdAccount
 	err := r.Scan(&a.ID, &a.OrgID, &a.BrandID, &a.Livemode, &a.Network, &a.ExternalID, &a.Name, &a.Currency, &a.Timezone, &a.Settings,
-		&a.Credentials, &a.Status, &a.StatusNote, &a.ReadAt, &a.NextReadAt, &a.CreatedAt)
+		&a.Credentials, &a.AppID, &a.Status, &a.StatusNote, &a.ReadAt, &a.NextReadAt, &a.CreatedAt)
 	return &a, mapErr(err)
 }
 
@@ -40,9 +40,17 @@ func (s *Store) CreateAdAccount(ctx context.Context, a *model.AdAccount) error {
 		a.Settings = map[string]string{}
 	}
 	return mapErr(s.q.QueryRow(ctx, `INSERT INTO ad_accounts (id, org_id, brand_id, livemode, network, external_id, name, currency, timezone,
-		settings, credentials, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING next_read_at, created_at`,
-		a.ID, a.OrgID, a.BrandID, a.Livemode, a.Network, a.ExternalID, a.Name, a.Currency, a.Timezone, a.Settings, a.Credentials, a.Status).
+		settings, credentials, app_id, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING next_read_at, created_at`,
+		a.ID, a.OrgID, a.BrandID, a.Livemode, a.Network, a.ExternalID, a.Name, a.Currency, a.Timezone, a.Settings, a.Credentials, a.AppID, a.Status).
 		Scan(&a.NextReadAt, &a.CreatedAt))
+}
+
+// UpdateAdAccountConnection stores a reconnected account's credentials and
+// app, makes it active again and due for reading.
+func (s *Store) UpdateAdAccountConnection(ctx context.Context, a *model.AdAccount) error {
+	return s.execOne(ctx, `UPDATE ad_accounts SET name = $3, currency = $4, timezone = $5, credentials = $6, app_id = $7,
+		status = 'active', status_note = '', next_read_at = now(), updated_at = now() WHERE org_id = $1 AND id = $2`,
+		a.OrgID, a.ID, a.Name, a.Currency, a.Timezone, a.Credentials, a.AppID)
 }
 
 // AdAccount returns one of an org's ad accounts.

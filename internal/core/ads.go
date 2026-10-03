@@ -47,6 +47,10 @@ type AdNetworkInfo struct {
 	Fields     []platform.Field
 	Reporting  bool
 	Promotions bool
+	// OAuth networks connect with a sign-in through a developer app,
+	// registered under Provider.
+	OAuth    bool
+	Provider platform.Provider
 }
 
 // AdNetworks lists the networks accounts can connect to in a mode: the
@@ -58,7 +62,8 @@ func (s *Service) AdNetworks(livemode bool) []AdNetworkInfo {
 			continue
 		}
 		r, _ := s.adNetworks.Get(n)
-		out = append(out, AdNetworkInfo{Network: n, Name: r.Name(), Fields: r.Fields(), Reporting: true})
+		_, oauth := r.(platform.Connector)
+		out = append(out, AdNetworkInfo{Network: n, Name: r.Name(), Fields: r.Fields(), Reporting: true, OAuth: oauth, Provider: ads.Provider(n)})
 	}
 	return out
 }
@@ -101,7 +106,7 @@ func (s *Service) ConnectAdAccount(ctx context.Context, a Actor, in AdAccountInp
 	for k, v := range secrets {
 		creds[k] = v
 	}
-	acct, err := rep.Verify(ctx, creds)
+	acct, err := rep.Verify(ctx, platform.App{}, creds)
 	if err != nil {
 		return nil, connectError(platform.Provider(rep.Name()), err)
 	}
@@ -257,13 +262,23 @@ func (s *Service) readAdAccount(ctx context.Context, ac *model.AdAccount, now ti
 	if err != nil {
 		return s.store.SetAdAccountStatus(ctx, ac.OrgID, ac.ID, ac.Status, "Could not decrypt the account's credentials.", now.Add(adsRetry))
 	}
+	var app platform.App
+	if ac.AppID != nil {
+		pa, err := s.store.ProviderApp(ctx, ac.OrgID, *ac.AppID)
+		if err == nil {
+			app, err = s.appCredentials(ctx, pa)
+		}
+		if err != nil {
+			return s.store.SetAdAccountStatus(ctx, ac.OrgID, ac.ID, ac.Status, "Could not read the developer app it connected through.", now.Add(adsRetry))
+		}
+	}
 	loc := location(ac.Timezone)
 	to := ads.Date(now, loc)
 	days := AdsLookbackDays
 	if ac.ReadAt == nil {
 		days = AdsBackfillDays
 	}
-	results, err := rep.Report(ctx, creds, to.AddDate(0, 0, -(days-1)), to)
+	results, err := rep.Report(ctx, app, creds, to.AddDate(0, 0, -(days-1)), to)
 	var pe *platform.Error
 	switch {
 	case err == nil:
@@ -276,6 +291,68 @@ func (s *Service) readAdAccount(ctx context.Context, ac *model.AdAccount, now ti
 		return s.store.SetAdAccountStatus(ctx, ac.OrgID, ac.ID, ac.Status, truncate("Reading results failed; retrying: "+err.Error(), 500),
 			now.Add(adsRetry))
 	}
+}
+
+// connectAdAccounts turns a sign-in's connections into ad accounts of its
+// brand, reconnecting any the brand already has. The network describes each
+// account (name, currency, time zone) with the new credentials.
+func (s *Service) connectAdAccounts(ctx context.Context, a Actor, st *model.OAuthState, network ads.Network, conns []platform.Connection) ([]*model.AdAccount, error) {
+	rep, ok := s.adNetworks.Get(network)
+	if !ok {
+		return nil, apperr.Invalid("network_unsupported", "provider", "This install cannot read %q ad accounts.", network)
+	}
+	app, err := s.store.ProviderApp(ctx, a.OrgID, st.AppID)
+	if err != nil {
+		return nil, notFound(err, "app")
+	}
+	appCreds, err := s.appCredentials(ctx, app)
+	if err != nil {
+		return nil, err
+	}
+	existing, err := s.store.AdAccounts(ctx, a.OrgID, true, &st.BrandID)
+	if err != nil {
+		return nil, err
+	}
+	var out []*model.AdAccount
+	for _, c := range conns {
+		acct, err := rep.Verify(ctx, appCreds, c.Credentials)
+		if err != nil {
+			return nil, connectError(platform.Provider(rep.Name()), err)
+		}
+		ac := &model.AdAccount{ID: id.New(), OrgID: a.OrgID, BrandID: st.BrandID, Livemode: true, Network: string(network),
+			ExternalID: acct.ExternalID, Settings: map[string]string{}, Status: model.AdAccountActive}
+		reconnect := false
+		for _, e := range existing {
+			if e.Network == string(network) && e.ExternalID == acct.ExternalID {
+				ac, reconnect = e, true
+			}
+		}
+		ac.Name, ac.Currency, ac.Timezone, ac.AppID = acct.Name, acct.Currency, acct.Timezone, &st.AppID
+		raw, err := json.Marshal(c.Credentials)
+		if err != nil {
+			return nil, err
+		}
+		if ac.Credentials, err = s.keys.Encrypt(ctx, a.OrgID, adCredentialsAAD(ac.ID), raw); err != nil {
+			return nil, err
+		}
+		action := "ad_account.connect"
+		err = s.store.InTx(ctx, func(tx *store.Store) error {
+			if reconnect {
+				action = "ad_account.reconnect"
+				if err := tx.UpdateAdAccountConnection(ctx, ac); err != nil {
+					return err
+				}
+			} else if err := tx.CreateAdAccount(ctx, ac); err != nil {
+				return err
+			}
+			return s.audit(ctx, tx, a, action, id.Format(id.AdAccount, ac.ID), map[string]any{"network": network})
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ac)
+	}
+	return out, nil
 }
 
 func (s *Service) adCredentials(ctx context.Context, ac *model.AdAccount) (platform.Credentials, error) {

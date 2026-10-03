@@ -391,11 +391,13 @@ type AdAccount struct {
 	Timezone    string
 	Settings    map[string]string // non-secret fields
 	Credentials []byte            // encrypted secret fields
-	Status      AdAccountStatus
-	StatusNote  string
-	ReadAt      *time.Time
-	NextReadAt  time.Time
-	CreatedAt   time.Time
+	// AppID is the developer app a signed-in account connected through.
+	AppID      *uuid.UUID
+	Status     AdAccountStatus
+	StatusNote string
+	ReadAt     *time.Time
+	NextReadAt time.Time
+	CreatedAt  time.Time
 }
 
 // TargetStatus is where one channel's copy of a post stands (ADR 0011).

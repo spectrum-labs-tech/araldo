@@ -29,6 +29,8 @@ type adsData struct {
 	Networks []core.AdNetworkInfo
 	Network  *core.AdNetworkInfo
 	Values   map[string]string
+	// Apps are the org's developer apps for the network's sign-in.
+	Apps []*model.ProviderApp
 }
 
 func (s *Server) adsPage(c *reqCtx) error {
@@ -52,6 +54,17 @@ func (s *Server) adsData(c *reqCtx) (*adsData, error) {
 		}
 	}
 	var err error
+	if d.Network != nil && d.Network.OAuth && d.CanWrite {
+		apps, err := s.svc.ProviderApps(c.ctx(), c.actor)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range apps {
+			if a.Provider == d.Network.Provider {
+				d.Apps = append(d.Apps, a)
+			}
+		}
+	}
 	if d.Brands, err = s.svc.Brands(c.ctx(), c.actor); err != nil {
 		return nil, err
 	}

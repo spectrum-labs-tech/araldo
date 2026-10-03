@@ -12,6 +12,9 @@ CREATE TABLE ad_accounts (
     timezone     text        NOT NULL,
     settings     jsonb       NOT NULL DEFAULT '{}',
     credentials  bytea,
+    -- The developer app an account connected through with a sign-in, whose
+    -- credentials renew its token (ADR 0021).
+    app_id       uuid,
     status       text        NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'needs_reauth')),
     status_note  text        NOT NULL DEFAULT '',
     read_at      timestamptz,
@@ -20,7 +23,8 @@ CREATE TABLE ad_accounts (
     updated_at   timestamptz NOT NULL DEFAULT now(),
     UNIQUE (org_id, id),
     UNIQUE (brand_id, livemode, network, external_id),
-    FOREIGN KEY (org_id, brand_id) REFERENCES brands (org_id, id) ON DELETE CASCADE
+    FOREIGN KEY (org_id, brand_id) REFERENCES brands (org_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (org_id, app_id) REFERENCES provider_apps (org_id, id) ON DELETE SET NULL (app_id)
 );
 CREATE INDEX ad_accounts_due_idx ON ad_accounts (next_read_at) WHERE status = 'active';
 

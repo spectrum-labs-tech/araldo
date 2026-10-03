@@ -268,9 +268,17 @@ revise a day's numbers as late conversions are attributed. Amounts are in
 the account's currency, in its minor unit. A network that refuses the
 credentials marks the account *needs reauth*; connect it again.
 
-Test mode has a sandbox network with invented numbers. Real networks are
-added as their ads APIs approve the install; until then the live Ads page
-says so. To count signups, tag ad links with UTM parameters
+Test mode has a sandbox network with invented numbers.
+
+**Reddit.** At reddit.com/prefs/apps, create a *web app* with Araldo's
+redirect URI (`{ARALDO_BASE_URL}/connect/reddit_ads/callback`), and ask
+Reddit for Ads API access for it. Add its client ID and secret under
+Channels → Developer apps as *Reddit Ads*, then on the Ads page sign in
+and choose the ad accounts to read. Araldo asks only for `adsread`, with
+a permanent refresh token it swaps for an hour-long access token on each
+read. Spend arrives in millionths of the account's currency and is stored
+in its minor unit. Results stay 0: they count conversions, which Reddit
+measures with its pixel. To count signups, tag ad links with UTM parameters
 (`utm_medium=paid`) and read them in your own analytics: Araldo never asks
 for a network's tracking pixel.
 

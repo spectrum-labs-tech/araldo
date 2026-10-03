@@ -3,12 +3,14 @@
 package x
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -244,5 +246,96 @@ func TestSignInAndRefresh(t *testing.T) {
 	}
 	if _, err := a.Exchange(t.Context(), platform.App{ClientID: "id", ClientSecret: "wrong"}, "x", "c", "v"); err == nil {
 		t.Fatal("a wrong app secret should fail the exchange")
+	}
+}
+
+// fakeXVideo takes chunked video uploads that need statusPolls status
+// checks, or fail, before they can be posted.
+type fakeXVideo struct {
+	mu          sync.Mutex
+	init        map[string]any
+	segments    map[int]int // segment index: bytes
+	finalized   bool
+	statusPolls int
+	polls       int
+	fail        bool
+	tweets      []map[string]any
+}
+
+func (f *fakeXVideo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	processing := func(state string) string {
+		return `{"data":{"id":"v1","processing_info":{"state":"` + state + `","check_after_secs":1}}}`
+	}
+	switch {
+	case r.URL.Path == "/2/media/upload/initialize":
+		_ = json.NewDecoder(r.Body).Decode(&f.init)
+		_, _ = w.Write([]byte(`{"data":{"id":"v1","expires_after_secs":86400}}`))
+	case r.URL.Path == "/2/media/upload/v1/append":
+		file, _, err := r.FormFile("media")
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		data, _ := io.ReadAll(file)
+		idx, _ := strconv.Atoi(r.FormValue("segment_index"))
+		f.segments[idx] = len(data)
+	case r.URL.Path == "/2/media/upload/v1/finalize":
+		f.finalized = true
+		_, _ = w.Write([]byte(processing("pending")))
+	case r.URL.Path == "/2/media/upload" && r.URL.Query().Get("command") == "STATUS":
+		f.polls++
+		switch {
+		case f.fail:
+			_, _ = w.Write([]byte(`{"data":{"processing_info":{"state":"failed","error":{"message":"InvalidMedia"}}}}`))
+		case f.polls < f.statusPolls:
+			_, _ = w.Write([]byte(processing("in_progress")))
+		default:
+			_, _ = w.Write([]byte(processing("succeeded")))
+		}
+	case r.URL.Path == "/2/tweets":
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		f.tweets = append(f.tweets, in)
+		_, _ = w.Write([]byte(`{"data":{"id":"t1","text":"x"}}`))
+	case r.URL.Path == "/2/media/metadata":
+		_, _ = w.Write([]byte(`{}`))
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func TestPublishVideo(t *testing.T) {
+	t.Parallel()
+	for _, fail := range []bool{false, true} {
+		f := &fakeXVideo{segments: map[int]int{}, statusPolls: 3, fail: fail}
+		srv := httptest.NewServer(f)
+		a := New(srv.Client())
+		a.API = srv.URL
+		var slept []time.Duration
+		a.Sleep = func(_ context.Context, d time.Duration) error { slept = append(slept, d); return nil }
+		data := make([]byte, chunkSize+10)
+		v := platform.Media{Type: "video/mp4", Alt: "Range day"}.WithData(data)
+		_, err := a.Publish(t.Context(), platform.Credentials{"access_token": "bearer"},
+			platform.Payload{Parts: []string{"watch"}, Media: []platform.Media{v}}, nil)
+		srv.Close()
+		if fail {
+			if platform.KindOf(err) != platform.Rejected || len(f.tweets) != 0 {
+				t.Fatalf("a video X failed to process: %v, %d tweets", err, len(f.tweets))
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.init["media_category"] != "tweet_video" || f.init["media_type"] != "video/mp4" || f.init["total_bytes"].(float64) != float64(len(data)) ||
+			f.segments[0] != chunkSize || f.segments[1] != 10 || !f.finalized || f.polls != 3 || len(slept) != 3 || slept[0] != time.Second {
+			t.Fatalf("init %v, segments %v, polls %d, slept %v", f.init, f.segments, f.polls, slept)
+		}
+		ids, _ := f.tweets[0]["media"].(map[string]any)["media_ids"].([]any)
+		if len(ids) != 1 || ids[0] != "v1" {
+			t.Fatalf("tweet %v", f.tweets[0])
+		}
 	}
 }

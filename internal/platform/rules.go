@@ -88,6 +88,12 @@ var rules = map[Provider]Rules{
 		Source:      "https://docs.x.com/fundamentals/counting-characters",
 		Images:      map[string]int64{media.JPEG: 5_000_000, media.PNG: 5_000_000, media.WebP: 5_000_000, media.GIF: 15_000_000},
 		ImageSource: "https://developer.x.com/en/docs/x-api/v1/media/upload-media/uploading-media/media-best-practices",
+		// MP4 or MOV, H.264, up to 512 MB, 0.5 to 140 seconds, 1:3 to 3:1,
+		// at most 60 frames a second (for accounts without longer uploads).
+		Video: &VideoRules{Types: map[string]int64{media.MP4: 512 << 20, media.QuickTime: 512 << 20},
+			MinDuration: 500 * time.Millisecond, MaxDuration: 140 * time.Second, MinAspect: 1.0 / 3, MaxAspect: 3, MaxFrameRate: 60,
+			Codecs: []string{"avc1", "avc3"},
+			Source: "https://developer.x.com/en/docs/x-api/v1/media/upload-media/uploading-media/media-best-practices"},
 	},
 	Bluesky: {
 		Provider: Bluesky, Name: "Bluesky", MaxLength: 300, Counting: CountBluesky, Threads: true, MaxThreadParts: 25, MaxMedia: 4,

@@ -21,6 +21,8 @@ import (
 	"crypto/rand"
 	"crypto/sha1" //nolint:gosec // SHA-1 is what OAuth 1.0a's HMAC-SHA1 signature method is (RFC 5849)
 	"encoding/base64"
+	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -46,11 +48,22 @@ type Adapter struct {
 	// Now and Nonce make signatures; tests replace them.
 	Now   func() time.Time
 	Nonce func() string
+	// Sleep waits while X processes a video; tests replace it.
+	Sleep func(ctx context.Context, d time.Duration) error
 }
 
 // New returns an X adapter.
 func New(client *http.Client) *Adapter {
-	return &Adapter{Client: client, API: DefaultAPI, Authorize: DefaultAuthorize, Now: time.Now, Nonce: nonce}
+	return &Adapter{Client: client, API: DefaultAPI, Authorize: DefaultAuthorize, Now: time.Now, Nonce: nonce, Sleep: sleep}
+}
+
+func sleep(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
 }
 
 func (a *Adapter) Provider() platform.Provider { return platform.X }
@@ -222,6 +235,15 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 func (a *Adapter) upload(ctx context.Context, cr credentials, media []platform.Media) ([]string, error) {
 	ids := make([]string, 0, len(media))
 	for i, m := range media {
+		if m.IsVideo() {
+			id, err := a.uploadVideo(ctx, cr, m)
+			if err != nil {
+				return nil, err
+			}
+			a.setAlt(ctx, cr, id, m.Alt)
+			ids = append(ids, id)
+			continue
+		}
 		data, err := m.Read(ctx)
 		if err != nil {
 			return nil, err
@@ -245,15 +267,109 @@ func (a *Adapter) upload(ctx context.Context, cr credentials, media []platform.M
 		if out.Data.ID == "" {
 			return nil, platform.Errorf(platform.Transient, "the media upload returned no ID")
 		}
-		if m.Alt != "" {
-			// Alt text is a courtesy the post does not depend on: a failure
-			// here should not stop the post.
-			_ = a.call(ctx, cr, http.MethodPost, "/2/media/metadata",
-				map[string]any{"id": out.Data.ID, "metadata": map[string]any{"alt_text": map[string]string{"text": m.Alt}}}, nil)
-		}
+		a.setAlt(ctx, cr, out.Data.ID, m.Alt)
 		ids = append(ids, out.Data.ID)
 	}
 	return ids, nil
+}
+
+// setAlt sets an upload's alt text. It is a courtesy the post does not
+// depend on: a failure here does not stop the post.
+func (a *Adapter) setAlt(ctx context.Context, cr credentials, id, alt string) {
+	if alt == "" {
+		return
+	}
+	_ = a.call(ctx, cr, http.MethodPost, "/2/media/metadata",
+		map[string]any{"id": id, "metadata": map[string]any{"alt_text": map[string]string{"text": alt}}}, nil)
+}
+
+// chunkSize is each appended segment of a video.
+const chunkSize = 4 << 20
+
+// maxProcessingWait bounds the wait between status checks.
+const maxProcessingWait = 30 * time.Second
+
+type processing struct {
+	State          string `json:"state"`
+	CheckAfterSecs int    `json:"check_after_secs"`
+	Error          struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// uploadVideo sends a video in chunks, initialize, append each segment and
+// finalize, then waits for X to process it
+// (https://docs.x.com/x-api/media/quickstart/media-upload-chunked).
+func (a *Adapter) uploadVideo(ctx context.Context, cr credentials, m platform.Media) (string, error) {
+	base := strings.TrimRight(a.API, "/") + "/2/media/upload"
+	var init struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := a.call(ctx, cr, http.MethodPost, "/2/media/upload/initialize",
+		map[string]any{"media_type": m.Type, "total_bytes": m.Size, "media_category": "tweet_video"}, &init); err != nil {
+		return "", classify(err)
+	}
+	if init.Data.ID == "" {
+		return "", platform.Errorf(platform.Transient, "the video upload returned no ID")
+	}
+	id := init.Data.ID
+	rc, err := platform.OpenVideo(ctx, m)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = rc.Close() }()
+	buf := make([]byte, chunkSize)
+	for seg := 0; ; seg++ {
+		n, rerr := io.ReadFull(rc, buf)
+		if n > 0 {
+			body, contentType, err := platform.Multipart([][2]string{{"segment_index", strconv.Itoa(seg)}},
+				[]platform.File{{Field: "media", Name: m.Filename(0), Type: "application/octet-stream", Data: buf[:n]}})
+			if err != nil {
+				return "", &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+			}
+			u := base + "/" + url.PathEscape(id) + "/append"
+			if err := platform.Send(ctx, a.Client, http.MethodPost, u, map[string]string{"Authorization": a.authorization(cr, http.MethodPost, u, nil)},
+				body, contentType, nil); err != nil {
+				return "", classify(err)
+			}
+		}
+		if errors.Is(rerr, io.EOF) || errors.Is(rerr, io.ErrUnexpectedEOF) {
+			break
+		}
+		if rerr != nil {
+			return "", &platform.Error{Kind: platform.Transient, Code: "media_unreadable", Msg: "reading the video", Err: rerr}
+		}
+	}
+	var fin struct {
+		Data struct {
+			Processing *processing `json:"processing_info"`
+		} `json:"data"`
+	}
+	if err := a.call(ctx, cr, http.MethodPost, "/2/media/upload/"+url.PathEscape(id)+"/finalize", nil, &fin); err != nil {
+		return "", classify(err)
+	}
+	for p := fin.Data.Processing; p != nil && p.State != "succeeded"; {
+		if p.State == "failed" {
+			return "", &platform.Error{Kind: platform.Rejected, Code: "video_rejected", Msg: "X could not process the video: " + p.Error.Message}
+		}
+		wait := min(time.Duration(max(p.CheckAfterSecs, 1))*time.Second, maxProcessingWait)
+		if err := a.Sleep(ctx, wait); err != nil {
+			return "", &platform.Error{Kind: platform.Transient, Code: "media_processing", Msg: "X was still processing the video", Err: err}
+		}
+		var st struct {
+			Data struct {
+				Processing *processing `json:"processing_info"`
+			} `json:"data"`
+		}
+		q := url.Values{"command": {"STATUS"}, "media_id": {id}}
+		if err := a.call(ctx, cr, http.MethodGet, "/2/media/upload?"+q.Encode(), nil, &st); err != nil {
+			return "", classify(err)
+		}
+		p = st.Data.Processing
+	}
+	return id, nil
 }
 
 // classify sharpens X's errors: a 403 is a refusal of this post (duplicate

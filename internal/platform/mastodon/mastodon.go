@@ -151,17 +151,8 @@ type attachment struct {
 func (a *Adapter) upload(ctx context.Context, base string, c platform.Credentials, media []platform.Media) ([]string, error) {
 	ids := make([]string, 0, len(media))
 	for i, m := range media {
-		data, err := m.Read(ctx)
-		if err != nil {
-			return nil, err
-		}
-		body, contentType, err := platform.Multipart([][2]string{{"description", m.Alt}},
-			[]platform.File{{Field: "file", Name: m.Filename(i), Type: m.Type, Data: data}})
-		if err != nil {
-			return nil, &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
-		}
 		var att attachment
-		err = platform.Send(ctx, a.Client, http.MethodPost, base+"/api/v2/media", headers(c), body, contentType, &att)
+		err := a.send(ctx, base, c, i, m, &att)
 		var pe *platform.Error
 		if errors.As(err, &pe) && pe.Kind == platform.Rejected && strings.HasPrefix(pe.Msg, "HTTP 403") {
 			pe.Code = "scope_missing"
@@ -173,7 +164,7 @@ func (a *Adapter) upload(ctx context.Context, base string, c platform.Credential
 		for att.URL == nil || *att.URL == "" {
 			select {
 			case <-ctx.Done():
-				return nil, &platform.Error{Kind: platform.Transient, Code: "media_processing", Msg: "the server was still processing an image", Err: ctx.Err()}
+				return nil, &platform.Error{Kind: platform.Transient, Code: "media_processing", Msg: "the server was still processing the media", Err: ctx.Err()}
 			case <-time.After(a.Poll):
 			}
 			if err := platform.JSON(ctx, a.Client, http.MethodGet, base+"/api/v1/media/"+url.PathEscape(att.ID), headers(c), nil, &att); err != nil {
@@ -212,4 +203,30 @@ func (a *Adapter) Engagement(ctx context.Context, c platform.Credentials, refs [
 		out[r.ID] = platform.Counts{Likes: st.Likes, Reposts: st.Reblogs, Replies: st.Replies, Quotes: st.Quotes}
 	}
 	return out, nil
+}
+
+// send uploads one file: an image from memory, or a video streamed.
+func (a *Adapter) send(ctx context.Context, base string, c platform.Credentials, i int, m platform.Media, att *attachment) error {
+	fields := [][2]string{{"description", m.Alt}}
+	if !m.IsVideo() {
+		data, err := m.Read(ctx)
+		if err != nil {
+			return err
+		}
+		body, contentType, err := platform.Multipart(fields, []platform.File{{Field: "file", Name: m.Filename(i), Type: m.Type, Data: data}})
+		if err != nil {
+			return &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+		}
+		return platform.Send(ctx, a.Client, http.MethodPost, base+"/api/v2/media", headers(c), body, contentType, att)
+	}
+	rc, err := platform.OpenVideo(ctx, m)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rc.Close() }()
+	body, contentType, length, err := platform.MultipartStream(fields, platform.StreamFile{Field: "file", Name: m.Filename(i), Type: m.Type, Size: m.Size, Body: rc})
+	if err != nil {
+		return &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+	}
+	return platform.SendStream(ctx, a.Client, http.MethodPost, base+"/api/v2/media", headers(c), body, length, contentType, att)
 }

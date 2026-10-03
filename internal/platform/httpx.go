@@ -62,9 +62,19 @@ func Send(ctx context.Context, client *http.Client, method, url string, headers 
 	if body != nil {
 		r = bytes.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, url, r)
+	return SendStream(ctx, client, method, url, headers, r, int64(len(body)), contentType, out)
+}
+
+// SendStream is Send with a body read as the request is sent, of length
+// bytes, such as a video (ADR 0027).
+func SendStream(ctx context.Context, client *http.Client, method, url string, headers map[string]string, body io.Reader, length int64,
+	contentType string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return &Error{Kind: Rejected, Code: "request", Err: err}
+	}
+	if body != nil {
+		req.ContentLength = length
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)

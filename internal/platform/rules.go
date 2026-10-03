@@ -100,6 +100,9 @@ var rules = map[Provider]Rules{
 		Source:      "https://docs.joinmastodon.org/user/posting/ (default instance limit; servers may raise it)",
 		Images:      map[string]int64{media.JPEG: 16 << 20, media.PNG: 16 << 20, media.WebP: 16 << 20, media.GIF: 16 << 20},
 		ImageSource: "https://docs.joinmastodon.org/entities/Instance/#image_size_limit (default; servers may change it)",
+		// The default video_size_limit; servers may change it.
+		Video: &VideoRules{Types: map[string]int64{media.MP4: 99 << 20, media.QuickTime: 99 << 20},
+			Source: "https://docs.joinmastodon.org/entities/Instance/#video_size_limit (default; servers may change it)"},
 	},
 	Gab: {
 		Provider: Gab, Name: "Gab", MaxLength: 3000, Counting: CountMastodon, Threads: true, MaxThreadParts: 25, MaxMedia: 4,
@@ -113,6 +116,9 @@ var rules = map[Provider]Rules{
 		// pass images it refuses. The types are Mastodon's.
 		Images:      map[string]int64{media.JPEG: 0, media.PNG: 0, media.WebP: 0, media.GIF: 0},
 		ImageSource: "https://docs.joinmastodon.org/methods/media/ (Gab Social is a Mastodon fork; it documents no size limit)",
+		// As for images: Mastodon's types, and no documented size.
+		Video: &VideoRules{Types: map[string]int64{media.MP4: 0, media.QuickTime: 0},
+			Source: "https://docs.joinmastodon.org/methods/media/ (Gab Social is a Mastodon fork; it documents no video limits)"},
 	},
 	Threads: {
 		Provider: Threads, Name: "Threads", MaxLength: 500, Counting: CountRunes, Threads: true, MaxThreadParts: 25, MaxMedia: 10,
@@ -155,6 +161,9 @@ var rules = map[Provider]Rules{
 		Source:      "https://discord.com/developers/docs/resources/webhook#execute-webhook",
 		Images:      map[string]int64{media.JPEG: 10 << 20, media.PNG: 10 << 20, media.WebP: 10 << 20, media.GIF: 10 << 20},
 		ImageSource: "https://discord.com/developers/docs/reference#uploading-files",
+		// Attachments, video included, share the same default upload limit.
+		Video: &VideoRules{Types: map[string]int64{media.MP4: 10 << 20, media.QuickTime: 10 << 20},
+			Source: "https://discord.com/developers/docs/reference#uploading-files"},
 	},
 	Telegram: {
 		Provider: Telegram, Name: "Telegram", MaxLength: 4096, Counting: CountRunes, MaxMedia: 10,

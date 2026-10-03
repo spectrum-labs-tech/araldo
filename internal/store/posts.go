@@ -432,6 +432,12 @@ func (s *Store) FinishTarget(ctx context.Context, id uuid.UUID, owner string, o 
 		id, owner, o.Status, o.NextAttemptAt, o.Permalink, posted, o.ErrorCode, o.ErrorMessage, o.PublishedAt)
 }
 
+// ExtendLease pushes back the lease of a target its worker is still
+// publishing, such as a video a platform is processing.
+func (s *Store) ExtendLease(ctx context.Context, id uuid.UUID, owner string, until time.Time) error {
+	return s.execOne(ctx, `UPDATE post_targets SET lease_until = $3 WHERE id = $1 AND status = 'publishing' AND lease_owner = $2`, id, owner, until)
+}
+
 // ExpiredLeases returns targets whose worker vanished mid-publish.
 func (s *Store) ExpiredLeases(ctx context.Context, now time.Time, limit int) ([]model.Target, error) {
 	rows, err := s.q.Query(ctx, `SELECT `+targetCols+` FROM post_targets t JOIN channels c ON c.id = t.channel_id

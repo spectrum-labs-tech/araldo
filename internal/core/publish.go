@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
@@ -20,8 +22,12 @@ const (
 	publishPoll    = 5 * time.Second
 	publishLease   = 3 * time.Minute
 	publishTimeout = 90 * time.Second
-	publishBatch   = 10
-	maxRetryDelay  = 30 * time.Minute
+	// videoPublishTimeout leaves room to upload a video and for the
+	// platform to process it (ADR 0027); the lease is renewed meanwhile.
+	videoPublishTimeout = 20 * time.Minute
+	leaseRenewEvery     = time.Minute
+	publishBatch        = 10
+	maxRetryDelay       = 30 * time.Minute
 )
 
 // RunPublisher publishes due targets until ctx ends: it polls every few
@@ -139,10 +145,18 @@ func (s *Service) publishTarget(ctx context.Context, owner string, ct store.Clai
 		if !t.Livemode {
 			payload.Simulate = ct.Metadata["araldo_simulate"]
 		}
-		pctx, cancel := context.WithTimeout(ctx, publishTimeout)
+		timeout := publishTimeout
+		for _, m := range pm {
+			if m.IsVideo() {
+				timeout = videoPublishTimeout
+			}
+		}
+		pctx, cancel := context.WithTimeout(ctx, timeout)
+		stop := s.keepLease(pctx, t.ID, owner)
 		res, pubErr = adapter.Publish(pctx, creds, payload, func(ref platform.RemoteRef) error {
 			return s.store.RecordPostedPart(context.WithoutCancel(ctx), t.ID, owner, ref)
 		})
+		stop()
 		cancel()
 	}
 	return s.finishPublish(context.WithoutCancel(ctx), owner, &t, ch, adapter, attempt, res, pubErr)
@@ -339,4 +353,28 @@ func (s *Service) SandboxTarget(ctx context.Context, ref string) (*model.Target,
 		return nil, notFoundID("post target", ref)
 	}
 	return t, nil
+}
+
+// keepLease renews a target's lease while its worker publishes, so a long
+// attempt is not taken for a lost one. It stops when stop is called or ctx
+// ends.
+func (s *Service) keepLease(ctx context.Context, targetID uuid.UUID, owner string) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(leaseRenewEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if err := s.store.ExtendLease(context.WithoutCancel(ctx), targetID, owner, s.Now().Add(publishLease)); err != nil {
+					s.log.WarnContext(ctx, "renewing a publishing lease failed", "target", id.Format(id.Target, targetID), "err", err)
+				}
+			}
+		}
+	}()
+	return func() { close(done) }
 }

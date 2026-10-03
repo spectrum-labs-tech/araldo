@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -203,7 +204,20 @@ func TestVideoPublishes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := settle(t, w, p.ID); got.Status != model.PostPublished {
+	// Workers of other tests, without this test's storage, may claim the
+	// target first and fail to read the video; that is transient, so move
+	// this service's clock past the retry, where only it will claim it.
+	got := settle(t, w, p.ID)
+	for try := 0; got.Status != model.PostPublished && try < 5; try++ {
+		tg := got.Targets[0]
+		if tg.Status != model.TargetQueued || tg.ErrorCode != "media_unreadable" {
+			break
+		}
+		at := tg.NextAttemptAt.Add(time.Second)
+		w.s.Now = func() time.Time { return at }
+		got = settle(t, w, p.ID)
+	}
+	if got.Status != model.PostPublished {
 		t.Fatalf("published as %s: %+v", got.Status, got.Targets[0])
 	}
 }

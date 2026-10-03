@@ -119,6 +119,9 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 // attachment's description
 // (https://discord.com/developers/docs/reference#uploading-files).
 func (a *Adapter) sendWithFiles(ctx context.Context, u string, body map[string]any, media []platform.Media, out any) error {
+	if len(media) == 1 && media[0].IsVideo() {
+		return a.sendVideo(ctx, u, body, media[0], out)
+	}
 	files := make([]platform.File, 0, len(media))
 	attachments := make([]map[string]any, 0, len(media))
 	for i, m := range media {
@@ -144,4 +147,29 @@ func (a *Adapter) sendWithFiles(ctx context.Context, u string, body map[string]a
 		return &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
 	}
 	return platform.Send(ctx, a.Client, http.MethodPost, u, nil, raw, contentType, out)
+}
+
+// sendVideo posts body with a video attached, streamed.
+func (a *Adapter) sendVideo(ctx context.Context, u string, body map[string]any, v platform.Media, out any) error {
+	rc, err := platform.OpenVideo(ctx, v)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rc.Close() }()
+	name := v.Filename(0)
+	att := map[string]any{"id": 0, "filename": name}
+	if v.Alt != "" {
+		att["description"] = v.Alt
+	}
+	body["attachments"] = []map[string]any{att}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+	}
+	stream, contentType, length, err := platform.MultipartStream([][2]string{{"payload_json", string(payload)}},
+		platform.StreamFile{Field: "files[0]", Name: name, Type: v.Type, Size: v.Size, Body: rc})
+	if err != nil {
+		return &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+	}
+	return platform.SendStream(ctx, a.Client, http.MethodPost, u, nil, stream, length, contentType, out)
 }

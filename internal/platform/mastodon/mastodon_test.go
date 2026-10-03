@@ -226,3 +226,25 @@ func TestEngagement(t *testing.T) {
 		t.Fatalf("a server error: %v", err)
 	}
 }
+
+// A video streams up and is posted once the server has processed it.
+func TestPublishVideo(t *testing.T) {
+	t.Parallel()
+	f := &fakeServer{processPolls: 4, polls: map[string]int{}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	a := New(srv.Client())
+	a.Poll = time.Millisecond
+	v := platform.Media{Type: "video/mp4", Alt: "a bench test"}.WithData([]byte("mp4 bytes"))
+	if _, err := a.Publish(t.Context(), platform.Credentials{"instance": srv.URL, "access_token": "tok"},
+		platform.Payload{Key: "ptgt_v", Parts: []string{"watch"}, Media: []platform.Media{v}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.uploads) != 1 || f.uploads[0]["filename"] != "video1.mp4" || f.uploads[0]["type"] != "video/mp4" ||
+		f.uploads[0]["data"] != "mp4 bytes" || f.uploads[0]["description"] != "a bench test" || f.polls["m1"] < 4 {
+		t.Fatalf("uploads %v, polls %v", f.uploads, f.polls)
+	}
+	if got := asStrings(f.statuses[0]["media_ids"]); strings.Join(got, ",") != "m1" {
+		t.Fatalf("status %v", f.statuses[0])
+	}
+}

@@ -118,3 +118,37 @@ func TestPublishImages(t *testing.T) {
 		t.Fatalf("second message %v: images belong on the first only", payloads[1])
 	}
 }
+
+func TestPublishVideo(t *testing.T) {
+	t.Parallel()
+	var payload map[string]any
+	var file string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_ = json.Unmarshal([]byte(r.FormValue("payload_json")), &payload)
+		f, hdr, err := r.FormFile("files[0]")
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		data, _ := io.ReadAll(f)
+		file = hdr.Filename + ":" + hdr.Header.Get("Content-Type") + ":" + string(data)
+		_, _ = w.Write([]byte(`{"id":"m1","channel_id":"c"}`))
+	}))
+	defer srv.Close()
+	a := New(srv.Client())
+	a.AllowAnyHost = true
+	v := platform.Media{Type: "video/mp4", Alt: "the range"}.WithData([]byte("mp4"))
+	if _, err := a.Publish(t.Context(), platform.Credentials{"webhook_url": srv.URL + "/api/webhooks/1/tok"},
+		platform.Payload{Parts: []string{"watch"}, Media: []platform.Media{v}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	atts, _ := payload["attachments"].([]any)
+	att, _ := atts[0].(map[string]any)
+	if file != "video1.mp4:video/mp4:mp4" || payload["content"] != "watch" || att["description"] != "the range" {
+		t.Fatalf("file %q, payload %v", file, payload)
+	}
+}

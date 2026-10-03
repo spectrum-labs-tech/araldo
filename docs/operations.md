@@ -116,6 +116,7 @@ check's result.
 | Facebook Pages, Instagram | A sign-in through your Meta app, below; you choose which Pages, or which Instagram accounts linked to them. |
 | Pinterest | A sign-in through your Pinterest app, below, choosing boards: each board is a channel; or an access token and a board ID, pasted. |
 | YouTube | A sign-in through your Google app, below; each YouTube channel the account manages is a channel. Posts are videos. |
+| TikTok | A sign-in through your TikTok app, below. Posts are videos. |
 | Discord, Telegram | A webhook URL; a bot token and chat. |
 
 **X.** At developer.x.com, in your app's *User authentication settings*,
@@ -150,6 +151,16 @@ are public. Each upload costs 1,600 of the project's 10,000 daily quota
 units, so about six a day until Google raises it; past that, uploads wait
 until the quota resets at midnight Pacific time. Videos over 15 minutes need
 a verified YouTube account.
+
+**TikTok.** At developers.tiktok.com, create an app with the *Login Kit*
+and *Content Posting API* products and the scopes `user.info.basic` and
+`video.publish`, and add Araldo's redirect URI
+(`{ARALDO_BASE_URL}/connect/tiktok/callback`). Add its client key and secret
+under Developer apps, then connect. Tokens last a day and are renewed
+automatically. Before each post Araldo asks TikTok what the account may
+post: its longest video, and the privacy levels it may use (public when
+allowed). Until TikTok audits the app, it can post only to accounts set to
+private, and its posts are private too; the error says so.
 
 **Pinterest.** At developers.pinterest.com/apps, create an app, and add
 Araldo's redirect URI (`{ARALDO_BASE_URL}/connect/pinterest/callback`).
@@ -295,8 +306,8 @@ not transcode, so export H.264 with AAC in an MP4. Each platform's video
 rules are checked as images' are; a platform takes video once its adapter
 can post it, and the preview says when one cannot yet. Today Bluesky (through
 its video service), X (chunked uploads), Mastodon, Gab, LinkedIn, Facebook
-Pages, Instagram (as reels shared to the feed), Threads, YouTube, Telegram and
-Discord take video; Instagram and Threads fetch it through a signed link, so
+Pages, Instagram (as reels shared to the feed), Threads, YouTube, TikTok,
+Telegram and Discord take video; Instagram and Threads fetch it through a signed link, so
 the install's API must be public; where a platform processes a video
 before posting it, publishing waits for it, up to 20 minutes, renewing its
 lease so the wait is not mistaken for a lost worker.

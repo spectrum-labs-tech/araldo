@@ -36,6 +36,7 @@ const (
 	LinkedIn  Provider = "linkedin"
 	Pinterest Provider = "pinterest"
 	YouTube   Provider = "youtube"
+	TikTok    Provider = "tiktok"
 )
 
 // Credentials are a channel's decrypted settings and secrets, by field

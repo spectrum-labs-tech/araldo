@@ -46,6 +46,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform/sandbox"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/telegram"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/threads"
+	"github.com/spectrum-labs-tech/araldo/internal/platform/tiktok"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/x"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/youtube"
 	"github.com/spectrum-labs-tech/araldo/internal/server"
@@ -109,6 +110,7 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 		linkedin.New(client),
 		pinterest.New(client),
 		youtube.New(client),
+		tiktok.New(client),
 		threads.New(client),
 		facebook.New(client),
 		instagram.New(client),

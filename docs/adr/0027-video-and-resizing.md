@@ -1,6 +1,6 @@
 # ADR 0027: Images too big for a platform are resized for it, and video is media stored in object storage
 
-- Status: proposed
+- Status: accepted; built
 - Date: 2026-10-03
 
 ## Context

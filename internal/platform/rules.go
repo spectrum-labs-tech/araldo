@@ -193,6 +193,16 @@ var rules = map[Provider]Rules{
 		Video: &VideoRules{Types: map[string]int64{media.MP4: 256 << 30, media.QuickTime: 256 << 30}, MaxDuration: 12 * time.Hour,
 			Source: "https://support.google.com/youtube/answer/71673"},
 	},
+	TikTok: {
+		// A caption of up to 2,200 characters on one video: MP4, MOV or
+		// WebM, up to 4 GB and 10 minutes (each creator's own limit is
+		// checked when posting).
+		Provider: TikTok, Name: "TikTok", MaxLength: 2200, Counting: CountRunes, MediaRequired: true, MaxMedia: 1,
+		Source: "https://developers.tiktok.com/doc/content-posting-api-reference-direct-post",
+		Images: map[string]int64{},
+		Video: &VideoRules{Types: map[string]int64{media.MP4: 4 << 30, media.QuickTime: 4 << 30}, MaxDuration: 10 * time.Minute,
+			Source: "https://developers.tiktok.com/doc/content-posting-api-media-transfer-guide"},
+	},
 	Discord: {
 		Provider: Discord, Name: "Discord", MaxLength: 2000, Counting: CountRunes, MaxMedia: 10,
 		Source:      "https://discord.com/developers/docs/resources/webhook#execute-webhook",
@@ -221,7 +231,7 @@ func RulesFor(p Provider) (Rules, bool) {
 
 // Emulable lists the providers the sandbox can imitate.
 func Emulable() []Provider {
-	return []Provider{Bluesky, Mastodon, Gab, X, Threads, LinkedIn, Facebook, Instagram, Pinterest, YouTube, Discord, Telegram}
+	return []Provider{Bluesky, Mastodon, Gab, X, Threads, LinkedIn, Facebook, Instagram, Pinterest, YouTube, TikTok, Discord, Telegram}
 }
 
 var urlRE = regexp.MustCompile(`https?://[^\s<>"]+`)

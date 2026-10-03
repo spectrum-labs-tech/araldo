@@ -32,4 +32,4 @@ open a pull request.
 | [0024](0024-newsletters.md) | Newsletters are designed and scheduled in Araldo and sent by the email provider, which owns the list | accepted |
 | [0025](0025-web-analytics.md) | Web analytics are provider adapters that report visits and signups by Araldo's own link tags | proposed |
 | [0026](0026-reports.md) | A brand's report is computed on demand from what Araldo already reads, one period at a time | proposed |
-| [0027](0027-video-and-resizing.md) | Images too big for a platform are resized for it, and video is media stored in object storage | proposed |
+| [0027](0027-video-and-resizing.md) | Images too big for a platform are resized for it, and video is media stored in object storage | accepted |

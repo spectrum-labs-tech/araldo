@@ -1,64 +1,59 @@
 # Roadmap
 
-## Done (first release, September 2026)
+What Araldo is for, what is decided but not built, and the order it is
+being built in. The ADRs carry each decision's reasons; this file keeps the
+order and the status in one place. Update it in the same change as the work.
 
-- Tenancy: orgs, brands, members with four roles, optional approvals, audit
-  log.
-- Sign-in: argon2id passwords, TOTP with QR enrollment, recovery codes,
-  sessions, re-authentication for sensitive actions, org-wide MFA
-  requirement.
-- API: `/v1` with API keys (test and live, scoped, brand-limited),
-  idempotency keys, cursor pagination, problem details, rate limits; the
-  OpenAPI contract with a test that keeps it in step with the routes.
-- Templates with JSON Schema, per-platform bodies and fit modes; previews
-  with per-platform violations.
-- Publishing: slots, deadlines, rate-limit holds, re-auth detection, never
-  silently double-posting; sandbox (with failure simulation), Bluesky,
-  Mastodon, Discord and Telegram.
-- Events and signed webhooks with retries, a delivery log and resend.
-- UTM tagging of links to a brand's own sites, so web analytics can credit
-  each network, template and post; Bluesky posts show short links
-  ([ADR 0016](adr/0016-link-tagging.md)).
-- Dashboard for all of the above; one binary; Helm chart; CI publishing to
-  GHCR.
-- Metrics through OpenTelemetry (Prometheus or OTLP), with the Helm chart's
-  optional PodMonitor and alerts ([operations](operations.md#metrics)).
-- Images on posts: uploads or URLs, checked against each platform's limits,
-  stored in Postgres or S3-compatible storage
-  ([ADR 0017](adr/0017-media.md)).
-- Facebook Pages and Instagram through a Meta app, on the same flow.
-- Threads, connected with OAuth through an org's developer app, with
-  token renewal, images by signed links and engagement including views
-  ([ADR 0021](adr/0021-oauth-connections.md)).
-- X and LinkedIn, connected with tokens from each platform's developer
-  portal (X: the app's keys and the account's access token; LinkedIn: a
-  member token, 60 days), with images.
-- An MCP server (`araldo mcp`, ADR 0020): assistants draft, check,
-  schedule and follow up on posts through the API.
-- Administration by API (ADR 0019): channel recovery, brand slots, attempt
-  history, keys managing keys, approval and the audit log behind
-  explicit-only scopes; members and org settings in the CLI.
-- Engagement: likes, reposts, replies and quotes read from Bluesky and
-  Mastodon on a schedule after publishing, with a summary by post, channel
-  and template and the dashboard's Performance page
-  ([ADR 0018](adr/0018-engagement.md)).
+## What Araldo is for
 
-## Next
+The publishing layer products and AI agents can trust: it checks every post
+against each platform's rules before sending, never posts twice, lets a
+person approve what matters, and puts a brand's social posts, ad spend,
+newsletters and the signups they bring in one place, for many brands and
+organizations. Self-hosted under the AGPL, or hosted.
 
-1. **X and LinkedIn on the OAuth flow** instead of pasted tokens (with
-   LinkedIn company pages, which need its Community Management API);
-   install-wide developer apps; engagement from X (it needs a paid API tier
-   to read) and LinkedIn.
-2. **More media**: video, and resizing images to fit each platform.
-3. **ar15.build as the first tenant**: its daily featured build and brand
-   posts sent through the API.
-4. **Developer tooling**: `araldo listen` (webhooks to localhost), the MCP
-   server over HTTP for hosted assistants, TypeScript and Go SDKs generated from the contract, a request
-   log in the dashboard.
-5. **Passkeys** (WebAuthn) and OIDC single sign-on.
-6. **Backups** built in ([ADR 0013](adr/0013-backups.md)), and the rest of
-   OpenTelemetry: traces, logs, publish lateness, channels needing
-   reauthorization ([ADR 0014](adr/0014-telemetry.md)).
-7. **LinkedIn, YouTube, TikTok, Pinterest, Reddit.**
-8. **Newsletters**: lists, double opt-in, one-click unsubscribe, SES /
-   Brevo / Resend / SMTP, bounces and complaints, digests from templates.
+Principles every feature keeps:
+
+- **Adapters everywhere.** Platforms, ad networks, mail providers and web
+  analytics are replaceable adapters; the work (content, templates,
+  approvals, history, results) stays in Araldo, so switching a provider is
+  cheap.
+- **Trust in automation.** Validate before acting, at most once, a person
+  gates what matters, test mode for everything.
+- **No audience data.** No tracking pixel, no subscriber lists, no visitor
+  records: counts from the tools that own them.
+- **API first, then the dashboard, then MCP**, all on the same contract.
+
+## Order of work
+
+| # | Work | Decision | Status |
+| --- | --- | --- | --- |
+| 1 | Prove the adapters with real accounts on every network, and a daily test post per network so a platform change is caught early | ADR 0011 | Adapters built; real-account runs and test posts not yet |
+| 2 | MCP over HTTP at `POST /v1/mcp` | ADR 0020 | Decided |
+| 3 | Web analytics adapters: signups and cost per signup by post, ad and issue (Plausible, then GA4) | ADR 0025 | Decided |
+| 4 | Newsletters phase 1: mail accounts, issues with a delivery per account, renderer and theme, Brevo and sandbox providers | ADR 0024 | Decided |
+| 5 | Client reports: one page per brand per month across posts, ads, newsletters and analytics | ADR 0024, 0025 | Planned |
+| 6 | Pinterest (images) | ADR 0009 | Planned |
+| 7 | Video media, then YouTube and TikTok | ADR 0009, 0017 | Planned |
+| 8 | Ads phase 2: promotions on the first network with real spend, under per-brand caps | ADR 0023 | Decided |
+| 9 | AI drafting in the dashboard with the organization's own model key | ADR 0001 | Planned |
+| 10 | Hosted plan: a separate install with sign-up, billing and approved developer apps shared by every organization | ADR 0021 | Planned, after 1 to 7 |
+
+## Built
+
+- Posts across Bluesky, Mastodon, Gab, X, LinkedIn, Threads, Facebook
+  Pages, Instagram, Discord and Telegram, with per-platform rules and
+  preview (ADR 0009, 0010).
+- Approval, slots taken at approval, moving and swapping posts (ADR 0004,
+  0022).
+- Images (ADR 0017), engagement (ADR 0018), the administration API
+  (ADR 0019), MCP over stdio (ADR 0020), OAuth connections (ADR 0021).
+- Ads phase 1: ad accounts and their results, Reddit Ads first (ADR 0023).
+
+## Not now
+
+- **A social inbox** (reading and answering comments and DMs): large,
+  crowded, and outside what sets Araldo apart (ADR 0001). If customers ask,
+  it starts read-only from the engagement readers.
+- **Sending email or holding subscriber lists** (ADR 0024).
+- **A tracking script** (ADR 0025).

@@ -2,7 +2,9 @@
 
 Developer-first social distribution API (schedule and publish posts across
 platforms from templates). Read `docs/architecture.md`, then the ADRs in
-`docs/adr/`. `CONTRIBUTING.md` applies to you too.
+`docs/adr/`, and `docs/roadmap.md` for what is decided but not built and
+the order it is being built in (update its status with the work).
+`CONTRIBUTING.md` applies to you too.
 
 ## Ground rules
 

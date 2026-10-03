@@ -30,3 +30,4 @@ open a pull request.
 | [0022](0022-slots-at-approval.md) | A post takes its publishing slot when it is approved, and posts can be moved | proposed |
 | [0023](0023-paid-promotion.md) | Paid promotion on any network, with spend that cannot exceed a cap | proposed |
 | [0024](0024-newsletters.md) | Newsletters are designed and scheduled in Araldo and sent by the email provider, which owns the list | proposed |
+| [0025](0025-web-analytics.md) | Web analytics are provider adapters that report visits and signups by Araldo's own link tags | proposed |

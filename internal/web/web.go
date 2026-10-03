@@ -157,6 +157,9 @@ type view struct {
 	RequireMFA bool
 	// Wide pages use the full width (the template editor).
 	Wide bool
+	// Guide is set when the page defines a "guide" template: how to do the
+	// page's work, beside it.
+	Guide bool
 	// Nonce allows the editor's style elements (Content-Security-Policy).
 	Nonce string
 }
@@ -293,6 +296,9 @@ func (s *Server) render(w http.ResponseWriter, status int, page string, v view) 
 		return
 	}
 	v.Wide = widePages[page]
+	if g := t.Lookup("guide"); g != nil && g.Tree != nil {
+		v.Guide = len(g.Tree.Root.Nodes) > 0
+	}
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, v); err != nil {
 		s.log.Error("rendering page", "page", page, "err", err)

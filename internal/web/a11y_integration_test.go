@@ -96,7 +96,7 @@ func TestPagesAreAccessible(t *testing.T) {
 
 	pages := []string{
 		"/", "/posts", "/posts?q=accessible&status=published", "/posts/new", "/posts/" + id.Format(id.Post, p.ID), "/posts/" + id.Format(id.Post, scheduled.ID),
-		"/sandbox/" + id.Format(id.Target, target.ID), "/performance", "/ads",
+		"/sandbox/" + id.Format(id.Target, target.ID), "/performance", "/ads", "/ads?tag_url=https://example.com/&tag_campaign=launch",
 		"/templates", "/templates/new", "/templates/" + id.Format(id.Template, tpl.ID),
 		"/channels", "/channels/apps", "/channels/new", "/channels/new?provider=bluesky", "/channels/" + id.Format(id.Channel, chans[0].ID) + "/reconnect",
 		"/brands", "/brands/new", "/brands/" + id.Format(id.Brand, d.brand.ID),

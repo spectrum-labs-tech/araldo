@@ -91,3 +91,53 @@
 
 {{define "adsHead"}}<th class="text-right">Spend</th><th class="text-right">Impressions</th><th class="text-right">Clicks</th><th class="text-right">Cost per click</th><th class="text-right">Results</th>{{end}}
 {{define "adsRow"}}<td class="text-right">{{money .Spend .Currency}}</td><td class="text-right">{{.Impressions}}</td><td class="text-right">{{.Clicks}}</td><td class="text-right">{{money .CostPerClick .Currency}}</td><td class="text-right">{{.Results}}</td>{{end}}
+
+{{define "guide"}}
+{{$d := .Data}}
+<h2>Guide</h2>
+{{if not .Livemode}}
+<p>Test mode reads a sandbox network whose numbers are invented, so you can try this page safely.</p>
+<ol class="guide-steps">
+  <li{{if $d.Accounts}} class="done"{{end}}>{{template "guideMark" (list "1" (printf "%t" (gt (len $d.Accounts) 0)))}}<div><strong>Connect a sandbox account</strong> below. Give it any name.</div></li>
+  <li{{if $d.HasResults}} class="done"{{end}}>{{template "guideMark" (list "2" (printf "%t" $d.HasResults))}}<div><strong>See results.</strong> They are read within a few minutes, then daily.</div></li>
+  <li>{{template "guideMark" (list "3" "false")}}<div><strong>Switch to live mode</strong> to connect a real network.</div></li>
+</ol>
+{{else if and $d.Network $d.Network.OAuth}}
+{{$n := $d.Network.Name}}
+<ol class="guide-steps">
+  <li{{if $d.Apps}} class="done"{{end}}>{{template "guideMark" (list "1" (printf "%t" (gt (len $d.Apps) 0)))}}<div><strong>Create a {{$n}} app</strong>{{if eq (printf "%s" $d.Network.Network) "reddit"}} at <a href="https://www.reddit.com/prefs/apps" rel="noopener" target="_blank">reddit.com/prefs/apps</a>, of type <em>web app</em>{{end}}, with this redirect URI:
+    <code id="guide-redirect" class="copy-box mt-1 block">{{$d.Redirect}}</code> <button type="button" data-copy="guide-redirect">Copy</button></div></li>
+  <li>{{template "guideMark" (list "2" "false")}}<div><strong>Ask {{$n}} for Ads API access</strong> for that app. Approval can take days; run your first campaigns in {{$n}}'s own tools meanwhile. Araldo reads their history once connected.</div></li>
+  <li{{if $d.Apps}} class="done"{{end}}>{{template "guideMark" (list "3" (printf "%t" (gt (len $d.Apps) 0)))}}<div><strong>Add the app</strong> under <a href="/channels/apps">Developer apps</a>: its client ID and secret, as {{$n}} Ads.</div></li>
+  <li{{if $d.Accounts}} class="done"{{end}}>{{template "guideMark" (list "4" (printf "%t" (gt (len $d.Accounts) 0)))}}<div><strong>Sign in</strong> below and choose the ad accounts to read. Araldo asks only to read them.</div></li>
+  <li{{if $d.HasResults}} class="done"{{end}}>{{template "guideMark" (list "5" (printf "%t" $d.HasResults))}}<div><strong>See results</strong> within a few minutes: the last 30 days, then a daily update.</div></li>
+</ol>
+{{else}}
+<p>This install reads no ad networks yet. Each is added once its ads API approves the install.</p>
+{{end}}
+
+<h3>Tag every ad link</h3>
+<p>Ad networks count clicks; your analytics count signups. Tag each ad's link so you can tell which ad brought them.</p>
+<form method="get" action="/ads" class="flex flex-col gap-2">
+  {{if $d.Brand}}<input type="hidden" name="brand" value="{{$d.Brand}}">{{end}}
+  <label>Landing page <input name="tag_url" type="url" value="{{$d.Tag.URL}}" placeholder="https://example.com/pricing" required></label>
+  <label>Network <input name="tag_source" value="{{$d.Tag.Source}}" placeholder="reddit"></label>
+  <label>Campaign <input name="tag_campaign" value="{{$d.Tag.Campaign}}" placeholder="alpha-launch" required></label>
+  <label>Ad <span class="font-normal text-muted">(optional)</span> <input name="tag_content" value="{{$d.Tag.Content}}" placeholder="localllama-1"></label>
+  <div><button>Build link</button></div>
+</form>
+{{if $d.Tag.Err}}<div class="alert" role="alert">{{$d.Tag.Err}}</div>{{end}}
+{{if $d.Tag.Link}}<p class="mb-1">Use this as the ad's link:</p><code id="guide-tagged" class="copy-box block break-all">{{$d.Tag.Link}}</code> <button type="button" data-copy="guide-tagged">Copy</button>{{end}}
+
+<h3>Best practices</h3>
+<ul class="guide-tips">
+  <li><strong>Start small.</strong> Set a daily cap you are comfortable losing, and give each ad 3 to 7 days before judging it.</li>
+  <li><strong>Target communities, not broad interests.</strong> On Reddit, pick the subreddits your users already read.</li>
+  <li><strong>Write ads like useful posts.</strong> Lead with the problem you solve; communities skip anything that reads like a pitch.</li>
+  <li><strong>Judge by signups per dollar,</strong> not clicks: compare a campaign's signups in your analytics with its spend here.</li>
+  <li><strong>Recent days settle.</strong> Networks revise the last week as clicks are attributed; Araldo re-reads it daily.</li>
+  <li><strong>Results stay 0</strong> without a network's tracking pixel, which Araldo never asks for: count signups in your own analytics.</li>
+</ul>
+{{end}}
+
+{{define "guideMark"}}<span class="guide-mark" aria-hidden="true">{{if eq (index . 1) "true"}}✓{{else}}{{index . 0}}{{end}}</span>{{if eq (index . 1) "true"}}<span class="sr-only">Done:</span>{{end}}{{end}}

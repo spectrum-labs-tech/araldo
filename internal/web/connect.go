@@ -21,6 +21,18 @@ type appsData struct {
 	Providers []core.ProviderInfo
 	Redirects map[platform.Provider]string
 	Form      map[string]string
+	// Names are providers' names for people, Added which have an app, and
+	// Sites where each registers one (for the guide).
+	Names map[platform.Provider]string
+	Added map[platform.Provider]bool
+	Sites map[platform.Provider]string
+}
+
+// developerSites are where each provider's developer apps are registered.
+var developerSites = map[platform.Provider]string{
+	platform.X: "https://developer.x.com", platform.LinkedIn: "https://www.linkedin.com/developers/apps",
+	platform.Threads: "https://developers.facebook.com/apps", platform.Facebook: "https://developers.facebook.com/apps",
+	platform.Instagram: "https://developers.facebook.com/apps", "reddit_ads": "https://www.reddit.com/prefs/apps",
 }
 
 func (s *Server) appsData(c *reqCtx) (*appsData, error) {
@@ -28,7 +40,12 @@ func (s *Server) appsData(c *reqCtx) (*appsData, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &appsData{Apps: apps, Redirects: map[platform.Provider]string{}, Form: map[string]string{}}
+	d := &appsData{Apps: apps, Redirects: map[platform.Provider]string{}, Form: map[string]string{},
+		Names: map[platform.Provider]string{}, Added: map[platform.Provider]bool{}, Sites: developerSites}
+	for _, a := range apps {
+		d.Added[a.Provider] = true
+		d.Names[a.Provider] = s.svc.ProviderName(a.Provider)
+	}
 	for _, p := range s.svc.Providers(true) {
 		if p.OAuth {
 			d.Providers = append(d.Providers, p)
@@ -40,6 +57,9 @@ func (s *Server) appsData(c *reqCtx) (*appsData, error) {
 			d.Providers = append(d.Providers, core.ProviderInfo{Provider: n.Provider, Name: s.svc.ProviderName(n.Provider), OAuth: true})
 			d.Redirects[n.Provider] = s.svc.ConnectRedirectURI(n.Provider)
 		}
+	}
+	for _, p := range d.Providers {
+		d.Names[p.Provider] = p.Name
 	}
 	return d, nil
 }

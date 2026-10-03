@@ -26,8 +26,13 @@ func TestAdsPage(t *testing.T) {
 		}
 		return rec.Body.String()
 	}
-	if got := page(); !strings.Contains(got, "No ad accounts are connected.") || !strings.Contains(got, `action="/ads/accounts"`) {
+	got := page()
+	if !strings.Contains(got, "No ad accounts are connected.") || !strings.Contains(got, `action="/ads/accounts"`) {
 		t.Fatalf("an owner should see the connect form:\n%s", got)
+	}
+	// The guide's first step is not done yet.
+	if !strings.Contains(got, `<aside class="guide" aria-label="Guide">`) || strings.Contains(got, `<li class="done">`) {
+		t.Fatalf("the guide should start with nothing done:\n%s", got)
 	}
 	connect := func(name string) *httptest.ResponseRecorder {
 		form := url.Values{"csrf": {d.login.Session.CSRFToken}, "network": {"sandbox"}, "brand": {id.Format(id.Brand, d.brand.ID)},
@@ -51,8 +56,35 @@ func TestAdsPage(t *testing.T) {
 			break
 		}
 	}
-	got := page()
+	got = page()
+	if strings.Count(got, `<li class="done">`) != 2 {
+		t.Fatalf("connecting and reading should tick the guide's first two steps:\n%s", got)
+	}
 	if !strings.Contains(got, "Retargeting") || !strings.Contains(got, " EUR</td>") || !strings.Contains(got, "Otium EU") {
 		t.Fatalf("the page should show both campaigns in euros:\n%s", got)
+	}
+}
+
+func TestAdsGuideBuildsTaggedLinks(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	get := func(q url.Values) string {
+		t.Helper()
+		rec := d.send(httptest.NewRequest(http.MethodGet, "/ads?"+q.Encode(), nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /ads: %d", rec.Code)
+		}
+		return rec.Body.String()
+	}
+	got := get(url.Values{"tag_url": {"https://getotium.ai/pricing"}, "tag_source": {"reddit"}, "tag_campaign": {"Alpha launch"}})
+	if want := "https://getotium.ai/pricing?utm_campaign=alpha-launch&amp;utm_medium=paid&amp;utm_source=reddit"; !strings.Contains(got, want) {
+		t.Fatalf("the builder should show %s:\n%s", want, got)
+	}
+	if got := get(url.Values{"tag_url": {"getotium.ai"}, "tag_campaign": {"x"}}); !strings.Contains(got, "full address, starting with https://") {
+		t.Fatalf("a bad landing page should say why:\n%s", got)
+	}
+	// Pages without a guide keep their single column.
+	if rec := d.send(httptest.NewRequest(http.MethodGet, "/posts", nil)); strings.Contains(rec.Body.String(), `class="with-guide"`) {
+		t.Fatal("a page without a guide should not get the guide column")
 	}
 }

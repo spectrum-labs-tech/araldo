@@ -55,11 +55,16 @@
     <a href="/org" {{if eq .Nav "org"}}class="active" aria-current="page"{{end}}>Organization</a>
     <a href="/account" {{if eq .Nav "account"}}class="active" aria-current="page"{{end}}>Your account</a>
   </nav>
-  <main id="main" class="{{if not .Wide}}max-w-[1100px] {{end}}min-w-0 px-4 py-6 md:px-8">
+  <main id="main" class="{{if .Guide}}max-w-[1400px] {{else if not .Wide}}max-w-[1100px] {{end}}min-w-0 px-4 py-6 md:px-8">
     {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
     {{if .Error}}<div class="alert" role="alert"><strong>{{.Error}}</strong>
       {{if .Problems}}<ul class="mt-1.5 list-disc pl-5">{{range .Problems}}<li>{{if .Param}}<code>{{.Param}}</code>: {{end}}{{.Message}}</li>{{end}}</ul>{{end}}</div>{{end}}
-    {{template "content" .}}
+    {{if .Guide}}
+    <div class="with-guide">
+      <div class="min-w-0">{{template "content" .}}</div>
+      <aside class="guide" aria-label="Guide">{{template "guide" .}}</aside>
+    </div>
+    {{else}}{{template "content" .}}{{end}}
   </main>
 </div>
 {{else}}
@@ -75,3 +80,6 @@
 <footer class="p-4 text-center text-xs text-muted">Araldo {{.Version}} · <a class="text-muted" href="https://github.com/spectrum-labs-tech/araldo">source</a> (AGPL-3.0)</footer>
 </body>
 </html>
+
+{{/* A page shows a guide beside its content by defining this (see view.Guide). */}}
+{{define "guide"}}{{end}}

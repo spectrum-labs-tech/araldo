@@ -51,6 +51,10 @@ platforms from templates). Read `docs/architecture.md`, then the ADRs in
   `internal/web/static/editor.js` (CI checks it too). Pages must work
   without JavaScript. Styles that scripts inject need the per-request CSP
   nonce (`data-nonce`); never loosen the policy with `unsafe-inline`.
+- **Guides**: a page whose work takes setup elsewhere (developer apps, ad
+  networks) defines a `guide` template: steps that tick themselves off from
+  real state, then tips. The layout shows it beside the content on wide
+  screens and after it on narrow ones; it works without JavaScript.
 - **Accessibility** ([ADR 0015](docs/adr/0015-dashboard.md)): WCAG 2.2 AA.
   Every control has a label, every content image alt text, one `h1` and no
   skipped heading levels; selects never submit on change (add a button);

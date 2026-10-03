@@ -240,6 +240,38 @@
   .card {
     @apply my-4 rounded-lg border border-line bg-panel px-5 py-4;
   }
+  /* A page's guide: how to do its work, beside it on wide screens and
+     after it on narrow ones. */
+  .with-guide {
+    @apply grid gap-8 xl:grid-cols-[minmax(0,1fr)_19rem];
+  }
+  .guide {
+    @apply self-start rounded-lg border border-line bg-panel px-5 py-4 text-sm leading-relaxed xl:sticky xl:top-4;
+  }
+  .guide h2 {
+    @apply mt-0 mb-2 text-base;
+  }
+  .guide h3 {
+    @apply mt-5 mb-1.5 text-sm font-semibold;
+  }
+  .guide p {
+    @apply my-2;
+  }
+  .guide-steps {
+    @apply m-0 flex list-none flex-col gap-3 p-0;
+  }
+  .guide-steps > li {
+    @apply grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2;
+  }
+  .guide-mark {
+    @apply grid size-6 place-items-center rounded-full border border-line text-xs font-semibold text-muted;
+  }
+  .guide-steps > li.done .guide-mark {
+    @apply border-good bg-good-bg text-good;
+  }
+  .guide-tips {
+    @apply m-0 flex list-disc flex-col gap-1.5 pl-5;
+  }
   .card.attention {
     @apply border-warn bg-warn-bg;
   }

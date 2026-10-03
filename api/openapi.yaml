@@ -943,6 +943,9 @@ paths:
                         clicks: { type: integer }
                         results: { type: integer, description: "The network's count of results for the campaign's objective." }
                         cost_per_click: { type: integer, description: "Spend divided by clicks, in the minor unit; 0 without clicks." }
+                        visitors: { type: integer, description: "For campaigns: visitors the brand's web analytics credit to the campaign's tagged links (ADR 0025)." }
+                        signups: { type: integer, description: "For campaigns: the conversions credited the same way." }
+                        cost_per_signup: { type: integer, description: "Spend divided by signups, in the minor unit; 0 without signups." }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/analytics_providers:

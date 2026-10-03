@@ -1,7 +1,7 @@
 {{define "content"}}
 {{$d := .Data}}
 <h1>Ads</h1>
-<p class="text-muted">Spend and results of your ad accounts' campaigns, read daily, including campaigns made in each network's own tools. Araldo spends nothing: run campaigns in the network, and tag their links with <code>utm_medium=paid</code> so your analytics count the signups.{{if not .Livemode}} In test mode the sandbox invents these numbers.{{end}}</p>
+<p class="text-muted">Spend and results of your ad accounts' campaigns, read daily, including campaigns made in each network's own tools. Araldo spends nothing: run campaigns in the network, and tag their links below. With web analytics connected on the Performance page, each campaign shows the signups its links brought and what each cost.{{if not .Livemode}} In test mode the sandbox invents these numbers.{{end}}</p>
 
 <form method="get" action="/ads" class="my-4 flex flex-wrap items-end gap-3">
   <label>Brand
@@ -17,8 +17,9 @@
   <h2>By campaign</h2>
   {{if $d.Campaigns.Rows}}
   <table class="text-sm">
-    <thead><tr><th>Campaign</th><th>Network</th>{{template "adsHead"}}</tr></thead>
-    <tbody>{{range $d.Campaigns.Rows}}<tr><td>{{.Label}}</td><td>{{.Network}}</td>{{template "adsRow" .}}</tr>{{end}}</tbody>
+    <thead><tr><th>Campaign</th><th>Network</th>{{template "adsHead"}}<th class="text-right">Signups</th><th class="text-right">Cost per signup</th></tr></thead>
+    <tbody>{{range $d.Campaigns.Rows}}<tr><td>{{.Label}}</td><td>{{.Network}}</td>{{template "adsRow" .}}
+      <td class="text-right">{{.Signups}}</td><td class="text-right">{{if .Signups}}{{money (costPer .Spend .Signups) .Currency}}{{else}}—{{end}}</td></tr>{{end}}</tbody>
   </table>
   {{else}}<p class="text-muted">No results for this period yet.</p>{{end}}
 </section>
@@ -117,7 +118,7 @@
 {{end}}
 
 <h3>Tag every ad link</h3>
-<p>Ad networks count clicks; your analytics count signups. Tag each ad's link so you can tell which ad brought them.</p>
+<p>Ad networks count clicks; your analytics count signups. Tag each ad's link here, with the campaign named as in the network, and the campaign table credits it with its signups.</p>
 <form method="get" action="/ads" class="flex flex-col gap-2">
   {{if $d.Brand}}<input type="hidden" name="brand" value="{{$d.Brand}}">{{end}}
   <label>Landing page <input name="tag_url" type="url" value="{{$d.Tag.URL}}" placeholder="https://example.com/pricing" required></label>
@@ -134,7 +135,7 @@
   <li><strong>Start small.</strong> Set a daily cap you are comfortable losing, and give each ad 3 to 7 days before judging it.</li>
   <li><strong>Target communities, not broad interests.</strong> On Reddit, pick the subreddits your users already read.</li>
   <li><strong>Write ads like useful posts.</strong> Lead with the problem you solve; communities skip anything that reads like a pitch.</li>
-  <li><strong>Judge by signups per dollar,</strong> not clicks: compare a campaign's signups in your analytics with its spend here.</li>
+  <li><strong>Judge by cost per signup,</strong> not clicks. It needs web analytics connected and links tagged here; a campaign renamed in the network stops matching its old links.</li>
   <li><strong>Recent days settle.</strong> Networks revise the last week as clicks are attributed; Araldo re-reads it daily.</li>
   <li><strong>Results stay 0</strong> without a network's tracking pixel, which Araldo never asks for: count signups in your own analytics.</li>
 </ul>

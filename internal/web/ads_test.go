@@ -2,10 +2,7 @@
 
 package web
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestMoney(t *testing.T) {
 	t.Parallel()
@@ -50,17 +47,5 @@ func TestTagLink(t *testing.T) {
 				t.Fatalf("tagLink = %q, %q; want %q, %q", got, problem, tt.want, tt.problem)
 			}
 		})
-	}
-}
-
-func TestUTMToken(t *testing.T) {
-	t.Parallel()
-	for in, want := range map[string]string{
-		"Alpha Launch": "alpha-launch", "r/LocalLLaMA": "r-localllama", "v1.2_final": "v1.2_final", "  --  ": "", "Café": "caf",
-		strings.Repeat("ab ", 40): strings.TrimRight(strings.Repeat("ab-", 22)[:64], "-"),
-	} {
-		if got := utmToken(in); got != want {
-			t.Errorf("utmToken(%q) = %q, want %q", in, got, want)
-		}
 	}
 }

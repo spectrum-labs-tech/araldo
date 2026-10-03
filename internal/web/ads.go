@@ -13,6 +13,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
+	"github.com/spectrum-labs-tech/araldo/internal/utm"
 )
 
 // Ads (ADR 0023).
@@ -190,41 +191,18 @@ func tagLink(raw, source, campaign, content string) (link, problem string) {
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return "", "Give the landing page's full address, starting with https://."
 	}
-	if campaign = utmToken(campaign); campaign == "" {
+	if campaign = utm.Token(campaign); campaign == "" {
 		return "", "Name the campaign."
 	}
 	q := u.Query()
-	q.Set("utm_source", firstNonEmpty(utmToken(source), "ads"))
-	q.Set("utm_medium", "paid")
+	q.Set("utm_source", firstNonEmpty(utm.Token(source), "ads"))
+	q.Set("utm_medium", utm.Paid)
 	q.Set("utm_campaign", campaign)
-	if content = utmToken(content); content != "" {
+	if content = utm.Token(content); content != "" {
 		q.Set("utm_content", content)
 	} else {
 		q.Del("utm_content")
 	}
 	u.RawQuery = q.Encode()
 	return u.String(), ""
-}
-
-// utmToken makes a value a short lowercase token ("Alpha launch!" becomes
-// "alpha-launch"): what analytics group by, and what sites that keep only
-// such tokens accept.
-func utmToken(s string) string {
-	var b strings.Builder
-	dash := false
-	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '_':
-			b.WriteRune(r)
-			dash = false
-		case !dash && b.Len() > 0:
-			b.WriteByte('-')
-			dash = true
-		}
-	}
-	out := strings.TrimRight(b.String(), "-")
-	if len(out) > 64 {
-		out = strings.TrimRight(out[:64], "-")
-	}
-	return out
 }

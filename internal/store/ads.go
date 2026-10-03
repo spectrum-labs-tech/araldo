@@ -135,6 +135,9 @@ type AdsRow struct {
 	Currency  string
 	AccountID *uuid.UUID // for campaigns
 	ads.Totals
+	// Visitors and Signups are what the brand's web analytics credit to
+	// the campaign's tagged links (ADR 0025); filled for campaigns.
+	Visitors, Signups int64
 }
 
 // AdsSummary adds up results by group, per currency.

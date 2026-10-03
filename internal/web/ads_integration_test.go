@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/analytics"
+	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 )
 
@@ -62,6 +64,27 @@ func TestAdsPage(t *testing.T) {
 	}
 	if !strings.Contains(got, "Retargeting") || !strings.Contains(got, " EUR</td>") || !strings.Contains(got, "Otium EU") {
 		t.Fatalf("the page should show both campaigns in euros:\n%s", got)
+	}
+	if strings.Count(got, `<td class="text-right">—</td>`) != 2 {
+		t.Fatalf("without web analytics no campaign has a cost per signup:\n%s", got)
+	}
+
+	// Web analytics credit the Launch campaign's tagged links.
+	src, err := d.s.ConnectAnalyticsSource(t.Context(), d.owner, core.AnalyticsSourceInput{BrandID: d.brand.ID, Provider: analytics.Sandbox,
+		Goals: []string{"Signup"}, Fields: map[string]string{"site": "otium.example", "tags": "sandbox/paid/launch/ad-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := d.s.CollectAnalytics(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := d.s.AnalyticsSource(t.Context(), d.owner, src.ID); err != nil || got.ReadAt != nil || time.Now().After(deadline) {
+			break
+		}
+	}
+	if got := page(); strings.Count(got, `<td class="text-right">—</td>`) != 1 {
+		t.Fatalf("Launch should have a cost per signup and Retargeting none:\n%s", got)
 	}
 }
 

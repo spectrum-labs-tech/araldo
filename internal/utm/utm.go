@@ -131,3 +131,30 @@ func validHost(h string) bool {
 	}
 	return true
 }
+
+// Token makes a value a short lowercase token ("Alpha launch!" becomes
+// "alpha-launch"): what the link builder writes in utm_campaign and
+// utm_content for ads, and what reading analytics matches an ad campaign's
+// name against (ADR 0025), so the two cannot drift apart.
+func Token(s string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '_':
+			b.WriteRune(r)
+			dash = false
+		case !dash && b.Len() > 0:
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	out := strings.TrimRight(b.String(), "-")
+	if len(out) > 64 {
+		out = strings.TrimRight(out[:64], "-")
+	}
+	return out
+}
+
+// Paid is utm_medium on ad links.
+const Paid = "paid"

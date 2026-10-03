@@ -460,6 +460,7 @@ var funcs = template.FuncMap{
 	"adAccountID":       func(u uuid.UUID) string { return id.Format(id.AdAccount, u) },
 	"analyticsSourceID": func(u uuid.UUID) string { return id.Format(id.AnalyticsSource, u) },
 	"money":             money,
+	"costPer":           core.CostPer,
 	"rowID": func(group string, u *uuid.UUID) string {
 		return core.EngagementRowID(store.EngagementGroup(group), u)
 	},

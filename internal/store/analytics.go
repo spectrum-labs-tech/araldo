@@ -214,3 +214,29 @@ func (s *Store) AnalyticsSummary(ctx context.Context, orgID uuid.UUID, livemode 
 	}
 	return out, totals, goals.Err()
 }
+
+// CampaignCount is the visitors and conversions one utm_source and
+// utm_campaign brought.
+type CampaignCount struct {
+	Source, Campaign      string
+	Visitors, Conversions int64
+}
+
+// AnalyticsByCampaign adds up the counts of traffic tagged with medium, by
+// source and campaign, over days since through until.
+func (s *Store) AnalyticsByCampaign(ctx context.Context, orgID uuid.UUID, livemode bool, brandID *uuid.UUID, medium string,
+	since, until time.Time) ([]CampaignCount, error) {
+	rows, err := s.q.Query(ctx, `SELECT r.utm_source, r.utm_campaign, COALESCE(sum(r.visitors) FILTER (WHERE r.goal = ''), 0),
+			COALESCE(sum(r.visitors) FILTER (WHERE r.goal <> ''), 0)
+		FROM analytics_results r JOIN analytics_sources a ON a.id = r.source_id
+		WHERE r.org_id = $1 AND a.livemode = $2 AND ($3::uuid IS NULL OR a.brand_id = $3) AND r.utm_medium = $4 AND r.day BETWEEN $5 AND $6
+		GROUP BY 1, 2`, orgID, livemode, brandID, medium, since, until)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (CampaignCount, error) {
+		var c CampaignCount
+		err := r.Scan(&c.Source, &c.Campaign, &c.Visitors, &c.Conversions)
+		return c, err
+	})
+}

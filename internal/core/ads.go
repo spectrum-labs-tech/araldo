@@ -18,6 +18,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
+	"github.com/spectrum-labs-tech/araldo/internal/utm"
 )
 
 // Ad accounts and their results (ADR 0023). This phase reads; nothing
@@ -225,7 +226,32 @@ func (s *Service) AdsSummary(ctx context.Context, a Actor, f AdsFilter) (*AdsSum
 	if err != nil {
 		return nil, err
 	}
+	if f.GroupBy == store.AdsByCampaign && len(rows) > 0 {
+		if err := s.attachSignups(ctx, a, f, rows); err != nil {
+			return nil, err
+		}
+	}
 	return &AdsSummary{GroupBy: f.GroupBy, Since: f.Since, Until: f.Until, Rows: rows}, nil
+}
+
+// attachSignups credits each campaign with the visitors and signups the
+// brand's web analytics recorded for links tagged with its network and its
+// name as a token: what the Ads page's link builder writes (ADR 0025).
+func (s *Service) attachSignups(ctx context.Context, a Actor, f AdsFilter, rows []store.AdsRow) error {
+	counts, err := s.store.AnalyticsByCampaign(ctx, a.OrgID, a.Livemode, f.BrandID, utm.Paid, f.Since, f.Until)
+	if err != nil {
+		return err
+	}
+	byTag := map[string]store.CampaignCount{}
+	for _, c := range counts {
+		byTag[c.Source+"/"+c.Campaign] = c
+	}
+	for i := range rows {
+		if c, ok := byTag[rows[i].Network+"/"+utm.Token(rows[i].Label)]; ok {
+			rows[i].Visitors, rows[i].Signups = c.Visitors, c.Conversions
+		}
+	}
+	return nil
 }
 
 // CollectAds reads the results of ad accounts that are due.
@@ -434,6 +460,11 @@ type AdsRowView struct {
 	Clicks       int64  `json:"clicks"`
 	Results      int64  `json:"results"`
 	CostPerClick int64  `json:"cost_per_click"`
+	// Visitors, Signups and CostPerSignup come from the brand's web
+	// analytics, for campaigns.
+	Visitors      int64 `json:"visitors"`
+	Signups       int64 `json:"signups"`
+	CostPerSignup int64 `json:"cost_per_signup"`
 }
 
 // AdsSummaryView is an ads summary in the API.
@@ -451,7 +482,8 @@ func ViewAdsSummary(sum *AdsSummary) AdsSummaryView {
 		Until: sum.Until.Format(time.DateOnly), Data: make([]AdsRowView, 0, len(sum.Rows))}
 	for _, r := range sum.Rows {
 		v.Data = append(v.Data, AdsRowView{ID: AdsRowID(sum.GroupBy, r.Key), Label: r.Label, Network: r.Network, Currency: r.Currency,
-			Spend: r.Spend, Impressions: r.Impressions, Clicks: r.Clicks, Results: r.Results, CostPerClick: r.CostPerClick()})
+			Spend: r.Spend, Impressions: r.Impressions, Clicks: r.Clicks, Results: r.Results, CostPerClick: r.CostPerClick(),
+			Visitors: r.Visitors, Signups: r.Signups, CostPerSignup: CostPer(r.Spend, r.Signups)})
 	}
 	return v
 }
@@ -471,4 +503,12 @@ func AdsRowID(group store.AdsGroup, key string) string {
 		return id.Format(id.AdAccount, u)
 	}
 	return key
+}
+
+// CostPer is spend divided by n, rounded, or 0 when n is 0.
+func CostPer(spend, n int64) int64 {
+	if n == 0 {
+		return 0
+	}
+	return (spend + n/2) / n
 }

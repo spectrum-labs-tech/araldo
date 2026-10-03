@@ -5,6 +5,7 @@ package utm
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -72,5 +73,17 @@ func TestNormalizeDomains(t *testing.T) {
 	}
 	if got, err := NormalizeDomains(nil); err != nil || got == nil || len(got) != 0 {
 		t.Errorf("NormalizeDomains(nil) = %#v, %v; want an empty, non-nil list", got, err)
+	}
+}
+
+func TestToken(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]string{
+		"Alpha Launch": "alpha-launch", "r/LocalLLaMA": "r-localllama", "v1.2_final": "v1.2_final", "  --  ": "", "Café": "caf",
+		strings.Repeat("ab ", 40): strings.TrimRight(strings.Repeat("ab-", 22)[:64], "-"),
+	} {
+		if got := Token(in); got != want {
+			t.Errorf("Token(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

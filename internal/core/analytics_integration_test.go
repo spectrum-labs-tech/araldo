@@ -135,3 +135,65 @@ func TestAnalyticsSourceRules(t *testing.T) {
 		t.Fatalf("an unknown grouping: %v", err)
 	}
 }
+
+// An ad campaign is credited with the signups its tagged links brought:
+// utm_source is the network, utm_medium paid and utm_campaign the
+// campaign's name as a token (ADR 0025).
+func TestAdCampaignsGetSignups(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	ac := connectSandboxAds(t, w, w.owner, "Otium", nil)
+	src, err := w.s.ConnectAnalyticsSource(ctx, w.owner, core.AnalyticsSourceInput{BrandID: w.brand.ID, Provider: analytics.Sandbox,
+		Goals: []string{"Waitlist Signup"}, Fields: map[string]string{"site": "otium.example", "tags": "sandbox/paid/launch/ad-1, sandbox/social/retargeting/x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the ad account and the source to be read", func() {
+		if _, err := core.CollectAdsOrg(w.s, w.org.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := core.CollectAnalyticsOrg(w.s, w.org.ID); err != nil {
+			t.Fatal(err)
+		}
+	}, func() bool {
+		a, err := w.s.AdAccount(ctx, w.owner, ac.ID)
+		s, err2 := w.s.AnalyticsSource(ctx, w.owner, src.ID)
+		return err == nil && err2 == nil && a.ReadAt != nil && s.ReadAt != nil
+	})
+
+	until := ads.Date(time.Now(), time.UTC)
+	sum, err := w.s.AdsSummary(ctx, w.owner, core.AdsFilter{GroupBy: store.AdsByCampaign, Since: until.AddDate(0, 0, -29), Until: until, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sum.Rows) != 2 {
+		t.Fatalf("campaigns: %+v", sum.Rows)
+	}
+	for _, r := range sum.Rows {
+		switch r.Label {
+		case "Launch":
+			if r.Visitors == 0 || r.Signups == 0 {
+				t.Fatalf("Launch has tagged paid traffic, got %+v", r)
+			}
+		case "Retargeting":
+			if r.Visitors != 0 || r.Signups != 0 {
+				t.Fatalf("Retargeting's only traffic is not paid, got %+v", r)
+			}
+		}
+	}
+	view := core.ViewAdsSummary(sum)
+	for _, r := range view.Data {
+		if r.Label == "Launch" && r.CostPerSignup != core.CostPer(r.Spend, r.Signups) {
+			t.Fatalf("cost per signup %+v", r)
+		}
+	}
+
+	byAccount, err := w.s.AdsSummary(ctx, w.owner, core.AdsFilter{GroupBy: store.AdsByAccount, Since: until.AddDate(0, 0, -29), Until: until, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byAccount.Rows[0].Signups != 0 {
+		t.Fatalf("signups are credited to campaigns only: %+v", byAccount.Rows[0])
+	}
+}

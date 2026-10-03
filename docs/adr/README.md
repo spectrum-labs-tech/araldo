@@ -29,3 +29,4 @@ open a pull request.
 | [0021](0021-oauth-connections.md) | Channels connect with OAuth through an org's developer apps; images reach platforms by signed links | proposed |
 | [0022](0022-slots-at-approval.md) | A post takes its publishing slot when it is approved, and posts can be moved | proposed |
 | [0023](0023-paid-promotion.md) | Paid promotion on any network, with spend that cannot exceed a cap | proposed |
+| [0024](0024-newsletters.md) | Newsletters are designed and scheduled in Araldo and sent by the email provider, which owns the list | proposed |

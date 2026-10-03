@@ -2,8 +2,8 @@
 //
 // Writes internal/web/templates/_icons.html: an SVG sprite of platform icons
 // the dashboard references with <use href="#i-<provider>">. Brand glyphs come
-// from Simple Icons (CC0, https://simpleicons.org); LinkedIn (no longer in
-// Simple Icons) and the sandbox are simple glyphs drawn here. Run with
+// from Simple Icons (CC0, https://simpleicons.org); LinkedIn and Gab (neither
+// is in Simple Icons) and the sandbox are simple glyphs drawn here. Run with
 // `task web:icons` and commit the result.
 import { writeFileSync } from "node:fs";
 import * as si from "simple-icons";
@@ -23,6 +23,10 @@ const drawn = {
   // A rounded square with "in".
   linkedin:
     "M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm1.7 7.5v8.8h2.7V9.5Zm1.35-4.3a1.55 1.55 0 1 0 0 3.1 1.55 1.55 0 0 0 0-3.1ZM10.5 9.5v8.8h2.7v-4.6c0-1.3.6-2 1.6-2s1.4.7 1.4 1.9v4.7h2.7v-5.3c0-2.4-1.3-3.7-3.2-3.7-1.2 0-2 .6-2.5 1.3V9.5Z",
+  // A rounded square with "G". Gab's own mark is not in Simple Icons and is
+  // trademarked, so this is a plain letter glyph, as LinkedIn's above is.
+  gab:
+    "M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8.3 4.6a5.4 5.4 0 1 0 5.4 5.4v-1.1h-5v2.2h2.6a2.9 2.9 0 1 1-3-3.6c.8 0 1.5.3 2 .8l1.6-1.6a5.4 5.4 0 0 0-3.6-1.4Z",
   // An open box.
   sandbox:
     "M3 7.5 12 3l9 4.5v9L12 21l-9-4.5Zm2 1.6v6.2l6 3v-6.2Zm8 3v6.2l6-3V9.1Zm-1-1.7 5.7-2.9L12 5.6 6.3 8.4Z",
@@ -34,7 +38,7 @@ for (const [name, icon] of Object.entries(brands)) {
   out += `<symbol id="i-${name}" viewBox="0 0 24 24"><title>${icon.title}</title><path fill="currentColor" d="${icon.path}"/></symbol>\n`;
 }
 for (const [name, path] of Object.entries(drawn)) {
-  const title = name === "linkedin" ? "LinkedIn" : "Sandbox";
+  const title = { linkedin: "LinkedIn", gab: "Gab", sandbox: "Sandbox" }[name];
   out += `<symbol id="i-${name}" viewBox="0 0 24 24"><title>${title}</title><path fill="currentColor" fill-rule="evenodd" d="${path}"/></symbol>\n`;
 }
 out += "</svg>{{end}}\n";

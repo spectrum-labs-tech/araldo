@@ -39,7 +39,7 @@ own products, but the API may still change.
   MFA, scoped API keys, an audit log. Secrets are envelope-encrypted per
   org.
 
-Platforms today: Bluesky, Mastodon, X, LinkedIn (a member's own feed),
+Platforms today: Bluesky, Mastodon, Gab, X, LinkedIn (a member's own feed),
 Threads, Facebook Pages and Instagram (signing in through your developer
 app), Discord (webhooks) and Telegram (bots), plus the sandbox
 ([roadmap](docs/roadmap.md)).

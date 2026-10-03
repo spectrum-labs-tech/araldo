@@ -31,6 +31,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform/bluesky"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/discord"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/facebook"
+	"github.com/spectrum-labs-tech/araldo/internal/platform/gab"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/instagram"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/linkedin"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/mastodon"
@@ -92,6 +93,7 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 		sandbox.New(cfg.BaseURL),
 		bluesky.New(client),
 		mastodon.New(client),
+		gab.New(client),
 		discord.New(client),
 		telegram.New(client),
 		x.New(client),

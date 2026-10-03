@@ -81,6 +81,19 @@ var rules = map[Provider]Rules{
 		Images:      map[string]int64{media.JPEG: 16 << 20, media.PNG: 16 << 20, media.WebP: 16 << 20, media.GIF: 16 << 20},
 		ImageSource: "https://docs.joinmastodon.org/entities/Instance/#image_size_limit (default; servers may change it)",
 	},
+	Gab: {
+		Provider: Gab, Name: "Gab", MaxLength: 3000, Counting: CountMastodon, Threads: true, MaxThreadParts: 25, MaxMedia: 4,
+		// Gab Social is a Mastodon fork: it enforces Mastodon's status length
+		// validator, which counts code points and every URL as 23, over a limit it
+		// raised to 3000. Gab publishes no API reference of its own, so the shape is
+		// cited from Mastodon's and the limit from Gab's own composer.
+		Source: "https://docs.joinmastodon.org/methods/statuses/ (Gab Social is a Mastodon fork; its own limit is 3000)",
+		// Sizes are left at 0 -- undocumented -- rather than guessed: Gab states no
+		// image_size_limit, and inventing one would reject images Gab accepts or
+		// pass images it refuses. The types are Mastodon's.
+		Images:      map[string]int64{media.JPEG: 0, media.PNG: 0, media.WebP: 0, media.GIF: 0},
+		ImageSource: "https://docs.joinmastodon.org/methods/media/ (Gab Social is a Mastodon fork; it documents no size limit)",
+	},
 	Threads: {
 		Provider: Threads, Name: "Threads", MaxLength: 500, Counting: CountRunes, Threads: true, MaxThreadParts: 25, MaxMedia: 10,
 		Source:    "https://developers.facebook.com/docs/threads/overview",
@@ -130,7 +143,7 @@ func RulesFor(p Provider) (Rules, bool) {
 
 // Emulable lists the providers the sandbox can imitate.
 func Emulable() []Provider {
-	return []Provider{Bluesky, Mastodon, X, Threads, LinkedIn, Facebook, Instagram, Discord, Telegram}
+	return []Provider{Bluesky, Mastodon, Gab, X, Threads, LinkedIn, Facebook, Instagram, Discord, Telegram}
 }
 
 var urlRE = regexp.MustCompile(`https?://[^\s<>"]+`)

@@ -103,6 +103,7 @@ longer be renewed shows *needs reauth* and reconnects the same way.
 |---|---|
 | Bluesky | Handle and an app password. |
 | Mastodon | Server and an access token (write:statuses, write:media, read:accounts). |
+| Gab | An access token (write:statuses, write:media, read:accounts). Gab is one service, so there is no server to give. |
 | X | The app's API key and secret, and the account's access token and secret (developer.x.com, read and write). |
 | LinkedIn | A member access token from the developer portal's token tools (openid, profile, w_member_social); it lasts 60 days. |
 | Threads | A sign-in through your Threads app, below. |
@@ -207,16 +208,27 @@ as long as the post. With the Helm chart, put the S3 keys in the
 `existingSecret` and the rest in `extraEnv`; the server and the worker
 must both have them, since one stores files and the other reads them.
 
-Mastodon channels need an access token with the `write:media` scope to
-post images; one made before images were supported must be replaced.
+Mastodon and Gab channels need an access token with the `write:media` scope
+to post images; one made before images were supported must be replaced.
+
+**Gab.** Gab Social is a Mastodon fork, so a Gab channel works like a
+Mastodon one without the server field, and posts can run to 3000 characters.
+Two things differ in practice. Gab makes no promise about `Idempotency-Key`,
+so Araldo treats it as non-idempotent: an attempt whose outcome is unknown
+waits for a person (Posts -> *needs attention*) instead of being retried,
+where a Mastodon target would retry itself. And Gab documents no image size
+limit, so Araldo checks only the image's type and leaves the size to Gab --
+an image it refuses comes back as a publishing failure rather than a rule
+violation at preview.
 
 ## Engagement
 
 The `engagement.collect` task reads each published post's likes, reposts,
 replies and quotes 1 hour, 6 hours, 1, 3, 7 and 30 days after publishing
 ([ADR 0018](adr/0018-engagement.md)): Bluesky through its public AppView
-(no sign-in), Mastodon with the channel's token. Discord and Telegram do not
-report engagement. Posts published before an upgrade to a version with
+(no sign-in), Mastodon and Gab with the channel's token. Gab reports no
+quote count, which stays zero. Discord and Telegram do not report
+engagement. Posts published before an upgrade to a version with
 engagement are read once soon after it, then on the schedule. A failed
 reading is retried later and never affects publishing; see the target's
 `engagement.state` and the task on Organization → Background tasks.

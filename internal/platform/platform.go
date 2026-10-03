@@ -26,6 +26,7 @@ const (
 	Sandbox   Provider = "sandbox"
 	Bluesky   Provider = "bluesky"
 	Mastodon  Provider = "mastodon"
+	Gab       Provider = "gab"
 	Discord   Provider = "discord"
 	Telegram  Provider = "telegram"
 	X         Provider = "x"

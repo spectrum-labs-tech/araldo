@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -30,6 +31,10 @@ const (
 	OAuthStateTTL = 15 * time.Minute
 	// RefreshAhead is how long before expiry tokens are renewed.
 	RefreshAhead = 7 * 24 * time.Hour
+	// UseAhead is how close to expiry a token is renewed before it is
+	// used, in case the hourly renewal fell behind (an X token lasts two
+	// hours).
+	UseAhead = 5 * time.Minute
 )
 
 // ProviderAppInput registers a developer app.
@@ -139,7 +144,11 @@ func (s *Service) DeleteProviderApp(ctx context.Context, a Actor, appID uuid.UUI
 }
 
 func (s *Service) appCredentials(ctx context.Context, app *model.ProviderApp) (platform.App, error) {
-	secret, err := s.keys.Decrypt(ctx, app.OrgID, appSecretAAD(app.ID), app.ClientSecret)
+	return appCredentialsWith(ctx, s.keys, app)
+}
+
+func appCredentialsWith(ctx context.Context, keys *keyring.Keyring, app *model.ProviderApp) (platform.App, error) {
+	secret, err := keys.Decrypt(ctx, app.OrgID, appSecretAAD(app.ID), app.ClientSecret)
 	if err != nil {
 		return platform.App{}, err
 	}
@@ -387,6 +396,10 @@ func (s *Service) refreshTokens(ctx context.Context, orgID *uuid.UUID) (int, err
 		switch {
 		case err == nil:
 			n++
+		case errors.Is(err, platform.ErrNoRefresh):
+			if err := s.cannotRefresh(ctx, ch, now); err != nil {
+				return n, err
+			}
 		case errors.As(err, &pe) && pe.Kind == platform.AuthRevoked, errors.Is(err, store.ErrNotFound):
 			if err := s.needsReauth(ctx, ch, "The token could not be renewed: reconnect the account."); err != nil {
 				return n, err
@@ -398,32 +411,87 @@ func (s *Service) refreshTokens(ctx context.Context, orgID *uuid.UUID) (int, err
 	return n, nil
 }
 
+// refreshOne renews a channel's token with the channel locked, so two
+// renewals never race: some platforms (X) replace the refresh token each
+// time, and a second renewal with the spent one would read as revoked. If
+// the token changed while waiting for the lock, it was just renewed and is
+// left alone.
 func (s *Service) refreshOne(ctx context.Context, ch *model.Channel, r platform.Refresher) error {
-	app, err := s.store.ProviderApp(ctx, ch.OrgID, *ch.AppID)
-	if err != nil {
-		return err
+	return s.store.InTx(ctx, func(tx *store.Store) error {
+		locked, err := tx.ChannelForUpdate(ctx, ch.OrgID, ch.ID)
+		if err != nil {
+			return err
+		}
+		if !sameTime(locked.TokenExpiresAt, ch.TokenExpiresAt) || locked.AppID == nil {
+			return nil
+		}
+		// Keys through the transaction too: see keyring.With.
+		keys := s.keys.With(tx)
+		app, err := tx.ProviderApp(ctx, locked.OrgID, *locked.AppID)
+		if err != nil {
+			return err
+		}
+		appCreds, err := appCredentialsWith(ctx, keys, app)
+		if err != nil {
+			return err
+		}
+		creds, err := credentialsWith(ctx, keys, locked)
+		if err != nil {
+			return err
+		}
+		fresh, expires, err := r.Refresh(ctx, appCreds, creds)
+		if err != nil {
+			return err
+		}
+		raw, err := json.Marshal(fresh)
+		if err != nil {
+			return err
+		}
+		sealed, err := keys.Encrypt(ctx, locked.OrgID, credentialsAAD(locked.ID), raw)
+		if err != nil {
+			return err
+		}
+		return tx.SetChannelToken(ctx, locked.OrgID, locked.ID, sealed, expires)
+	})
+}
+
+// sameTime compares expiries at Postgres's precision (microseconds), so a
+// time not yet read back from the database matches its stored copy.
+func sameTime(a, b *time.Time) bool {
+	return (a == nil) == (b == nil) && (a == nil || a.Truncate(time.Microsecond).Equal(b.Truncate(time.Microsecond)))
+}
+
+// cannotRefresh handles a token the platform gives no way to renew (a
+// LinkedIn token without a refresh token): the channel says when to sign
+// in again, and needs it once the token has expired.
+func (s *Service) cannotRefresh(ctx context.Context, ch *model.Channel, now time.Time) error {
+	if ch.TokenExpiresAt == nil {
+		return nil
 	}
-	appCreds, err := s.appCredentials(ctx, app)
-	if err != nil {
-		return err
+	if !ch.TokenExpiresAt.After(now) {
+		return s.needsReauth(ctx, ch, "The token expired: sign in again.")
 	}
-	creds, err := s.credentials(ctx, ch)
-	if err != nil {
-		return err
+	note := fmt.Sprintf("Sign in again before %s: this token cannot be renewed.", ch.TokenExpiresAt.UTC().Format("Jan 2, 2006 15:04 UTC"))
+	if ch.StatusNote == note {
+		return nil
 	}
-	fresh, expires, err := r.Refresh(ctx, appCreds, creds)
-	if err != nil {
-		return err
+	return s.store.SetChannelStatus(ctx, ch.OrgID, ch.ID, ch.Status, note)
+}
+
+// usableCredentials are a channel's credentials, its token renewed first
+// if it is about to expire.
+func (s *Service) usableCredentials(ctx context.Context, ch *model.Channel, adapter platform.Adapter) (platform.Credentials, error) {
+	r, canRefresh := adapter.(platform.Refresher)
+	if canRefresh && ch.AppID != nil && ch.TokenExpiresAt != nil && ch.TokenExpiresAt.Before(s.Now().Add(UseAhead)) {
+		if err := s.refreshOne(ctx, ch, r); err != nil && !errors.Is(err, platform.ErrNoRefresh) {
+			// Use the token as it is; if it has expired, the platform says
+			// so and the channel is marked for signing in again.
+			s.log.WarnContext(ctx, "renewing a token before use failed", "channel", id.Format(id.Channel, ch.ID), "err", err)
+		} else if fresh, err := s.store.Channel(ctx, ch.OrgID, ch.ID); err == nil {
+			ch = fresh
+		}
 	}
-	raw, err := json.Marshal(fresh)
-	if err != nil {
-		return err
-	}
-	sealed, err := s.keys.Encrypt(ctx, ch.OrgID, credentialsAAD(ch.ID), raw)
-	if err != nil {
-		return err
-	}
-	return s.store.SetChannelToken(ctx, ch.OrgID, ch.ID, sealed, expires)
+	return s.credentials(ctx, ch)
 }
 
 // needsReauth marks a channel as needing reconnecting and says so.

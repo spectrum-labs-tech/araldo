@@ -4,12 +4,15 @@ package linkedin
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
@@ -146,5 +149,61 @@ func TestExpiredTokenNeedsReconnecting(t *testing.T) {
 	}
 	if _, err := a.Verify(t.Context(), platform.Credentials{}); platform.KindOf(err) != platform.AuthRevoked {
 		t.Fatalf("no token: %v", err)
+	}
+}
+
+func TestSignInAndRefresh(t *testing.T) {
+	t.Parallel()
+	_, a := setup(t)
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		f := r.PostForm
+		switch {
+		case r.URL.Path != "/accessToken" || f.Get("client_id") != "id" || f.Get("client_secret") != "secret":
+			w.WriteHeader(http.StatusUnauthorized)
+		case f.Get("grant_type") == "authorization_code" && f.Get("code") == "plain":
+			_, _ = w.Write([]byte(`{"access_token":"tok","expires_in":5184000}`))
+		case f.Get("grant_type") == "authorization_code" && f.Get("code") == "approved":
+			_, _ = w.Write([]byte(`{"access_token":"tok","expires_in":5184000,"refresh_token":"r1","refresh_token_expires_in":31536000}`))
+		case f.Get("grant_type") == "refresh_token" && f.Get("refresh_token") == "r1":
+			_, _ = w.Write([]byte(`{"access_token":"tok","expires_in":5184000,"refresh_token":"r2"}`))
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
+		}
+	}))
+	t.Cleanup(auth.Close)
+	a.Auth = auth.URL
+	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	a.Now = func() time.Time { return now }
+	app := platform.App{ClientID: "id", ClientSecret: "secret"}
+
+	u, _ := url.Parse(a.AuthorizeURL(app, "https://araldo.test/connect/linkedin/callback", "st", ""))
+	if u.Path != "/authorization" || u.Query().Get("scope") != "openid profile w_member_social" || u.Query().Get("state") != "st" {
+		t.Fatalf("authorize URL %s", u)
+	}
+
+	// Most apps get no refresh token: the channel works for 60 days, then
+	// the member signs in again.
+	conns, err := a.Exchange(t.Context(), app, "https://araldo.test/cb", "plain", "")
+	if err != nil || len(conns) != 1 || conns[0].Account.ExternalID != "abc123" || conns[0].Credentials["refresh_token"] != "" ||
+		!conns[0].ExpiresAt.Equal(now.Add(60*24*time.Hour)) {
+		t.Fatalf("Exchange = %+v, %v", conns, err)
+	}
+	if _, _, err := a.Refresh(t.Context(), app, conns[0].Credentials); !errors.Is(err, platform.ErrNoRefresh) {
+		t.Fatalf("refreshing without a refresh token: %v", err)
+	}
+
+	// Approved apps get one, and renew with it.
+	conns, err = a.Exchange(t.Context(), app, "https://araldo.test/cb", "approved", "")
+	if err != nil || conns[0].Credentials["refresh_token"] != "r1" {
+		t.Fatalf("Exchange = %+v, %v", conns, err)
+	}
+	fresh, exp, err := a.Refresh(t.Context(), app, conns[0].Credentials)
+	if err != nil || fresh["refresh_token"] != "r2" || exp == nil {
+		t.Fatalf("Refresh = %v, %v, %v", fresh, exp, err)
+	}
+	if _, _, err := a.Refresh(t.Context(), app, fresh); platform.KindOf(err) != platform.AuthRevoked {
+		t.Fatalf("a refused refresh: %v, want auth_revoked", err)
 	}
 }

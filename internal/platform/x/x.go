@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package x posts to X with the account's own OAuth 1.0a credentials: the
-// app's API key and secret and the account's access token and secret, all
-// from the X developer portal (an app with read and write permission).
+// Package x posts to X. A channel connects one of two ways:
+//
+//   - a sign-in (OAuth 2.0 with PKCE, ADR 0021) through the org's X app,
+//     with scopes tweet.read, tweet.write, users.read, media.write and
+//     offline.access. The access token lasts two hours and is renewed with
+//     a refresh token, which X replaces on every renewal;
+//   - the account's own OAuth 1.0a credentials, pasted from the X developer
+//     portal (the app's API key and secret and the account's access token
+//     and secret, from an app with read and write permission). They do not
+//     expire.
 //
 // X has no idempotency key, so the adapter is not idempotent: an uncertain
 // attempt waits for a person (ADR 0011).
@@ -24,14 +31,18 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
-// DefaultAPI is X's API.
-const DefaultAPI = "https://api.x.com"
+// Defaults.
+const (
+	DefaultAPI       = "https://api.x.com"
+	DefaultAuthorize = "https://x.com/i/oauth2/authorize"
+	scopes           = "tweet.read tweet.write users.read media.write offline.access"
+)
 
 // Adapter posts to X.
 type Adapter struct {
 	Client *http.Client
-	// API is the API base URL; tests replace it.
-	API string
+	// API and Authorize are X's endpoints; tests replace them.
+	API, Authorize string
 	// Now and Nonce make signatures; tests replace them.
 	Now   func() time.Time
 	Nonce func() string
@@ -39,7 +50,7 @@ type Adapter struct {
 
 // New returns an X adapter.
 func New(client *http.Client) *Adapter {
-	return &Adapter{Client: client, API: DefaultAPI, Now: time.Now, Nonce: nonce}
+	return &Adapter{Client: client, API: DefaultAPI, Authorize: DefaultAuthorize, Now: time.Now, Nonce: nonce}
 }
 
 func (a *Adapter) Provider() platform.Provider { return platform.X }
@@ -61,11 +72,59 @@ func (a *Adapter) Fields() []platform.Field {
 
 func (a *Adapter) Idempotent() bool { return false }
 
-// credentials are the four OAuth 1.0a values.
-type credentials struct{ key, secret, token, tokenSecret string }
+func (a *Adapter) AuthorizeURL(app platform.App, redirectURI, state, challenge string) string {
+	q := url.Values{"response_type": {"code"}, "client_id": {app.ClientID}, "redirect_uri": {redirectURI}, "scope": {scopes},
+		"state": {state}, "code_challenge": {challenge}, "code_challenge_method": {"S256"}}
+	return a.Authorize + "?" + q.Encode()
+}
+
+// Exchange trades the code for a token pair and reads the account
+// (https://docs.x.com/resources/fundamentals/authentication/oauth-2-0/user-access-token).
+// The app authenticates with HTTP Basic, as X requires of confidential
+// clients.
+func (a *Adapter) Exchange(ctx context.Context, app platform.App, redirectURI, code, verifier string) ([]platform.Connection, error) {
+	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirectURI},
+		"code_verifier": {verifier}, "client_id": {app.ClientID}}
+	t, err := platform.RequestToken(ctx, a.Client, strings.TrimRight(a.API, "/")+"/2/oauth2/token", form, &app)
+	if err != nil {
+		return nil, err
+	}
+	c := platform.Credentials{"access_token": t.AccessToken, "refresh_token": t.RefreshToken}
+	acct, err := a.Verify(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	return []platform.Connection{{Account: acct, Credentials: c, ExpiresAt: t.Expiry(a.Now())}}, nil
+}
+
+// Refresh renews a signed-in channel's token. X replaces the refresh token
+// each time and the old one stops working, so the caller must store the
+// new pair before anything else refreshes.
+func (a *Adapter) Refresh(ctx context.Context, app platform.App, c platform.Credentials) (platform.Credentials, *time.Time, error) {
+	if c["refresh_token"] == "" {
+		return nil, nil, platform.ErrNoRefresh
+	}
+	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {c["refresh_token"]}, "client_id": {app.ClientID}}
+	t, err := platform.RequestToken(ctx, a.Client, strings.TrimRight(a.API, "/")+"/2/oauth2/token", form, &app)
+	if err != nil {
+		return nil, nil, err
+	}
+	fresh := platform.Credentials{"access_token": t.AccessToken, "refresh_token": t.RefreshToken}
+	if fresh["refresh_token"] == "" {
+		fresh["refresh_token"] = c["refresh_token"]
+	}
+	return fresh, t.Expiry(a.Now()), nil
+}
+
+// credentials sign requests: a signed-in channel's bearer token, or the
+// four OAuth 1.0a values of a channel connected with pasted keys.
+type credentials struct{ bearer, key, secret, token, tokenSecret string }
 
 func creds(c platform.Credentials) (credentials, error) {
-	cr := credentials{c["api_key"], c["api_secret"], c["access_token"], c["access_token_secret"]}
+	if c["api_key"] == "" && c["access_token"] != "" && c["access_token_secret"] == "" {
+		return credentials{bearer: c["access_token"]}, nil
+	}
+	cr := credentials{key: c["api_key"], secret: c["api_secret"], token: c["access_token"], tokenSecret: c["access_token_secret"]}
 	if cr.key == "" || cr.secret == "" || cr.token == "" || cr.tokenSecret == "" {
 		return cr, platform.Errorf(platform.AuthRevoked, "the API key and secret and the access token and secret are all required")
 	}
@@ -210,10 +269,13 @@ func classify(err error) error {
 	return pe
 }
 
-// authorization is the OAuth 1.0a header for a request (RFC 5849,
-// HMAC-SHA1). form holds a form-encoded body's parameters, which are
-// signed; JSON and multipart bodies are not.
+// authorization is the header for a request: the bearer token, or an OAuth
+// 1.0a signature (RFC 5849, HMAC-SHA1). form holds a form-encoded body's
+// parameters, which are signed; JSON and multipart bodies are not.
 func (a *Adapter) authorization(cr credentials, method, rawURL string, form url.Values) string {
+	if cr.bearer != "" {
+		return "Bearer " + cr.bearer
+	}
 	oauth := map[string]string{
 		"oauth_consumer_key":     cr.key,
 		"oauth_nonce":            a.Nonce(),

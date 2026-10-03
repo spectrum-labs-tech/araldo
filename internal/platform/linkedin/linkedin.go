@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package linkedin posts to a member's LinkedIn feed with an access token
-// the member creates in the LinkedIn developer portal (an app with the
-// products "Sign In with LinkedIn using OpenID Connect" and "Share on
-// LinkedIn"; OAuth token tools; scopes openid, profile, w_member_social).
-// Such tokens last 60 days; reconnect the channel with a new one.
+// Package linkedin posts to a member's LinkedIn feed. The org's LinkedIn
+// app needs the products "Sign In with LinkedIn using OpenID Connect" and
+// "Share on LinkedIn" (scopes openid, profile, w_member_social). A channel
+// connects one of two ways:
+//
+//   - a sign-in through that app (ADR 0021);
+//   - an access token pasted from the app's OAuth token tools.
+//
+// Tokens last 60 days. LinkedIn issues refresh tokens only to apps it has
+// approved for them; with one, the token is renewed, and without one the
+// member signs in again before it expires (Araldo says when, a week ahead).
 //
 // LinkedIn has no idempotency key, so the adapter is not idempotent.
 package linkedin
@@ -15,8 +21,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
@@ -28,17 +36,24 @@ const (
 	// LinkedIn retires a version about a year after it ships; a channel can
 	// name a newer one in its api_version setting.
 	DefaultVersion = "202606"
+	// DefaultAuth is where members sign in and tokens are issued.
+	DefaultAuth = "https://www.linkedin.com/oauth/v2"
+	scopes      = "openid profile w_member_social"
 )
 
 // Adapter posts to LinkedIn.
 type Adapter struct {
 	Client *http.Client
-	// API is the API base URL; tests replace it.
-	API string
+	// API and Auth are LinkedIn's endpoints; tests replace them.
+	API, Auth string
+	// Now is the clock for token expiry; tests replace it.
+	Now func() time.Time
 }
 
 // New returns a LinkedIn adapter.
-func New(client *http.Client) *Adapter { return &Adapter{Client: client, API: DefaultAPI} }
+func New(client *http.Client) *Adapter {
+	return &Adapter{Client: client, API: DefaultAPI, Auth: DefaultAuth, Now: time.Now}
+}
 
 func (a *Adapter) Provider() platform.Provider { return platform.LinkedIn }
 
@@ -57,6 +72,51 @@ func (a *Adapter) Fields() []platform.Field {
 }
 
 func (a *Adapter) Idempotent() bool { return false }
+
+func (a *Adapter) AuthorizeURL(app platform.App, redirectURI, state, _ string) string {
+	q := url.Values{"response_type": {"code"}, "client_id": {app.ClientID}, "redirect_uri": {redirectURI}, "scope": {scopes}, "state": {state}}
+	return a.Auth + "/authorization?" + q.Encode()
+}
+
+// Exchange trades the code for a token and reads the member
+// (https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow).
+func (a *Adapter) Exchange(ctx context.Context, app platform.App, redirectURI, code, _ string) ([]platform.Connection, error) {
+	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirectURI},
+		"client_id": {app.ClientID}, "client_secret": {app.ClientSecret}}
+	t, err := platform.RequestToken(ctx, a.Client, a.Auth+"/accessToken", form, nil)
+	if err != nil {
+		return nil, err
+	}
+	c := platform.Credentials{"access_token": t.AccessToken}
+	if t.RefreshToken != "" {
+		c["refresh_token"] = t.RefreshToken
+	}
+	acct, err := a.Verify(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	return []platform.Connection{{Account: acct, Credentials: c, ExpiresAt: t.Expiry(a.Now())}}, nil
+}
+
+// Refresh renews the token when LinkedIn gave a refresh token
+// (https://learn.microsoft.com/en-us/linkedin/shared/authentication/programmatic-refresh-tokens),
+// and otherwise says the member must sign in again.
+func (a *Adapter) Refresh(ctx context.Context, app platform.App, c platform.Credentials) (platform.Credentials, *time.Time, error) {
+	if c["refresh_token"] == "" {
+		return nil, nil, platform.ErrNoRefresh
+	}
+	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {c["refresh_token"]},
+		"client_id": {app.ClientID}, "client_secret": {app.ClientSecret}}
+	t, err := platform.RequestToken(ctx, a.Client, a.Auth+"/accessToken", form, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	fresh := platform.Credentials{"access_token": t.AccessToken, "refresh_token": t.RefreshToken}
+	if fresh["refresh_token"] == "" {
+		fresh["refresh_token"] = c["refresh_token"]
+	}
+	return fresh, t.Expiry(a.Now()), nil
+}
 
 func (a *Adapter) headers(c platform.Credentials) (map[string]string, error) {
 	token := strings.TrimSpace(c["access_token"])
@@ -241,7 +301,7 @@ func (a *Adapter) upload(ctx context.Context, h map[string]string, owner string,
 func expired(err error) error {
 	pe, ok := err.(*platform.Error) //nolint:errorlint // platform helpers return *Error directly
 	if ok && pe.Kind == platform.AuthRevoked {
-		pe.Msg = "the access token expired or was revoked (LinkedIn tokens last 60 days): create a new one and reconnect. " + pe.Msg
+		pe.Msg = "the access token expired or was revoked (LinkedIn tokens last 60 days): sign in again or paste a new one. " + pe.Msg
 	}
 	return err
 }

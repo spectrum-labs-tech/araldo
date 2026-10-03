@@ -31,11 +31,22 @@ URL: they fetch the file themselves.
 3. **Adapters opt in** with `Connector` (authorize URL, code exchange,
    returning the connectable accounts) and `Refresher` (renew a token, with
    the app's credentials). A channel remembers its app and when its token
-   expires.
+   expires. An adapter can take a sign-in and pasted credentials both (X,
+   LinkedIn); a pasted channel has no app and is never renewed.
 4. **Tokens are renewed before they expire**: an `opsched` task
    (`channels.refresh`, hourly) refreshes those expiring within 7 days. A
    refresh that fails as revoked marks the channel `needs_reauth` and emits
    `channel.needs_reauth`; reconnecting is the same flow again.
+   - A renewal holds the channel's row lock, and does nothing if the token
+     changed while it waited: some platforms (X) replace the refresh token
+     on every renewal, so two renewals racing with the same one would read
+     as revoked.
+   - Publishing and reading engagement renew a token first when it expires
+     within five minutes, in case the hourly task fell behind (an X token
+     lasts two hours).
+   - A token the platform gives no way to renew (a LinkedIn token without a
+     refresh token) keeps working until it expires: the channel says when
+     to sign in again, and needs it once the token has expired.
 5. **Images reach platforms by signed links**:
    `GET /v1/media/{id}/content?expires=…&signature=…` serves a file without
    an API key when the signature is an HMAC of the ID and expiry under a

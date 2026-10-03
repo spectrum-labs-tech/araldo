@@ -305,8 +305,9 @@ type Connector interface {
 }
 
 // Refresher is implemented by adapters whose tokens expire and can be
-// renewed. An error is a *Error; AuthRevoked means the member must sign in
-// again.
+// renewed. An error is a *Error, AuthRevoked meaning the member must sign
+// in again now; or ErrNoRefresh, for a token that cannot be renewed but
+// still works until it expires.
 type Refresher interface {
 	Refresh(ctx context.Context, app App, c Credentials) (Credentials, *time.Time, error)
 }

@@ -55,7 +55,9 @@ type dash struct {
 	send  func(*http.Request) *httptest.ResponseRecorder
 }
 
-func newDash(t *testing.T) *dash {
+// newDash is a dashboard signed in as a new org's owner, in test mode, with
+// the sandbox and any extra adapters.
+func newDash(t *testing.T, extra ...platform.Adapter) *dash {
 	t.Helper()
 	dsn := os.Getenv("ARALDO_TEST_DSN")
 	if dsn == "" {
@@ -77,7 +79,8 @@ func newDash(t *testing.T) *dash {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s := core.New(st, keyring.New(mk, st), platform.NewRegistry(sandbox.New("https://araldo.test")), log, core.Config{BaseURL: "https://araldo.test"})
+	adapters := append([]platform.Adapter{sandbox.New("https://araldo.test")}, extra...)
+	s := core.New(st, keyring.New(mk, st), platform.NewRegistry(adapters...), log, core.Config{BaseURL: "https://araldo.test"})
 	email := fmt.Sprintf("web-%s@example.com", uuid.NewString()[:8])
 	u, err := s.CreateUser(ctx, email, "Owner", "correct horse battery")
 	if err != nil {

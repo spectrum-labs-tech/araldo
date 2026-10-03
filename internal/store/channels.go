@@ -64,6 +64,11 @@ func (s *Store) UpdateChannelConnection(ctx context.Context, c *model.Channel) e
 		c.AppID, c.TokenExpiresAt)
 }
 
+// ChannelForUpdate reads a channel and locks it until the transaction ends.
+func (s *Store) ChannelForUpdate(ctx context.Context, orgID, id uuid.UUID) (*model.Channel, error) {
+	return scanChannel(s.q.QueryRow(ctx, `SELECT `+channelCols+` FROM channels WHERE org_id = $1 AND id = $2 FOR UPDATE`, orgID, id))
+}
+
 // SetChannelToken stores refreshed credentials and their expiry.
 func (s *Store) SetChannelToken(ctx context.Context, orgID, id uuid.UUID, credentials []byte, expires *time.Time) error {
 	return s.execOne(ctx, `UPDATE channels SET credentials = $3, token_expires_at = $4, updated_at = now() WHERE org_id = $1 AND id = $2`,

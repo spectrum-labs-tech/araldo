@@ -7,6 +7,9 @@ import (
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/metric"
+
+	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
 // InstrumentOrg is Instrument with the database gauges narrowed to one
@@ -35,4 +38,11 @@ func CollectEngagementOrg(s *Service, org uuid.UUID) (int, error) {
 // RefreshTokensOrg is RefreshTokens for one org.
 func RefreshTokensOrg(s *Service, org uuid.UUID) (int, error) {
 	return s.refreshTokens(context.Background(), &org)
+}
+
+// UsableCredentials is the credentials a publish or engagement read would
+// use for a channel, renewing its token first if it is about to expire.
+func UsableCredentials(s *Service, ch *model.Channel) (platform.Credentials, error) {
+	adapter, _ := s.platforms.Get(ch.Provider)
+	return s.usableCredentials(context.Background(), ch, adapter)
 }

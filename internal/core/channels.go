@@ -271,6 +271,10 @@ func (s *Service) DeleteChannel(ctx context.Context, a Actor, channelID uuid.UUI
 
 // credentials decrypts a channel's secrets and merges its settings.
 func (s *Service) credentials(ctx context.Context, ch *model.Channel) (platform.Credentials, error) {
+	return credentialsWith(ctx, s.keys, ch)
+}
+
+func credentialsWith(ctx context.Context, keys *keyring.Keyring, ch *model.Channel) (platform.Credentials, error) {
 	creds := platform.Credentials{}
 	for k, v := range ch.Settings {
 		creds[k] = v
@@ -278,7 +282,7 @@ func (s *Service) credentials(ctx context.Context, ch *model.Channel) (platform.
 	if len(ch.Credentials) == 0 {
 		return creds, nil
 	}
-	raw, err := s.keys.Decrypt(ctx, ch.OrgID, credentialsAAD(ch.ID), ch.Credentials)
+	raw, err := keys.Decrypt(ctx, ch.OrgID, credentialsAAD(ch.ID), ch.Credentials)
 	if err != nil {
 		return nil, err
 	}

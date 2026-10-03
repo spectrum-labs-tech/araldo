@@ -4,6 +4,7 @@ package x
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -61,6 +62,20 @@ func (f *fakeX) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	f.auth = append(f.auth, r.Header.Get("Authorization"))
 	switch r.URL.Path {
+	case "/2/oauth2/token":
+		_ = r.ParseForm()
+		user, pass, _ := r.BasicAuth()
+		switch {
+		case user != "id" || pass != "secret":
+			w.WriteHeader(http.StatusUnauthorized)
+		case r.PostForm.Get("grant_type") == "authorization_code" && r.PostForm.Get("code") == "c" && r.PostForm.Get("code_verifier") == "v":
+			_, _ = w.Write([]byte(`{"token_type":"bearer","access_token":"bearer1","refresh_token":"r1","expires_in":7200}`))
+		case r.PostForm.Get("grant_type") == "refresh_token" && r.PostForm.Get("refresh_token") == "r1":
+			_, _ = w.Write([]byte(`{"token_type":"bearer","access_token":"bearer2","refresh_token":"r2","expires_in":7200}`))
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid_request","error_description":"Value passed for the token was invalid."}`))
+		}
 	case "/2/users/me":
 		_, _ = w.Write([]byte(`{"data":{"id":"42","name":"AR15.build","username":"ar15build"}}`))
 	case "/2/media/upload":
@@ -174,10 +189,60 @@ func TestAuthorizationIsSigned(t *testing.T) {
 	a := New(http.DefaultClient)
 	a.Now = func() time.Time { return time.Unix(1318622958, 0) }
 	a.Nonce = func() string { return "n" }
-	h := a.authorization(credentials{"ck", "cs", "at", "ats"}, http.MethodPost, "https://api.x.com/2/tweets", nil)
+	h := a.authorization(credentials{key: "ck", secret: "cs", token: "at", tokenSecret: "ats"}, http.MethodPost, "https://api.x.com/2/tweets", nil)
 	want := signature(http.MethodPost, "https://api.x.com/2/tweets", map[string]string{"oauth_consumer_key": "ck", "oauth_nonce": "n",
 		"oauth_signature_method": "HMAC-SHA1", "oauth_timestamp": "1318622958", "oauth_token": "at", "oauth_version": "1.0"}, nil, "cs", "ats")
 	if !strings.Contains(h, `oauth_signature="`+encode(want)+`"`) || !strings.Contains(h, `oauth_timestamp="1318622958"`) {
 		t.Fatalf("header %q, want signature %q", h, want)
+	}
+}
+
+func TestSignInAndRefresh(t *testing.T) {
+	t.Parallel()
+	f, a, _ := setup(t)
+	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	a.Now = func() time.Time { return now }
+	app := platform.App{ClientID: "id", ClientSecret: "secret"}
+
+	u, _ := url.Parse(a.AuthorizeURL(app, "https://araldo.test/connect/x/callback", "st", "chal"))
+	q := u.Query()
+	if q.Get("code_challenge") != "chal" || q.Get("code_challenge_method") != "S256" || q.Get("state") != "st" ||
+		!strings.Contains(q.Get("scope"), "media.write") || !strings.Contains(q.Get("scope"), "offline.access") {
+		t.Fatalf("authorize URL %s", u)
+	}
+	conns, err := a.Exchange(t.Context(), app, "https://araldo.test/connect/x/callback", "c", "v")
+	if err != nil || len(conns) != 1 {
+		t.Fatalf("Exchange = %+v, %v", conns, err)
+	}
+	c := conns[0]
+	if c.Account.Handle != "@ar15build" || c.Credentials["access_token"] != "bearer1" || c.Credentials["refresh_token"] != "r1" ||
+		c.ExpiresAt == nil || !c.ExpiresAt.Equal(now.Add(2*time.Hour)) {
+		t.Fatalf("connection %+v", c)
+	}
+
+	// A signed-in channel posts with its bearer token.
+	if _, err := a.Publish(t.Context(), c.Credentials, platform.Payload{Parts: []string{"Signed in"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if last := f.auth[len(f.auth)-1]; last != "Bearer bearer1" {
+		t.Fatalf("authorization %q", last)
+	}
+
+	// Each renewal replaces the refresh token; the old one is then refused,
+	// which means signing in again.
+	fresh, exp, err := a.Refresh(t.Context(), app, c.Credentials)
+	if err != nil || fresh["access_token"] != "bearer2" || fresh["refresh_token"] != "r2" || exp == nil {
+		t.Fatalf("Refresh = %v, %v, %v", fresh, exp, err)
+	}
+	_, _, err = a.Refresh(t.Context(), app, fresh)
+	if pe, _ := err.(*platform.Error); pe == nil || pe.Kind != platform.AuthRevoked { //nolint:errorlint // the adapter returns *Error
+		t.Fatalf("refresh with a spent token: %v, want auth_revoked", err)
+	}
+	// Pasted OAuth 1.0a keys have nothing to renew.
+	if _, _, err := a.Refresh(t.Context(), app, platform.Credentials{"api_key": "ck"}); !errors.Is(err, platform.ErrNoRefresh) {
+		t.Fatalf("refreshing pasted keys: %v", err)
+	}
+	if _, err := a.Exchange(t.Context(), platform.App{ClientID: "id", ClientSecret: "wrong"}, "x", "c", "v"); err == nil {
+		t.Fatal("a wrong app secret should fail the exchange")
 	}
 }

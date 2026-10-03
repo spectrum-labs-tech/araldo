@@ -118,7 +118,7 @@ func (s *Service) publishTarget(ctx context.Context, owner string, ct store.Clai
 	case !ok:
 		pubErr = &platform.Error{Kind: platform.Rejected, Code: "provider_unsupported", Msg: "this server has no " + string(ch.Provider) + " adapter"}
 	default:
-		creds, err := s.credentials(ctx, ch)
+		creds, err := s.usableCredentials(ctx, ch, adapter)
 		if err != nil {
 			pubErr = &platform.Error{Kind: platform.Transient, Code: "credentials_unreadable", Msg: "could not decrypt the channel's credentials", Err: err}
 			break

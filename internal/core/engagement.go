@@ -93,7 +93,7 @@ func (s *Service) readChannelEngagement(ctx context.Context, now time.Time, due 
 	if err != nil {
 		return 0, err
 	}
-	creds, err := s.credentials(ctx, ch)
+	creds, err := s.usableCredentials(ctx, ch, adapter)
 	if err != nil {
 		return 0, reschedule(model.EngagementCollecting, ptr(now.Add(time.Hour)), "could not decrypt the channel's credentials")
 	}

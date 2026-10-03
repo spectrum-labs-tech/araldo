@@ -104,11 +104,30 @@ longer be renewed shows *needs reauth* and reconnects the same way.
 | Bluesky | Handle and an app password. |
 | Mastodon | Server and an access token (write:statuses, write:media, read:accounts). |
 | Gab | An access token (write:statuses, write:media, read:accounts). Gab is one service, so there is no server to give. |
-| X | The app's API key and secret, and the account's access token and secret (developer.x.com, read and write). |
-| LinkedIn | A member access token from the developer portal's token tools (openid, profile, w_member_social); it lasts 60 days. |
+| X | A sign-in through your X app, below; or the app's API key and secret and the account's access token and secret, pasted (read and write). |
+| LinkedIn | A sign-in through your LinkedIn app, below; or a member access token from its token tools (openid, profile, w_member_social), pasted. Tokens last 60 days. |
 | Threads | A sign-in through your Threads app, below. |
 | Facebook Pages, Instagram | A sign-in through your Meta app, below; you choose which Pages, or which Instagram accounts linked to them. |
 | Discord, Telegram | A webhook URL; a bot token and chat. |
+
+**X.** At developer.x.com, in your app's *User authentication settings*,
+turn on OAuth 2.0 as a *Web App* (a confidential client) with read and
+write permission, and add Araldo's redirect URI
+(`{ARALDO_BASE_URL}/connect/x/callback`) as a callback URI. Add the app's
+OAuth 2.0 client ID and secret (not the API key) under Developer apps,
+then connect. The sign-in asks for `tweet.read`, `tweet.write`,
+`users.read`, `media.write` and `offline.access`; tokens last two hours and
+are renewed automatically, each renewal replacing the refresh token. What
+an app may post and read depends on its X API access tier.
+
+**LinkedIn.** At linkedin.com/developers, add the products *Sign In with
+LinkedIn using OpenID Connect* and *Share on LinkedIn* to your app, and
+add Araldo's redirect URI (`{ARALDO_BASE_URL}/connect/linkedin/callback`)
+under Auth → Authorized redirect URLs. Add the app's client ID and secret
+under Developer apps, then connect. Tokens last 60 days. LinkedIn gives
+refresh tokens only to apps it has approved for them; without one, the
+channel says a week ahead when to sign in again, and needs it once the
+token expires.
 
 **Threads.** At developers.facebook.com, create an app with the *Access the
 Threads API* use case; add the permissions `threads_basic`,

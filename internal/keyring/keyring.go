@@ -199,9 +199,14 @@ func open(aead cipher.AEAD, sealed, aad []byte) ([]byte, error) {
 type Keyring struct {
 	master *MasterKeys
 	store  Store
+	cache  *keyCache
+}
 
-	mu    sync.Mutex
-	cache map[cacheKey]cipher.AEAD
+// keyCache holds unwrapped data keys, shared by a keyring and the copies
+// With makes.
+type keyCache struct {
+	mu   sync.Mutex
+	aead map[cacheKey]cipher.AEAD
 }
 
 type cacheKey struct {
@@ -211,7 +216,15 @@ type cacheKey struct {
 
 // New returns a keyring using master keys m and data keys in st.
 func New(m *MasterKeys, st Store) *Keyring {
-	return &Keyring{master: m, store: st, cache: map[cacheKey]cipher.AEAD{}}
+	return &Keyring{master: m, store: st, cache: &keyCache{aead: map[cacheKey]cipher.AEAD{}}}
+}
+
+// With returns this keyring reading and writing data keys through st,
+// sharing its cache. Inside a database transaction, use With(tx): the
+// keyring's own store would wait for another pooled connection while the
+// transaction holds one, and enough of those at once exhaust the pool.
+func (k *Keyring) With(st Store) *Keyring {
+	return &Keyring{master: k.master, store: st, cache: k.cache}
 }
 
 // AAD names the place a secret is stored: its table, column and row.
@@ -268,11 +281,11 @@ func hmacSHA256(key []byte, label string) []byte {
 
 // Forget drops a scope's cached data keys (after the scope is deleted).
 func (k *Keyring) Forget(scope uuid.UUID) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	for ck := range k.cache {
+	k.cache.mu.Lock()
+	defer k.cache.mu.Unlock()
+	for ck := range k.cache.aead {
 		if ck.scope == scope {
-			delete(k.cache, ck)
+			delete(k.cache.aead, ck)
 		}
 	}
 }
@@ -322,9 +335,9 @@ func (k *Keyring) create(ctx context.Context, scope uuid.UUID, version int) (Wra
 }
 
 func (k *Keyring) version(ctx context.Context, scope uuid.UUID, version int) (cipher.AEAD, error) {
-	k.mu.Lock()
-	aead, ok := k.cache[cacheKey{scope, version}]
-	k.mu.Unlock()
+	k.cache.mu.Lock()
+	aead, ok := k.cache.aead[cacheKey{scope, version}]
+	k.cache.mu.Unlock()
 	if ok {
 		return aead, nil
 	}
@@ -337,12 +350,12 @@ func (k *Keyring) version(ctx context.Context, scope uuid.UUID, version int) (ci
 
 func (k *Keyring) load(wk WrappedKey) (cipher.AEAD, error) {
 	ck := cacheKey{wk.Scope, wk.Version}
-	k.mu.Lock()
-	if aead, ok := k.cache[ck]; ok {
-		k.mu.Unlock()
+	k.cache.mu.Lock()
+	if aead, ok := k.cache.aead[ck]; ok {
+		k.cache.mu.Unlock()
 		return aead, nil
 	}
-	k.mu.Unlock()
+	k.cache.mu.Unlock()
 	dek, err := k.master.unwrap(wk)
 	if err != nil {
 		return nil, err
@@ -351,9 +364,9 @@ func (k *Keyring) load(wk WrappedKey) (cipher.AEAD, error) {
 	if err != nil {
 		return nil, err
 	}
-	k.mu.Lock()
-	k.cache[ck] = aead
-	k.mu.Unlock()
+	k.cache.mu.Lock()
+	k.cache.aead[ck] = aead
+	k.cache.mu.Unlock()
 	return aead, nil
 }
 

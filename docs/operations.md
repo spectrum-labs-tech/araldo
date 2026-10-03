@@ -194,9 +194,22 @@ Claude Desktop (`claude_desktop_config.json`):
 }
 ```
 
+**Over HTTP**, with nothing to install: the server answers MCP at
+`POST /v1/mcp` with the same tools, as the key sent with it (scopes, brand
+limit and rate limit apply). In Claude Code:
+
+```bash
+claude mcp add --transport http araldo https://araldo.example.com/v1/mcp   --header "Authorization: Bearer ald_test_…"
+```
+
+Any MCP client that connects to a URL with a header works the same way.
+The endpoint is stateless (no session, no server-initiated messages) and
+refuses requests a browser makes from another site.
+
 The key needs `brands:read`, `channels:read` and `posts:read`/`posts:write`
-(and `templates:read` for templates); a key with no scopes listed has them
-all. It does not need, and should not have, an administrative scope.
+(and `templates:read` for templates, `ads:read` for `ads_summary`); a key
+with no scopes listed has them all. It does not need, and should not have,
+an administrative scope.
 
 ## Members and org settings
 

@@ -2,7 +2,8 @@
 
 // Package mcp is Araldo's Model Context Protocol server (ADR 0020): the
 // tools an AI assistant uses to draft, check, schedule and follow up on
-// posts, over stdio, as a client of the public API.
+// posts, as a client of the public API, over stdio (`araldo mcp`) or HTTP
+// (POST /v1/mcp).
 package mcp
 
 import (
@@ -95,22 +96,29 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		if len(line) == 0 {
 			continue
 		}
-		var req request
-		if err := json.Unmarshal(line, &req); err != nil {
-			if err := write(response{ID: json.RawMessage("null"), Error: &rpcError{Code: codeParse, Message: "not a JSON-RPC message"}}); err != nil {
-				return err
-			}
-			continue
-		}
-		if len(req.ID) == 0 {
+		res, ok := s.message(ctx, line)
+		if !ok {
 			continue // a notification: nothing to answer
 		}
-		result, rerr := s.handle(ctx, req)
-		if err := write(response{ID: req.ID, Result: result, Error: rerr}); err != nil {
+		if err := write(res); err != nil {
 			return err
 		}
 	}
 	return sc.Err()
+}
+
+// message answers one JSON-RPC message. A notification (no id) gets no
+// answer: ok is false.
+func (s *Server) message(ctx context.Context, raw []byte) (res response, ok bool) {
+	var req request
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return response{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{Code: codeParse, Message: "not a JSON-RPC message"}}, true
+	}
+	if len(req.ID) == 0 {
+		return response{}, false
+	}
+	result, rerr := s.handle(ctx, req)
+	return response{JSONRPC: "2.0", ID: req.ID, Result: result, Error: rerr}, true
 }
 
 func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {

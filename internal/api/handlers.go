@@ -17,6 +17,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/mcp"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/tmpl"
@@ -70,6 +71,7 @@ func (h *Handler) routes() {
 	h.handle("GET /v1/post_targets/{id}/engagement", h.listEngagement)
 	h.handle("GET /v1/post_targets/{id}/attempts", h.listAttempts)
 	h.handle("GET /v1/engagement/summary", h.engagementSummary, "group_by", "brand", "since", "until", "limit")
+	h.handle("POST /v1/mcp", h.mcp)
 	h.handle("GET /v1/ad_networks", h.listAdNetworks)
 	h.handle("GET /v1/ad_accounts", h.listAdAccounts, "brand")
 	h.handle("POST /v1/ad_accounts", h.createAdAccount)
@@ -972,5 +974,12 @@ func (h *Handler) resendDelivery(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ok(w, http.StatusAccepted, map[string]any{"id": r.PathValue("id"), "object": "webhook_delivery", "status": "pending"})
+	return nil
+}
+
+// mcp serves Araldo's MCP tools over HTTP (ADR 0020), running as the
+// caller's key through this handler.
+func (h *Handler) mcp(w http.ResponseWriter, r *http.Request) error {
+	(&mcp.HTTPHandler{API: h}).ServeHTTP(w, r)
 	return nil
 }

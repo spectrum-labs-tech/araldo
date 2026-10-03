@@ -65,7 +65,7 @@ Principles every feature keeps:
 | # | Work | Decision | Status |
 | --- | --- | --- | --- |
 | 1 | Prove the adapters with real accounts on every network, and a daily test post per network so a platform change is caught early | ADR 0011 | Adapters built; real-account runs and test posts not yet |
-| 2 | MCP over HTTP at `POST /v1/mcp` | ADR 0020 | Decided |
+| 2 | MCP over HTTP at `POST /v1/mcp` | ADR 0020 | Done |
 | 3 | Web analytics adapters: signups and cost per signup by post, ad and issue (Plausible, then GA4) | ADR 0025 | Decided |
 | 4 | Newsletters phase 1: mail accounts, issues with a delivery per account, renderer and theme, Brevo and sandbox providers | ADR 0024 | Decided |
 | 5 | Client reports: one page per brand per month across posts, ads, newsletters and analytics | ADR 0024, 0025 | Planned |

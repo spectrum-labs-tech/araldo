@@ -56,6 +56,7 @@ tags:
   - name: API keys
   - name: Audit
   - name: Platforms
+  - name: MCP
 
 paths:
   /v1/openapi.yaml:
@@ -759,6 +760,50 @@ paths:
                   - type: object
                     properties:
                       data: { type: array, items: { $ref: "#/components/schemas/PublishAttempt" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/mcp:
+    post:
+      summary: MCP tools over HTTP
+      description: |
+        The Model Context Protocol endpoint (Streamable HTTP, stateless), so
+        an AI assistant can use Araldo's tools by URL with an API key
+        (ADR 0020): send one JSON-RPC 2.0 message, or a batch, and get its
+        answer as JSON. Notifications get `202`. The tools run as the key,
+        with its scopes, brand limit and rate limit, and are the same as
+        `araldo mcp`'s: `initialize`, `tools/list`, then `tools/call`. A
+        browser on another site is refused (`Origin`).
+      tags: [MCP]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jsonrpc, method]
+              properties:
+                jsonrpc: { type: string, enum: ["2.0"] }
+                id: { description: Absent for a notification. }
+                method: { type: string, example: tools/list }
+                params: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: The JSON-RPC response (or responses, for a batch).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jsonrpc: { type: string, enum: ["2.0"] }
+                  id: {}
+                  result: { type: object, additionalProperties: true }
+                  error:
+                    type: object
+                    properties:
+                      code: { type: integer }
+                      message: { type: string }
+        "202":
+          description: A notification, accepted; no body.
         default: { $ref: "#/components/responses/Error" }
 
   /v1/ad_networks:

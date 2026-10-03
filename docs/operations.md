@@ -97,7 +97,12 @@ with a sign-in through a **developer app** you register with the platform
 Developer apps**, which shows the redirect URI to give the platform, then
 connect channels through it. Tokens are stored encrypted and renewed before
 they expire (the `channels.refresh` task); a channel whose token can no
-longer be renewed shows *needs reauth* and reconnects the same way.
+longer be renewed shows *needs reauth* and reconnects the same way. Once a
+day the `channels.check` task verifies every live channel's credentials
+with its platform: revoked ones mark the channel *needs reauth* (with the
+`channel.needs_reauth` event) before a post fails, and other failures (a
+platform outage, a retired API version) show under the channel as the last
+check's result.
 
 | Platform | How it connects |
 |---|---|

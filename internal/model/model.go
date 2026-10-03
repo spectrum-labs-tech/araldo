@@ -201,6 +201,10 @@ type Channel struct {
 	// TokenExpiresAt when its token expires (ADR 0021).
 	AppID          *uuid.UUID
 	TokenExpiresAt *time.Time
+	// CheckedAt is the last daily health check, and CheckError what it
+	// found wrong ("" when it passed).
+	CheckedAt  *time.Time
+	CheckError string
 }
 
 // ProviderApp is an org's developer app on a platform (ADR 0021).

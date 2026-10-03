@@ -81,14 +81,19 @@ type ChannelView struct {
 	Settings   map[string]string `json:"settings"`
 	Status     string            `json:"status"`
 	StatusNote string            `json:"status_note,omitempty"`
-	CreatedAt  time.Time         `json:"created_at"`
+	// CheckedAt is the last daily check of its credentials, and
+	// CheckError what it found wrong.
+	CheckedAt  *time.Time `json:"checked_at,omitempty"`
+	CheckError string     `json:"check_error,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
 }
 
 // ViewChannel renders a channel. Credentials never leave the server.
 func ViewChannel(c *model.Channel) ChannelView {
 	return ChannelView{ID: id.Format(id.Channel, c.ID), Object: "channel", Brand: id.Format(id.Brand, c.BrandID), Livemode: c.Livemode,
 		Provider: string(c.Provider), Emulates: string(c.Emulates), DisplayName: c.DisplayName, Handle: c.Handle, ProfileURL: c.ProfileURL,
-		Settings: nonNilSettings(c.Settings), Status: string(c.Status), StatusNote: c.StatusNote, CreatedAt: c.CreatedAt.UTC()}
+		Settings: nonNilSettings(c.Settings), Status: string(c.Status), StatusNote: c.StatusNote, CheckedAt: utc(c.CheckedAt), CheckError: c.CheckError,
+		CreatedAt: c.CreatedAt.UTC()}
 }
 
 func nonNilSettings(m map[string]string) map[string]string {

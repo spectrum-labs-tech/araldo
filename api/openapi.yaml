@@ -1476,6 +1476,8 @@ components:
           description: The non-secret connect fields. Secrets are write-only and never returned.
         status: { type: string, enum: [active, needs_reauth, disabled] }
         status_note: { type: string }
+        checked_at: { type: string, format: date-time, description: "The last daily check of the channel's credentials with its platform (live channels)." }
+        check_error: { type: string, description: What the last check found wrong; absent when it passed. }
         created_at: { type: string, format: date-time }
 
     TemplateSource:

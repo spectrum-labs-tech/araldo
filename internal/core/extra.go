@@ -109,6 +109,7 @@ func (s *Service) Tasks() []opsched.Task {
 		}},
 		{Name: "media.prune", Interval: time.Hour, Run: s.PruneUnusedMedia},
 		{Name: "channels.refresh", Interval: time.Hour, Timeout: 10 * time.Minute, Run: s.RefreshTokens},
+		{Name: "channels.check", Interval: time.Hour, Timeout: 10 * time.Minute, Run: s.CheckChannels},
 		{Name: "oauth.prune", Interval: time.Hour, Run: func(ctx context.Context) (int, error) {
 			return s.store.PruneOAuthStates(ctx, s.Now().Add(-OAuthStateTTL))
 		}},

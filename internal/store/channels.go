@@ -15,13 +15,13 @@ import (
 )
 
 const channelCols = `id, org_id, brand_id, livemode, provider, COALESCE(emulates, ''), display_name, handle, external_id, profile_url,
-	settings, credentials, status, status_note, hold_until, created_at, app_id, token_expires_at`
+	settings, credentials, status, status_note, hold_until, created_at, app_id, token_expires_at, checked_at, check_error`
 
 func scanChannel(r pgx.Row) (*model.Channel, error) {
 	var c model.Channel
 	var provider, emulates string
 	err := r.Scan(&c.ID, &c.OrgID, &c.BrandID, &c.Livemode, &provider, &emulates, &c.DisplayName, &c.Handle, &c.ExternalID, &c.ProfileURL,
-		&c.Settings, &c.Credentials, &c.Status, &c.StatusNote, &c.HoldUntil, &c.CreatedAt, &c.AppID, &c.TokenExpiresAt)
+		&c.Settings, &c.Credentials, &c.Status, &c.StatusNote, &c.HoldUntil, &c.CreatedAt, &c.AppID, &c.TokenExpiresAt, &c.CheckedAt, &c.CheckError)
 	c.Provider, c.Emulates = platform.Provider(provider), platform.Provider(emulates)
 	return &c, mapErr(err)
 }
@@ -192,4 +192,25 @@ func (s *Store) TemplateVersion(ctx context.Context, orgID, templateID uuid.UUID
 		}
 	}
 	return &v, nil
+}
+
+// ClaimChannelsToCheck takes active live channels last checked before
+// cutoff (or never), in one org or (orgID nil) every org, and marks them
+// checked now so no other worker takes them; SetChannelCheck records the
+// outcome.
+func (s *Store) ClaimChannelsToCheck(ctx context.Context, orgID *uuid.UUID, now, cutoff time.Time, limit int) ([]*model.Channel, error) {
+	rows, err := s.q.Query(ctx, `UPDATE channels SET checked_at = $2 WHERE id IN (
+			SELECT id FROM channels WHERE status = 'active' AND livemode AND (checked_at IS NULL OR checked_at < $3)
+				AND ($1::uuid IS NULL OR org_id = $1)
+			ORDER BY checked_at NULLS FIRST LIMIT $4 FOR UPDATE SKIP LOCKED)
+		RETURNING `+channelCols, orgID, now, cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Channel, error) { return scanChannel(r) })
+}
+
+// SetChannelCheck records a health check's outcome ("" when it passed).
+func (s *Store) SetChannelCheck(ctx context.Context, orgID, id uuid.UUID, at time.Time, problem string) error {
+	return s.execOne(ctx, `UPDATE channels SET checked_at = $3, check_error = $4 WHERE org_id = $1 AND id = $2`, orgID, id, at, problem)
 }

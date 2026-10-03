@@ -52,3 +52,8 @@ func UsableCredentials(s *Service, ch *model.Channel) (platform.Credentials, err
 func CollectAdsOrg(s *Service, org uuid.UUID) (int, error) {
 	return s.collectAds(context.Background(), &org)
 }
+
+// CheckChannelsOrg is CheckChannels for one org.
+func CheckChannelsOrg(s *Service, org uuid.UUID) (int, error) {
+	return s.checkChannels(context.Background(), &org)
+}

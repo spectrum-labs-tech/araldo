@@ -45,7 +45,8 @@ What exists:
    We revisit this if several callers end up repeating the same "adapt this
    announcement for each network" prompt; that would be the signal to offer
    adaptation as an optional, bring-your-own-key feature.
-4. **Out of scope:** reading or answering replies (a social inbox), ads,
+4. **Out of scope:** reading or answering replies (a social inbox), ads
+   (except small, bounded promotions, [ADR 0023](0023-paid-promotion.md)),
    social listening, link shortening, and analytics beyond basic per-post
    metrics (later).
 

@@ -28,3 +28,4 @@ open a pull request.
 | [0020](0020-mcp.md) | An MCP server in the binary, as a client of the public API | proposed |
 | [0021](0021-oauth-connections.md) | Channels connect with OAuth through an org's developer apps; images reach platforms by signed links | proposed |
 | [0022](0022-slots-at-approval.md) | A post takes its publishing slot when it is approved, and posts can be moved | proposed |
+| [0023](0023-paid-promotion.md) | Paid promotion on any network, with spend that cannot exceed a cap | proposed |

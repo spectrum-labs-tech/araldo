@@ -359,7 +359,8 @@ func (s *Service) UpdateBrand(ctx context.Context, a Actor, brandID uuid.UUID, i
 
 // Brand returns one of the actor's brands.
 func (s *Service) Brand(ctx context.Context, a Actor, brandID uuid.UUID) (*model.Brand, error) {
-	if err := a.require(PermBrandsRead); err != nil && !a.Can(PermPostsRead) && !a.Can(PermPostsWrite) && !a.Can(PermAdsRead) && !a.Can(PermAdsWrite) {
+	if err := a.require(PermBrandsRead); err != nil && !a.Can(PermPostsRead) && !a.Can(PermPostsWrite) && !a.Can(PermAdsRead) && !a.Can(PermAdsWrite) &&
+		!a.Can(PermNewslettersRead) && !a.Can(PermNewslettersWrite) {
 		return nil, err
 	}
 	if err := a.brandAllowed(brandID); err != nil {
@@ -371,7 +372,8 @@ func (s *Service) Brand(ctx context.Context, a Actor, brandID uuid.UUID) (*model
 
 // Brands lists the actor's brands.
 func (s *Service) Brands(ctx context.Context, a Actor) ([]*model.Brand, error) {
-	if err := a.require(PermBrandsRead); err != nil && !a.Can(PermPostsRead) && !a.Can(PermPostsWrite) && !a.Can(PermAdsRead) && !a.Can(PermAdsWrite) {
+	if err := a.require(PermBrandsRead); err != nil && !a.Can(PermPostsRead) && !a.Can(PermPostsWrite) && !a.Can(PermAdsRead) && !a.Can(PermAdsWrite) &&
+		!a.Can(PermNewslettersRead) && !a.Can(PermNewslettersWrite) {
 		return nil, err
 	}
 	bs, err := s.store.Brands(ctx, a.OrgID)

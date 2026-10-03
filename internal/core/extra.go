@@ -116,6 +116,8 @@ func (s *Service) Tasks() []opsched.Task {
 		{Name: "engagement.collect", Interval: 2 * time.Minute, Timeout: 5 * time.Minute, Run: s.CollectEngagement},
 		{Name: "ads.collect", Interval: 10 * time.Minute, Timeout: 5 * time.Minute, Run: s.CollectAds},
 		{Name: "analytics.collect", Interval: 10 * time.Minute, Timeout: 5 * time.Minute, Run: s.CollectAnalytics},
+		{Name: "newsletters.handoff", Interval: time.Minute, Timeout: 5 * time.Minute, Run: s.HandOffNewsletters},
+		{Name: "newsletters.read", Interval: 5 * time.Minute, Timeout: 5 * time.Minute, Run: s.ReadNewsletterResults},
 	}
 }
 

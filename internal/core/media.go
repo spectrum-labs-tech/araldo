@@ -426,21 +426,44 @@ func (s *Service) mediaSignature(mediaID uuid.UUID, expires int64) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// EmailMediaLink is a public link to m's file that does not expire, for
+// newsletters, which are read long after they are sent (ADR 0024). Its
+// signature is bound to that purpose, so it cannot stand in for a
+// platform's expiring link. Empty without master keys or a base URL.
+func (s *Service) EmailMediaLink(m *model.Media) string {
+	if s.keys == nil || s.cfg.BaseURL == "" {
+		return ""
+	}
+	return s.cfg.BaseURL + "/v1/media/" + id.Format(id.Media, m.ID) + "/content?signature=" + s.emailMediaSignature(m.ID)
+}
+
+func (s *Service) emailMediaSignature(mediaID uuid.UUID) string {
+	mac := hmac.New(sha256.New, s.keys.Derive("media-links"))
+	mac.Write([]byte(mediaID.String() + "|email"))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
 // LinkedMedia opens a file by a signed link: the signature must match and
-// the link must not have expired. Any failure is "not found", saying
-// nothing about which part was wrong.
+// the link must not have expired, or, without an expiry, the signature must
+// be a newsletter's. Any failure is "not found", saying nothing about which
+// part was wrong.
 func (s *Service) LinkedMedia(ctx context.Context, ref, expires, signature string) (*model.Media, io.ReadCloser, error) {
 	missing := apperr.NotFound("media")
 	mid, err := id.Parse(id.Media, ref)
 	if err != nil || s.keys == nil {
 		return nil, nil, missing
 	}
-	exp, err := strconv.ParseInt(expires, 10, 64)
-	now := s.Now()
-	if err != nil || now.Unix() > exp || time.Unix(exp, 0).After(now.Add(MediaLinkTTL+time.Minute)) {
-		return nil, nil, missing
+	var want string
+	if expires == "" {
+		want = s.emailMediaSignature(mid)
+	} else {
+		exp, err := strconv.ParseInt(expires, 10, 64)
+		now := s.Now()
+		if err != nil || now.Unix() > exp || time.Unix(exp, 0).After(now.Add(MediaLinkTTL+time.Minute)) {
+			return nil, nil, missing
+		}
+		want = s.mediaSignature(mid, exp)
 	}
-	want := s.mediaSignature(mid, exp)
 	if !hmac.Equal([]byte(want), []byte(signature)) {
 		return nil, nil, missing
 	}

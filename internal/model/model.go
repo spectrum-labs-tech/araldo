@@ -134,9 +134,22 @@ type Brand struct {
 	ApprovalPolicy ApprovalPolicy
 	// UTMDomains are the sites whose links get UTM parameters (empty: none).
 	UTMDomains []string
+	// EmailTheme is its look in newsletters (ADR 0024).
+	EmailTheme EmailTheme
 	CreatedAt  time.Time
 	// Slots are its weekly publishing times, filled by reads.
 	Slots []Slot
+}
+
+// EmailTheme is a brand's look in newsletters (ADR 0024 decision 9).
+type EmailTheme struct {
+	LogoMediaID *uuid.UUID
+	// Accent is "#rrggbb", or empty for the default.
+	Accent string
+	// PostalAddress is the sender's, which anti-spam laws require in every
+	// newsletter; an issue cannot be scheduled without it.
+	PostalAddress string
+	Footer        string
 }
 
 // Slot is a weekly publishing time in the brand's time zone.
@@ -425,6 +438,141 @@ type AnalyticsSource struct {
 	ReadAt      *time.Time
 	NextReadAt  time.Time
 	CreatedAt   time.Time
+}
+
+// MailAccount is an email provider account a brand sends newsletters
+// through (ADR 0024). The provider owns the subscribers.
+type MailAccount struct {
+	ID         uuid.UUID
+	OrgID      uuid.UUID
+	BrandID    uuid.UUID
+	Livemode   bool
+	Provider   string
+	ExternalID string
+	Name       string
+	FromName   string
+	FromEmail  string
+	ReplyTo    string
+	// DefaultAudiences are the provider's audience IDs a new issue goes to.
+	DefaultAudiences []string
+	Settings         map[string]string // non-secret fields
+	Credentials      []byte            // encrypted secret fields
+	Status           AdAccountStatus
+	StatusNote       string
+	CreatedAt        time.Time
+}
+
+// IssueStatus is where a newsletter issue stands, derived from its
+// deliveries once it is scheduled (ADR 0024 decision 6).
+type IssueStatus string
+
+// Issue statuses.
+const (
+	IssueDraft           IssueStatus = "draft"
+	IssuePendingApproval IssueStatus = "pending_approval"
+	IssueScheduled       IssueStatus = "scheduled"
+	IssueSending         IssueStatus = "sending"
+	IssueSent            IssueStatus = "sent"
+	IssuePartiallySent   IssueStatus = "partially_sent"
+	IssueCanceled        IssueStatus = "canceled"
+	IssueFailed          IssueStatus = "failed"
+)
+
+// Issue is a newsletter issue: a document sent to audiences at one or
+// more mail accounts.
+type Issue struct {
+	ID             uuid.UUID
+	OrgID          uuid.UUID
+	BrandID        uuid.UUID
+	Livemode       bool
+	Subject        string
+	PreviewText    string
+	Body           string
+	Status         IssueStatus
+	SendAt         *time.Time
+	ApprovalNeeded bool
+	ReviewedByUser *uuid.UUID
+	ReviewedByKey  *uuid.UUID
+	ReviewedAt     *time.Time
+	ReviewNote     string
+	CreatedByUser  *uuid.UUID
+	CreatedByKey   *uuid.UUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	// Deliveries and Media are filled by reads.
+	Deliveries []IssueDelivery
+	Media      []uuid.UUID
+}
+
+// DeliveryStatus is where one mail account's copy of an issue stands.
+type DeliveryStatus string
+
+// Delivery statuses.
+const (
+	DeliveryDraft DeliveryStatus = "draft"
+	// DeliveryHeld waits for the issue's approval.
+	DeliveryHeld DeliveryStatus = "held"
+	// DeliveryQueued waits to be handed to the provider.
+	DeliveryQueued DeliveryStatus = "queued"
+	// DeliveryHandedOff is scheduled at the provider, which sends it.
+	DeliveryHandedOff      DeliveryStatus = "handed_off"
+	DeliverySent           DeliveryStatus = "sent"
+	DeliveryCanceled       DeliveryStatus = "canceled"
+	DeliveryFailed         DeliveryStatus = "failed"
+	DeliveryNeedsAttention DeliveryStatus = "needs_attention"
+)
+
+// Open reports whether a delivery may still be sent.
+func (s DeliveryStatus) Open() bool {
+	switch s {
+	case DeliveryDraft, DeliveryHeld, DeliveryQueued, DeliveryHandedOff:
+		return true
+	}
+	return false
+}
+
+// Audience is a provider's audience an issue goes to, as it was when
+// chosen: never its members.
+type Audience struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	Size int64  `json:"size"`
+}
+
+// MailResults are a delivery's counts, as its provider reports them.
+type MailResults struct {
+	Recipients   int64
+	Delivered    int64
+	Opens        int64
+	Clicks       int64
+	Unsubscribes int64
+	Bounces      int64
+	Complaints   int64
+}
+
+// IssueDelivery is one mail account's copy of an issue: its audiences, its
+// campaign at the provider and its results.
+type IssueDelivery struct {
+	ID      uuid.UUID
+	OrgID   uuid.UUID
+	IssueID uuid.UUID
+	// MailAccountID is nil once the account is disconnected.
+	MailAccountID *uuid.UUID
+	Livemode      bool
+	Provider      string
+	AccountName   string
+	Audiences     []Audience
+	Status        DeliveryStatus
+	HandoffAt     *time.Time
+	Attempts      int
+	CampaignID    string
+	LastError     string
+	SentAt        *time.Time
+	Results       MailResults
+	ResultsReadAt *time.Time
+	NextReadAt    *time.Time
+	UpdatedAt     time.Time
 }
 
 // TargetStatus is where one channel's copy of a post stands (ADR 0011).

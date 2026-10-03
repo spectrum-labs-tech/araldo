@@ -62,3 +62,13 @@ func CheckChannelsOrg(s *Service, org uuid.UUID) (int, error) {
 func CollectAnalyticsOrg(s *Service, org uuid.UUID) (int, error) {
 	return s.collectAnalytics(context.Background(), &org)
 }
+
+// HandOffNewslettersOrg is HandOffNewsletters for one org.
+func HandOffNewslettersOrg(s *Service, org uuid.UUID) (int, error) {
+	return s.handOffNewsletters(context.Background(), &org)
+}
+
+// ReadNewsletterResultsOrg is ReadNewsletterResults for one org.
+func ReadNewsletterResultsOrg(s *Service, org uuid.UUID) (int, error) {
+	return s.readNewsletterResults(context.Background(), &org)
+}

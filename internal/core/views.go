@@ -29,7 +29,9 @@ type BrandView struct {
 	ApprovalPolicy string     `json:"approval_policy"`
 	UTMDomains     []string   `json:"utm_domains"`
 	Slots          []SlotView `json:"slots"`
-	CreatedAt      time.Time  `json:"created_at"`
+	// EmailTheme is the brand's look in newsletters (ADR 0024).
+	EmailTheme EmailThemeView `json:"email_theme"`
+	CreatedAt  time.Time      `json:"created_at"`
 }
 
 // SlotView is a weekly publishing time in the brand's time zone.
@@ -42,7 +44,7 @@ type SlotView struct {
 func ViewBrand(b *model.Brand) BrandView {
 	v := BrandView{ID: id.Format(id.Brand, b.ID), Object: "brand", Name: b.Name, Slug: b.Slug, Timezone: b.Timezone,
 		ApprovalPolicy: string(b.ApprovalPolicy), UTMDomains: nonNilList(b.UTMDomains), Slots: make([]SlotView, 0, len(b.Slots)),
-		CreatedAt: b.CreatedAt.UTC()}
+		EmailTheme: ViewEmailTheme(b.EmailTheme), CreatedAt: b.CreatedAt.UTC()}
 	for _, sl := range b.Slots {
 		v.Slots = append(v.Slots, SlotView{Weekday: strings.ToLower(sl.Weekday.String()),
 			Time: fmt.Sprintf("%02d:%02d", sl.MinuteOfDay/60, sl.MinuteOfDay%60)})

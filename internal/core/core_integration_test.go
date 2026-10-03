@@ -26,6 +26,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/authn"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/email"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -279,6 +280,32 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	checks["delete analytics source"] = b.s.DeleteAnalyticsSource(ctx, b.owner, anl.ID)
 	_, checks["analytics for their brand"] = b.s.ConnectAnalyticsSource(ctx, b.owner, core.AnalyticsSourceInput{BrandID: a.brand.ID, Provider: analytics.Sandbox})
 	_, checks["ad account for their brand"] = b.s.ConnectAdAccount(ctx, b.owner, core.AdAccountInput{BrandID: a.brand.ID, Network: ads.Sandbox})
+	mailAcct, err := a.s.ConnectMailAccount(ctx, a.owner, core.MailAccountInput{BrandID: a.brand.ID, Provider: email.Sandbox,
+		FromName: "A", FromEmail: "news@a.example", DefaultAudiences: []string{"list-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err := a.s.CreateIssue(ctx, a.owner, core.IssueInput{BrandID: a.brand.ID, Subject: "Hi", Body: "Hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, checks["mail account"] = b.s.MailAccount(ctx, b.owner, mailAcct.ID)
+	_, checks["mail audiences"] = b.s.MailAudiences(ctx, b.owner, mailAcct.ID)
+	_, checks["update mail account"] = b.s.UpdateMailAccount(ctx, b.owner, mailAcct.ID, core.MailAccountUpdate{FromName: "B", FromEmail: "b@b.example"})
+	checks["delete mail account"] = b.s.DeleteMailAccount(ctx, b.owner, mailAcct.ID)
+	_, checks["mail account for their brand"] = b.s.ConnectMailAccount(ctx, b.owner, core.MailAccountInput{BrandID: a.brand.ID,
+		Provider: email.Sandbox, FromName: "B", FromEmail: "b@b.example"})
+	_, checks["email theme"] = b.s.SetEmailTheme(ctx, b.owner, a.brand.ID, core.EmailThemeInput{PostalAddress: "x"})
+	_, checks["issue"] = b.s.Issue(ctx, b.owner, issue.ID)
+	_, checks["issue preview"] = b.s.IssuePreview(ctx, b.owner, issue.ID)
+	_, checks["update issue"] = b.s.UpdateIssue(ctx, b.owner, issue.ID, core.IssueInput{Subject: "x", Body: "x"})
+	_, checks["schedule issue"] = b.s.ScheduleIssue(ctx, b.owner, issue.ID, time.Now().Add(time.Hour))
+	_, checks["unschedule issue"] = b.s.UnscheduleIssue(ctx, b.owner, issue.ID)
+	_, checks["cancel issue"] = b.s.CancelIssue(ctx, b.owner, issue.ID)
+	_, checks["review issue"] = b.s.ReviewIssue(ctx, b.owner, issue.ID, true, "")
+	checks["test issue"] = b.s.SendTestIssue(ctx, b.owner, issue.ID, core.TestIssueInput{MailAccountID: mailAcct.ID, To: []string{"b@b.example"}})
+	_, checks["issue for their brand"] = b.s.CreateIssue(ctx, b.owner, core.IssueInput{BrandID: a.brand.ID, Subject: "x", Body: "x"})
+	_, checks["preview for their brand"] = b.s.PreviewIssue(ctx, b.owner, core.IssueInput{BrandID: a.brand.ID, Subject: "x", Body: "x"})
 	_, checks["retry"] = b.s.RetryTarget(ctx, b.owner, p.Targets[0].ID)
 	_, checks["post to their brand"] = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: a.brand.ID, Content: &model.Content{Body: "x"}})
 	for what, err := range checks {

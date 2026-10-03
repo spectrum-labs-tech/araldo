@@ -21,6 +21,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/analytics"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
+	"github.com/spectrum-labs-tech/araldo/internal/email"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -46,6 +47,9 @@ type Config struct {
 	// AnalyticsSources are the web analytics tools live sites can connect
 	// to (ADR 0025); test mode always has the sandbox.
 	AnalyticsSources []analytics.Source
+	// Mailers are the email providers live newsletters can be sent
+	// through (ADR 0024); test mode always has the sandbox.
+	Mailers []email.Mailer
 }
 
 // Service is the application.
@@ -66,6 +70,8 @@ type Service struct {
 	adNetworks *ads.Registry
 	// analytics are the web analytics tools sources can be read from.
 	analytics *analytics.Registry
+	// mailers are the email providers newsletters can be sent through.
+	mailers *email.Registry
 	// metrics records nothing until Instrument.
 	metrics *metrics
 }
@@ -75,6 +81,7 @@ func New(st *store.Store, keys *keyring.Keyring, platforms *platform.Registry, l
 	return &Service{store: st, keys: keys, platforms: platforms, log: log, cfg: cfg, Now: time.Now,
 		adNetworks: ads.NewRegistry(append([]ads.Reporter{ads.SandboxAds{}}, cfg.AdNetworks...)...),
 		analytics:  analytics.NewRegistry(append([]analytics.Source{analytics.SandboxSource{}}, cfg.AnalyticsSources...)...),
+		mailers:    email.NewRegistry(append([]email.Mailer{email.SandboxMailer{}}, cfg.Mailers...)...),
 		HTTP:       netguard.Client(cfg.AllowPrivateWebhooks, deliveryTimeout),
 		MediaHTTP:  mediaClient(cfg.AllowPrivateWebhooks, netguard.Client(cfg.AllowPrivateWebhooks, mediaFetchTimeout)),
 		blobs:      cfg.Blobs, metrics: noopMetrics()}
@@ -109,6 +116,9 @@ const (
 	PermAuditRead      Permission = "audit:read"
 	PermAdsRead        Permission = "ads:read"
 	PermAdsWrite       Permission = "ads:write"
+	// Newsletters (ADR 0024); approving one takes posts:approve.
+	PermNewslettersRead  Permission = "newsletters:read"
+	PermNewslettersWrite Permission = "newsletters:write"
 )
 
 // KeyScopes are the integration permissions: an API key with no scopes
@@ -116,6 +126,7 @@ const (
 var KeyScopes = []Permission{
 	PermPostsRead, PermPostsWrite, PermTemplatesRead, PermTemplatesWrite, PermChannelsRead, PermChannelsWrite,
 	PermBrandsRead, PermBrandsWrite, PermEventsRead, PermWebhooksRead, PermWebhooksWrite, PermAdsRead,
+	PermNewslettersRead, PermNewslettersWrite,
 }
 
 // AdminScopes are explicit-only (ADR 0019): a key holds one only when it
@@ -126,7 +137,8 @@ var AdminScopes = []Permission{PermKeysWrite, PermPostsApprove, PermAuditRead, P
 var roleMin = map[Permission]model.Role{
 	PermPostsRead: model.RoleViewer, PermTemplatesRead: model.RoleViewer, PermChannelsRead: model.RoleViewer,
 	PermBrandsRead: model.RoleViewer, PermEventsRead: model.RoleViewer, PermWebhooksRead: model.RoleViewer, PermAdsRead: model.RoleViewer,
-	PermPostsWrite: model.RoleEditor, PermTemplatesWrite: model.RoleEditor,
+	PermNewslettersRead: model.RoleViewer,
+	PermPostsWrite:      model.RoleEditor, PermTemplatesWrite: model.RoleEditor, PermNewslettersWrite: model.RoleEditor,
 	PermChannelsWrite: model.RoleAdmin, PermBrandsWrite: model.RoleAdmin, PermWebhooksWrite: model.RoleAdmin,
 	PermKeysWrite: model.RoleAdmin, PermMembersWrite: model.RoleAdmin, PermPostsApprove: model.RoleAdmin, PermAuditRead: model.RoleAdmin,
 	PermAdsWrite: model.RoleAdmin,

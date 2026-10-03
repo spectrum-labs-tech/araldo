@@ -29,6 +29,8 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/buildinfo"
 	"github.com/spectrum-labs-tech/araldo/internal/config"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/email"
+	"github.com/spectrum-labs-tech/araldo/internal/email/brevo"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
 	"github.com/spectrum-labs-tech/araldo/internal/netguard"
 	"github.com/spectrum-labs-tech/araldo/internal/opsched"
@@ -108,7 +110,8 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 		instagram.New(client),
 	)
 	ccfg := core.Config{BaseURL: cfg.BaseURL, AllowPrivateWebhooks: cfg.AllowPrivateNetworks,
-		AdNetworks: []ads.Reporter{reddit.New(client)}, AnalyticsSources: []analytics.Source{plausible.New(client), ga4.New(client)}}
+		AdNetworks: []ads.Reporter{reddit.New(client)}, AnalyticsSources: []analytics.Source{plausible.New(client), ga4.New(client)},
+		Mailers: []email.Mailer{brevo.New(client)}}
 	if s := cfg.S3; s.Bucket != "" {
 		b, err := blob.NewS3(s.Endpoint, s.Bucket, s.Region, s.AccessKeyID, s.SecretAccessKey, s.Prefix)
 		if err != nil {

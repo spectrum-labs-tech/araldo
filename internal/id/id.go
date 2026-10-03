@@ -37,6 +37,9 @@ const (
 	AuditEvent      Prefix = "audit"
 	AdAccount       Prefix = "adacct"
 	AnalyticsSource Prefix = "anlsrc"
+	MailAccount     Prefix = "mailacct"
+	Issue           Prefix = "nl"
+	IssueDelivery   Prefix = "nldel"
 )
 
 // ErrInvalid is returned for a malformed ID or one of another type.

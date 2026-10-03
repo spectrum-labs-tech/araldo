@@ -508,11 +508,13 @@ paths:
         Serves a media file without an API key when the link is signed and
         has not expired. Araldo makes these links (valid for an hour) for
         platforms that fetch images themselves, such as Threads and
-        Instagram; there is no need to call it directly.
+        Instagram, and links without an expiry, signed for that purpose
+        only, for images in newsletters, which are opened long after they
+        are sent. There is no need to call it directly.
       security: []
       tags: [Media]
       parameters:
-        - { name: expires, in: query, required: true, schema: { type: integer }, description: Unix time the link stops working. }
+        - { name: expires, in: query, schema: { type: integer }, description: "Unix time the link stops working; absent on a newsletter's link." }
         - { name: signature, in: query, required: true, schema: { type: string } }
       responses:
         "200":

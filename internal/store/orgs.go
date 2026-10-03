@@ -102,11 +102,13 @@ func (s *Store) CountOwners(ctx context.Context, orgID uuid.UUID) (int, error) {
 
 // Brands.
 
-const brandCols = `id, org_id, name, slug, timezone, approval_policy, utm_domains, created_at`
+const brandCols = `id, org_id, name, slug, timezone, approval_policy, utm_domains, email_logo_media_id, email_accent, email_address,
+	email_footer, created_at`
 
 func scanBrand(r pgx.Row) (*model.Brand, error) {
 	var b model.Brand
-	err := r.Scan(&b.ID, &b.OrgID, &b.Name, &b.Slug, &b.Timezone, &b.ApprovalPolicy, &b.UTMDomains, &b.CreatedAt)
+	err := r.Scan(&b.ID, &b.OrgID, &b.Name, &b.Slug, &b.Timezone, &b.ApprovalPolicy, &b.UTMDomains, &b.EmailTheme.LogoMediaID,
+		&b.EmailTheme.Accent, &b.EmailTheme.PostalAddress, &b.EmailTheme.Footer, &b.CreatedAt)
 	return &b, mapErr(err)
 }
 
@@ -119,6 +121,13 @@ func (s *Store) CreateBrand(ctx context.Context, b *model.Brand) error {
 func (s *Store) UpdateBrand(ctx context.Context, b *model.Brand) error {
 	return mapErr(s.execOne(ctx, `UPDATE brands SET name = $3, slug = $4, timezone = $5, approval_policy = $6, utm_domains = $7, updated_at = now()
 		WHERE org_id = $1 AND id = $2`, b.OrgID, b.ID, b.Name, b.Slug, b.Timezone, b.ApprovalPolicy, nonNilStrings(b.UTMDomains)))
+}
+
+// UpdateBrandEmailTheme sets a brand's look in newsletters. A logo that
+// is not the org's media is ErrReferenced.
+func (s *Store) UpdateBrandEmailTheme(ctx context.Context, orgID, id uuid.UUID, t model.EmailTheme) error {
+	return s.execOne(ctx, `UPDATE brands SET email_logo_media_id = $3, email_accent = $4, email_address = $5, email_footer = $6,
+		updated_at = now() WHERE org_id = $1 AND id = $2`, orgID, id, t.LogoMediaID, t.Accent, t.PostalAddress, t.Footer)
 }
 
 func (s *Store) Brand(ctx context.Context, orgID, id uuid.UUID) (*model.Brand, error) {

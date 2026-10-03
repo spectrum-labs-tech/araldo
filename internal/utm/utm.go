@@ -28,26 +28,29 @@ func Tag(text string, domains []string, p Params) string {
 	if len(domains) == 0 {
 		return text
 	}
-	return platform.LinkRE.ReplaceAllStringFunc(text, func(raw string) string {
-		u, err := url.Parse(raw)
-		if err != nil || !matches(u.Hostname(), domains) || hasUTM(u.RawQuery) {
-			return raw
+	return platform.LinkRE.ReplaceAllStringFunc(text, func(raw string) string { return TagURL(raw, domains, p) })
+}
+
+// TagURL adds the params to one link, by the same rules as Tag.
+func TagURL(raw string, domains []string, p Params) string {
+	u, err := url.Parse(raw)
+	if err != nil || !matches(u.Hostname(), domains) || hasUTM(u.RawQuery) {
+		return raw
+	}
+	add := url.Values{}
+	for k, v := range map[string]string{"utm_source": p.Source, "utm_medium": p.Medium, "utm_campaign": p.Campaign, "utm_content": p.Content} {
+		if v != "" {
+			add.Set(k, v)
 		}
-		add := url.Values{}
-		for k, v := range map[string]string{"utm_source": p.Source, "utm_medium": p.Medium, "utm_campaign": p.Campaign, "utm_content": p.Content} {
-			if v != "" {
-				add.Set(k, v)
-			}
-		}
-		if len(add) == 0 {
-			return raw
-		}
-		if u.RawQuery != "" {
-			u.RawQuery += "&"
-		}
-		u.RawQuery += add.Encode()
-		return u.String()
-	})
+	}
+	if len(add) == 0 {
+		return raw
+	}
+	if u.RawQuery != "" {
+		u.RawQuery += "&"
+	}
+	u.RawQuery += add.Encode()
+	return u.String()
 }
 
 func matches(host string, domains []string) bool {
@@ -156,5 +159,10 @@ func Token(s string) string {
 	return out
 }
 
-// Paid is utm_medium on ad links.
-const Paid = "paid"
+// Mediums Araldo writes besides "social" for posts.
+const (
+	// Paid is utm_medium on ad links.
+	Paid = "paid"
+	// Email is utm_medium on newsletter links (ADR 0024 decision 10).
+	Email = "email"
+)

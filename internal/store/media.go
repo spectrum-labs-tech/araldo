@@ -99,16 +99,20 @@ func (s *Store) SetMediaAlt(ctx context.Context, orgID, id uuid.UUID, alt string
 }
 
 // DeleteMedia deletes a media row (and its Postgres file). It fails with
-// ErrReferenced while a post uses it.
+// ErrReferenced while a post, a newsletter issue or a brand's email theme
+// uses it.
 func (s *Store) DeleteMedia(ctx context.Context, orgID, id uuid.UUID) error {
 	return s.execOne(ctx, `DELETE FROM media WHERE org_id = $1 AND id = $2`, orgID, id)
 }
 
-// UnusedMedia lists media created before cutoff that no post uses, oldest
-// first, in one org or (orgID nil) every org, for pruning.
+// UnusedMedia lists media created before cutoff that no post, issue or
+// email theme uses, oldest first, in one org or (orgID nil) every org, for
+// pruning.
 func (s *Store) UnusedMedia(ctx context.Context, orgID *uuid.UUID, cutoff time.Time, limit int) ([]*model.Media, error) {
 	rows, err := s.q.Query(ctx, `SELECT `+mediaCols+` FROM media m WHERE m.created_at < $1 AND ($3::uuid IS NULL OR m.org_id = $3)
-		AND NOT EXISTS (SELECT 1 FROM post_media pm WHERE pm.media_id = m.id) ORDER BY m.id LIMIT $2`, cutoff, limit, orgID)
+		AND NOT EXISTS (SELECT 1 FROM post_media pm WHERE pm.media_id = m.id)
+		AND NOT EXISTS (SELECT 1 FROM newsletter_media nm WHERE nm.media_id = m.id)
+		AND NOT EXISTS (SELECT 1 FROM brands b WHERE b.email_logo_media_id = m.id) ORDER BY m.id LIMIT $2`, cutoff, limit, orgID)
 	if err != nil {
 		return nil, err
 	}

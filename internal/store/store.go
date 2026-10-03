@@ -159,6 +159,23 @@ func (s *Store) InTx(ctx context.Context, fn func(tx *Store) error) error {
 	return nil
 }
 
+// snapshot runs fn, a read made of several statements, in one read-only
+// REPEATABLE READ transaction, so every statement sees the same moment:
+// otherwise a write committed between them (a target published, its post
+// marked published) shows half done. Inside a transaction already, it just
+// runs fn.
+func (s *Store) snapshot(ctx context.Context, fn func(tx *Store) error) error {
+	if s.inTx {
+		return fn(s)
+	}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return fmt.Errorf("store: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	return fn(&Store{pool: s.pool, q: tx, inTx: true})
+}
+
 // mapErr turns driver errors into store sentinels.
 func mapErr(err error) error {
 	if err == nil {

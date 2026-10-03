@@ -82,11 +82,15 @@ func (s *Store) CreatePost(ctx context.Context, p *model.Post) error {
 
 // Post returns a post with its targets and media.
 func (s *Store) Post(ctx context.Context, orgID, id uuid.UUID) (*model.Post, error) {
-	p, err := scanPost(s.q.QueryRow(ctx, `SELECT `+postCols+` FROM posts WHERE org_id = $1 AND id = $2`, orgID, id))
-	if err != nil {
-		return nil, err
-	}
-	return p, s.complete(ctx, orgID, p)
+	var p *model.Post
+	err := s.snapshot(ctx, func(tx *Store) error {
+		var err error
+		if p, err = scanPost(tx.q.QueryRow(ctx, `SELECT `+postCols+` FROM posts WHERE org_id = $1 AND id = $2`, orgID, id)); err != nil {
+			return err
+		}
+		return tx.complete(ctx, orgID, p)
+	})
+	return p, err
 }
 
 // PostForUpdate locks a post row.
@@ -159,6 +163,17 @@ var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 // Posts lists posts newest first, each with its targets.
 func (s *Store) Posts(ctx context.Context, orgID uuid.UUID, livemode bool, f PostFilter, page Page) ([]*model.Post, bool, error) {
+	var posts []*model.Post
+	var more bool
+	err := s.snapshot(ctx, func(tx *Store) error {
+		var err error
+		posts, more, err = tx.posts(ctx, orgID, livemode, f, page)
+		return err
+	})
+	return posts, more, err
+}
+
+func (s *Store) posts(ctx context.Context, orgID uuid.UUID, livemode bool, f PostFilter, page Page) ([]*model.Post, bool, error) {
 	cond, fargs := postWhere(f, true)
 	where, order, extra := pageClause(page, "p.id", 3+len(fargs))
 	args := append(append([]any{orgID, livemode}, fargs...), extra...)

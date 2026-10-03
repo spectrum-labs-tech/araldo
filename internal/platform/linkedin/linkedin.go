@@ -48,11 +48,22 @@ type Adapter struct {
 	API, Auth string
 	// Now is the clock for token expiry; tests replace it.
 	Now func() time.Time
+	// Sleep waits while LinkedIn processes a video; tests replace it.
+	Sleep func(ctx context.Context, d time.Duration) error
 }
 
 // New returns a LinkedIn adapter.
 func New(client *http.Client) *Adapter {
-	return &Adapter{Client: client, API: DefaultAPI, Auth: DefaultAuth, Now: time.Now}
+	return &Adapter{Client: client, API: DefaultAPI, Auth: DefaultAuth, Now: time.Now, Sleep: sleep}
+}
+
+func sleep(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
 }
 
 func (a *Adapter) Provider() platform.Provider { return platform.LinkedIn }
@@ -178,6 +189,9 @@ type content struct {
 	MultiImage *multiImage `json:"multiImage,omitempty"`
 }
 
+// videoWait is the wait between checks on a processing video.
+const videoWait = 3 * time.Second
+
 type image struct {
 	ID      string `json:"id"`
 	AltText string `json:"altText,omitempty"`
@@ -205,7 +219,14 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 	author := "urn:li:person:" + sub
 	body := post{Author: author, Commentary: Commentary(p.Parts[0]), Visibility: "PUBLIC", LifecycleState: "PUBLISHED",
 		Distribution: distribution{FeedDistribution: "MAIN_FEED", TargetEntities: []string{}, ThirdPartyDistributionChannels: []string{}}}
-	if len(p.Media) > 0 {
+	switch {
+	case len(p.Media) == 1 && p.Media[0].IsVideo():
+		urn, err := a.uploadVideo(ctx, h, author, p.Media[0])
+		if err != nil {
+			return res, err
+		}
+		body.Content = &content{Media: &image{ID: urn}}
+	case len(p.Media) > 0:
 		imgs, err := a.upload(ctx, h, author, p.Media)
 		if err != nil {
 			return res, err
@@ -337,4 +358,101 @@ func escape(s string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// uploadVideo sends a video through the Videos API: initialize with its
+// size, put each part LinkedIn asks for, read from the stream in order,
+// finalize with the parts' ETags, and wait until LinkedIn has processed it
+// (https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/videos-api).
+func (a *Adapter) uploadVideo(ctx context.Context, h map[string]string, owner string, m platform.Media) (string, error) {
+	var init struct {
+		Value struct {
+			Video        string `json:"video"`
+			UploadToken  string `json:"uploadToken"`
+			Instructions []struct {
+				UploadURL string `json:"uploadUrl"`
+				FirstByte int64  `json:"firstByte"`
+				LastByte  int64  `json:"lastByte"`
+			} `json:"uploadInstructions"`
+		} `json:"value"`
+	}
+	err := platform.JSON(ctx, a.Client, http.MethodPost, a.API+"/rest/videos?action=initializeUpload", h,
+		map[string]any{"initializeUploadRequest": map[string]any{"owner": owner, "fileSizeBytes": m.Size, "uploadCaptions": false, "uploadThumbnail": false}},
+		&init)
+	if err != nil {
+		return "", expired(err)
+	}
+	v := init.Value
+	if v.Video == "" || len(v.Instructions) == 0 {
+		return "", platform.Errorf(platform.Transient, "LinkedIn returned no upload instructions")
+	}
+	rc, err := platform.OpenVideo(ctx, m)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = rc.Close() }()
+	etags := make([]string, 0, len(v.Instructions))
+	var read int64
+	for _, in := range v.Instructions {
+		n := in.LastByte - in.FirstByte + 1
+		if in.FirstByte != read || n <= 0 {
+			return "", platform.Errorf(platform.Rejected, "LinkedIn asked for bytes %d to %d out of order", in.FirstByte, in.LastByte)
+		}
+		part := make([]byte, n)
+		if _, err := io.ReadFull(rc, part); err != nil {
+			return "", &platform.Error{Kind: platform.Transient, Code: "media_unreadable", Msg: "reading the video", Err: err}
+		}
+		read += n
+		etag, err := a.putPart(ctx, h, in.UploadURL, part)
+		if err != nil {
+			return "", err
+		}
+		etags = append(etags, etag)
+	}
+	err = platform.JSON(ctx, a.Client, http.MethodPost, a.API+"/rest/videos?action=finalizeUpload", h,
+		map[string]any{"finalizeUploadRequest": map[string]any{"video": v.Video, "uploadToken": v.UploadToken, "uploadedPartIds": etags}}, nil)
+	if err != nil {
+		return "", expired(err)
+	}
+	for {
+		var st struct {
+			Status string `json:"status"`
+		}
+		if err := platform.JSON(ctx, a.Client, http.MethodGet, a.API+"/rest/videos/"+url.QueryEscape(v.Video), h, nil, &st); err != nil {
+			return "", expired(err)
+		}
+		switch st.Status {
+		case "AVAILABLE":
+			return v.Video, nil
+		case "PROCESSING_FAILED":
+			return "", &platform.Error{Kind: platform.Rejected, Code: "video_rejected", Msg: "LinkedIn could not process the video"}
+		}
+		if err := a.Sleep(ctx, videoWait); err != nil {
+			return "", &platform.Error{Kind: platform.Transient, Code: "media_processing", Msg: "LinkedIn was still processing the video", Err: err}
+		}
+	}
+}
+
+// putPart uploads one part and returns its ETag.
+func (a *Adapter) putPart(ctx context.Context, h map[string]string, uploadURL string, part []byte) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, bytes.NewReader(part))
+	if err != nil {
+		return "", &platform.Error{Kind: platform.Rejected, Code: "request", Err: err}
+	}
+	req.Header.Set("Authorization", h["Authorization"])
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := platform.Do(a.Client, req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if resp.StatusCode/100 != 2 {
+		return "", expired(platform.Classify(resp, raw))
+	}
+	etag := resp.Header.Get("ETag")
+	if etag == "" {
+		return "", platform.Errorf(platform.Transient, "LinkedIn accepted a video part without an ETag")
+	}
+	return etag, nil
 }

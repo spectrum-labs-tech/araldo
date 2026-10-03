@@ -143,6 +143,9 @@ var rules = map[Provider]Rules{
 		Source:      "https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api",
 		Images:      map[string]int64{media.JPEG: 0, media.PNG: 0, media.GIF: 0},
 		ImageSource: "https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/images-api",
+		// MP4 up to 500 MB, 3 seconds to 30 minutes.
+		Video: &VideoRules{Types: map[string]int64{media.MP4: 500 << 20}, MinDuration: 3 * time.Second, MaxDuration: 30 * time.Minute,
+			Source: "https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/videos-api"},
 	},
 	Facebook: {
 		Provider: Facebook, Name: "Facebook", MaxLength: 63206, Counting: CountRunes, MaxMedia: 10,

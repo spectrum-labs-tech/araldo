@@ -3,8 +3,10 @@
 package linkedin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -42,6 +44,12 @@ type fakeLinkedIn struct {
 	uploads []string
 	headers []http.Header
 	expired bool
+	// Video: parts put, the finalize request, and status checks until the
+	// video is available.
+	videoParts []string
+	finalize   map[string]any
+	polls      int
+	rawPaths   []string
 }
 
 func (f *fakeLinkedIn) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +70,33 @@ func (f *fakeLinkedIn) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		data, _ := io.ReadAll(r.Body)
 		f.uploads = append(f.uploads, string(data))
 		w.WriteHeader(http.StatusCreated)
+	case r.URL.Path == "/rest/videos" && r.URL.Query().Get("action") == "initializeUpload":
+		var in struct {
+			Req struct {
+				Size int `json:"fileSizeBytes"`
+			} `json:"initializeUploadRequest"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		var parts []string
+		for first := 0; first < in.Req.Size; first += 4 {
+			last := min(first+3, in.Req.Size-1)
+			parts = append(parts, fmt.Sprintf(`{"uploadUrl":"%s/vupload/%d","firstByte":%d,"lastByte":%d}`, f.srv.URL, len(parts), first, last))
+		}
+		_, _ = w.Write([]byte(`{"value":{"video":"urn:li:video:V1","uploadToken":"","uploadInstructions":[` + strings.Join(parts, ",") + `]}}`))
+	case strings.HasPrefix(r.URL.Path, "/vupload/") && r.Method == http.MethodPut:
+		data, _ := io.ReadAll(r.Body)
+		f.videoParts = append(f.videoParts, string(data))
+		w.Header().Set("ETag", "etag-"+strings.TrimPrefix(r.URL.Path, "/vupload/"))
+	case r.URL.Path == "/rest/videos" && r.URL.Query().Get("action") == "finalizeUpload":
+		_ = json.NewDecoder(r.Body).Decode(&f.finalize)
+	case r.URL.Path == "/rest/videos/urn:li:video:V1":
+		f.rawPaths = append(f.rawPaths, r.URL.EscapedPath())
+		f.polls++
+		status := "PROCESSING"
+		if f.polls >= 2 {
+			status = "AVAILABLE"
+		}
+		_, _ = w.Write([]byte(`{"status":"` + status + `"}`))
 	case r.URL.Path == "/rest/posts":
 		var in map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&in)
@@ -205,5 +240,26 @@ func TestSignInAndRefresh(t *testing.T) {
 	}
 	if _, _, err := a.Refresh(t.Context(), app, fresh); platform.KindOf(err) != platform.AuthRevoked {
 		t.Fatalf("a refused refresh: %v, want auth_revoked", err)
+	}
+}
+
+func TestPublishVideo(t *testing.T) {
+	t.Parallel()
+	f, a := setup(t)
+	a.Sleep = func(context.Context, time.Duration) error { return nil }
+	v := platform.Media{Type: "video/mp4"}.WithData([]byte("0123456789"))
+	if _, err := a.Publish(t.Context(), platform.Credentials{"access_token": "tok"},
+		platform.Payload{Parts: []string{"watch"}, Media: []platform.Media{v}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	fin, _ := f.finalize["finalizeUploadRequest"].(map[string]any)
+	ids, _ := fin["uploadedPartIds"].([]any)
+	if strings.Join(f.videoParts, "|") != "0123|4567|89" || len(ids) != 3 || ids[2] != "etag-2" || fin["video"] != "urn:li:video:V1" ||
+		f.polls != 2 || !strings.Contains(f.rawPaths[0], "urn%3Ali%3Avideo%3AV1") {
+		t.Fatalf("parts %q, finalize %v, polls %d, paths %v", f.videoParts, f.finalize, f.polls, f.rawPaths)
+	}
+	media, _ := f.posts[0]["content"].(map[string]any)["media"].(map[string]any)
+	if media["id"] != "urn:li:video:V1" {
+		t.Fatalf("post %v", f.posts[0])
 	}
 }

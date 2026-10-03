@@ -3,11 +3,15 @@
 package platform
 
 import (
+	"bytes"
 	"errors"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -115,5 +119,30 @@ func TestKindOfUnknownIsUncertain(t *testing.T) {
 	t.Parallel()
 	if KindOf(errors.New("boom")) != Uncertain {
 		t.Fatal("an unclassified error must count as uncertain")
+	}
+}
+
+func TestMultipartStream(t *testing.T) {
+	t.Parallel()
+	body, ct, length, err := MultipartStream([][2]string{{"chat_id", "1"}, {"caption", "hi"}},
+		StreamFile{Field: "video", Name: "v.mp4", Type: "video/mp4", Size: 5, Body: strings.NewReader("12345")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, _ := io.ReadAll(body)
+	if int64(len(all)) != length {
+		t.Fatalf("length %d, read %d", length, len(all))
+	}
+	_, params, _ := mime.ParseMediaType(ct)
+	r := multipart.NewReader(bytes.NewReader(all), params["boundary"])
+	form, err := r.ReadForm(1 << 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, _ := form.File["video"][0].Open()
+	data, _ := io.ReadAll(f)
+	if form.Value["chat_id"][0] != "1" || form.Value["caption"][0] != "hi" || string(data) != "12345" ||
+		form.File["video"][0].Header.Get("Content-Type") != "video/mp4" {
+		t.Fatalf("form %+v, file %q", form.Value, data)
 	}
 }

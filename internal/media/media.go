@@ -92,6 +92,10 @@ func Extension(typ string) string {
 		return ".gif"
 	case WebP:
 		return ".webp"
+	case MP4:
+		return ".mp4"
+	case QuickTime:
+		return ".mov"
 	}
 	return ""
 }

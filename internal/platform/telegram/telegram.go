@@ -68,11 +68,16 @@ func (a *Adapter) call(ctx context.Context, c platform.Credentials, method strin
 
 // send calls method with a body already encoded as contentType.
 func (a *Adapter) send(ctx context.Context, c platform.Credentials, method string, body []byte, contentType string, out any) error {
+	return a.sendStream(ctx, c, method, bytes.NewReader(body), int64(len(body)), contentType, out)
+}
+
+// sendStream calls method with a body read as it is sent.
+func (a *Adapter) sendStream(ctx context.Context, c platform.Credentials, method string, body io.Reader, length int64, contentType string, out any) error {
 	token := strings.TrimSpace(c["bot_token"])
 	if token == "" {
 		return platform.Errorf(platform.AuthRevoked, "bot token is required")
 	}
-	err := a.do(ctx, a.API+"/bot"+token+"/"+method, body, contentType, out)
+	err := a.do(ctx, a.API+"/bot"+token+"/"+method, body, length, contentType, out)
 	var pe *platform.Error
 	if errors.As(err, &pe) {
 		// The token is part of the URL: keep it out of every message.
@@ -84,11 +89,12 @@ func (a *Adapter) send(ctx context.Context, c platform.Credentials, method strin
 	return err
 }
 
-func (a *Adapter) do(ctx context.Context, u string, body []byte, contentType string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
+func (a *Adapter) do(ctx context.Context, u string, body io.Reader, length int64, contentType string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, body)
 	if err != nil {
 		return &platform.Error{Kind: platform.Rejected, Code: "request", Err: err}
 	}
+	req.ContentLength = length
 	req.Header.Set("Content-Type", contentType)
 	resp, err := platform.Do(a.Client, req)
 	if err != nil {
@@ -163,9 +169,12 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 	for i := len(p.Posted); i < len(p.Parts); i++ {
 		var m message
 		var err error
-		if i == 0 && len(p.Media) > 0 {
+		switch {
+		case i == 0 && len(p.Media) == 1 && p.Media[0].IsVideo():
+			m, err = a.sendVideo(ctx, c, p.Parts[i], p.Media[0])
+		case i == 0 && len(p.Media) > 0:
 			m, err = a.sendPhotos(ctx, c, p.Parts[i], p.Media)
-		} else {
+		default:
 			err = a.call(ctx, c, "sendMessage", map[string]any{"chat_id": c["chat_id"], "text": p.Parts[i]}, &m)
 		}
 		if err != nil {
@@ -237,4 +246,25 @@ func (a *Adapter) sendPhotos(ctx context.Context, c platform.Credentials, captio
 		return message{}, &platform.Error{Kind: platform.Uncertain, Code: "decode", Msg: "sendMediaGroup returned no messages"}
 	}
 	return ms[0], nil
+}
+
+// sendVideo posts a video, streamed, with the text as its caption
+// (https://core.telegram.org/bots/api#sendvideo).
+func (a *Adapter) sendVideo(ctx context.Context, c platform.Credentials, caption string, v platform.Media) (message, error) {
+	rc, err := platform.OpenVideo(ctx, v)
+	if err != nil {
+		return message{}, err
+	}
+	defer func() { _ = rc.Close() }()
+	fields := [][2]string{{"chat_id", c["chat_id"]}, {"supports_streaming", "true"},
+		{"width", strconv.Itoa(v.Width)}, {"height", strconv.Itoa(v.Height)}, {"duration", strconv.Itoa(int(v.Duration.Seconds() + 0.5))}}
+	if caption != "" {
+		fields = append(fields, [2]string{"caption", caption})
+	}
+	body, contentType, length, err := platform.MultipartStream(fields, platform.StreamFile{Field: "video", Name: v.Filename(0), Type: v.Type, Size: v.Size, Body: rc})
+	if err != nil {
+		return message{}, &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+	}
+	var m message
+	return m, a.sendStream(ctx, c, "sendVideo", body, length, contentType, &m)
 }

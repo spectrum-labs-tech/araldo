@@ -162,6 +162,8 @@ var rules = map[Provider]Rules{
 		Images:    map[string]int64{media.JPEG: 10_000_000, media.PNG: 10_000_000, media.WebP: 10_000_000},
 		MinAspect: 1.0 / 20, MaxAspect: 20, MaxDimensions: 10_000, MaxCaption: 1024,
 		ImageSource: "https://core.telegram.org/bots/api#sendphoto, #sendmediagroup (captions: 1024 characters)",
+		// Bots upload files of up to 50 MB; Telegram plays MPEG4 video.
+		Video: &VideoRules{Types: map[string]int64{media.MP4: 50_000_000}, Source: "https://core.telegram.org/bots/api#sendvideo"},
 	},
 }
 

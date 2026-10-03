@@ -177,3 +177,33 @@ func TestVideoNeedsObjectStorage(t *testing.T) {
 		t.Fatalf("a video over the limit: %v", err)
 	}
 }
+
+// A video posts to a platform whose adapter takes video, streamed from
+// storage; the sandbox imitating Telegram reads it through.
+func TestVideoPublishes(t *testing.T) {
+	t.Parallel()
+	mem := &memBlobs{objects: map[string][]byte{}}
+	w := newWorld(t, withBlobs(mem))
+	ctx := t.Context()
+	tg, err := w.s.ConnectChannel(ctx, w.owner, core.ConnectInput{BrandID: w.brand.ID, Provider: platform.Sandbox,
+		Fields: map[string]string{"emulates": "telegram"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := w.s.StageVideo(ctx, w.owner, bytes.NewReader(testMP4(1080, 1920, 8)), "clip.mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := w.s.CreateVideo(ctx, w.owner, st, w.brand.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "Watch the build"},
+		Channels: []uuid.UUID{tg.ID}, Media: []uuid.UUID{m.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := settle(t, w, p.ID); got.Status != model.PostPublished {
+		t.Fatalf("published as %s: %+v", got.Status, got.Targets[0])
+	}
+}

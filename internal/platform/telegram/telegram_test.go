@@ -157,3 +157,41 @@ func TestPublishPhotos(t *testing.T) {
 		t.Fatal("an empty caption should be left out")
 	}
 }
+
+func TestPublishVideo(t *testing.T) {
+	t.Parallel()
+	var (
+		fields map[string]string
+		file   string
+		length int64
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		length = r.ContentLength
+		if err := r.ParseMultipartForm(1 << 20); err != nil || !strings.HasSuffix(r.URL.Path, "/sendVideo") {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		fields = map[string]string{}
+		for k, v := range r.MultipartForm.Value {
+			fields[k] = v[0]
+		}
+		hs := r.MultipartForm.File["video"][0]
+		f, _ := hs.Open()
+		data, _ := io.ReadAll(f)
+		file = hs.Filename + ":" + hs.Header.Get("Content-Type") + ":" + string(data)
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":9,"chat":{"id":-100,"username":"ar15build"}}}`))
+	}))
+	defer srv.Close()
+	a := New(srv.Client())
+	a.API = srv.URL
+	v := platform.Media{Type: "video/mp4", Width: 1080, Height: 1920, Duration: 12400 * time.Millisecond}.WithData([]byte("mp4 bytes"))
+	res, err := a.Publish(t.Context(), platform.Credentials{"bot_token": "123:abc", "chat_id": "@ar15build"},
+		platform.Payload{Parts: []string{"watch this"}, Media: []platform.Media{v}}, nil)
+	if err != nil || res.Permalink != "https://t.me/ar15build/9" {
+		t.Fatalf("Publish = %+v, %v", res, err)
+	}
+	if fields["caption"] != "watch this" || fields["width"] != "1080" || fields["height"] != "1920" || fields["duration"] != "12" ||
+		fields["supports_streaming"] != "true" || file != "video1.mp4:video/mp4:mp4 bytes" || length <= 0 {
+		t.Fatalf("fields %v, file %q, length %d", fields, file, length)
+	}
+}

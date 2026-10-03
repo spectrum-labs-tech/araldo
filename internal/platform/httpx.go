@@ -96,6 +96,49 @@ func Send(ctx context.Context, client *http.Client, method, url string, headers 
 	return nil
 }
 
+// StreamFile is a file sent in a multipart request as it is read, such as
+// a video (ADR 0027).
+type StreamFile struct {
+	Field, Name, Type string
+	Size              int64
+	Body              io.Reader
+}
+
+// MultipartStream encodes fields, then one streamed file, as
+// multipart/form-data without holding the file: the body reads it as the
+// request is sent, and length is exact, so no chunked encoding is needed.
+func MultipartStream(fields [][2]string, f StreamFile) (body io.Reader, contentType string, length int64, err error) {
+	var head bytes.Buffer
+	w := multipart.NewWriter(&head)
+	for _, fl := range fields {
+		if err := w.WriteField(fl[0], fl[1]); err != nil {
+			return nil, "", 0, err
+		}
+	}
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": f.Field, "filename": f.Name}))
+	h.Set("Content-Type", f.Type)
+	if _, err := w.CreatePart(h); err != nil {
+		return nil, "", 0, err
+	}
+	// What Close would write after the last part.
+	tail := "\r\n--" + w.Boundary() + "--\r\n"
+	return io.MultiReader(&head, f.Body, strings.NewReader(tail)), w.FormDataContentType(), int64(head.Len()) + f.Size + int64(len(tail)), nil
+}
+
+// OpenVideo opens a video for an upload, as a platform error when it
+// cannot be read (storage is ours, so trying again may work).
+func OpenVideo(ctx context.Context, m Media) (io.ReadCloser, error) {
+	if m.Open == nil {
+		return nil, &Error{Kind: Transient, Code: "media_unreadable", Msg: "the video is not available"}
+	}
+	rc, err := m.Open(ctx)
+	if err != nil {
+		return nil, &Error{Kind: Transient, Code: "media_unreadable", Msg: "reading the video", Err: err}
+	}
+	return rc, nil
+}
+
 // File is one file in a multipart request.
 type File struct {
 	Field, Name, Type string

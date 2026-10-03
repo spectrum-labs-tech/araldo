@@ -144,7 +144,11 @@ func (m Media) Read(ctx context.Context) ([]byte, error) {
 
 // Filename is a name for an upload, for platforms that want one.
 func (m Media) Filename(i int) string {
-	return fmt.Sprintf("image%d%s", i+1, media.Extension(m.Type))
+	kind := "image"
+	if m.IsVideo() {
+		kind = "video"
+	}
+	return fmt.Sprintf("%s%d%s", kind, i+1, media.Extension(m.Type))
 }
 
 // Result is a successful publish.

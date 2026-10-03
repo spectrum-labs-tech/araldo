@@ -35,6 +35,9 @@ type S3 struct {
 	SecretKey string
 	// Prefix goes before every key (for example "media/").
 	Prefix string
+	// PartSize is a multipart upload's part size; zero is the default,
+	// PartSize. Tests make it small.
+	PartSize int
 	Client *http.Client
 	// Now is the clock for signatures; tests replace it.
 	Now func() time.Time
@@ -53,13 +56,17 @@ func NewS3(endpoint, bucket, region, accessKey, secretKey, prefix string) (*S3, 
 	if region == "" {
 		region = "auto"
 	}
+	// No overall timeout: reading a video takes as long as it takes, bounded
+	// by the caller's context; a server that does not answer is cut off.
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.ResponseHeaderTimeout = 60 * time.Second
 	return &S3{Endpoint: u, Bucket: bucket, Region: region, AccessKey: accessKey, SecretKey: secretKey, Prefix: prefix,
-		Client: &http.Client{Timeout: 60 * time.Second}, Now: time.Now}, nil
+		Client: &http.Client{Transport: tr}, Now: time.Now}, nil
 }
 
 // Put stores data at key.
 func (s *S3) Put(ctx context.Context, key string, data []byte, contentType string) error {
-	resp, err := s.do(ctx, http.MethodPut, key, data, contentType)
+	resp, err := s.do(ctx, http.MethodPut, key, nil, data, contentType, nil)
 	if err != nil {
 		return err
 	}
@@ -72,7 +79,7 @@ func (s *S3) Put(ctx context.Context, key string, data []byte, contentType strin
 
 // Get returns the object at key; the caller closes it.
 func (s *S3) Get(ctx context.Context, key string) (io.ReadCloser, error) {
-	resp, err := s.do(ctx, http.MethodGet, key, nil, "")
+	resp, err := s.do(ctx, http.MethodGet, key, nil, nil, "", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +96,7 @@ func (s *S3) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 
 // Delete removes the object at key; a missing object is not an error.
 func (s *S3) Delete(ctx context.Context, key string) error {
-	resp, err := s.do(ctx, http.MethodDelete, key, nil, "")
+	resp, err := s.do(ctx, http.MethodDelete, key, nil, nil, "", nil)
 	if err != nil {
 		return err
 	}
@@ -100,10 +107,11 @@ func (s *S3) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-func (s *S3) do(ctx context.Context, method, key string, body []byte, contentType string) (*http.Response, error) {
+func (s *S3) do(ctx context.Context, method, key string, query url.Values, body []byte, contentType string, headers map[string]string) (*http.Response, error) {
 	u := *s.Endpoint
 	u.Path = strings.TrimRight(u.Path, "/") + "/" + s.Bucket + "/" + s.Prefix + key
 	u.RawPath = ""
+	u.RawQuery = query.Encode()
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -113,6 +121,9 @@ func (s *S3) do(ctx context.Context, method, key string, body []byte, contentTyp
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	sum := sha256.Sum256(body)
 	Sign(req, s.AccessKey, s.SecretKey, s.Region, hex.EncodeToString(sum[:]), s.Now())

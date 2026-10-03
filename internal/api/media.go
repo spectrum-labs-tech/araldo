@@ -218,7 +218,7 @@ func (h *Handler) deleteMedia(w http.ResponseWriter, r *http.Request) error {
 // a platform can fetch it.
 func (h *Handler) mediaContent(w http.ResponseWriter, r *http.Request) error {
 	q := r.URL.Query()
-	m, rc, err := h.svc.LinkedMedia(r.Context(), r.PathValue("id"), q.Get("expires"), q.Get("signature"))
+	m, rc, err := h.svc.LinkedMedia(r.Context(), r.PathValue("id"), q.Get("expires"), q.Get("signature"), q.Get("for"))
 	if err != nil {
 		return err
 	}

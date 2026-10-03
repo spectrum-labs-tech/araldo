@@ -371,9 +371,12 @@ type Media struct {
 	ContentType   string
 	Size          int64
 	Width, Height int
-	SHA256        []byte
-	Alt           string
-	Filename      string
+	// Transparent is set for an image with transparent pixels, which is
+	// never resized into a JPEG (ADR 0027).
+	Transparent bool
+	SHA256      []byte
+	Alt         string
+	Filename    string
 	// Storage is where the file is: StoragePostgres, or StorageS3 at
 	// StorageKey.
 	Storage       string

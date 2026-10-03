@@ -278,7 +278,59 @@ func (r Rules) Check(parts []string, media []Media) []Violation {
 	return out
 }
 
+// Resize is how an image must change to fit a platform (ADR 0027):
+// re-encoded as a JPEG of at most MaxBytes (0: any size) whose width plus
+// height is at most MaxSum (0: any).
+type Resize struct {
+	MaxBytes int64
+	MaxSum   int
+	// Why says what does not fit, for the preview's notice.
+	Why string
+}
+
+// ResizeFor reports whether an image must be resized to fit the
+// platform's type, size and dimension limits, and how. It is not needed
+// when the image fits; it cannot be done for a GIF, a transparent image,
+// one over media.MaxPixels, or a platform that takes no JPEGs.
+func (r Rules) ResizeFor(m Media) (rs Resize, needed, possible bool) {
+	limit, accepted := r.Images[m.Type]
+	switch {
+	case !accepted:
+		rs.Why = r.Name + " does not take " + strings.TrimPrefix(m.Type, "image/") + " images"
+	case limit > 0 && m.Size > limit:
+		rs.Why = fmt.Sprintf("%s takes images up to %s; this is %s", r.Name, humanBytes(limit), humanBytes(m.Size))
+	case r.MaxDimensions > 0 && m.Width+m.Height > r.MaxDimensions:
+		rs.Why = fmt.Sprintf("%s takes images whose width plus height is at most %d; this is %d×%d", r.Name, r.MaxDimensions, m.Width, m.Height)
+	default:
+		return rs, false, true
+	}
+	jpegLimit, takesJPEG := r.Images[media.JPEG]
+	if !takesJPEG || !media.Resizable(media.Info{Type: m.Type, Width: m.Width, Height: m.Height, Transparent: m.Transparent}) {
+		return rs, true, false
+	}
+	rs.MaxBytes, rs.MaxSum = jpegLimit, r.MaxDimensions
+	return rs, true, true
+}
+
+// Notices lists what Araldo will change for the platform, image by image:
+// resizing or converting one that does not fit as it is.
+func (r Rules) Notices(media []Media) []Violation {
+	out := []Violation{}
+	for i, m := range media {
+		if rs, needed, possible := r.ResizeFor(m); needed && possible {
+			out = append(out, Violation{Code: "media_resized", Media: i + 1,
+				Message: fmt.Sprintf("image %d will be resized into a JPEG for %s: %s", i+1, r.Name, rs.Why)})
+		}
+	}
+	return out
+}
+
 func (r Rules) checkImage(pos int, m Media) []Violation {
+	_, needed, possible := r.ResizeFor(m)
+	if needed && possible {
+		// Resizing fixes the type, size and dimensions; the shape stays.
+		return r.checkAspect(pos, m)
+	}
 	limit, ok := r.Images[m.Type]
 	if !ok {
 		var types []string
@@ -292,22 +344,41 @@ func (r Rules) checkImage(pos int, m Media) []Violation {
 	var out []Violation
 	if limit > 0 && m.Size > limit {
 		out = append(out, Violation{Code: "media_too_large", Media: pos, Length: int(m.Size), Limit: int(limit),
-			Message: fmt.Sprintf("%s takes images up to %s; image %d is %s", r.Name, humanBytes(limit), pos, humanBytes(m.Size))})
+			Message: fmt.Sprintf("%s takes images up to %s; image %d is %s%s", r.Name, humanBytes(limit), pos, humanBytes(m.Size), whyNotResized(m))})
 	}
-	if m.Width > 0 && m.Height > 0 {
-		aspect := float64(m.Width) / float64(m.Height)
-		if r.MinAspect > 0 && aspect < r.MinAspect-0.005 || r.MaxAspect > 0 && aspect > r.MaxAspect+0.005 {
-			out = append(out, Violation{Code: "media_aspect_ratio", Media: pos,
-				Message: fmt.Sprintf("%s takes images from %s to %s (width:height); image %d is %d×%d",
-					r.Name, ratio(r.MinAspect), ratio(r.MaxAspect), pos, m.Width, m.Height)})
-		}
-		if r.MaxDimensions > 0 && m.Width+m.Height > r.MaxDimensions {
-			out = append(out, Violation{Code: "media_dimensions", Media: pos, Length: m.Width + m.Height, Limit: r.MaxDimensions,
-				Message: fmt.Sprintf("%s takes images whose width plus height is at most %d; image %d is %d×%d",
-					r.Name, r.MaxDimensions, pos, m.Width, m.Height)})
-		}
+	out = append(out, r.checkAspect(pos, m)...)
+	if m.Width > 0 && m.Height > 0 && r.MaxDimensions > 0 && m.Width+m.Height > r.MaxDimensions {
+		out = append(out, Violation{Code: "media_dimensions", Media: pos, Length: m.Width + m.Height, Limit: r.MaxDimensions,
+			Message: fmt.Sprintf("%s takes images whose width plus height is at most %d; image %d is %d×%d%s",
+				r.Name, r.MaxDimensions, pos, m.Width, m.Height, whyNotResized(m))})
 	}
 	return out
+}
+
+func (r Rules) checkAspect(pos int, m Media) []Violation {
+	if m.Width <= 0 || m.Height <= 0 {
+		return nil
+	}
+	aspect := float64(m.Width) / float64(m.Height)
+	if r.MinAspect > 0 && aspect < r.MinAspect-0.005 || r.MaxAspect > 0 && aspect > r.MaxAspect+0.005 {
+		return []Violation{{Code: "media_aspect_ratio", Media: pos,
+			Message: fmt.Sprintf("%s takes images from %s to %s (width:height); image %d is %d×%d",
+				r.Name, ratio(r.MinAspect), ratio(r.MaxAspect), pos, m.Width, m.Height)}}
+	}
+	return nil
+}
+
+// whyNotResized says why Araldo could not shrink an image itself.
+func whyNotResized(m Media) string {
+	switch {
+	case m.Type == media.GIF:
+		return " (GIFs are not resized, to keep their animation)"
+	case m.Transparent:
+		return " (it has transparent pixels, which a resized JPEG cannot keep)"
+	case int64(m.Width)*int64(m.Height) > media.MaxPixels:
+		return " (it has more than 50 megapixels, too many to resize)"
+	}
+	return ""
 }
 
 // ratio writes an aspect ratio the way platforms document it: 4:5, 1.91:1.

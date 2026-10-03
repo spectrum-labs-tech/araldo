@@ -286,6 +286,9 @@ type Rendition struct {
 	Limit      int                  `json:"limit"`
 	Counting   string               `json:"counting"`
 	Violations []platform.Violation `json:"violations"`
+	// Notices are changes Araldo makes so the post fits, such as resizing
+	// an image (ADR 0027).
+	Notices []platform.Violation `json:"notices"`
 }
 
 // PreviewTemplate renders a (possibly unsaved) template with data for each
@@ -334,7 +337,7 @@ func (s *Service) PreviewTemplate(ctx context.Context, a Actor, src tmpl.Source,
 // rules.ForMedia(len(media)).
 func rendition(rules platform.Rules, parts []string, channel string, media []platform.Media) Rendition {
 	r := Rendition{Provider: rules.Provider, Channel: channel, Parts: parts, Limit: rules.MaxLength, Counting: string(rules.Counting),
-		Violations: rules.Check(parts, media)}
+		Violations: rules.Check(parts, media), Notices: rules.Notices(media)}
 	for _, p := range parts {
 		r.Lengths = append(r.Lengths, rules.Length(p))
 	}

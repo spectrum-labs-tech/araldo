@@ -261,6 +261,16 @@ as long as the post. With the Helm chart, put the S3 keys in the
 `existingSecret` and the rest in `extraEnv`; the server and the worker
 must both have them, since one stores files and the other reads them.
 
+An image too big for a platform, or of a type it does not take, is resized
+for it when the post is published ([ADR 0027](adr/0027-video-and-resizing.md)):
+scaled down only as far as needed and re-encoded as a JPEG, turned upright
+from its EXIF orientation, with the original going unchanged to every
+platform it fits. The preview lists these as notices. Araldo never crops: an
+image the wrong shape for a platform is still refused. GIFs, images with
+transparent pixels and images over 50 megapixels are not resized; they are
+refused with the reason. Platforms that fetch images by link get the resized
+copy through a link signed for that platform.
+
 Mastodon and Gab channels need an access token with the `write:media` scope
 to post images; one made before images were supported must be replaced.
 

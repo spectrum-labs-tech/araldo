@@ -71,11 +71,16 @@ func TestCheck(t *testing.T) {
 		{"instagram square", rulesOf(t, Instagram), []string{"hi"}, []Media{square}, ""},
 		{"instagram 4:5 portrait", rulesOf(t, Instagram), []string{"hi"}, []Media{jpeg(1, 1080, 1350)}, ""},
 		{"instagram too tall", rulesOf(t, Instagram), []string{"hi"}, []Media{jpeg(1, 1080, 1920)}, "media_aspect_ratio"},
-		{"instagram takes no png", rulesOf(t, Instagram), []string{"hi"}, []Media{{Type: "image/png", Size: 1, Width: 1, Height: 1}}, "media_type_unsupported"},
+		{"instagram converts an opaque png", rulesOf(t, Instagram), []string{"hi"}, []Media{{Type: "image/png", Size: 1, Width: 1, Height: 1}}, ""},
+		{"instagram takes no transparent png", rulesOf(t, Instagram), []string{"hi"},
+			[]Media{{Type: "image/png", Size: 1, Width: 1, Height: 1, Transparent: true}}, "media_type_unsupported"},
 		{"telegram has no threads", rulesOf(t, Telegram), []string{"a", "b"}, nil, "threads_unsupported"},
-		{"telegram panorama", rulesOf(t, Telegram), []string{"a"}, []Media{jpeg(1, 9000, 1500)}, "media_dimensions"},
+		{"telegram panorama, resized", rulesOf(t, Telegram), []string{"a"}, []Media{jpeg(1, 9000, 1500)}, ""},
+		{"telegram panorama too wide to keep its shape", rulesOf(t, Telegram), []string{"a"}, []Media{jpeg(1, 21000, 1000)}, "media_aspect_ratio"},
 		{"too much media", x, []string{"hi"}, []Media{square, square, square, square, square}, "too_much_media"},
-		{"bluesky's 1 MB", rulesOf(t, Bluesky), []string{"hi"}, []Media{jpeg(1_000_000, 1, 1), jpeg(1_000_001, 1, 1)}, "media_too_large"},
+		{"bluesky's 1 MB, resized", rulesOf(t, Bluesky), []string{"hi"}, []Media{jpeg(1_000_000, 1, 1), jpeg(1_000_001, 1, 1)}, ""},
+		{"bluesky's 1 MB, a gif", rulesOf(t, Bluesky), []string{"hi"}, []Media{{Type: "image/gif", Size: 1_000_001, Width: 1, Height: 1}}, "media_too_large"},
+		{"bluesky's 1 MB, too many pixels", rulesOf(t, Bluesky), []string{"hi"}, []Media{jpeg(9_000_000, 10_000, 6_000)}, "media_too_large"},
 		{"linkedin documents no size", rulesOf(t, LinkedIn), []string{"hi"}, []Media{jpeg(50<<20, 1, 1)}, ""},
 		{"x takes big gifs", x, []string{"hi"}, []Media{{Type: "image/gif", Size: 12_000_000, Width: 1, Height: 1}}, ""},
 	}
@@ -162,8 +167,9 @@ func TestCheckExplainsMedia(t *testing.T) {
 		m    Media
 		want Violation
 	}{
-		{"too large", rulesOf(t, Bluesky), Media{Type: "image/png", Size: 2_345_678, Width: 1, Height: 1},
-			Violation{Code: "media_too_large", Media: 1, Length: 2_345_678, Limit: 1_000_000, Message: "Bluesky takes images up to 1 MB; image 1 is 2.3 MB"}},
+		{"too large", rulesOf(t, Bluesky), Media{Type: "image/png", Size: 2_345_678, Width: 1, Height: 1, Transparent: true},
+			Violation{Code: "media_too_large", Media: 1, Length: 2_345_678, Limit: 1_000_000,
+				Message: "Bluesky takes images up to 1 MB; image 1 is 2.3 MB (it has transparent pixels, which a resized JPEG cannot keep)"}},
 		{"aspect", rulesOf(t, Instagram), Media{Type: "image/jpeg", Size: 1, Width: 1000, Height: 2000},
 			Violation{Code: "media_aspect_ratio", Media: 1, Message: "Instagram takes images from 4:5 to 1.91:1 (width:height); image 1 is 1000×2000"}},
 		{"type", rulesOf(t, Threads), Media{Type: "image/gif", Size: 1, Width: 1, Height: 1},
@@ -174,6 +180,36 @@ func TestCheckExplainsMedia(t *testing.T) {
 		if len(got) != 1 || got[0] != tt.want {
 			t.Errorf("%s: %+v, want %+v", tt.name, got, tt.want)
 		}
+	}
+}
+
+func TestNoticesSayWhatIsResized(t *testing.T) {
+	t.Parallel()
+	bsky := rulesOf(t, Bluesky)
+	big := Media{Type: "image/jpeg", Size: 3_200_000, Width: 4032, Height: 3024}
+	small := Media{Type: "image/jpeg", Size: 400_000, Width: 1080, Height: 1080}
+	gif := Media{Type: "image/gif", Size: 3_000_000, Width: 500, Height: 500}
+	got := bsky.Notices([]Media{small, big, gif})
+	if len(got) != 1 || got[0].Code != "media_resized" || got[0].Media != 2 ||
+		got[0].Message != "image 2 will be resized into a JPEG for Bluesky: Bluesky takes images up to 1 MB; this is 3.2 MB" {
+		t.Fatalf("notices %+v", got)
+	}
+	rs, needed, possible := bsky.ResizeFor(big)
+	if !needed || !possible || rs.MaxBytes != 1_000_000 {
+		t.Fatalf("resize %+v, %t, %t", rs, needed, possible)
+	}
+	if _, needed, _ := bsky.ResizeFor(small); needed {
+		t.Fatal("a small image needs no resizing")
+	}
+	if _, needed, possible := bsky.ResizeFor(gif); !needed || possible {
+		t.Fatal("a GIF cannot be resized")
+	}
+	ig := rulesOf(t, Instagram)
+	if rs, needed, possible := ig.ResizeFor(Media{Type: "image/webp", Size: 100, Width: 1080, Height: 1080}); !needed || !possible || rs.MaxBytes != 8_000_000 {
+		t.Fatalf("instagram converts a WebP: %+v, %t, %t", rs, needed, possible)
+	}
+	if got := rulesOf(t, X).Notices([]Media{small}); got == nil || len(got) != 0 {
+		t.Fatalf("no notices is an empty list: %#v", got)
 	}
 }
 

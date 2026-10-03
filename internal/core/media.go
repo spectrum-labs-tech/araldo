@@ -101,7 +101,7 @@ func (s *Service) CreateMedia(ctx context.Context, a Actor, in MediaInput) (*mod
 	}
 	sum := sha256.Sum256(in.Data)
 	m := &model.Media{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, ContentType: info.Type, Size: int64(len(in.Data)),
-		Width: info.Width, Height: info.Height, SHA256: sum[:], Alt: alt, Filename: cleanFilename(in.Filename),
+		Width: info.Width, Height: info.Height, Transparent: info.Transparent, SHA256: sum[:], Alt: alt, Filename: cleanFilename(in.Filename),
 		Storage: model.StoragePostgres, CreatedByUser: a.UserID, CreatedByKey: a.KeyID}
 	if s.blobs != nil {
 		m.Storage = model.StorageS3
@@ -388,20 +388,51 @@ func (s *Service) postMedia(ctx context.Context, a Actor, brandID uuid.UUID, ids
 func ruleMedia(ms []*model.Media) []platform.Media {
 	out := make([]platform.Media, 0, len(ms))
 	for _, m := range ms {
-		out = append(out, platform.Media{Type: m.ContentType, Size: m.Size, Width: m.Width, Height: m.Height, Alt: m.Alt})
+		out = append(out, platform.Media{Type: m.ContentType, Size: m.Size, Width: m.Width, Height: m.Height, Alt: m.Alt, Transparent: m.Transparent})
 	}
 	return out
 }
 
 // payloadMedia describes media for an adapter, opening each file when it
-// is read.
-func (s *Service) payloadMedia(ms []*model.Media) []platform.Media {
+// is read. An image that does not fit the platform's rules is resized for
+// it now, and its link serves the resized copy (ADR 0027).
+func (s *Service) payloadMedia(ctx context.Context, ms []*model.Media, rules platform.Rules) ([]platform.Media, error) {
 	out := ruleMedia(ms)
 	for i, m := range ms {
-		out[i].Open = func(ctx context.Context) (io.ReadCloser, error) { return s.openMedia(ctx, m) }
-		out[i].URL = s.MediaLink(m)
+		rs, needed, possible := rules.ResizeFor(out[i])
+		if !needed || !possible {
+			out[i].Open = func(ctx context.Context) (io.ReadCloser, error) { return s.openMedia(ctx, m) }
+			out[i].URL = s.MediaLink(m)
+			continue
+		}
+		data, info, err := s.fitMedia(ctx, m, rs)
+		if err != nil {
+			return nil, err
+		}
+		fitted := platform.Media{Type: info.Type, Width: info.Width, Height: info.Height, Alt: m.Alt}.WithData(data)
+		fitted.URL = s.mediaLinkFor(m, rules.Provider)
+		out[i] = fitted
 	}
-	return out
+	return out, nil
+}
+
+// fitMedia resizes an image as rs says. A failure to read the file may be
+// passing; an image that cannot be made to fit never will.
+func (s *Service) fitMedia(ctx context.Context, m *model.Media, rs platform.Resize) ([]byte, media.Info, error) {
+	rc, err := s.openMedia(ctx, m)
+	if err != nil {
+		return nil, media.Info{}, &platform.Error{Kind: platform.Transient, Code: "media_unreadable", Msg: "reading the image", Err: err}
+	}
+	defer func() { _ = rc.Close() }()
+	data, err := io.ReadAll(io.LimitReader(rc, m.Size+1))
+	if err != nil {
+		return nil, media.Info{}, &platform.Error{Kind: platform.Transient, Code: "media_unreadable", Msg: "reading the image", Err: err}
+	}
+	out, info, err := media.Fit(data, media.Info{Type: m.ContentType, Width: m.Width, Height: m.Height, Transparent: m.Transparent}, rs.MaxBytes, rs.MaxSum)
+	if err != nil {
+		return nil, media.Info{}, &platform.Error{Kind: platform.Rejected, Code: "media_unfit", Msg: rs.Why + ", and resizing failed: " + err.Error()}
+	}
+	return out, info, nil
 }
 
 // MediaLinkTTL is how long a signed media link works: long enough for a
@@ -420,9 +451,23 @@ func (s *Service) MediaLink(m *model.Media) string {
 		"&signature=" + s.mediaSignature(m.ID, exp)
 }
 
-func (s *Service) mediaSignature(mediaID uuid.UUID, expires int64) string {
+// mediaLinkFor is MediaLink for the copy of an image resized for a
+// platform; the platform is signed with the rest.
+func (s *Service) mediaLinkFor(m *model.Media, p platform.Provider) string {
+	if s.keys == nil || s.cfg.BaseURL == "" {
+		return ""
+	}
+	exp := s.Now().Add(MediaLinkTTL).Unix()
+	return s.cfg.BaseURL + "/v1/media/" + id.Format(id.Media, m.ID) + "/content?expires=" + strconv.FormatInt(exp, 10) +
+		"&for=" + url.QueryEscape(string(p)) + "&signature=" + s.mediaSignature(m.ID, exp, p)
+}
+
+func (s *Service) mediaSignature(mediaID uuid.UUID, expires int64, forProvider ...platform.Provider) string {
 	mac := hmac.New(sha256.New, s.keys.Derive("media-links"))
 	mac.Write([]byte(mediaID.String() + "|" + strconv.FormatInt(expires, 10)))
+	for _, p := range forProvider {
+		mac.Write([]byte("|" + string(p)))
+	}
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
@@ -447,22 +492,31 @@ func (s *Service) emailMediaSignature(mediaID uuid.UUID) string {
 // the link must not have expired, or, without an expiry, the signature must
 // be a newsletter's. Any failure is "not found", saying nothing about which
 // part was wrong.
-func (s *Service) LinkedMedia(ctx context.Context, ref, expires, signature string) (*model.Media, io.ReadCloser, error) {
+//
+// With forProvider, the link is to the copy resized for that platform.
+func (s *Service) LinkedMedia(ctx context.Context, ref, expires, signature, forProvider string) (*model.Media, io.ReadCloser, error) {
 	missing := apperr.NotFound("media")
 	mid, err := id.Parse(id.Media, ref)
 	if err != nil || s.keys == nil {
 		return nil, nil, missing
 	}
 	var want string
-	if expires == "" {
+	switch {
+	case expires == "" && forProvider == "":
 		want = s.emailMediaSignature(mid)
-	} else {
+	case expires == "":
+		return nil, nil, missing
+	default:
 		exp, err := strconv.ParseInt(expires, 10, 64)
 		now := s.Now()
 		if err != nil || now.Unix() > exp || time.Unix(exp, 0).After(now.Add(MediaLinkTTL+time.Minute)) {
 			return nil, nil, missing
 		}
-		want = s.mediaSignature(mid, exp)
+		if forProvider != "" {
+			want = s.mediaSignature(mid, exp, platform.Provider(forProvider))
+		} else {
+			want = s.mediaSignature(mid, exp)
+		}
 	}
 	if !hmac.Equal([]byte(want), []byte(signature)) {
 		return nil, nil, missing
@@ -470,6 +524,19 @@ func (s *Service) LinkedMedia(ctx context.Context, ref, expires, signature strin
 	m, err := s.store.MediaAnyOrg(ctx, mid)
 	if err != nil {
 		return nil, nil, notFound(err, "media")
+	}
+	if forProvider != "" {
+		rules, _ := platform.RulesFor(platform.Provider(forProvider))
+		pm := ruleMedia([]*model.Media{m})[0]
+		if rs, needed, possible := rules.ResizeFor(pm); needed && possible {
+			data, info, err := s.fitMedia(ctx, m, rs)
+			if err != nil {
+				return nil, nil, err
+			}
+			fitted := *m
+			fitted.ContentType, fitted.Size, fitted.Width, fitted.Height = info.Type, int64(len(data)), info.Width, info.Height
+			return &fitted, io.NopCloser(bytes.NewReader(data)), nil
+		}
 	}
 	rc, err := s.openMedia(ctx, m)
 	return m, rc, err

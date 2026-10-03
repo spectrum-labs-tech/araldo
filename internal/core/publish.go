@@ -128,8 +128,14 @@ func (s *Service) publishTarget(ctx context.Context, owner string, ct store.Clai
 			pubErr = &platform.Error{Kind: platform.Transient, Code: "media_unreadable", Msg: "could not read the post's media", Err: err}
 			break
 		}
+		rules, _ := platform.RulesFor(ch.RulesProvider())
+		pm, err := s.payloadMedia(ctx, media, rules.ForMedia(len(media)))
+		if err != nil {
+			pubErr = err
+			break
+		}
 		payload := platform.Payload{Key: id.Format(id.Target, t.ID), KeyTime: t.CreatedAt, Parts: t.Parts, Posted: t.Posted, Attempt: t.Attempts,
-			Media: s.payloadMedia(media)}
+			Media: pm}
 		if !t.Livemode {
 			payload.Simulate = ct.Metadata["araldo_simulate"]
 		}

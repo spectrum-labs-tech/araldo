@@ -97,6 +97,8 @@ type Media struct {
 	Size          int64
 	Width, Height int
 	Alt           string
+	// Transparent images are never resized into a JPEG (ADR 0027).
+	Transparent bool
 	// URL is a public, expiring link to the file, for platforms that fetch
 	// images themselves (ADR 0021); empty when the install cannot sign one.
 	URL string

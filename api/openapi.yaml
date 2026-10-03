@@ -551,6 +551,7 @@ paths:
       tags: [Media]
       parameters:
         - { name: expires, in: query, schema: { type: integer }, description: "Unix time the link stops working; absent on a newsletter's link." }
+        - { name: for, in: query, schema: { type: string }, description: "The platform the image was resized for, which the link serves instead of the original (ADR 0027)." }
         - { name: signature, in: query, required: true, schema: { type: string } }
       responses:
         "200":
@@ -2403,6 +2404,15 @@ components:
                     media: { type: integer, description: "The position (from 1) of the media item at fault." }
                     length: { type: integer }
                     limit: { type: integer }
+              notices:
+                type: array
+                description: What Araldo changes so the post fits this channel, such as resizing an image into a JPEG within its limits.
+                items:
+                  type: object
+                  properties:
+                    code: { type: string, example: media_resized }
+                    message: { type: string }
+                    media: { type: integer }
 
     MailProvider:
       type: object

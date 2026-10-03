@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package media identifies uploaded images (ADR 0017): their type from the
-// bytes themselves and their dimensions from the header. It never decodes
-// pixels, so a decompression bomb costs nothing.
+// bytes themselves and their dimensions from the header. It decodes pixels
+// only within MaxPixels: to tell whether an image that may be transparent
+// is, and to resize one for a platform (ADR 0027).
 package media
 
 import (
@@ -45,6 +46,9 @@ var ErrUnsupported = errors.New("not a JPEG, PNG, GIF or WebP image")
 type Info struct {
 	Type          string
 	Width, Height int
+	// Transparent is set when some pixel is not fully opaque (or, for an
+	// image too large to decode, might not be).
+	Transparent bool
 }
 
 // Inspect identifies data and reads its dimensions.
@@ -72,7 +76,9 @@ func Inspect(data []byte) (Info, error) {
 	if cfg.Width <= 0 || cfg.Height <= 0 {
 		return Info{}, fmt.Errorf("unreadable %s: no dimensions", typ)
 	}
-	return Info{Type: typ, Width: cfg.Width, Height: cfg.Height}, nil
+	info := Info{Type: typ, Width: cfg.Width, Height: cfg.Height}
+	info.Transparent = transparent(data, info)
+	return info, nil
 }
 
 // Extension is the usual file extension for an accepted type.

@@ -10,10 +10,12 @@ import (
 	"crypto/rand"
 	"errors"
 	"image"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -441,5 +443,69 @@ func TestMediaInObjectStorage(t *testing.T) {
 	}
 	if _, _, err := w.s.MediaContent(ctx, w.owner, m.ID); err == nil {
 		t.Fatal("reading a lost object succeeded")
+	}
+}
+
+// noisyJPEG is an opaque photo-like image that compresses badly.
+func noisyJPEG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	_, _ = rand.Read(img.Pix)
+	for i := 3; i < len(img.Pix); i += 4 {
+		img.Pix[i] = 0xff
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// An image too big for Bluesky is resized for it rather than refused, and
+// the preview says so (ADR 0027).
+func TestImagesAreResizedForAPlatform(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t) // its channel emulates Bluesky, which takes 1 MB
+	ctx := t.Context()
+	data := noisyJPEG(t, 1200, 900)
+	if len(data) <= 1_000_000 {
+		t.Fatalf("the test image is only %d bytes", len(data))
+	}
+	m, err := w.s.CreateMedia(ctx, w.owner, core.MediaInput{BrandID: w.brand.ID, Data: data, Alt: "Noise"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "Big photo"}, Media: []uuid.UUID{m.ID}}
+	renders, err := w.s.PreviewPost(ctx, w.owner, in)
+	if err != nil || len(renders) != 1 || len(renders[0].Violations) != 0 || len(renders[0].Notices) != 1 ||
+		renders[0].Notices[0].Code != "media_resized" {
+		t.Fatalf("preview %+v, %v", renders, err)
+	}
+	p, err := w.s.CreatePost(ctx, w.owner, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := settle(t, w, p.ID); got.Status != model.PostPublished {
+		t.Fatalf("published as %s: %+v", got.Status, got.Targets[0])
+	}
+
+	// A platform that fetches the image gets the resized copy.
+	link := core.MediaLinkFor(w.s, m, platform.Bluesky)
+	u, err := url.Parse(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	got, rc, err := w.s.LinkedMedia(ctx, id.Format(id.Media, m.ID), q.Get("expires"), q.Get("signature"), q.Get("for"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(rc)
+	_ = rc.Close()
+	if got.ContentType != "image/jpeg" || int64(len(body)) != got.Size || got.Size > 1_000_000 {
+		t.Fatalf("the resized copy: %s, %d bytes (read %d)", got.ContentType, got.Size, len(body))
+	}
+	if _, _, err := w.s.LinkedMedia(ctx, id.Format(id.Media, m.ID), q.Get("expires"), q.Get("signature"), "x"); kind(err) != apperr.KindNotFound {
+		t.Fatalf("a link signed for one platform used for another: %v", err)
 	}
 }

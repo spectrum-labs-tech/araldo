@@ -72,3 +72,8 @@ func HandOffNewslettersOrg(s *Service, org uuid.UUID) (int, error) {
 func ReadNewsletterResultsOrg(s *Service, org uuid.UUID) (int, error) {
 	return s.readNewsletterResults(context.Background(), &org)
 }
+
+// MediaLinkFor is mediaLinkFor, for tests of resized copies.
+func MediaLinkFor(s *Service, m *model.Media, p platform.Provider) string {
+	return s.mediaLinkFor(m, p)
+}

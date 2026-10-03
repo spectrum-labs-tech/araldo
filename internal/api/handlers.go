@@ -56,7 +56,7 @@ func (h *Handler) routes() {
 	h.handle("GET /v1/media/{id}", h.getMedia)
 	h.handle("POST /v1/media/{id}", h.updateMedia)
 	h.handle("DELETE /v1/media/{id}", h.deleteMedia)
-	h.public("GET /v1/media/{id}/content", h.mediaContent, "expires", "signature")
+	h.public("GET /v1/media/{id}/content", h.mediaContent, "expires", "signature", "for")
 
 	h.handle("GET /v1/posts", h.listPosts, paged("brand", "status", "metadata", "q")...)
 	h.handle("POST /v1/posts", h.createPost)

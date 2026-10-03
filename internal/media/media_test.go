@@ -53,12 +53,13 @@ func TestInspect(t *testing.T) {
 		want Info
 		err  bool
 	}{
-		{"jpeg", encoded(t, JPEG, 40, 30), Info{JPEG, 40, 30}, false},
-		{"png", encoded(t, PNG, 1, 500), Info{PNG, 1, 500}, false},
-		{"gif", encoded(t, GIF, 12, 12), Info{GIF, 12, 12}, false},
-		{"webp lossy", webp("VP8 ", vp8), Info{WebP, 640, 480}, false},
-		{"webp lossless", webp("VP8L", vp8l), Info{WebP, 1200, 800}, false},
-		{"webp extended", webp("VP8X", vp8x), Info{WebP, 8000, 1080}, false},
+		{"jpeg", encoded(t, JPEG, 40, 30), Info{Type: JPEG, Width: 40, Height: 30}, false},
+		{"png with transparent pixels", encoded(t, PNG, 1, 500), Info{Type: PNG, Width: 1, Height: 500, Transparent: true}, false},
+		{"gif", encoded(t, GIF, 12, 12), Info{Type: GIF, Width: 12, Height: 12}, false},
+		{"webp lossy", webp("VP8 ", vp8), Info{Type: WebP, Width: 640, Height: 480}, false},
+		{"webp lossless", webp("VP8L", vp8l), Info{Type: WebP, Width: 1200, Height: 800}, false},
+		// Its alpha flag is set, and its pixels cannot be read: counted as transparent.
+		{"webp extended", webp("VP8X", vp8x), Info{Type: WebP, Width: 8000, Height: 1080, Transparent: true}, false},
 		{"webp without a start code", webp("VP8 ", []byte{0, 0, 0, 1, 2, 3, 0, 0, 0, 0}), Info{}, true},
 		{"svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), Info{}, true},
 		{"text", []byte("hello"), Info{}, true},

@@ -295,7 +295,9 @@ not transcode, so export H.264 with AAC in an MP4. Each platform's video
 rules are checked as images' are; a platform takes video once its adapter
 can post it, and the preview says when one cannot yet. Today Bluesky (through
 its video service), X (chunked uploads), Mastodon, Gab, LinkedIn, Facebook
-Pages, Telegram and Discord take video; where a platform processes a video
+Pages, Instagram (as reels shared to the feed), Threads, YouTube, Telegram and
+Discord take video; Instagram and Threads fetch it through a signed link, so
+the install's API must be public; where a platform processes a video
 before posting it, publishing waits for it, up to 20 minutes, renewing its
 lease so the wait is not mistaken for a lost worker.
 

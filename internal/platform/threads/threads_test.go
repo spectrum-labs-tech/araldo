@@ -182,3 +182,20 @@ func TestEngagement(t *testing.T) {
 		t.Fatalf("counts %+v", c)
 	}
 }
+
+func TestPublishVideo(t *testing.T) {
+	t.Parallel()
+	f, a := setup(t)
+	f.processing = 3
+	v := platform.Media{Type: "video/mp4", URL: "https://araldo.test/v1/media/media_9/content?sig"}
+	res, err := a.Publish(t.Context(), platform.Credentials{"user_id": "123", "access_token": "long"},
+		platform.Payload{Parts: []string{"Range day"}, Media: []platform.Media{v}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := f.containers[0]
+	if c.Get("media_type") != "VIDEO" || c.Get("video_url") != v.URL || c.Get("text") != "Range day" || f.polls["/v1.0/c1"] != 4 ||
+		len(f.published) != 1 || res.Permalink == "" {
+		t.Fatalf("container %v, polls %v, published %v, result %+v", c, f.polls, f.published, res)
+	}
+}

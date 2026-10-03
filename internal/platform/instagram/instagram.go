@@ -87,7 +87,8 @@ func (a *Adapter) Verify(ctx context.Context, c platform.Credentials) (platform.
 	return platform.Account{ExternalID: me.ID, Handle: "@" + me.Username, DisplayName: me.Name, URL: "https://www.instagram.com/" + me.Username}, nil
 }
 
-// Publish posts the single part as a photo, or a carousel of up to ten
+// Publish posts the single part as a photo, a carousel of up to ten, or a
+// video as a reel shared to the feed
 // (https://developers.facebook.com/docs/instagram-platform/content-publishing).
 func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platform.Payload, onPart func(platform.RemoteRef) error) (platform.Result, error) {
 	res := platform.Result{Parts: append([]platform.RemoteRef(nil), p.Posted...)}
@@ -99,21 +100,26 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		return res, platform.Errorf(platform.AuthRevoked, "the channel has no token: reconnect it")
 	}
 	if len(p.Media) == 0 {
-		return res, &platform.Error{Kind: platform.Rejected, Code: "media_required", Msg: "Instagram posts need an image"}
+		return res, &platform.Error{Kind: platform.Rejected, Code: "media_required", Msg: "Instagram posts need an image or a video"}
 	}
 	for _, m := range p.Media {
 		if m.URL == "" {
 			return res, &platform.Error{Kind: platform.Rejected, Code: "media_link_missing",
-				Msg: "Instagram fetches images from a link, and this install cannot make one: its API must be public at ARALDO_BASE_URL"}
+				Msg: "Instagram fetches media from a link, and this install cannot make one: its API must be public at ARALDO_BASE_URL"}
 		}
 	}
 	params := url.Values{"caption": {p.Parts[0]}, "access_token": {tok}}
-	if len(p.Media) == 1 {
+	switch {
+	case len(p.Media) == 1 && p.Media[0].IsVideo():
+		params.Set("media_type", "REELS")
+		params.Set("video_url", p.Media[0].URL)
+		params.Set("share_to_feed", "true")
+	case len(p.Media) == 1:
 		params.Set("image_url", p.Media[0].URL)
 		if p.Media[0].Alt != "" {
 			params.Set("alt_text", p.Media[0].Alt)
 		}
-	} else {
+	default:
 		var children []string
 		for _, m := range p.Media {
 			item := url.Values{"image_url": {m.URL}, "is_carousel_item": {"true"}, "access_token": {tok}}
@@ -155,7 +161,7 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 }
 
 // container creates a media container and waits until Instagram has
-// fetched and processed the image.
+// fetched and processed its image or video.
 func (a *Adapter) container(ctx context.Context, user, tok string, params url.Values) (string, error) {
 	var out struct {
 		ID string `json:"id"`
@@ -174,11 +180,11 @@ func (a *Adapter) container(ctx context.Context, user, tok string, params url.Va
 		case "FINISHED", "PUBLISHED", "":
 			return out.ID, nil
 		case "ERROR", "EXPIRED":
-			return "", &platform.Error{Kind: platform.Rejected, Code: "media_rejected", Msg: "Instagram could not process the image (" + st.StatusCode + ")"}
+			return "", &platform.Error{Kind: platform.Rejected, Code: "media_rejected", Msg: "Instagram could not process the media (" + st.StatusCode + ")"}
 		}
 		select {
 		case <-ctx.Done():
-			return "", &platform.Error{Kind: platform.Transient, Code: "processing", Msg: "Instagram was still processing the image", Err: ctx.Err()}
+			return "", &platform.Error{Kind: platform.Transient, Code: "processing", Msg: "Instagram was still processing the media", Err: ctx.Err()}
 		case <-time.After(a.Meta.Poll):
 		}
 	}

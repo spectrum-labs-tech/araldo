@@ -136,3 +136,19 @@ func TestEngagement(t *testing.T) {
 		t.Fatalf("engagement %+v, %v", got, err)
 	}
 }
+
+func TestPublishReel(t *testing.T) {
+	t.Parallel()
+	f, a, creds := setup(t)
+	f.processing = 4
+	v := platform.Media{Type: "video/mp4", URL: "https://araldo.test/v1/media/media_9/content?sig"}
+	res, err := a.Publish(t.Context(), creds, platform.Payload{Parts: []string{"Range day"}, Media: []platform.Media{v}}, nil)
+	if err != nil || res.Permalink != "https://www.instagram.com/p/m1/" {
+		t.Fatalf("reel: %+v, %v", res, err)
+	}
+	c := f.containers[0]
+	if c["media_type"] != "REELS" || c["video_url"] != v.URL || c["share_to_feed"] != "true" || c["caption"] != "Range day" ||
+		c["image_url"] != "" || f.polls != 5 || f.published[0] != "c1" {
+		t.Fatalf("container %v after %d polls, published %v", c, f.polls, f.published)
+	}
+}

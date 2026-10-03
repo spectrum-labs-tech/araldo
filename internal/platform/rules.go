@@ -137,6 +137,11 @@ var rules = map[Provider]Rules{
 		Images:    map[string]int64{media.JPEG: 8_000_000, media.PNG: 8_000_000},
 		MinAspect: 0.1, MaxAspect: 10,
 		ImageSource: "https://developers.facebook.com/docs/threads/overview#image-specifications",
+		// MOV or MP4, H.264 or HEVC, up to 1 GB and 5 minutes, 23 to 60
+		// frames a second, 0.01:1 to 10:1.
+		Video: &VideoRules{Types: map[string]int64{media.MP4: 1 << 30, media.QuickTime: 1 << 30}, MaxDuration: 5 * time.Minute,
+			MinAspect: 0.01, MaxAspect: 10, MaxFrameRate: 60, Codecs: []string{"avc1", "avc3", "hvc1", "hev1"},
+			Source: "https://developers.facebook.com/docs/threads/overview#video-specifications"},
 	},
 	LinkedIn: {
 		Provider: LinkedIn, Name: "LinkedIn", MaxLength: 3000, Counting: CountRunes, MaxMedia: 9,
@@ -162,6 +167,11 @@ var rules = map[Provider]Rules{
 		Images:    map[string]int64{media.JPEG: 8_000_000},
 		MinAspect: 4.0 / 5, MaxAspect: 1.91,
 		ImageSource: "https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media#image-specifications",
+		// A reel: MOV or MP4, H.264 or HEVC, up to 300 MB, 3 seconds to 15
+		// minutes, at most 60 frames a second, 0.01:1 to 10:1.
+		Video: &VideoRules{Types: map[string]int64{media.MP4: 300 << 20, media.QuickTime: 300 << 20}, MinDuration: 3 * time.Second,
+			MaxDuration: 15 * time.Minute, MinAspect: 0.01, MaxAspect: 10, MaxFrameRate: 60, Codecs: []string{"avc1", "avc3", "hvc1", "hev1"},
+			Source: "https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media#reel-specifications"},
 	},
 	Pinterest: {
 		// A pin's description holds 800 characters and its title 100; the

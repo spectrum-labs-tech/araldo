@@ -179,14 +179,20 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 	return res, nil
 }
 
-// container creates the container for one part (text, an image, or a
-// carousel of images) and waits until Threads has processed it.
+// container creates the container for one part (text, an image, a video,
+// or a carousel of images) and waits until Threads has processed it.
 func (a *Adapter) container(ctx context.Context, user, tok, text, replyTo string, media []platform.Media) (string, error) {
 	params := url.Values{"text": {text}, "access_token": {tok}}
 	if replyTo != "" {
 		params.Set("reply_to_id", replyTo)
 	}
 	switch {
+	case len(media) == 1 && media[0].IsVideo():
+		if media[0].URL == "" {
+			return "", noLink()
+		}
+		params.Set("media_type", "VIDEO")
+		params.Set("video_url", media[0].URL)
 	case len(media) == 1:
 		if media[0].URL == "" {
 			return "", noLink()
@@ -227,7 +233,7 @@ func (a *Adapter) container(ctx context.Context, user, tok, text, replyTo string
 
 func noLink() error {
 	return &platform.Error{Kind: platform.Rejected, Code: "media_link_missing",
-		Msg: "Threads fetches images from a link, and this install cannot make one: its API must be public at ARALDO_BASE_URL"}
+		Msg: "Threads fetches media from a link, and this install cannot make one: its API must be public at ARALDO_BASE_URL"}
 }
 
 // ready waits for a container to finish processing

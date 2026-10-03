@@ -3,11 +3,13 @@
 package bluesky
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -267,5 +269,111 @@ func TestEngagementBatchesPublicReads(t *testing.T) {
 	}
 	if c := got[refs[0].ID]; c != (platform.Counts{Likes: 1, Reposts: 2, Replies: 3, Quotes: 4}) {
 		t.Fatalf("counts %+v", c)
+	}
+}
+
+// fakeVideo is a PDS that grants service tokens and records posts, and
+// Bluesky's video service, which processes an upload in polls checks.
+type fakeVideo struct {
+	mu       sync.Mutex
+	aud      string
+	upload   string // did:name:type:length:data
+	polls    int
+	conflict bool
+	fail     bool
+	record   map[string]any
+}
+
+func (f *fakeVideo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	blob := `{"$type":"blob","ref":{"$link":"bafkvideo"},"mimeType":"video/mp4","size":9}`
+	switch r.URL.Path {
+	case "/xrpc/com.atproto.server.createSession":
+		_, _ = w.Write([]byte(`{"did":"did:plc:abc","handle":"araldo.test","accessJwt":"jwt",
+			"didDoc":{"service":[{"id":"#atproto_pds","serviceEndpoint":"https://morel.us-east.host.bsky.network"}]}}`))
+	case "/xrpc/com.atproto.server.getServiceAuth":
+		f.aud = r.URL.Query().Get("aud") + " " + r.URL.Query().Get("lxm")
+		_, _ = w.Write([]byte(`{"token":"svc"}`))
+	case "/xrpc/app.bsky.video.uploadVideo":
+		if r.Header.Get("Authorization") != "Bearer svc" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		data, _ := io.ReadAll(r.Body)
+		q := r.URL.Query()
+		f.upload = q.Get("did") + ":" + q.Get("name") + ":" + r.Header.Get("Content-Type") + ":" + strconv.FormatInt(r.ContentLength, 10) + ":" + string(data)
+		if f.conflict {
+			w.WriteHeader(http.StatusConflict)
+		}
+		_, _ = w.Write([]byte(`{"jobId":"job1","state":"JOB_STATE_CREATED","did":"did:plc:abc"}`))
+	case "/xrpc/app.bsky.video.getJobStatus":
+		f.polls++
+		switch {
+		case f.fail:
+			_, _ = w.Write([]byte(`{"jobStatus":{"jobId":"job1","state":"JOB_STATE_FAILED","error":"Unsupported","message":"bad codec"}}`))
+		case f.polls < 3:
+			_, _ = w.Write([]byte(`{"jobStatus":{"jobId":"job1","state":"JOB_STATE_ENCODING"}}`))
+		default:
+			_, _ = w.Write([]byte(`{"jobStatus":{"jobId":"job1","state":"JOB_STATE_COMPLETED","blob":` + blob + `}}`))
+		}
+	case "/xrpc/com.atproto.repo.getRecord":
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"RecordNotFound"}`))
+	case "/xrpc/com.atproto.repo.createRecord":
+		var in struct {
+			Rkey   string         `json:"rkey"`
+			Record map[string]any `json:"record"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		f.record = in.Record
+		_ = json.NewEncoder(w).Encode(map[string]string{"uri": "at://did:plc:abc/app.bsky.feed.post/" + in.Rkey, "cid": "cid"})
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func TestPublishVideo(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name           string
+		conflict, fail bool
+	}{
+		{"processed", false, false},
+		{"already uploaded", true, false},
+		{"refused by the video service", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := &fakeVideo{conflict: tt.conflict, fail: tt.fail}
+			srv := httptest.NewServer(f)
+			defer srv.Close()
+			a := New(srv.Client())
+			a.Video = srv.URL
+			a.Sleep = func(context.Context, time.Duration) error { return nil }
+			v := platform.Media{Type: "video/mp4", Alt: "Range day", Width: 1080, Height: 1920}.WithData([]byte("mp4 bytes"))
+			_, err := a.Publish(t.Context(), platform.Credentials{"identifier": "araldo.test", "app_password": "app-pass", "service": srv.URL},
+				platform.Payload{Key: "ptgt_v", KeyTime: time.Unix(1700000000, 0), Parts: []string{"watch"}, Media: []platform.Media{v}}, nil)
+			if tt.fail {
+				if platform.KindOf(err) != platform.Rejected || f.record != nil {
+					t.Fatalf("a refused video: %v, record %v", err, f.record)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if f.aud != "did:web:morel.us-east.host.bsky.network com.atproto.repo.uploadBlob" ||
+				f.upload != "did:plc:abc:video1.mp4:video/mp4:9:mp4 bytes" || f.polls != 3 {
+				t.Fatalf("aud %q, upload %q, polls %d", f.aud, f.upload, f.polls)
+			}
+			embed, _ := f.record["embed"].(map[string]any)
+			ratio, _ := embed["aspectRatio"].(map[string]any)
+			if embed["$type"] != "app.bsky.embed.video" || embed["alt"] != "Range day" || ratio["width"].(float64) != 1080 ||
+				embed["video"].(map[string]any)["ref"].(map[string]any)["$link"] != "bafkvideo" {
+				t.Fatalf("embed %v", embed)
+			}
+		})
 	}
 }

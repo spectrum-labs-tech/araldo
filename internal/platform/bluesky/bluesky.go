@@ -13,9 +13,11 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +30,10 @@ const DefaultService = "https://bsky.social"
 // DefaultAppView serves public reads (engagement) without signing in.
 const DefaultAppView = "https://public.api.bsky.app"
 
+// DefaultVideo is Bluesky's video service, which processes a video before
+// a post can show it.
+const DefaultVideo = "https://video.bsky.app"
+
 const postCollection = "app.bsky.feed.post"
 
 // Adapter publishes to Bluesky.
@@ -37,11 +43,24 @@ type Adapter struct {
 	Web string
 	// AppView answers public reads; tests replace it.
 	AppView string
+	// Video is the video service; tests replace it.
+	Video string
+	// Sleep waits while a video is processed; tests replace it.
+	Sleep func(ctx context.Context, d time.Duration) error
 }
 
 // New returns a Bluesky adapter.
 func New(client *http.Client) *Adapter {
-	return &Adapter{Client: client, Web: "https://bsky.app", AppView: DefaultAppView}
+	return &Adapter{Client: client, Web: "https://bsky.app", AppView: DefaultAppView, Video: DefaultVideo, Sleep: sleep}
+}
+
+func sleep(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
 }
 
 func (a *Adapter) Provider() platform.Provider { return platform.Bluesky }
@@ -66,6 +85,27 @@ type session struct {
 	Handle     string `json:"handle"`
 	AccessJwt  string `json:"accessJwt"`
 	RefreshJwt string `json:"refreshJwt"`
+	// DIDDoc names the account's own PDS, which may not be the service it
+	// signed in through (bsky.social is an entryway to many).
+	DIDDoc struct {
+		Service []struct {
+			ID              string `json:"id"`
+			ServiceEndpoint string `json:"serviceEndpoint"`
+		} `json:"service"`
+	} `json:"didDoc"`
+}
+
+// pdsHost is the host of the account's own PDS.
+func (s session) pdsHost(c platform.Credentials) string {
+	for _, sv := range s.DIDDoc.Service {
+		if sv.ID == "#atproto_pds" {
+			if u, err := url.Parse(sv.ServiceEndpoint); err == nil && u.Host != "" {
+				return u.Host
+			}
+		}
+	}
+	u, _ := url.Parse(service(c))
+	return u.Host
 }
 
 func service(c platform.Credentials) string {
@@ -115,7 +155,7 @@ type post struct {
 	CreatedAt string    `json:"createdAt"`
 	Facets    []facet   `json:"facets,omitempty"`
 	Reply     *replyRef `json:"reply,omitempty"`
-	Embed     *images   `json:"embed,omitempty"`
+	Embed     any       `json:"embed,omitempty"`
 	Langs     []string  `json:"langs,omitempty"`
 }
 
@@ -177,7 +217,12 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 			if root != nil {
 				rec.Reply = &replyRef{Root: *root, Parent: *parent}
 			}
-			if i == 0 && len(p.Media) > 0 {
+			switch {
+			case i == 0 && len(p.Media) == 1 && p.Media[0].IsVideo():
+				if rec.Embed, err = a.uploadVideo(ctx, c, s, p.Media[0]); err != nil {
+					return res, err
+				}
+			case i == 0 && len(p.Media) > 0:
 				if rec.Embed, err = a.upload(ctx, c, auth, p.Media); err != nil {
 					return res, err
 				}
@@ -326,4 +371,88 @@ func (a *Adapter) Engagement(ctx context.Context, _ platform.Credentials, refs [
 		}
 	}
 	return out, nil
+}
+
+// video is an app.bsky.embed.video embed.
+type video struct {
+	Type        string          `json:"$type"`
+	Video       json.RawMessage `json:"video"`
+	Alt         string          `json:"alt,omitempty"`
+	AspectRatio *aspectRatio    `json:"aspectRatio,omitempty"`
+}
+
+type jobStatus struct {
+	JobID   string          `json:"jobId"`
+	State   string          `json:"state"`
+	Blob    json.RawMessage `json:"blob"`
+	Error   string          `json:"error"`
+	Message string          `json:"message"`
+}
+
+// maxVideoWait is the longest wait between checks on a processing video.
+const maxVideoWait = 5 * time.Second
+
+// uploadVideo sends a video, streamed, to Bluesky's video service with a
+// token the account's PDS grants for it, waits for it to be processed, and
+// returns the embed that shows it
+// (https://docs.bsky.app/docs/tutorials/video).
+func (a *Adapter) uploadVideo(ctx context.Context, c platform.Credentials, s session, m platform.Media) (*video, error) {
+	var tok struct {
+		Token string `json:"token"`
+	}
+	q := url.Values{"aud": {"did:web:" + s.pdsHost(c)}, "lxm": {"com.atproto.repo.uploadBlob"},
+		"exp": {strconv.FormatInt(time.Now().Add(30*time.Minute).Unix(), 10)}}
+	if err := platform.JSON(ctx, a.Client, http.MethodGet, service(c)+"/xrpc/com.atproto.server.getServiceAuth?"+q.Encode(),
+		map[string]string{"Authorization": "Bearer " + s.AccessJwt}, nil, &tok); err != nil {
+		return nil, err
+	}
+	rc, err := platform.OpenVideo(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rc.Close() }()
+	u := a.Video + "/xrpc/app.bsky.video.uploadVideo?" + url.Values{"did": {s.DID}, "name": {m.Filename(0)}}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, rc)
+	if err != nil {
+		return nil, &platform.Error{Kind: platform.Rejected, Code: "request", Err: err}
+	}
+	req.ContentLength = m.Size
+	req.Header.Set("Authorization", "Bearer "+tok.Token)
+	req.Header.Set("Content-Type", m.Type)
+	resp, err := platform.Do(a.Client, req)
+	if err != nil {
+		return nil, err
+	}
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	_ = resp.Body.Close()
+	var job jobStatus
+	// A video the service already has comes back as 409 with its job.
+	if json.Unmarshal(raw, &job) != nil || job.JobID == "" || resp.StatusCode/100 != 2 && resp.StatusCode != http.StatusConflict {
+		if resp.StatusCode/100 == 2 {
+			return nil, &platform.Error{Kind: platform.Transient, Code: "decode", Msg: "the video service answered without a job"}
+		}
+		return nil, platform.Classify(resp, raw)
+	}
+	for len(job.Blob) == 0 {
+		if job.State == "JOB_STATE_FAILED" {
+			return nil, &platform.Error{Kind: platform.Rejected, Code: "video_rejected",
+				Msg: strings.TrimSpace("Bluesky could not process the video: " + job.Error + " " + job.Message)}
+		}
+		if err := a.Sleep(ctx, maxVideoWait); err != nil {
+			return nil, &platform.Error{Kind: platform.Transient, Code: "media_processing", Msg: "Bluesky was still processing the video", Err: err}
+		}
+		var st struct {
+			JobStatus jobStatus `json:"jobStatus"`
+		}
+		if err := platform.JSON(ctx, a.Client, http.MethodGet, a.Video+"/xrpc/app.bsky.video.getJobStatus?jobId="+url.QueryEscape(job.JobID),
+			nil, nil, &st); err != nil {
+			return nil, err
+		}
+		job = st.JobStatus
+	}
+	v := &video{Type: "app.bsky.embed.video", Video: job.Blob, Alt: m.Alt}
+	if m.Width > 0 && m.Height > 0 {
+		v.AspectRatio = &aspectRatio{Width: m.Width, Height: m.Height}
+	}
+	return v, nil
 }

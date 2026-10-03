@@ -100,6 +100,11 @@ var rules = map[Provider]Rules{
 		Source:      "https://docs.bsky.app/docs/advanced-guides/post-richtext",
 		Images:      map[string]int64{media.JPEG: 1_000_000, media.PNG: 1_000_000, media.WebP: 1_000_000, media.GIF: 1_000_000},
 		ImageSource: "https://github.com/bluesky-social/atproto/blob/main/lexicons/app/bsky/embed/images.json (maxSize)",
+		// The embed takes an MP4 blob of up to 100,000,000 bytes; Bluesky's
+		// video service takes up to three minutes.
+		Video: &VideoRules{Types: map[string]int64{media.MP4: 100_000_000}, MaxDuration: 3 * time.Minute,
+			Source: "https://github.com/bluesky-social/atproto/blob/main/lexicons/app/bsky/embed/video.json (maxSize); " +
+				"https://docs.bsky.app/docs/tutorials/video"},
 	},
 	Mastodon: {
 		Provider: Mastodon, Name: "Mastodon", MaxLength: 500, Counting: CountMastodon, Threads: true, MaxThreadParts: 25, MaxMedia: 4,

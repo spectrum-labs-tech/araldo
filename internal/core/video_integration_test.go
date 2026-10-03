@@ -112,10 +112,17 @@ func TestVideoIsStreamedAndRead(t *testing.T) {
 		t.Fatal("the stored video differs")
 	}
 
-	// No platform takes video until its adapter can post it; the preview
-	// says so per channel.
-	renders, err := w.s.PreviewPost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "Watch"}, Media: []uuid.UUID{m.ID}})
-	if err != nil || len(renders[0].Violations) != 1 || renders[0].Violations[0].Code != "video_unsupported" {
+	// Bluesky takes it; a platform whose adapter cannot post video yet
+	// refuses it in the preview.
+	pin, err := w.s.ConnectChannel(ctx, w.owner, core.ConnectInput{BrandID: w.brand.ID, Provider: platform.Sandbox,
+		Fields: map[string]string{"emulates": "pinterest"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renders, err := w.s.PreviewPost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "Watch"},
+		Channels: []uuid.UUID{w.channel.ID, pin.ID}, Media: []uuid.UUID{m.ID}})
+	if err != nil || len(renders) != 2 || len(renders[0].Violations) != 0 || len(renders[1].Violations) != 1 ||
+		renders[1].Violations[0].Code != "video_unsupported" {
 		t.Fatalf("preview %+v, %v", renders, err)
 	}
 

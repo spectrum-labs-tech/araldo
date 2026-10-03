@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"time"
 )
 
@@ -106,7 +107,11 @@ func header(r io.ReaderAt, off, limit int64) (box, error) {
 		if _, err := r.ReadAt(h[8:16], off+8); err != nil {
 			return box{}, err
 		}
-		size, b.start = int64(binary.BigEndian.Uint64(h[8:16])), off+16
+		large := binary.BigEndian.Uint64(h[8:16])
+		if large > math.MaxInt64 {
+			return box{}, fmt.Errorf("a %q box runs past the file", b.typ)
+		}
+		size, b.start = int64(large), off+16 //nolint:gosec // G115: bounded on the line above
 	}
 	if size < b.start-off || off+size > limit {
 		return box{}, fmt.Errorf("a %q box runs past the file", b.typ)
@@ -224,8 +229,9 @@ func (v *Video) readTkhd(t []byte) {
 	matrix := t[off-36 : off]
 	w := int(binary.BigEndian.Uint32(t[off:off+4]) >> 16)
 	h := int(binary.BigEndian.Uint32(t[off+4:off+8]) >> 16)
-	a := int32(binary.BigEndian.Uint32(matrix[0:4]))
-	b := int32(binary.BigEndian.Uint32(matrix[4:8]))
+	// The matrix's first row: a quarter turn has no a and a nonzero b.
+	a := binary.BigEndian.Uint32(matrix[0:4])
+	b := binary.BigEndian.Uint32(matrix[4:8])
 	if a == 0 && b != 0 {
 		w, h = h, w
 	}

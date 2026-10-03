@@ -38,7 +38,7 @@ type S3 struct {
 	// PartSize is a multipart upload's part size; zero is the default,
 	// PartSize. Tests make it small.
 	PartSize int
-	Client *http.Client
+	Client   *http.Client
 	// Now is the clock for signatures; tests replace it.
 	Now func() time.Time
 }

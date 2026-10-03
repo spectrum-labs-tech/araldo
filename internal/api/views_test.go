@@ -62,3 +62,52 @@ func TestPostViewsMatchContract(t *testing.T) {
 		})
 	}
 }
+
+// Newsletter objects render as the contract says, nulls included: a draft
+// has no send time, a disconnected account's delivery no account, and an
+// audience a provider does not size no size.
+func TestNewsletterViewsMatchContract(t *testing.T) {
+	t.Parallel()
+	doc, err := openapi3.NewLoader().LoadFromData(contract.OpenAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 5, 15, 0, 0, 0, time.UTC)
+	acct := uuid.New()
+	logo := uuid.New()
+	draft := &model.Issue{ID: uuid.New(), BrandID: uuid.New(), Subject: "x", Body: "x", Status: model.IssueDraft,
+		Deliveries: []model.IssueDelivery{{ID: uuid.New(), Provider: "sandbox", AccountName: "Gone", Status: model.DeliveryDraft,
+			Audiences: []model.Audience{{ID: "segment-1", Name: "Engaged", Kind: "segment", Size: -1}}}}}
+	sent := &model.Issue{ID: uuid.New(), BrandID: uuid.New(), Subject: "x", Body: "x", Status: model.IssueSent, SendAt: &at,
+		ApprovalNeeded: true, ReviewedAt: &at, ReviewedByUser: &acct, Media: []uuid.UUID{logo},
+		Deliveries: []model.IssueDelivery{{ID: uuid.New(), MailAccountID: &acct, Provider: "brevo", AccountName: "Brevo", Status: model.DeliverySent,
+			CampaignID: "12", SentAt: &at, ResultsReadAt: &at, Results: model.MailResults{Recipients: 10, Delivered: 9, Clicks: 2},
+			Audiences: []model.Audience{{ID: "list:7", Name: "Newsletter", Kind: "list", Size: 1200}}}}}
+	tests := []struct {
+		name, schema string
+		view         any
+	}{
+		{"a draft", "Issue", core.ViewIssue(draft)},
+		{"a sent issue", "Issue", core.ViewIssue(sent)},
+		{"a mail account", "MailAccount", core.ViewMailAccount(&model.MailAccount{ID: acct, BrandID: uuid.New(), Provider: "brevo",
+			Status: model.AdAccountActive})},
+		{"a brand with a theme", "Brand", core.ViewBrand(&model.Brand{ID: uuid.New(), EmailTheme: model.EmailTheme{LogoMediaID: &logo}})},
+		{"a brand without one", "Brand", core.ViewBrand(&model.Brand{ID: uuid.New()})},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			raw, err := json.Marshal(tt.view)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var v any
+			if err := json.Unmarshal(raw, &v); err != nil {
+				t.Fatal(err)
+			}
+			if err := doc.Components.Schemas[tt.schema].Value.VisitJSON(v); err != nil {
+				t.Fatalf("does not match the contract: %v\n%s", err, raw)
+			}
+		})
+	}
+}

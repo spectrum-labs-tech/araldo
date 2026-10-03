@@ -434,8 +434,9 @@ type IssueInput struct {
 	PreviewText string
 	// Body is the Markdown subset internal/newsletter renders.
 	Body string
-	// Deliveries are the mail accounts and their audiences it goes to; nil
-	// means each of the brand's active accounts with default audiences.
+	// Deliveries are the mail accounts and their audiences it goes to. Nil
+	// means, for a new issue, each of the brand's active accounts with
+	// default audiences, and for an edit, the ones it has.
 	Deliveries []DeliveryInput
 }
 
@@ -616,6 +617,15 @@ func (s *Service) UpdateIssue(ctx context.Context, a Actor, issueID uuid.UUID, i
 		return nil, err
 	}
 	in.BrandID = cur.BrandID
+	if in.Deliveries == nil {
+		// Keep the accounts and audiences it has.
+		in.Deliveries = []DeliveryInput{}
+		for _, d := range cur.Deliveries {
+			if d.MailAccountID != nil {
+				in.Deliveries = append(in.Deliveries, DeliveryInput{MailAccountID: *d.MailAccountID, Audiences: audienceIDs(d.Audiences)})
+			}
+		}
+	}
 	pl, err := s.prepareIssue(ctx, a, &in)
 	if err != nil {
 		return nil, err

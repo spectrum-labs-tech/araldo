@@ -52,6 +52,7 @@ tags:
   - name: Engagement
   - name: Ads
   - name: Analytics
+  - name: Newsletters
   - name: Events
   - name: Webhooks
   - name: API keys
@@ -146,6 +147,40 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/BrandInput" }
+      responses:
+        "200":
+          description: The brand.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Brand" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/brands/{id}/email_theme:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: A brand ID (`brand_…`) or slug.
+        schema: { type: string }
+    post:
+      summary: Set a brand's email theme
+      description: |
+        The brand's look in newsletters: a logo from its media library, an
+        accent color for links and buttons (dark enough to read on white,
+        4.5:1), a footer line, and the postal address anti-spam laws
+        require in every newsletter; an issue cannot be scheduled without
+        it. Needs `brands:write`.
+      tags: [Newsletters]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                logo: { type: string, nullable: true, description: "A media ID of the brand's, or null for the brand's name." }
+                accent: { type: string, example: "#1d4ed8", description: "#rrggbb, or empty for the default." }
+                postal_address: { type: string, maxLength: 300, example: "1 Main St\nDenver, CO 80202" }
+                footer: { type: string, maxLength: 300, example: You signed up at ar15.build. }
       responses:
         "200":
           description: The brand.
@@ -1138,6 +1173,375 @@ paths:
                         total: { type: integer, description: "Likes, reposts, replies and quotes." }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/mail_providers:
+    get:
+      summary: List email providers
+      description: The providers mail accounts can connect to in the key's mode, with their connect fields.
+      tags: [Newsletters]
+      responses:
+        "200":
+          description: Providers.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/MailProvider" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/mail_accounts:
+    get:
+      summary: List mail accounts
+      description: The brands' connected email provider accounts, in the key's mode. Needs `channels:read` or `newsletters:read`.
+      tags: [Newsletters]
+      parameters:
+        - { name: brand, in: query, schema: { type: string }, description: Brand ID or slug. }
+      responses:
+        "200":
+          description: Accounts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/MailAccount" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Connect a mail account
+      description: |
+        Checks the key with the provider, and that the provider will send as
+        `from_email`, and stores the key encrypted. The provider owns the
+        subscribers, unsubscribes, bounces and complaints; Araldo never
+        stores an address (ADR 0024). Needs `channels:write`.
+      tags: [Newsletters]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [brand, provider, from_name, from_email]
+              properties:
+                brand: { type: string }
+                provider: { type: string, example: brevo }
+                from_name: { type: string, example: AR15.build }
+                from_email: { type: string, example: news@news.ar15.build }
+                reply_to: { type: string }
+                default_audiences:
+                  type: array
+                  items: { type: string }
+                  description: Audience IDs new issues go to (see the account's audiences).
+                fields:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: The provider's connect fields (see /v1/mail_providers).
+      responses:
+        "201":
+          description: The account.
+          content: { application/json: { schema: { $ref: "#/components/schemas/MailAccount" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/mail_accounts/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Get a mail account
+      tags: [Newsletters]
+      responses:
+        "200":
+          description: The account.
+          content: { application/json: { schema: { $ref: "#/components/schemas/MailAccount" } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Update a mail account
+      description: Changes the sender, checked with the provider when its address changes, and the default audiences. Needs `channels:write`.
+      tags: [Newsletters]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from_name, from_email]
+              properties:
+                from_name: { type: string }
+                from_email: { type: string }
+                reply_to: { type: string }
+                default_audiences: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: The account.
+          content: { application/json: { schema: { $ref: "#/components/schemas/MailAccount" } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Disconnect a mail account
+      description: |
+        Forgets the account and its key. Refused while scheduled issues go
+        through it; past issues keep their results. Needs `channels:write`.
+      tags: [Newsletters]
+      responses:
+        "200":
+          description: Deleted.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/mail_accounts/{id}/audiences:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: List an account's audiences
+      description: What the provider groups subscribers by (Brevo's lists and segments), read from it now. Never their members.
+      tags: [Newsletters]
+      responses:
+        "200":
+          description: Audiences.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Audience" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/newsletters:
+    get:
+      summary: List newsletter issues
+      description: Issues in the key's mode, newest first. Needs `newsletters:read`.
+      tags: [Newsletters]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+        - $ref: "#/components/parameters/EndingBefore"
+        - { name: brand, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/IssueStatus" } }
+      responses:
+        "200":
+          description: Issues.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Issue" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Create a newsletter issue
+      description: |
+        Stores a draft. Its body is Markdown: headings, paragraphs, lists,
+        quotes, `---` dividers, `![alt](media_… or https://…)` images and
+        `[Label](https://…){.button}` buttons on lines of their own, and
+        bold, italic, code and links. Araldo renders it into email-safe
+        HTML and plain text. Without `deliveries`, it goes to each of the
+        brand's active mail accounts with default audiences. Needs
+        `newsletters:write`.
+      tags: [Newsletters]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [brand]
+                  properties:
+                    brand: { type: string }
+                - $ref: "#/components/schemas/IssueInput"
+      responses:
+        "201":
+          description: The issue.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Issue" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/newsletters/preview:
+    post:
+      summary: Preview a newsletter issue
+      description: Renders an issue as its first delivery's provider would send it, links tagged, without storing anything.
+      tags: [Newsletters]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [brand]
+                  properties:
+                    brand: { type: string }
+                - $ref: "#/components/schemas/IssueInput"
+      responses:
+        "200":
+          description: The rendering.
+          content: { application/json: { schema: { $ref: "#/components/schemas/IssuePreview" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/newsletters/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Get a newsletter issue
+      tags: [Newsletters]
+      responses:
+        "200":
+          description: The issue, with each delivery's status and results.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Issue" } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Edit a draft
+      description: Replaces a draft's subject, preview text and body; `deliveries`, when given, replace its accounts and audiences.
+      tags: [Newsletters]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IssueInput" }
+      responses:
+        "200":
+          description: The issue.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Issue" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/newsletters/{id}/preview:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Render a newsletter issue
+      tags: [Newsletters]
+      responses:
+        "200":
+          description: The rendering.
+          content: { application/json: { schema: { $ref: "#/components/schemas/IssuePreview" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/newsletters/{id}/schedule:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Schedule or move a newsletter issue
+      description: |
+        Schedules a draft, which waits for approval under the brand's
+        policy, or moves a scheduled issue, at its providers too once it
+        has been handed to them. A day before `send_at` each delivery is
+        handed to its provider, which sends it without Araldo. Needs
+        `newsletters:write`.
+      tags: [Newsletters]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [send_at]
+              properties:
+                send_at: { type: string, format: date-time }
+      responses:
+        "200":
+          description: The issue.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Issue" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/newsletters/{id}/unschedule:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Return an issue to draft
+      description: Removes its campaigns from the providers, so it can be edited; it needs approval again. Needs `newsletters:write`.
+      tags: [Newsletters]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "200":
+          description: The issue.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Issue" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/newsletters/{id}/cancel:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Cancel a newsletter issue
+      description: Stops every delivery not yet sent, at the providers too. Needs `newsletters:write`.
+      tags: [Newsletters]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "200":
+          description: The issue.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Issue" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/newsletters/{id}/approve:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Approve a newsletter issue
+      description: Needs `posts:approve`, which a key holds only when it lists it. A key cannot approve an issue it created.
+      tags: [Newsletters]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        "200":
+          description: The issue.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Issue" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/newsletters/{id}/reject:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Reject a newsletter issue
+      description: Returns it to draft with the note. Needs `posts:approve`.
+      tags: [Newsletters]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        "200":
+          description: The issue.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Issue" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/newsletters/{id}/test:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Send a test
+      description: |
+        Sends the issue, its subject marked as a test, through one of the
+        brand's mail accounts to up to five addresses, which are not
+        stored. Needs `newsletters:write`.
+      tags: [Newsletters]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mail_account, to]
+              properties:
+                mail_account: { type: string }
+                to: { type: array, minItems: 1, maxItems: 5, items: { type: string } }
+      responses:
+        "200":
+          description: Sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object: { type: string, enum: [newsletter_test] }
+                  sent: { type: integer }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/events:
     get:
       summary: List events
@@ -1632,6 +2036,7 @@ components:
         approval_policy: { type: string }
         utm_domains: { type: array, items: { type: string } }
         slots: { type: array, items: { $ref: "#/components/schemas/Slot" } }
+        email_theme: { $ref: "#/components/schemas/EmailTheme" }
         created_at: { type: string, format: date-time }
 
     Slot:
@@ -1974,6 +2379,139 @@ components:
                     length: { type: integer }
                     limit: { type: integer }
 
+    MailProvider:
+      type: object
+      properties:
+        provider: { type: string, example: brevo }
+        name: { type: string }
+        connect_fields:
+          type: array
+          items:
+            type: object
+            properties:
+              Name: { type: string }
+              Label: { type: string }
+              Help: { type: string }
+              Secret: { type: boolean }
+              Optional: { type: boolean }
+              Default: { type: string }
+
+    MailAccount:
+      type: object
+      properties:
+        id: { type: string, example: mailacct_01j9x3k2v7e8f9g0h1j2k3m4n5 }
+        object: { type: string, enum: [mail_account] }
+        brand: { type: string }
+        livemode: { type: boolean }
+        provider: { type: string }
+        name: { type: string, description: "The provider account, as the provider names it." }
+        from_name: { type: string }
+        from_email: { type: string }
+        reply_to: { type: string }
+        default_audiences: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, needs_reauth] }
+        status_note: { type: string }
+        created_at: { type: string, format: date-time }
+
+    Audience:
+      type: object
+      description: What a provider groups subscribers by. Never its members.
+      properties:
+        id: { type: string, example: "list:7" }
+        name: { type: string }
+        kind: { type: string, example: list }
+        size: { type: integer, nullable: true, description: "Subscribers, when the provider says." }
+
+    EmailTheme:
+      type: object
+      properties:
+        logo: { type: string, nullable: true }
+        accent: { type: string }
+        postal_address: { type: string }
+        footer: { type: string }
+
+    IssueStatus:
+      type: string
+      enum: [draft, pending_approval, scheduled, sending, sent, partially_sent, canceled, failed]
+
+    IssueInput:
+      type: object
+      required: [subject, body]
+      properties:
+        subject: { type: string, maxLength: 200 }
+        preview_text: { type: string, maxLength: 200, description: The line inboxes show after the subject. }
+        body: { type: string, maxLength: 100000 }
+        deliveries:
+          type: array
+          description: The mail accounts it goes to, each once, with audiences there (empty for the account's defaults).
+          items:
+            type: object
+            required: [mail_account]
+            properties:
+              mail_account: { type: string }
+              audiences: { type: array, items: { type: string } }
+
+    IssuePreview:
+      type: object
+      properties:
+        object: { type: string, enum: [newsletter_preview] }
+        html: { type: string }
+        text: { type: string }
+
+    MailResults:
+      type: object
+      description: Counts as providers report them. Opens are inflated by mail clients that load images on their own; clicks are the better signal.
+      properties:
+        recipients: { type: integer }
+        delivered: { type: integer }
+        opens: { type: integer }
+        clicks: { type: integer }
+        unsubscribes: { type: integer }
+        bounces: { type: integer }
+        complaints: { type: integer }
+
+    IssueDelivery:
+      type: object
+      properties:
+        id: { type: string, example: nldel_01j9x3k2v7e8f9g0h1j2k3m4n5 }
+        object: { type: string, enum: [newsletter_delivery] }
+        mail_account: { type: string, nullable: true, description: Null once the account is disconnected. }
+        provider: { type: string }
+        account_name: { type: string }
+        audiences: { type: array, items: { $ref: "#/components/schemas/Audience" } }
+        status: { type: string, enum: [draft, held, queued, handed_off, sent, canceled, failed, needs_attention] }
+        campaign_id: { type: string, description: "The campaign at the provider, once handed off." }
+        error: { type: string }
+        sent_at: { type: string, format: date-time, nullable: true }
+        results: { $ref: "#/components/schemas/MailResults" }
+        results_read_at: { type: string, format: date-time, nullable: true }
+
+    Issue:
+      type: object
+      properties:
+        id: { type: string, example: nl_01j9x3k2v7e8f9g0h1j2k3m4n5 }
+        object: { type: string, enum: [newsletter_issue] }
+        brand: { type: string }
+        livemode: { type: boolean }
+        subject: { type: string }
+        preview_text: { type: string }
+        body: { type: string }
+        status: { $ref: "#/components/schemas/IssueStatus" }
+        send_at: { type: string, format: date-time, nullable: true }
+        approval:
+          type: object
+          properties:
+            required: { type: boolean }
+            reviewed_by: { type: string }
+            reviewed_by_key: { type: string }
+            reviewed_at: { type: string, format: date-time }
+            note: { type: string }
+        deliveries: { type: array, items: { $ref: "#/components/schemas/IssueDelivery" } }
+        results: { $ref: "#/components/schemas/MailResults" }
+        media: { type: array, items: { type: string }, description: The library images it uses. }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
     EventType:
       type: string
       enum:
@@ -1992,6 +2530,17 @@ components:
         - channel.connected
         - channel.needs_reauth
         - template.version_created
+        - newsletter.created
+        - newsletter.updated
+        - newsletter.approval_requested
+        - newsletter.approved
+        - newsletter.rejected
+        - newsletter.scheduled
+        - newsletter.rescheduled
+        - newsletter.unscheduled
+        - newsletter.canceled
+        - newsletter.sent
+        - newsletter.failed
 
     Event:
       type: object

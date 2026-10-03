@@ -17,6 +17,7 @@ import (
 
 	contract "github.com/spectrum-labs-tech/araldo/api"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
+	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 )
 
@@ -28,6 +29,26 @@ func TestContractIsValidOpenAPI(t *testing.T) {
 	}
 	if err := doc.Validate(t.Context()); err != nil {
 		t.Fatalf("contract is not valid OpenAPI: %v", err)
+	}
+}
+
+// The contract's event types are the events Araldo emits, which webhook
+// endpoints can subscribe to.
+func TestEventTypesMatchContract(t *testing.T) {
+	t.Parallel()
+	doc, err := openapi3.NewLoader().LoadFromData(contract.OpenAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inContract []string
+	for _, v := range doc.Components.Schemas["EventType"].Value.Enum {
+		inContract = append(inContract, v.(string))
+	}
+	inCode := slices.Clone(core.EventTypes)
+	sort.Strings(inContract)
+	sort.Strings(inCode)
+	if !slices.Equal(inContract, inCode) {
+		t.Fatalf("EventType in api/openapi.yaml:\n%v\ncore.EventTypes:\n%v", inContract, inCode)
 	}
 }
 

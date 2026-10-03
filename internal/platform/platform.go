@@ -34,6 +34,7 @@ const (
 	Instagram Provider = "instagram"
 	Threads   Provider = "threads"
 	LinkedIn  Provider = "linkedin"
+	Pinterest Provider = "pinterest"
 )
 
 // Credentials are a channel's decrypted settings and secrets, by field

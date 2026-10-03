@@ -40,9 +40,9 @@ Principles every feature keeps:
 - Publishing: slots taken at approval, moving and swapping posts, deadlines,
   rate-limit holds, re-auth detection, never silently double-posting
   ([ADR 0011](adr/0011-publishing.md), [ADR 0022](adr/0022-slots-at-approval.md)).
-- Platforms: Bluesky, Mastodon, Gab, X and LinkedIn (signing in through an
-  org's developer app, or pasted credentials), Threads, Facebook Pages and
-  Instagram (signing in), Discord and Telegram, and the sandbox with failure
+- Platforms: Bluesky, Mastodon, Gab, X, LinkedIn and Pinterest (signing in
+  through an org's developer app, or pasted credentials), Threads, Facebook
+  Pages and Instagram (signing in), Discord and Telegram, and the sandbox with failure
   simulation ([ADR 0021](adr/0021-oauth-connections.md)).
 - Events and signed webhooks with retries, a delivery log and resend.
 - UTM tagging of links to a brand's own sites; Bluesky posts show short
@@ -81,7 +81,7 @@ Principles every feature keeps:
 | 3 | Web analytics adapters: signups by post, network and campaign (Plausible), then cost per signup beside ad spend and GA4 | ADR 0025 | Done: Plausible and GA4, signups by post, cost per signup by ad campaign |
 | 4 | Newsletters phase 1: mail accounts, issues with a delivery per account, renderer and theme, Brevo and sandbox providers | ADR 0024 | Done: Brevo and the sandbox, approval, hand-off, results, dashboard and API; templates with data and MCP tools are phase 2 |
 | 5 | Client reports: one page per brand per month across posts, ads, newsletters and analytics | ADR 0026 | Phase 1 done: the page with a print stylesheet, the API and the MCP tool; share links next |
-| 6 | Pinterest (images) | ADR 0009 | Planned |
+| 6 | Pinterest (images) | ADR 0009 | Done: boards as channels, by sign-in or pasted token; engagement reading next |
 | 7 | Video media and resizing images to fit each platform, then YouTube and TikTok | ADR 0009, 0017 | Planned |
 | 8 | Ads phase 2: promotions on the first network with real spend, under per-brand caps | ADR 0023 | Decided |
 | 9 | LinkedIn company pages (its Community Management API); engagement from X and LinkedIn | ADR 0018, 0021 | Planned |

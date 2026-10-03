@@ -120,6 +120,16 @@ var rules = map[Provider]Rules{
 		MinAspect: 4.0 / 5, MaxAspect: 1.91,
 		ImageSource: "https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media#image-specifications",
 	},
+	Pinterest: {
+		// A pin's description holds 800 characters and its title 100; the
+		// adapter takes a short first line as the title, so the whole text is
+		// held to the description's limit. One image per pin, and one is
+		// required; the API takes JPEG and PNG as base64, up to 20 MB.
+		Provider: Pinterest, Name: "Pinterest", MaxLength: 800, Counting: CountRunes, MediaRequired: true, MaxMedia: 1,
+		Source:      "https://developers.pinterest.com/docs/api/v5/pins-create",
+		Images:      map[string]int64{media.JPEG: 20_000_000, media.PNG: 20_000_000},
+		ImageSource: "https://help.pinterest.com/en/business/article/pinterest-product-specs",
+	},
 	Discord: {
 		Provider: Discord, Name: "Discord", MaxLength: 2000, Counting: CountRunes, MaxMedia: 10,
 		Source:      "https://discord.com/developers/docs/resources/webhook#execute-webhook",
@@ -143,7 +153,7 @@ func RulesFor(p Provider) (Rules, bool) {
 
 // Emulable lists the providers the sandbox can imitate.
 func Emulable() []Provider {
-	return []Provider{Bluesky, Mastodon, Gab, X, Threads, LinkedIn, Facebook, Instagram, Discord, Telegram}
+	return []Provider{Bluesky, Mastodon, Gab, X, Threads, LinkedIn, Facebook, Instagram, Pinterest, Discord, Telegram}
 }
 
 var urlRE = regexp.MustCompile(`https?://[^\s<>"]+`)

@@ -113,6 +113,7 @@ check's result.
 | LinkedIn | A sign-in through your LinkedIn app, below; or a member access token from its token tools (openid, profile, w_member_social), pasted. Tokens last 60 days. |
 | Threads | A sign-in through your Threads app, below. |
 | Facebook Pages, Instagram | A sign-in through your Meta app, below; you choose which Pages, or which Instagram accounts linked to them. |
+| Pinterest | A sign-in through your Pinterest app, below, choosing boards: each board is a channel; or an access token and a board ID, pasted. |
 | Discord, Telegram | A webhook URL; a bot token and chat. |
 
 **X.** At developer.x.com, in your app's *User authentication settings*,
@@ -133,6 +134,17 @@ under Developer apps, then connect. Tokens last 60 days. LinkedIn gives
 refresh tokens only to apps it has approved for them; without one, the
 channel says a week ahead when to sign in again, and needs it once the
 token expires.
+
+**Pinterest.** At developers.pinterest.com/apps, create an app, and add
+Araldo's redirect URI (`{ARALDO_BASE_URL}/connect/pinterest/callback`).
+Add the app's ID and secret under Developer apps, then connect and choose
+the boards to pin to; each board becomes a channel. The sign-in asks for
+`boards:read`, `pins:read`, `pins:write` and `user_accounts:read`; tokens
+last 30 days and are renewed automatically. A pin needs one image. The
+first link in the text becomes the pin's destination, and a first line of
+up to 100 characters followed by more text becomes its title. Pinterest
+reviews an app before granting it Standard access, and limits what it can
+do until then: check the access level on the app's page.
 
 **Threads.** At developers.facebook.com, create an app with the *Access the
 Threads API* use case; add the permissions `threads_basic`,

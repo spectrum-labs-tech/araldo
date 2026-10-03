@@ -25,7 +25,11 @@ func (s *Service) CheckChannels(ctx context.Context) (int, error) {
 
 func (s *Service) checkChannels(ctx context.Context, orgID *uuid.UUID) (int, error) {
 	now := s.Now()
-	due, err := s.store.ClaimChannelsToCheck(ctx, orgID, now, now.Add(-ChannelCheckEvery), 25)
+	var providers []string
+	for _, p := range s.platforms.Providers() {
+		providers = append(providers, string(p))
+	}
+	due, err := s.store.ClaimChannelsToCheck(ctx, orgID, providers, now, now.Add(-ChannelCheckEvery), 25)
 	if err != nil {
 		return 0, err
 	}

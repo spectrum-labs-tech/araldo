@@ -51,6 +51,7 @@ tags:
   - name: Posts
   - name: Engagement
   - name: Ads
+  - name: Analytics
   - name: Events
   - name: Webhooks
   - name: API keys
@@ -944,6 +945,150 @@ paths:
                         cost_per_click: { type: integer, description: "Spend divided by clicks, in the minor unit; 0 without clicks." }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/analytics_providers:
+    get:
+      summary: List web analytics providers
+      description: |
+        The web analytics tools this install can read (ADR 0025), with the
+        fields needed to connect a site. Test mode has only `sandbox`,
+        whose numbers are invented.
+      tags: [Analytics]
+      responses:
+        "200":
+          description: Providers.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/AnalyticsProvider" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/analytics_sources:
+    get:
+      summary: List analytics sources
+      description: The brands' connected web analytics sites, in the key's mode. Needs `posts:read`.
+      tags: [Analytics]
+      parameters:
+        - { name: brand, in: query, schema: { type: string }, description: Brand ID or slug. }
+      responses:
+        "200":
+          description: Sources.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/AnalyticsSource" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Connect an analytics source
+      description: |
+        Checks the credentials with the provider and stores them encrypted.
+        Araldo then reads, daily, the visits and goal completions the site
+        recorded for each UTM tag: counts only, never visitors. Needs
+        `brands:write`.
+      tags: [Analytics]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [brand, provider]
+              properties:
+                brand: { type: string }
+                provider: { type: string, example: plausible }
+                goals:
+                  type: array
+                  maxItems: 20
+                  items: { type: string }
+                  description: The goals that count as conversions, as the tool names them (a Plausible goal, a GA4 key event).
+                  example: [Waitlist Signup]
+                fields:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: The provider's connect fields (see /v1/analytics_providers).
+      responses:
+        "201":
+          description: The source.
+          content: { application/json: { schema: { $ref: "#/components/schemas/AnalyticsSource" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/analytics_sources/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Get an analytics source
+      tags: [Analytics]
+      responses:
+        "200":
+          description: The source.
+          content: { application/json: { schema: { $ref: "#/components/schemas/AnalyticsSource" } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Disconnect an analytics source
+      description: Forgets the source, its credentials and the counts read from it. Needs `brands:write`.
+      tags: [Analytics]
+      responses:
+        "200":
+          description: Deleted.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/analytics/summary:
+    get:
+      summary: Summarize visits and conversions
+      description: |
+        Adds up the visits and goal completions the brands' analytics
+        recorded between `since` and `until`, inclusive (default: the last
+        30 days), grouped by what Araldo's link tags name: `post` (the post
+        each visit came from), `source` (the network), `medium`,
+        `campaign` (the template, or an ad campaign), `content` or `day`.
+        Visits whose tags Araldo did not write are in the summary's
+        `untagged` count, so the share it explains is visible. The last
+        days are provisional: tools revise them. Needs `posts:read`.
+      tags: [Analytics]
+      parameters:
+        - { name: group_by, in: query, schema: { type: string, enum: [post, source, medium, campaign, content, day], default: post } }
+        - { name: brand, in: query, schema: { type: string }, description: Brand ID or slug. }
+        - { name: since, in: query, schema: { type: string, format: date } }
+        - { name: until, in: query, schema: { type: string, format: date } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: The summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object: { type: string, enum: [analytics_summary] }
+                  group_by: { type: string }
+                  since: { type: string, format: date }
+                  until: { type: string, format: date }
+                  visitors: { type: integer, description: All visitors in the window. }
+                  untagged: { type: integer, description: Visitors who came without Araldo's tags. }
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, description: "The post ID, or the tag's value, or the day." }
+                        label: { type: string, description: "The post's first text, or the tag's value." }
+                        visitors: { type: integer }
+                        visits: { type: integer }
+                        conversions: { type: integer, description: Visitors who completed one of the source's goals. }
+                        goals:
+                          type: object
+                          additionalProperties: { type: integer }
+                          description: Conversions by goal.
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/engagement/summary:
     get:
       summary: Summarize engagement
@@ -1336,6 +1481,40 @@ components:
         id: { type: string }
         object: { type: string }
         deleted: { type: boolean }
+
+    AnalyticsProvider:
+      type: object
+      properties:
+        provider: { type: string, example: plausible }
+        name: { type: string }
+        connect_fields:
+          type: array
+          items:
+            type: object
+            properties:
+              Name: { type: string }
+              Label: { type: string }
+              Help: { type: string }
+              Secret: { type: boolean }
+              Optional: { type: boolean }
+              Default: { type: string }
+
+    AnalyticsSource:
+      type: object
+      properties:
+        id: { type: string, example: anlsrc_01j9x3k2v7e8f9g0h1j2k3m4n5 }
+        object: { type: string, enum: [analytics_source] }
+        brand: { type: string }
+        livemode: { type: boolean }
+        provider: { type: string }
+        site: { type: string, description: "The site or property, as the provider names it." }
+        name: { type: string }
+        timezone: { type: string }
+        goals: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, needs_reauth] }
+        status_note: { type: string }
+        read_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
 
     AdNetwork:
       type: object

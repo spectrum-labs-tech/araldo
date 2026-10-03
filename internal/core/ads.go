@@ -235,7 +235,11 @@ func (s *Service) CollectAds(ctx context.Context) (int, error) {
 
 func (s *Service) collectAds(ctx context.Context, orgID *uuid.UUID) (int, error) {
 	now := s.Now()
-	due, err := s.store.ClaimDueAdAccounts(ctx, orgID, now, adsReadLease, 20)
+	var networks []string
+	for _, n := range s.adNetworks.Networks() {
+		networks = append(networks, string(n))
+	}
+	due, err := s.store.ClaimDueAdAccounts(ctx, orgID, networks, now, adsReadLease, 20)
 	if err != nil {
 		return 0, err
 	}

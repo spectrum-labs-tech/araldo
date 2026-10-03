@@ -42,13 +42,19 @@ func TestAdAccountsAreReadAndSummarized(t *testing.T) {
 	}
 
 	// The first read backfills 30 days of both campaigns; the next is a day
-	// later.
-	if n, err := core.CollectAdsOrg(w.s, w.org.ID); err != nil || n != 1 {
-		t.Fatalf("collect: %d, %v", n, err)
-	}
-	got, err := w.s.AdAccount(ctx, w.owner, ac.ID)
-	if err != nil || got.ReadAt == nil || got.NextReadAt.Sub(*got.ReadAt) != core.AdsReadEvery {
-		t.Fatalf("after reading: %+v, %v", got, err)
+	// later. Readers in other tests may read it first, which is fine.
+	var got *model.AdAccount
+	waitFor(t, "the account to be read", func() {
+		if _, err := core.CollectAdsOrg(w.s, w.org.ID); err != nil {
+			t.Fatal(err)
+		}
+	}, func() bool {
+		var err error
+		got, err = w.s.AdAccount(ctx, w.owner, ac.ID)
+		return err == nil && got.ReadAt != nil
+	})
+	if got.NextReadAt.Sub(*got.ReadAt) != core.AdsReadEvery {
+		t.Fatalf("after reading: %+v", got)
 	}
 	if n, err := core.CollectAdsOrg(w.s, w.org.ID); err != nil || n != 0 {
 		t.Fatalf("reading again before it is due: %d, %v", n, err)
@@ -141,20 +147,42 @@ func TestAdAccountRules(t *testing.T) {
 
 	// A network that revokes access marks the account; nothing else stops.
 	revoked := connectSandboxAds(t, w, w.owner, "Revoked", map[string]string{"simulate": "auth_revoked"})
-	if _, err := core.CollectAdsOrg(w.s, w.org.ID); err != nil {
-		t.Fatal(err)
-	}
-	got, err := w.s.AdAccount(ctx, w.owner, revoked.ID)
-	if err != nil || got.Status != model.AdAccountNeedsReauth || got.StatusNote == "" {
-		t.Fatalf("a revoked account: %+v, %v", got, err)
-	}
-	accts, err := w.s.AdAccounts(ctx, w.owner, nil)
-	if err != nil || len(accts) != 2 {
-		t.Fatalf("accounts: %d, %v", len(accts), err)
-	}
+	var accts []*model.AdAccount
+	waitFor(t, "the revoked account flagged and the healthy one read", func() {
+		if _, err := core.CollectAdsOrg(w.s, w.org.ID); err != nil {
+			t.Fatal(err)
+		}
+	}, func() bool {
+		var err error
+		if accts, err = w.s.AdAccounts(ctx, w.owner, nil); err != nil || len(accts) != 2 {
+			return false
+		}
+		for _, a := range accts {
+			if a.ID == revoked.ID && a.Status != model.AdAccountNeedsReauth || a.ID != revoked.ID && a.ReadAt == nil {
+				return false
+			}
+		}
+		return true
+	})
 	for _, a := range accts {
-		if a.ID != revoked.ID && a.ReadAt == nil {
-			t.Fatalf("the healthy account was not read: %+v", a)
+		if a.ID == revoked.ID && a.StatusNote == "" {
+			t.Fatalf("a revoked account says nothing: %+v", a)
+		}
+	}
+}
+
+// waitFor runs step until done reports true, or fails after 15 seconds.
+// Readers in other tests claim due work in every org, so a test waits for
+// its own rows rather than counting what its own step did.
+func waitFor(t *testing.T, what string, step func(), done func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		step()
+		if done() {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
 		}
 	}
 }

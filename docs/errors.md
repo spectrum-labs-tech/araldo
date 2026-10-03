@@ -97,6 +97,16 @@ every problem in `errors`, each with its own `code` and `param`.
 - **window_invalid**: `since` must be on or before `until`, at most a year
   apart.
 
+## Web analytics
+
+- **provider_unsupported**: this install cannot read that analytics tool.
+- **analytics_source_connected**: that site is already connected to the
+  brand.
+- **goal_invalid**, **goals_too_many**: goal names are at most 120
+  characters, and a source has at most 20.
+- **group_by_invalid**: group a summary by `post`, `source`, `medium`,
+  `campaign`, `content` or `day`.
+
 ## API keys
 
 - **scope_not_grantable**: only a member can create a key with an

@@ -194,16 +194,17 @@ func (s *Store) TemplateVersion(ctx context.Context, orgID, templateID uuid.UUID
 	return &v, nil
 }
 
-// ClaimChannelsToCheck takes active live channels last checked before
-// cutoff (or never), in one org or (orgID nil) every org, and marks them
+// ClaimChannelsToCheck takes active live channels on providers the caller
+// has, last checked before cutoff (or never), in one org or (orgID nil)
+// every org, and marks them
 // checked now so no other worker takes them; SetChannelCheck records the
 // outcome.
-func (s *Store) ClaimChannelsToCheck(ctx context.Context, orgID *uuid.UUID, now, cutoff time.Time, limit int) ([]*model.Channel, error) {
+func (s *Store) ClaimChannelsToCheck(ctx context.Context, orgID *uuid.UUID, providers []string, now, cutoff time.Time, limit int) ([]*model.Channel, error) {
 	rows, err := s.q.Query(ctx, `UPDATE channels SET checked_at = $2 WHERE id IN (
 			SELECT id FROM channels WHERE status = 'active' AND livemode AND (checked_at IS NULL OR checked_at < $3)
-				AND ($1::uuid IS NULL OR org_id = $1)
+				AND ($1::uuid IS NULL OR org_id = $1) AND provider = ANY($5)
 			ORDER BY checked_at NULLS FIRST LIMIT $4 FOR UPDATE SKIP LOCKED)
-		RETURNING `+channelCols, orgID, now, cutoff, limit)
+		RETURNING `+channelCols, orgID, now, cutoff, limit, providers)
 	if err != nil {
 		return nil, err
 	}

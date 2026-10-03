@@ -137,8 +137,8 @@ func TestToolsList(t *testing.T) {
 	t.Parallel()
 	out, _, _ := session(t, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	list, _ := result(t, out["1"])["tools"].([]any)
-	if len(list) != 14 {
-		t.Fatalf("%d tools, want 14", len(list))
+	if len(list) != 15 {
+		t.Fatalf("%d tools, want 15", len(list))
 	}
 	names := map[string]map[string]any{}
 	for _, raw := range list {
@@ -168,8 +168,9 @@ func TestToolsCallTheAPI(t *testing.T) {
 		call(7, "cancel_post", `{"post":"post_1"}`),
 		call(8, "reschedule_post", `{"post":"post_1","swap_with":"post_2"}`),
 		call(9, "ads_summary", `{"group_by":"day","days":7}`),
+		call(10, "analytics_summary", `{"group_by":"post","days":14}`),
 	)
-	for i := 1; i <= 9; i++ {
+	for i := 1; i <= 10; i++ {
 		if text, isErr := toolText(t, out[itoa(i)]); isErr {
 			t.Fatalf("call %d failed: %s", i, text)
 		}
@@ -215,6 +216,9 @@ func TestToolsCallTheAPI(t *testing.T) {
 	}
 	if q := byPath["GET /v1/ads/summary"].Query; !strings.Contains(q, "group_by=day") || !strings.Contains(q, "since=") {
 		t.Fatalf("ads_summary query %q", q)
+	}
+	if q := byPath["GET /v1/analytics/summary"].Query; !strings.Contains(q, "group_by=post") || !strings.Contains(q, "since=") {
+		t.Fatalf("analytics_summary query %q", q)
 	}
 }
 

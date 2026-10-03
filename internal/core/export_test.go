@@ -57,3 +57,8 @@ func CollectAdsOrg(s *Service, org uuid.UUID) (int, error) {
 func CheckChannelsOrg(s *Service, org uuid.UUID) (int, error) {
 	return s.checkChannels(context.Background(), &org)
 }
+
+// CollectAnalyticsOrg is CollectAnalytics for one org.
+func CollectAnalyticsOrg(s *Service, org uuid.UUID) (int, error) {
+	return s.collectAnalytics(context.Background(), &org)
+}

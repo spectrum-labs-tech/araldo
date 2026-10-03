@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
+	"github.com/spectrum-labs-tech/araldo/internal/analytics"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -72,6 +73,10 @@ func TestPagesAreAccessible(t *testing.T) {
 		if scheduled, err = d.s.CreatePost(ctx, d.owner, core.PostInput{BrandID: d.brand.ID, Content: &model.Content{Body: "Later"}, PublishAt: "next_slot"}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := d.s.ConnectAnalyticsSource(ctx, d.owner, core.AnalyticsSourceInput{BrandID: d.brand.ID, Provider: analytics.Sandbox,
+		Goals: []string{"Signup"}, Fields: map[string]string{"site": "a11y.example"}}); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := d.s.ConnectAdAccount(ctx, d.owner, core.AdAccountInput{BrandID: d.brand.ID, Network: ads.Sandbox,
 		Fields: map[string]string{"name": "Accessible ads"}}); err != nil {

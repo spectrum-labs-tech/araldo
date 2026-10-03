@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
+	"github.com/spectrum-labs-tech/araldo/internal/analytics"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
@@ -42,6 +43,9 @@ type Config struct {
 	// AdNetworks are the ad networks live accounts can connect to (ADR
 	// 0023); test mode always has the sandbox.
 	AdNetworks []ads.Reporter
+	// AnalyticsSources are the web analytics tools live sites can connect
+	// to (ADR 0025); test mode always has the sandbox.
+	AnalyticsSources []analytics.Source
 }
 
 // Service is the application.
@@ -60,6 +64,8 @@ type Service struct {
 	blobs     Blobs
 	// adNetworks are the ad networks accounts can be read from.
 	adNetworks *ads.Registry
+	// analytics are the web analytics tools sources can be read from.
+	analytics *analytics.Registry
 	// metrics records nothing until Instrument.
 	metrics *metrics
 }
@@ -68,6 +74,7 @@ type Service struct {
 func New(st *store.Store, keys *keyring.Keyring, platforms *platform.Registry, log *slog.Logger, cfg Config) *Service {
 	return &Service{store: st, keys: keys, platforms: platforms, log: log, cfg: cfg, Now: time.Now,
 		adNetworks: ads.NewRegistry(append([]ads.Reporter{ads.SandboxAds{}}, cfg.AdNetworks...)...),
+		analytics:  analytics.NewRegistry(append([]analytics.Source{analytics.SandboxSource{}}, cfg.AnalyticsSources...)...),
 		HTTP:       netguard.Client(cfg.AllowPrivateWebhooks, deliveryTimeout),
 		MediaHTTP:  mediaClient(cfg.AllowPrivateWebhooks, netguard.Client(cfg.AllowPrivateWebhooks, mediaFetchTimeout)),
 		blobs:      cfg.Blobs, metrics: noopMetrics()}

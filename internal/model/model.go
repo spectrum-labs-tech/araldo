@@ -404,6 +404,29 @@ type AdAccount struct {
 	CreatedAt  time.Time
 }
 
+// AnalyticsSource is a brand's web analytics site, read for visits and
+// conversions by UTM tags (ADR 0025).
+type AnalyticsSource struct {
+	ID       uuid.UUID
+	OrgID    uuid.UUID
+	BrandID  uuid.UUID
+	Livemode bool
+	Provider string
+	// Site is the site or property as the provider names it.
+	Site     string
+	Name     string
+	Timezone string
+	// Goals are the provider's goals that count as conversions.
+	Goals       []string
+	Settings    map[string]string // non-secret fields
+	Credentials []byte            // encrypted secret fields
+	Status      AdAccountStatus
+	StatusNote  string
+	ReadAt      *time.Time
+	NextReadAt  time.Time
+	CreatedAt   time.Time
+}
+
 // TargetStatus is where one channel's copy of a post stands (ADR 0011).
 type TargetStatus string
 

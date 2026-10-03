@@ -362,5 +362,23 @@ func tools(api *Client) []Tool {
 				return get("/v1/ads/summary", q)(ctx)
 			},
 		},
+		{
+			Name: "analytics_summary", Title: "Summarize visits and signups", ReadOnly: true, Idempotent: true,
+			Description: "Visitors and signups (goal completions) from the brand's own web analytics, credited to the post, network, " +
+				"campaign or day whose tagged link brought them. Use it to see which posts bring customers, not just likes. " +
+				"Counts only; untagged traffic is reported separately.",
+			Input: object(nil, map[string]any{
+				"brand":    str(brandDesc),
+				"group_by": enum("How to group (default post).", "post", "source", "medium", "campaign", "content", "day"),
+				"days":     map[string]any{"type": "integer", "minimum": 1, "maximum": 365, "description": "How far back, ending today (default 30)."},
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				q := query(args, "brand", "group_by")
+				if d, ok := args["days"].(float64); ok && d >= 1 {
+					q.Set("since", time.Now().UTC().AddDate(0, 0, -(int(d)-1)).Format(time.DateOnly))
+				}
+				return get("/v1/analytics/summary", q)(ctx)
+			},
+		},
 	}
 }

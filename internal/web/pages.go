@@ -18,6 +18,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spectrum-labs-tech/araldo/internal/ads"
+	"github.com/spectrum-labs-tech/araldo/internal/analytics"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
@@ -122,6 +124,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /sandbox/{id}", s.app("posts", s.sandboxPost))
 	s.mux.HandleFunc("GET /media/{id}", s.app("posts", s.mediaFile))
 	s.mux.HandleFunc("GET /performance", s.app("performance", s.performance))
+	s.mux.HandleFunc("POST /performance/analytics", s.app("performance", s.connectAnalytics))
+	s.mux.HandleFunc("POST /performance/analytics/{id}/delete", s.app("performance", s.deleteAnalytics))
 	s.mux.HandleFunc("GET /ads", s.app("ads", s.adsPage))
 	s.mux.HandleFunc("POST /ads/accounts", s.app("ads", s.connectAdAccount))
 	s.mux.HandleFunc("POST /ads/accounts/{id}/delete", s.app("ads", s.deleteAdAccount))
@@ -477,19 +481,46 @@ type performanceData struct {
 	Posts     []core.EngagementRow
 	Channels  []core.EngagementRow
 	Templates []core.EngagementRow
+	// Web analytics (ADR 0025): signups by post, the brands' sources, and
+	// what connecting one takes.
+	Signups    *core.AnalyticsSummary
+	Sources    []*model.AnalyticsSource
+	Providers  []core.AnalyticsProviderInfo
+	Provider   *core.AnalyticsProviderInfo
+	CanConnect bool
+	// Tagging is whether any brand tags its links (UTM domains set).
+	Tagging bool
+	Values  map[string]string
 }
 
 // performance ranks posts, channels and templates by engagement over the
-// last days (ADR 0018).
+// last days (ADR 0018), and posts by the signups they brought (ADR 0025).
 func (s *Server) performance(c *reqCtx) error {
+	d, err := s.performanceData(c)
+	if err != nil {
+		return err
+	}
+	return s.page(c, "performance", "performance", "Performance", d)
+}
+
+func (s *Server) performanceData(c *reqCtx) (*performanceData, error) {
 	q := c.r.URL.Query()
-	d := performanceData{Days: 30, Brand: q.Get("brand")}
+	d := &performanceData{Days: 30, Brand: q.Get("brand"), Values: map[string]string{}, CanConnect: c.actor.Can(core.PermBrandsWrite),
+		Providers: s.svc.AnalyticsProviders(c.actor.Livemode)}
+	for i := range d.Providers {
+		if string(d.Providers[i].Provider) == q.Get("provider") || d.Provider == nil {
+			d.Provider = &d.Providers[i]
+		}
+	}
 	if n, err := strconv.Atoi(q.Get("days")); err == nil && n >= 1 && n <= 365 {
 		d.Days = n
 	}
 	var err error
 	if d.Brands, err = s.svc.Brands(c.ctx(), c.actor); err != nil {
-		return err
+		return nil, err
+	}
+	for _, b := range d.Brands {
+		d.Tagging = d.Tagging || len(b.UTMDomains) > 0
 	}
 	now := time.Now()
 	d.Since = now.Add(-time.Duration(d.Days) * 24 * time.Hour)
@@ -497,7 +528,7 @@ func (s *Server) performance(c *reqCtx) error {
 	if d.Brand != "" {
 		b, err := s.svc.ResolveBrand(c.ctx(), c.actor, d.Brand)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		f.BrandID = &b.ID
 	}
@@ -506,10 +537,61 @@ func (s *Server) performance(c *reqCtx) error {
 	} {
 		f.GroupBy = group
 		if *dst, err = s.svc.EngagementSummary(c.ctx(), c.actor, f); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return s.page(c, "performance", "performance", "Performance", d)
+	if d.Sources, err = s.svc.AnalyticsSources(c.ctx(), c.actor, f.BrandID); err != nil {
+		return nil, err
+	}
+	until := ads.Date(now, time.UTC)
+	if d.Signups, err = s.svc.AnalyticsSummary(c.ctx(), c.actor, core.AnalyticsFilter{GroupBy: store.AnalyticsByPost, BrandID: f.BrandID,
+		Since: until.AddDate(0, 0, -(d.Days - 1)), Until: until, Limit: 20}); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+func (s *Server) connectAnalytics(c *reqCtx) error {
+	f := c.r.PostForm
+	d, err := s.performanceData(c)
+	if err != nil {
+		return err
+	}
+	in := core.AnalyticsSourceInput{Provider: analytics.Provider(f.Get("provider")), Fields: map[string]string{}}
+	for k, v := range f {
+		if name, ok := strings.CutPrefix(k, "field_"); ok && len(v) > 0 {
+			in.Fields[name] = v[0]
+			d.Values[name] = v[0]
+		}
+	}
+	d.Values["goals"] = f.Get("goals")
+	in.Goals = strings.Split(f.Get("goals"), ",")
+	for i := range d.Providers {
+		if d.Providers[i].Provider == in.Provider {
+			d.Provider = &d.Providers[i]
+		}
+	}
+	b, err := s.svc.ResolveBrand(c.ctx(), c.actor, f.Get("brand"))
+	if err != nil {
+		return s.formErr(c, "performance", "performance", "Performance", d, err)
+	}
+	in.BrandID = b.ID
+	src, err := s.svc.ConnectAnalyticsSource(c.ctx(), c.actor, in)
+	if err != nil {
+		return s.formErr(c, "performance", "performance", "Performance", d, err)
+	}
+	return redirect(c, "/performance", "Connected "+src.Name+". Its visits and signups are read within a few minutes, then daily.")
+}
+
+func (s *Server) deleteAnalytics(c *reqCtx) error {
+	sid, err := pathUUID(c, id.AnalyticsSource, "analytics source")
+	if err != nil {
+		return err
+	}
+	if err := s.svc.DeleteAnalyticsSource(c.ctx(), c.actor, sid); err != nil {
+		return err
+	}
+	return redirect(c, "/performance", "Disconnected.")
 }
 
 type postDetailData struct {

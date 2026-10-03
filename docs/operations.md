@@ -177,6 +177,7 @@ live key limited to the brand it should post for.
 | `reschedule_post` | Move a post to another time or slot, or swap it with another. |
 | `engagement_summary` | What did best, by post, channel or template (read-only). |
 | `ads_summary` | Ad spend and results, by brand, account, campaign or day (read-only). |
+| `analytics_summary` | Visitors and signups by post, network, campaign or day, from the brand's web analytics (read-only). |
 
 Claude Code:
 
@@ -299,6 +300,29 @@ in its minor unit. Results stay 0: they count conversions, which Reddit
 measures with its pixel. To count signups, tag ad links with UTM parameters
 (`utm_medium=paid`) and read them in your own analytics: Araldo never asks
 for a network's tracking pixel.
+
+## Web analytics
+
+Araldo credits visitors and signups to the posts, networks and campaigns
+whose tagged links brought them, by reading counts from the brand's own web
+analytics ([ADR 0025](adr/0025-web-analytics.md)). It never reads
+individual visitors, and adds no tracking script.
+
+1. List the brand's sites under its **UTM domains**: links to them get
+   `utm_source` (the network), `utm_medium=social`, `utm_campaign` (the
+   template) and `utm_content` (the post's ID). Ad links made with the Ads
+   page's builder carry `utm_medium=paid`.
+2. Define a goal for what counts as a signup in the analytics tool.
+3. Connect the site on the **Performance** page or with
+   `POST /v1/analytics_sources`, naming the goals (needs `brands:write`).
+
+**Plausible** (hosted or self-hosted Community Edition): a Stats API key
+from Account settings → API keys, the site's domain, and your install's
+address if you self-host. The `analytics.collect` task reads the last 30
+days at first, then daily, re-reading the last 7 because tools revise
+them. `GET /v1/analytics/summary` and the MCP tool `analytics_summary`
+group the counts by post, source, medium, campaign, content or day; visits
+without Araldo's tags are reported as `untagged`.
 
 ## Health
 

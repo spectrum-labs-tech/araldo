@@ -69,14 +69,15 @@ func (s *Store) DeleteAdAccount(ctx context.Context, orgID, id uuid.UUID) error 
 	return s.execOne(ctx, `DELETE FROM ad_accounts WHERE org_id = $1 AND id = $2`, orgID, id)
 }
 
-// ClaimDueAdAccounts takes active accounts due for reading, in one org or
-// (orgID nil) every org, and pushes their next read back by lease so no
-// other worker takes them meanwhile.
-func (s *Store) ClaimDueAdAccounts(ctx context.Context, orgID *uuid.UUID, now time.Time, lease time.Duration, limit int) ([]*model.AdAccount, error) {
+// ClaimDueAdAccounts takes active accounts on networks the caller reads
+// that are due, in one org or (orgID nil) every org, and pushes their next
+// read back by lease so no other worker takes them meanwhile.
+func (s *Store) ClaimDueAdAccounts(ctx context.Context, orgID *uuid.UUID, networks []string, now time.Time, lease time.Duration, limit int) ([]*model.AdAccount, error) {
 	return collectAdAccounts(s.q.Query(ctx, `UPDATE ad_accounts SET next_read_at = $3 WHERE id IN (
 			SELECT id FROM ad_accounts WHERE status = 'active' AND next_read_at <= $2 AND ($1::uuid IS NULL OR org_id = $1)
+				AND network = ANY($5)
 			ORDER BY next_read_at LIMIT $4 FOR UPDATE SKIP LOCKED)
-		RETURNING `+adAccountCols, orgID, now, now.Add(lease), limit))
+		RETURNING `+adAccountCols, orgID, now, now.Add(lease), limit, networks))
 }
 
 // SaveAdResults replaces an account's results for the days they cover and

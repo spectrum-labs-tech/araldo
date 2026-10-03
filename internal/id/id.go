@@ -36,6 +36,7 @@ const (
 	Media           Prefix = "media"
 	AuditEvent      Prefix = "audit"
 	AdAccount       Prefix = "adacct"
+	AnalyticsSource Prefix = "anlsrc"
 )
 
 // ErrInvalid is returned for a malformed ID or one of another type.

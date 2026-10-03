@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
+	"github.com/spectrum-labs-tech/araldo/internal/analytics"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/authn"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
@@ -270,6 +271,13 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	}
 	_, checks["ad account"] = b.s.AdAccount(ctx, b.owner, adAcct.ID)
 	checks["delete ad account"] = b.s.DeleteAdAccount(ctx, b.owner, adAcct.ID)
+	anl, err := a.s.ConnectAnalyticsSource(ctx, a.owner, core.AnalyticsSourceInput{BrandID: a.brand.ID, Provider: analytics.Sandbox})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, checks["analytics source"] = b.s.AnalyticsSource(ctx, b.owner, anl.ID)
+	checks["delete analytics source"] = b.s.DeleteAnalyticsSource(ctx, b.owner, anl.ID)
+	_, checks["analytics for their brand"] = b.s.ConnectAnalyticsSource(ctx, b.owner, core.AnalyticsSourceInput{BrandID: a.brand.ID, Provider: analytics.Sandbox})
 	_, checks["ad account for their brand"] = b.s.ConnectAdAccount(ctx, b.owner, core.AdAccountInput{BrandID: a.brand.ID, Network: ads.Sandbox})
 	_, checks["retry"] = b.s.RetryTarget(ctx, b.owner, p.Targets[0].ID)
 	_, checks["post to their brand"] = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: a.brand.ID, Content: &model.Content{Body: "x"}})

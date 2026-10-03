@@ -152,6 +152,9 @@ var rules = map[Provider]Rules{
 		Source:      "https://developers.facebook.com/docs/pages-api/posts",
 		Images:      map[string]int64{media.JPEG: 4_000_000, media.PNG: 4_000_000, media.GIF: 4_000_000},
 		ImageSource: "https://developers.facebook.com/docs/graph-api/reference/page/photos/",
+		// A non-resumable upload: up to 1 GB and 20 minutes.
+		Video: &VideoRules{Types: map[string]int64{media.MP4: 1 << 30, media.QuickTime: 1 << 30}, MaxDuration: 20 * time.Minute,
+			Source: "https://developers.facebook.com/docs/video-api/guides/publishing"},
 	},
 	Instagram: {
 		Provider: Instagram, Name: "Instagram", MaxLength: 2200, Counting: CountRunes, MediaRequired: true, MaxMedia: 10,

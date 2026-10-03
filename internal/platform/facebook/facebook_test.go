@@ -20,6 +20,7 @@ type fakePage struct {
 	mu     sync.Mutex
 	feed   []map[string]string
 	photos []map[string]string // fields, plus "file"
+	videos []map[string]string // fields, plus "file" and "length"
 }
 
 func (f *fakePage) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +53,24 @@ func (f *fakePage) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.photos = append(f.photos, photo)
 		n := len(f.photos)
 		_, _ = fmt.Fprintf(w, `{"id":"photo%d","post_id":"p1_photo%d"}`, n, n)
+	case path == "/p1/videos":
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		video := map[string]string{"length": fmt.Sprint(r.ContentLength)}
+		for k, v := range r.MultipartForm.Value {
+			video[k] = v[0]
+		}
+		if fh := r.MultipartForm.File["source"]; len(fh) == 1 {
+			file, _ := fh[0].Open()
+			data, _ := io.ReadAll(file)
+			video["file"] = fh[0].Filename + ":" + string(data)
+		}
+		f.videos = append(f.videos, video)
+		_, _ = w.Write([]byte(`{"id":"v1"}`))
+	case path == "/v1" && r.URL.Query().Get("fields") == "permalink_url":
+		_, _ = w.Write([]byte(`{"permalink_url":"/p1/videos/v1/"}`))
 	case strings.HasPrefix(path, "/p1_") && r.URL.Query().Get("fields") == "permalink_url":
 		_, _ = fmt.Fprintf(w, `{"permalink_url":"https://www.facebook.com%s"}`, path)
 	case strings.HasPrefix(path, "/p1_"):
@@ -131,5 +150,23 @@ func TestExchangeListsPages(t *testing.T) {
 	conns, err := a.Exchange(t.Context(), platform.App{ClientID: "id", ClientSecret: "s"}, "https://araldo.test/cb", "code", "")
 	if err != nil || len(conns) != 2 || conns[1].Account.DisplayName != "VCDS" || conns[1].Credentials["access_token"] != "pt2" || conns[0].ExpiresAt != nil {
 		t.Fatalf("Exchange = %+v, %v", conns, err)
+	}
+}
+
+func TestPublishVideo(t *testing.T) {
+	t.Parallel()
+	f, a, c := setup(t)
+	a.Meta.VideoGraph = a.Meta.Graph
+	v := platform.Media{Type: "video/mp4"}.WithData([]byte("mp4 bytes"))
+	res, err := a.Publish(t.Context(), c, platform.Payload{Parts: []string{"Range day"}, Media: []platform.Media{v}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Parts[0].ID != "v1" || res.Permalink != "https://www.facebook.com/p1/videos/v1/" {
+		t.Fatalf("result %+v", res)
+	}
+	got := f.videos[0]
+	if got["description"] != "Range day" || got["access_token"] != "pt" || got["file"] != "video1.mp4:mp4 bytes" || got["length"] == "-1" {
+		t.Fatalf("upload %v", got)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/meta"
@@ -92,8 +93,14 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 	}
 	text := p.Parts[0]
 	var postID string
-	switch len(p.Media) {
-	case 0:
+	switch {
+	case len(p.Media) == 1 && p.Media[0].IsVideo():
+		id, err := a.video(ctx, page, tok, p.Media[0], text)
+		if err != nil {
+			return res, err
+		}
+		postID = id
+	case len(p.Media) == 0:
 		var out struct {
 			ID string `json:"id"`
 		}
@@ -101,7 +108,7 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 			return res, err
 		}
 		postID = out.ID
-	case 1:
+	case len(p.Media) == 1:
 		var out struct {
 			PostID string `json:"post_id"`
 		}
@@ -133,6 +140,10 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		PermalinkURL string `json:"permalink_url"`
 	}
 	_ = a.Meta.Get(ctx, postID, url.Values{"fields": {"permalink_url"}, "access_token": {tok}}, &link)
+	if strings.HasPrefix(link.PermalinkURL, "/") {
+		// A video's permalink is relative to Facebook.
+		link.PermalinkURL = "https://www.facebook.com" + link.PermalinkURL
+	}
 	ref := platform.RemoteRef{ID: postID, URL: link.PermalinkURL}
 	if onPart != nil {
 		if err := onPart(ref); err != nil {
@@ -193,4 +204,26 @@ func (a *Adapter) Engagement(ctx context.Context, c platform.Credentials, refs [
 func itoa(i int) string {
 	b, _ := json.Marshal(i)
 	return string(b)
+}
+
+// video uploads a video to the Page, streamed, with the text as its
+// description; Facebook publishes it once it has processed it.
+func (a *Adapter) video(ctx context.Context, page, tok string, m platform.Media, text string) (string, error) {
+	rc, err := platform.OpenVideo(ctx, m)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = rc.Close() }()
+	var out struct {
+		ID string `json:"id"`
+	}
+	fields := [][2]string{{"description", text}, {"published", "true"}, {"access_token", tok}}
+	if err := a.Meta.PostVideo(ctx, page+"/videos", fields,
+		platform.StreamFile{Field: "source", Name: m.Filename(0), Type: m.Type, Size: m.Size, Body: rc}, &out); err != nil {
+		return "", err
+	}
+	if out.ID == "" {
+		return "", platform.Errorf(platform.Uncertain, "Facebook accepted the video but did not say which it was")
+	}
+	return out.ID, nil
 }

@@ -278,7 +278,11 @@ copy through a link signed for that platform.
 reads each video's length, frame rate and codecs from its index and does
 not transcode, so export H.264 with AAC in an MP4. Each platform's video
 rules are checked as images' are; a platform takes video once its adapter
-can post it, and the preview says when one cannot yet.
+can post it, and the preview says when one cannot yet. Today Bluesky (through
+its video service), X (chunked uploads), Mastodon, Gab, LinkedIn, Facebook
+Pages, Telegram and Discord take video; where a platform processes a video
+before posting it, publishing waits for it, up to 20 minutes, renewing its
+lease so the wait is not mistaken for a lost worker.
 
 Mastodon and Gab channels need an access token with the `write:media` scope
 to post images; one made before images were supported must be replaced.

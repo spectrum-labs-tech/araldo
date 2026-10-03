@@ -20,14 +20,17 @@ import (
 const (
 	DefaultGraph  = "https://graph.facebook.com"
 	DefaultDialog = "https://www.facebook.com"
-	Version       = "v23.0"
+	// DefaultVideoGraph takes video uploads.
+	DefaultVideoGraph = "https://graph-video.facebook.com"
+	Version           = "v23.0"
 )
 
 // Client calls the Graph API.
 type Client struct {
 	HTTP *http.Client
-	// Graph and Dialog are Meta's endpoints; tests replace them.
-	Graph, Dialog string
+	// Graph, VideoGraph and Dialog are Meta's endpoints; tests replace
+	// them.
+	Graph, VideoGraph, Dialog string
 	// Poll is how long to wait between checks on a container Instagram is
 	// still processing; tests shorten it.
 	Poll time.Duration
@@ -35,7 +38,7 @@ type Client struct {
 
 // New returns a client.
 func New(client *http.Client) *Client {
-	return &Client{HTTP: client, Graph: DefaultGraph, Dialog: DefaultDialog, Poll: 2 * time.Second}
+	return &Client{HTTP: client, Graph: DefaultGraph, VideoGraph: DefaultVideoGraph, Dialog: DefaultDialog, Poll: 2 * time.Second}
 }
 
 func (c *Client) url(path string) string {
@@ -59,6 +62,17 @@ func (c *Client) PostMultipart(ctx context.Context, path string, fields [][2]str
 		return &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
 	}
 	return Classify(platform.Send(ctx, c.HTTP, http.MethodPost, c.url(path), nil, body, contentType, out))
+}
+
+// PostVideo sends fields and a video, streamed, to path on the video host
+// (https://developers.facebook.com/docs/video-api/guides/publishing).
+func (c *Client) PostVideo(ctx context.Context, path string, fields [][2]string, file platform.StreamFile, out any) error {
+	body, contentType, length, err := platform.MultipartStream(fields, file)
+	if err != nil {
+		return &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+	}
+	u := strings.TrimRight(c.VideoGraph, "/") + "/" + Version + "/" + strings.TrimLeft(path, "/")
+	return Classify(platform.SendStream(ctx, c.HTTP, http.MethodPost, u, nil, body, length, contentType, out))
 }
 
 // AuthorizeURL is Facebook Login's dialog for scopes.

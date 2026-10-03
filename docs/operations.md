@@ -115,6 +115,7 @@ check's result.
 | Threads | A sign-in through your Threads app, below. |
 | Facebook Pages, Instagram | A sign-in through your Meta app, below; you choose which Pages, or which Instagram accounts linked to them. |
 | Pinterest | A sign-in through your Pinterest app, below, choosing boards: each board is a channel; or an access token and a board ID, pasted. |
+| YouTube | A sign-in through your Google app, below; each YouTube channel the account manages is a channel. Posts are videos. |
 | Discord, Telegram | A webhook URL; a bot token and chat. |
 
 **X.** At developer.x.com, in your app's *User authentication settings*,
@@ -135,6 +136,20 @@ under Developer apps, then connect. Tokens last 60 days. LinkedIn gives
 refresh tokens only to apps it has approved for them; without one, the
 channel says a week ahead when to sign in again, and needs it once the
 token expires.
+
+**YouTube.** In a Google Cloud project, enable the *YouTube Data API v3*,
+configure the OAuth consent screen, and create an OAuth client of type *Web
+application* with Araldo's redirect URI
+(`{ARALDO_BASE_URL}/connect/youtube/callback`). Add its client ID and secret
+under Developer apps, then connect. The sign-in asks for `youtube.upload` and
+`youtube.readonly`; tokens last an hour and are renewed automatically. While
+the consent screen is in *testing*, Google expires the refresh token after
+seven days, so publish the app. A post is one video: the text's first line
+is its title (100 characters at most) and the rest its description; videos
+are public. Each upload costs 1,600 of the project's 10,000 daily quota
+units, so about six a day until Google raises it; past that, uploads wait
+until the quota resets at midnight Pacific time. Videos over 15 minutes need
+a verified YouTube account.
 
 **Pinterest.** At developers.pinterest.com/apps, create an app, and add
 Araldo's redirect URI (`{ARALDO_BASE_URL}/connect/pinterest/callback`).

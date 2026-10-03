@@ -82,7 +82,7 @@ Principles every feature keeps:
 | 4 | Newsletters phase 1: mail accounts, issues with a delivery per account, renderer and theme, Brevo and sandbox providers | ADR 0024 | Done: Brevo and the sandbox, approval, hand-off, results, dashboard, API and MCP drafting; templates with data and a top-posts block are phase 2 |
 | 5 | Client reports: one page per brand per month across posts, ads, newsletters and analytics | ADR 0026 | Phase 1 done: the page with a print stylesheet, the API and the MCP tool; share links next |
 | 6 | Pinterest (images) | ADR 0009 | Done: boards as channels, by sign-in or pasted token; engagement reading next |
-| 7 | Video media and resizing images to fit each platform, then YouTube and TikTok | ADR 0027 | Phases 1 and 2 done: images resized per platform; video on Bluesky, X, Mastodon, Gab, LinkedIn, Facebook, Telegram and Discord; YouTube, reels and TikTok next |
+| 7 | Video media and resizing images to fit each platform, then YouTube and TikTok | ADR 0027 | Phases 1 and 2 done, and YouTube: images resized per platform; video on Bluesky, X, Mastodon, Gab, LinkedIn, Facebook, Telegram, Discord and YouTube; reels and TikTok next |
 | 8 | Ads phase 2: promotions on the first network with real spend, under per-brand caps | ADR 0023 | Decided |
 | 9 | LinkedIn company pages (its Community Management API); engagement from X and LinkedIn | ADR 0018, 0021 | Planned |
 | 10 | Developer tooling: `araldo listen` (webhooks to localhost), SDKs generated from the contract, a request log in the dashboard | ADR 0005 | Planned |

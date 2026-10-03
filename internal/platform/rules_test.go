@@ -228,13 +228,21 @@ func TestForMedia(t *testing.T) {
 	}
 }
 
-func TestEveryPlatformDocumentsItsImages(t *testing.T) {
+func TestEveryPlatformDocumentsItsMedia(t *testing.T) {
 	t.Parallel()
 	for _, p := range Emulable() {
 		r := rulesOf(t, p)
-		if len(r.Images) == 0 || r.ImageSource == "" || r.MaxMedia < 1 {
-			t.Errorf("%s: images %v from %q, max %d: every platform needs image rules with a source", p, r.Images, r.ImageSource, r.MaxMedia)
+		videoOnly := len(r.Images) == 0 && r.Video != nil
+		if !videoOnly && (len(r.Images) == 0 || r.ImageSource == "") || r.MaxMedia < 1 {
+			t.Errorf("%s: images %v from %q, max %d: every platform needs image rules with a source, or takes only video", p, r.Images, r.ImageSource, r.MaxMedia)
 		}
+		if v := r.Video; v != nil && (len(v.Types) == 0 || v.Source == "") {
+			t.Errorf("%s: video rules need types and a source", p)
+		}
+	}
+	got := rulesOf(t, YouTube).Check([]string{"x"}, []Media{{Type: "image/jpeg", Size: 1, Width: 1, Height: 1}})
+	if len(got) != 1 || got[0].Message != "YouTube takes no images, only video" {
+		t.Fatalf("an image for YouTube: %+v", got)
 	}
 }
 

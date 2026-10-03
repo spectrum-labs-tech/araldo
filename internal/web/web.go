@@ -593,7 +593,7 @@ var funcs = template.FuncMap{
 }
 
 // iconNames are the symbols in templates/_icons.html.
-var iconNames = map[string]bool{"x": true, "bluesky": true, "mastodon": true, "gab": true, "threads": true, "linkedin": true, "pinterest": true,
+var iconNames = map[string]bool{"x": true, "bluesky": true, "mastodon": true, "gab": true, "threads": true, "linkedin": true, "pinterest": true, "youtube": true,
 	"facebook": true, "instagram": true, "discord": true, "telegram": true, "sandbox": true}
 
 func human(d time.Duration) string {

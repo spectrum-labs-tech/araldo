@@ -173,6 +173,16 @@ var rules = map[Provider]Rules{
 		Images:      map[string]int64{media.JPEG: 20_000_000, media.PNG: 20_000_000},
 		ImageSource: "https://help.pinterest.com/en/business/article/pinterest-product-specs",
 	},
+	YouTube: {
+		// A video's description holds 5,000 bytes; its title, the text's
+		// first line, 100 characters. YouTube takes only video: up to 256 GB
+		// and 12 hours (15 minutes until a channel is verified).
+		Provider: YouTube, Name: "YouTube", MaxLength: 5000, Counting: CountRunes, MediaRequired: true, MaxMedia: 1,
+		Source: "https://developers.google.com/youtube/v3/docs/videos#snippet.description",
+		Images: map[string]int64{},
+		Video: &VideoRules{Types: map[string]int64{media.MP4: 256 << 30, media.QuickTime: 256 << 30}, MaxDuration: 12 * time.Hour,
+			Source: "https://support.google.com/youtube/answer/71673"},
+	},
 	Discord: {
 		Provider: Discord, Name: "Discord", MaxLength: 2000, Counting: CountRunes, MaxMedia: 10,
 		Source:      "https://discord.com/developers/docs/resources/webhook#execute-webhook",
@@ -201,7 +211,7 @@ func RulesFor(p Provider) (Rules, bool) {
 
 // Emulable lists the providers the sandbox can imitate.
 func Emulable() []Provider {
-	return []Provider{Bluesky, Mastodon, Gab, X, Threads, LinkedIn, Facebook, Instagram, Pinterest, Discord, Telegram}
+	return []Provider{Bluesky, Mastodon, Gab, X, Threads, LinkedIn, Facebook, Instagram, Pinterest, YouTube, Discord, Telegram}
 }
 
 var urlRE = regexp.MustCompile(`https?://[^\s<>"]+`)
@@ -461,6 +471,9 @@ func (r Rules) checkImage(pos int, m Media) []Violation {
 		return r.checkAspect(pos, m)
 	}
 	limit, ok := r.Images[m.Type]
+	if !ok && len(r.Images) == 0 {
+		return []Violation{{Code: "media_type_unsupported", Media: pos, Message: r.Name + " takes no images, only video"}}
+	}
 	if !ok {
 		var types []string
 		for t := range r.Images {

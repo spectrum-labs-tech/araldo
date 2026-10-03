@@ -25,4 +25,21 @@
   {{end}}
   <div><button class="btn-primary">{{if $f.Brand}}Save{{else}}Create brand{{end}}</button></div>
 </form>
+{{if $f.Brand}}
+<section class="card max-w-xl">
+  <h2>Email theme</h2>
+  <p class="text-sm text-muted">How this brand's newsletters look. Every issue carries the postal address, which anti-spam laws require; an issue cannot be scheduled without it.</p>
+  <form method="post" action="/brands/{{brandID $f.Brand.ID}}/email_theme" class="flex flex-col gap-4">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <label>Logo
+      <select name="logo"><option value="">None: the brand's name</option>{{range $f.Theme.Images}}<option value="{{mediaID .ID}}" {{if eq $f.Theme.Logo (mediaID .ID)}}selected{{end}}>{{if .Filename}}{{.Filename}}{{else}}{{mediaID .ID}}{{end}}{{if .Alt}}: {{.Alt}}{{end}}</option>{{end}}</select>
+      <span class="text-sm font-normal text-muted">From the brand's media library; shown 40 pixels tall.</span></label>
+    <label>Accent color <input type="color" name="accent" value="{{$f.Theme.Accent}}">
+      <span class="text-sm font-normal text-muted">Links and buttons; dark enough to read on white.</span></label>
+    <label>Postal address <textarea name="postal_address" rows="3" maxlength="300" placeholder="1 Main St&#10;Denver, CO 80202">{{$f.Theme.PostalAddress}}</textarea></label>
+    <label>Footer line <span class="text-sm font-normal text-muted">(optional)</span> <input name="footer" value="{{$f.Theme.Footer}}" maxlength="300" placeholder="You signed up at example.com."></label>
+    <div><button class="btn-primary">Save theme</button></div>
+  </form>
+</section>
+{{end}}
 {{end}}

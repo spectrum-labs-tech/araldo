@@ -56,6 +56,15 @@ Principles every feature keeps:
 - Ads phase 1: ad accounts connected by sign-in, Reddit Ads first, with
   spend and results by brand, account, campaign and day
   ([ADR 0023](adr/0023-paid-promotion.md)).
+- Web analytics read from Plausible and GA4: signups by post, network and
+  campaign, and cost per signup beside ad spend
+  ([ADR 0025](adr/0025-web-analytics.md)).
+- Newsletters phase 1: mail accounts (Brevo first), issues with approval,
+  a delivery per account handed to its provider a day ahead, email-safe
+  rendering with a brand theme, test sends and results
+  ([ADR 0024](adr/0024-newsletters.md)).
+- MCP over HTTP at `POST /v1/mcp`, and a daily credential check per
+  channel.
 - Dashboard (WCAG 2.2 AA, with guides beside pages that need setup
   elsewhere); one binary; Helm chart; CI publishing to GHCR; metrics
   through OpenTelemetry with the chart's optional PodMonitor and alerts.
@@ -67,7 +76,7 @@ Principles every feature keeps:
 | 1 | Prove the adapters with real accounts on every network; a daily credential check per channel; a daily test post on dedicated test accounts so a platform change is caught early | ADR 0011 | Adapters and the daily check built; real-account runs and test posts not yet |
 | 2 | MCP over HTTP at `POST /v1/mcp` | ADR 0020 | Done |
 | 3 | Web analytics adapters: signups by post, network and campaign (Plausible), then cost per signup beside ad spend and GA4 | ADR 0025 | Done: Plausible and GA4, signups by post, cost per signup by ad campaign |
-| 4 | Newsletters phase 1: mail accounts, issues with a delivery per account, renderer and theme, Brevo and sandbox providers | ADR 0024 | Decided |
+| 4 | Newsletters phase 1: mail accounts, issues with a delivery per account, renderer and theme, Brevo and sandbox providers | ADR 0024 | Done: Brevo and the sandbox, approval, hand-off, results, dashboard and API; templates with data and MCP tools are phase 2 |
 | 5 | Client reports: one page per brand per month across posts, ads, newsletters and analytics | ADR 0024, 0025 | Planned |
 | 6 | Pinterest (images) | ADR 0009 | Planned |
 | 7 | Video media and resizing images to fit each platform, then YouTube and TikTok | ADR 0009, 0017 | Planned |

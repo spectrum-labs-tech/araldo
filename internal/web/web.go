@@ -459,8 +459,40 @@ var funcs = template.FuncMap{
 	"mediaID":           func(u uuid.UUID) string { return id.Format(id.Media, u) },
 	"adAccountID":       func(u uuid.UUID) string { return id.Format(id.AdAccount, u) },
 	"analyticsSourceID": func(u uuid.UUID) string { return id.Format(id.AnalyticsSource, u) },
+	"mailAccountID":     func(u uuid.UUID) string { return id.Format(id.MailAccount, u) },
+	"issueID":           func(u uuid.UUID) string { return id.Format(id.Issue, u) },
 	"money":             money,
-	"costPer":           core.CostPer,
+	// issueResults adds up an issue's deliveries' results.
+	"issueResults": func(is *model.Issue) model.MailResults {
+		var r model.MailResults
+		for _, d := range is.Deliveries {
+			r.Recipients += d.Results.Recipients
+			r.Delivered += d.Results.Delivered
+			r.Opens += d.Results.Opens
+			r.Clicks += d.Results.Clicks
+			r.Unsubscribes += d.Results.Unsubscribes
+		}
+		return r
+	},
+	// percent is n of total, as "4.2%".
+	"percent": func(n, total int64) string {
+		if total == 0 {
+			return "—"
+		}
+		return strconv.FormatFloat(float64(n)*100/float64(total), 'f', 1, 64) + "%"
+	},
+	// fmtIn shows a time in a time zone, with UTC beside it.
+	"fmtIn": func(t *time.Time, tz string) string {
+		if t == nil {
+			return "—"
+		}
+		loc, err := time.LoadLocation(tz)
+		if err != nil || loc == time.UTC {
+			return t.UTC().Format("Jan 2, 2006 15:04 UTC")
+		}
+		return t.In(loc).Format("Jan 2, 2006 15:04 MST") + " (" + t.UTC().Format("15:04 UTC") + ")"
+	},
+	"costPer": core.CostPer,
 	"rowID": func(group string, u *uuid.UUID) string {
 		return core.EngagementRowID(store.EngagementGroup(group), u)
 	},
@@ -520,11 +552,11 @@ var funcs = template.FuncMap{
 	},
 	"statusClass": func(s any) string {
 		switch fmt.Sprint(s) {
-		case "published", "active", "enabled", "succeeded", "ok":
+		case "published", "active", "enabled", "succeeded", "ok", "sent":
 			return "good"
 		case "failed", "rejected", "needs_reauth", "disabled", "needs_attention":
 			return "bad"
-		case "pending_approval", "held", "publishing", "partially_published", "pending", "delivering":
+		case "pending_approval", "held", "publishing", "partially_published", "pending", "delivering", "sending", "partially_sent", "handed_off":
 			return "warn"
 		}
 		return "neutral"

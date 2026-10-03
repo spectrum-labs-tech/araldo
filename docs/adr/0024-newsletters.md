@@ -1,6 +1,6 @@
 # ADR 0024: Newsletters are designed and scheduled in Araldo and sent by the email provider, which owns the list
 
-- Status: proposed
+- Status: accepted; phase 1 built
 - Date: 2026-10-03
 
 ## Context
@@ -150,6 +150,15 @@ into spam.
   account, the renderer and theme, approval and scheduling, the Brevo
   adapter with hand-off, test sends, results. Built for several providers
   from the start, with Brevo and the sandbox as the first two.
+  Built as decided, with one change to decision 13: a delivery's
+  campaign is created at its provider at hand-off, a day before the send,
+  rather than as a draft when the issue is scheduled. Until then an issue
+  lives only in Araldo, so edits, moves and unscheduling touch no
+  provider, and a hand-off is one request (create with its send time)
+  that a retry can find by its tag. Test sends go through the provider's
+  transactional API instead of a draft campaign, so they reach any
+  address. An unscheduled issue returns to draft and needs approval
+  again; a rejected one returns to draft with the note.
 - **Phase 2:** templates with data for issues, a "top posts" block from
   engagement, MCP tools.
 - **Phase 3:** more providers (Listmonk, Buttondown), and send slots per

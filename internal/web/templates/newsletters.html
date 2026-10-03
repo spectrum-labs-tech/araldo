@@ -1,0 +1,112 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Newsletters</h1>
+<p class="text-muted">Write issues here, approve them like posts, and schedule them; each mail account's provider sends them and keeps the subscribers, unsubscribes and bounces. Araldo never stores an address.{{if not .Livemode}} In test mode the sandbox sends nothing and invents results.{{end}}</p>
+
+<form method="get" action="/newsletters" class="my-4 flex flex-wrap items-end gap-3">
+  <label>Brand
+    <select name="brand"><option value="">All brands</option>{{range $d.Brands}}<option value="{{brandID .ID}}" {{if eq $d.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+  </label>
+  <button>Show</button>
+  {{if $d.CanWrite}}<a class="btn-primary" href="/newsletters/new{{if $d.Brand}}?brand={{$d.Brand}}{{end}}">New issue</a>{{end}}
+</form>
+
+<section class="card">
+  <h2>Issues</h2>
+  {{if $d.Issues}}
+  <table class="text-sm">
+    <thead><tr><th>Subject</th><th>Brand</th><th>Status</th><th>Sends</th><th class="text-right">Delivered</th><th class="text-right">Clicks</th></tr></thead>
+    <tbody>{{range $d.Issues}}{{$r := issueResults .}}<tr>
+      <td><a href="/newsletters/{{issueID .ID}}">{{.Subject}}</a></td>
+      <td>{{index $d.BrandName (brandID .BrandID)}}</td>
+      <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
+      <td>{{if .SendAt}}{{fmtTime .SendAt}}{{else}}—{{end}}</td>
+      <td class="text-right">{{if $r.Delivered}}{{$r.Delivered}}{{else}}—{{end}}</td>
+      <td class="text-right">{{if $r.Delivered}}{{$r.Clicks}} <span class="text-muted">({{percent $r.Clicks $r.Delivered}})</span>{{else}}—{{end}}</td>
+    </tr>{{end}}</tbody>
+  </table>
+  {{if $d.More}}<p class="text-sm text-muted">Showing the latest 50.</p>{{end}}
+  {{else}}<p class="text-muted">No issues yet.</p>{{end}}
+</section>
+
+<section class="card">
+  <h2>Mail accounts</h2>
+  {{if $d.Accounts}}
+  <table class="text-sm">
+    <thead><tr><th>Account</th><th>Sends as</th><th>Brand</th><th>Default audiences</th><th>Status</th>{{if $d.CanConnect}}<th><span class="sr-only">Actions</span></th>{{end}}</tr></thead>
+    <tbody>{{range $d.Accounts}}<tr>
+      <td><a href="/mail-accounts/{{mailAccountID .ID}}">{{.Name}}</a> <span class="text-muted">{{.Provider}}</span></td>
+      <td>{{.FromName}} &lt;{{.FromEmail}}&gt;</td>
+      <td>{{index $d.BrandName (brandID .BrandID)}}</td>
+      <td>{{if .DefaultAudiences}}{{join .DefaultAudiences ", "}}{{else}}<span class="text-muted">none chosen</span>{{end}}</td>
+      <td><span class="pill {{statusClass .Status}}">{{.Status}}</span>{{if .StatusNote}}<div class="text-muted">{{.StatusNote}}</div>{{end}}</td>
+      {{if $d.CanConnect}}<td><form method="post" action="/mail-accounts/{{mailAccountID .ID}}/delete" data-confirm="Disconnect {{.Name}}? Past issues keep their results.">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-link" aria-label="Disconnect {{.Name}}">Disconnect</button></form></td>{{end}}
+    </tr>{{end}}</tbody>
+  </table>
+  {{else}}<p class="text-muted">No mail accounts are connected.</p>{{end}}
+</section>
+
+{{if $d.CanConnect}}
+<section class="card">
+  <h2>Connect a mail account</h2>
+  {{if not $d.Provider}}
+  <p class="text-muted">This install sends through no email providers in live mode yet.</p>
+  {{else}}
+  {{if gt (len $d.Providers) 1}}<p class="text-sm">Provider: {{range $d.Providers}}<a href="/newsletters?provider={{.Provider}}" {{if eq .Provider $d.Provider.Provider}}aria-current="true"{{end}}>{{.Name}}</a> {{end}}</p>{{end}}
+  <form method="post" action="/mail-accounts" class="flex max-w-xl flex-col gap-4">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="provider" value="{{$d.Provider.Provider}}">
+    <label>Brand
+      <select name="brand">{{range $d.Brands}}<option value="{{brandID .ID}}" {{if eq $d.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+    </label>
+    <label>Sender name <input name="from_name" value="{{index $d.Values "from_name"}}" required maxlength="100" placeholder="AR15.build"></label>
+    <label>Sender address <input name="from_email" type="email" value="{{index $d.Values "from_email"}}" required placeholder="news@news.example.com">
+      <span class="text-sm font-normal text-muted">One {{$d.Provider.Name}} will send as: a verified sender, or any address on a domain authenticated there.</span></label>
+    <label>Reply-to <span class="text-sm font-normal text-muted">(optional)</span> <input name="reply_to" type="email" value="{{index $d.Values "reply_to"}}" placeholder="hello@example.com"></label>
+    {{range $d.Provider.Fields}}
+    <label>{{.Label}}{{if .Optional}} <span class="text-sm font-normal text-muted">(optional)</span>{{end}}
+      <input name="field_{{.Name}}" {{if .Secret}}type="password" autocomplete="off"{{else}}value="{{index $d.Values .Name}}"{{end}} {{if not .Optional}}required{{end}} placeholder="{{.Default}}">
+      {{if .Help}}<span class="text-sm font-normal text-muted">{{.Help}}</span>{{end}}</label>
+    {{end}}
+    <p class="text-sm text-muted">Araldo checks these with {{$d.Provider.Name}} and stores the key encrypted. Next you choose the audiences new issues go to.</p>
+    <div><button class="btn-primary">Connect</button></div>
+  </form>
+  {{end}}
+</section>
+{{end}}
+{{end}}
+
+{{define "guide"}}
+{{$d := .Data}}
+<h2>Guide</h2>
+<ol class="guide-steps">
+  {{if .Livemode}}<li>{{template "nlMark" (list "1" "false")}}<div><strong>Send from a subdomain</strong> of its own, like <code>news.example.com</code>, authenticated at your provider (see below), so newsletter complaints never reach your sign-in and receipt mail.</div></li>
+  {{else}}<li>{{template "nlMark" (list "1" "false")}}<div><strong>Try it in test mode</strong>: the sandbox sends nothing. Switch to live mode for a real provider.</div></li>{{end}}
+  <li{{if $d.Accounts}} class="done"{{end}}>{{template "nlMark" (list "2" (printf "%t" (gt (len $d.Accounts) 0)))}}<div><strong>Connect a mail account</strong> below{{if .Livemode}}: a Brevo API key, and a sender Brevo has verified{{end}}.</div></li>
+  <li{{if $d.HasDefaults}} class="done"{{end}}>{{template "nlMark" (list "3" (printf "%t" $d.HasDefaults))}}<div><strong>Choose its audiences</strong>: the lists or segments new issues go to.</div></li>
+  <li{{if $d.HasAddress}} class="done"{{end}}>{{template "nlMark" (list "4" (printf "%t" $d.HasAddress))}}<div><strong>Set the email theme</strong> on the <a href="/brands">brand</a>: logo, color and the postal address the law requires in every newsletter.</div></li>
+  <li{{if $d.HasSent}} class="done"{{end}}>{{template "nlMark" (list "5" (printf "%t" $d.HasSent))}}<div><strong>Write and schedule an issue.</strong> Send yourself a test first. It is handed to the provider a day ahead, which then sends it on its own.</div></li>
+</ol>
+
+{{if .Livemode}}
+<h3>Authenticate the sending domain</h3>
+<p>In Brevo, under Senders, Domains &amp; Dedicated IPs, add your newsletter subdomain and publish the records it shows:</p>
+<ul class="guide-tips">
+  <li><strong>DKIM</strong>: the TXT or CNAME record Brevo gives, so receivers can check the mail is yours.</li>
+  <li><strong>SPF</strong>: include Brevo in the subdomain's <code>v=spf1</code> record.</li>
+  <li><strong>DMARC</strong>: start with <code>v=DMARC1; p=none</code> on the subdomain, then tighten it once reports look clean.</li>
+</ul>
+{{end}}
+
+<h3>Good to know</h3>
+<ul class="guide-tips">
+  <li><strong>Judge by clicks,</strong> not opens: mail apps that load images on their own inflate opens.</li>
+  <li><strong>One provider per subscriber.</strong> Araldo cannot see addresses, so someone on lists at two providers gets two copies.</li>
+  <li><strong>Unsubscribes stay with the provider.</strong> Each copy carries the provider's own unsubscribe link.</li>
+  <li><strong>Links are tagged</strong> <code>utm_medium=email</code> with the issue, so signups show on the Performance page next to posts and ads.</li>
+  <li><strong>Moving providers is cheap:</strong> export the list there, import it at the new one, connect it, and keep writing here.</li>
+</ul>
+{{end}}
+
+{{define "nlMark"}}<span class="guide-mark" aria-hidden="true">{{if eq (index . 1) "true"}}✓{{else}}{{index . 0}}{{end}}</span>{{if eq (index . 1) "true"}}<span class="sr-only">Done:</span>{{end}}{{end}}

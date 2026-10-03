@@ -1,0 +1,164 @@
+{{define "content"}}
+{{$d := .Data}}
+{{$is := $d.Issue}}
+<p class="mb-1 text-sm text-muted"><a href="/newsletters">Newsletters</a>{{if $is}} / <code>{{issueID $is.ID}}</code>{{end}}</p>
+<h1>{{if $is}}{{$is.Subject}}{{else}}New issue{{end}}</h1>
+
+{{if not $d.Brand}}
+<p>Create a <a href="/brands/new">brand</a> first.</p>
+{{else}}
+
+{{if $is}}
+<p><span class="pill {{statusClass $is.Status}}">{{$is.Status}}</span>
+  {{if $is.SendAt}} Sends {{fmtIn $is.SendAt $d.Brand.Timezone}}{{end}}
+  {{if $is.ApprovalNeeded}} · needs approval{{end}}</p>
+{{if $is.ReviewNote}}<div class="callout" role="status"><strong>Review note:</strong> {{$is.ReviewNote}}</div>{{end}}
+{{if $is.Deliveries}}
+<section class="card">
+  <h2>Deliveries</h2>
+  <table class="text-sm">
+    <thead><tr><th>Account</th><th>Audiences</th><th>Status</th><th class="text-right">Delivered</th><th class="text-right">Clicks</th><th class="text-right">Opens</th><th class="text-right">Unsubscribes</th></tr></thead>
+    <tbody>{{range $is.Deliveries}}<tr>
+      <td>{{.AccountName}} <span class="text-muted">{{.Provider}}</span></td>
+      <td>{{range $i, $a := .Audiences}}{{if $i}}, {{end}}{{$a.Name}}{{end}}</td>
+      <td><span class="pill {{statusClass .Status}}">{{.Status}}</span>{{if .LastError}}<div class="text-muted">{{.LastError}}</div>{{end}}</td>
+      <td class="text-right">{{if .SentAt}}{{.Results.Delivered}}{{else}}—{{end}}</td>
+      <td class="text-right">{{if .SentAt}}{{.Results.Clicks}} <span class="text-muted">({{percent .Results.Clicks .Results.Delivered}})</span>{{else}}—{{end}}</td>
+      <td class="text-right">{{if .SentAt}}{{.Results.Opens}}{{else}}—{{end}}</td>
+      <td class="text-right">{{if .SentAt}}{{.Results.Unsubscribes}}{{else}}—{{end}}</td>
+    </tr>{{end}}</tbody>
+  </table>
+</section>
+{{end}}
+{{end}}
+
+{{if $d.Editable}}
+{{if not $is}}
+<form method="get" action="/newsletters/new" class="my-4 flex flex-wrap items-end gap-3">
+  <label>Brand
+    <select name="brand">{{range $d.Brands}}<option value="{{brandID .ID}}" {{if eq .ID $d.Brand.ID}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+  </label>
+  <button>Switch brand</button>
+</form>
+{{end}}
+<form method="post" action="{{if $is}}/newsletters/{{issueID $is.ID}}{{else}}/newsletters{{end}}" class="flex flex-col gap-4">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <input type="hidden" name="brand" value="{{brandID $d.Brand.ID}}">
+  <label>Subject <input name="subject" value="{{$d.Subject}}" required maxlength="200" placeholder="Three builds worth copying"></label>
+  <label>Preview text <span class="text-sm font-normal text-muted">(optional) the line inboxes show after the subject</span>
+    <input name="preview_text" value="{{$d.Preview}}" maxlength="200" placeholder="And the part that took the longest"></label>
+  <label>Body <span class="text-sm font-normal text-muted">Markdown; see the guide for buttons and images</span>
+    <textarea name="body" rows="18" class="font-mono" required>{{$d.Body}}</textarea></label>
+  <fieldset>
+    <legend>Send through</legend>
+    {{range $d.Accounts}}{{$ac := .}}
+    <div class="mb-3">
+      <label class="flex-row items-center gap-2"><input type="checkbox" name="account" value="{{mailAccountID .Account.ID}}" {{if .Use}}checked{{end}}>
+        {{.Account.Name}} <span class="font-normal text-muted">{{.Account.FromEmail}}</span></label>
+      {{if .AudienceErr}}<p class="text-sm text-muted">{{.AudienceErr}}</p>
+      {{else}}<fieldset class="ml-6 border-0 p-0">
+        <legend class="sr-only">Audiences at {{.Account.Name}}</legend>
+        {{range .Audiences}}<label class="flex-row items-center gap-2 font-normal"><input type="checkbox" name="{{$ac.Field}}" value="{{.ID}}" {{if contains $ac.Chosen .ID}}checked{{end}}>
+          {{.Name}} <span class="text-muted">{{.Kind}}{{if ge .Size 0}}, {{.Size}}{{end}}</span></label>{{end}}
+      </fieldset>{{end}}
+    </div>
+    {{else}}<p class="text-sm text-muted">This brand has no mail accounts; <a href="/newsletters">connect one</a> to send. You can still write a draft.</p>{{end}}
+  </fieldset>
+  <div class="flex gap-3">
+    <button class="btn-primary">Save draft</button>
+    <button formaction="/newsletters/preview" formtarget="nl-preview" formnovalidate>Preview changes</button>
+  </div>
+</form>
+{{end}}
+
+<section class="card">
+  <h2>Preview</h2>
+  <iframe name="nl-preview" title="Preview at desktop width" class="preview-frame" {{if $is}}src="/newsletters/{{issueID $is.ID}}/preview"{{end}}></iframe>
+  {{if $is}}
+  <details class="mt-3">
+    <summary>At phone width</summary>
+    <iframe title="Preview at phone width" class="preview-frame preview-phone" src="/newsletters/{{issueID $is.ID}}/preview" loading="lazy"></iframe>
+  </details>
+  {{if $d.Rendered}}<details class="mt-3">
+    <summary>Plain text</summary>
+    <pre class="preview-text">{{$d.Rendered.Text}}</pre>
+  </details>{{end}}
+  {{else}}<p class="text-sm text-muted">Press “Preview changes” to see it here.</p>{{end}}
+</section>
+
+{{if $is}}
+{{$open := or (eq (printf "%s" $is.Status) "draft") (eq (printf "%s" $is.Status) "pending_approval") (eq (printf "%s" $is.Status) "scheduled") (eq (printf "%s" $is.Status) "sending")}}
+{{if and $d.CanWrite $open}}
+<section class="card">
+  <h2>{{if eq (printf "%s" $is.Status) "draft"}}Schedule{{else}}Move{{end}}</h2>
+  <form method="post" action="/newsletters/{{issueID $is.ID}}/action" class="flex flex-wrap items-end gap-3">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="action" value="schedule">
+    <label>Send at <input type="datetime-local" name="send_at" value="{{$d.SendAt}}" required> <span class="text-sm font-normal text-muted">{{$d.Brand.Timezone}}</span></label>
+    <button class="btn-primary">{{if eq (printf "%s" $is.Status) "draft"}}Schedule{{else}}Move{{end}}</button>
+  </form>
+  {{if ne (printf "%s" $is.Status) "draft"}}
+  <form method="post" action="/newsletters/{{issueID $is.ID}}/action" class="mt-3">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="action" value="unschedule">
+    <button>Back to draft</button> <span class="text-sm text-muted">to edit it; it needs approval again</span>
+  </form>
+  {{end}}
+</section>
+{{end}}
+
+{{if and $d.CanReview (eq (printf "%s" $is.Status) "pending_approval")}}
+<section class="card">
+  <h2>Review</h2>
+  <form method="post" action="/newsletters/{{issueID $is.ID}}/action" class="flex max-w-xl flex-col gap-3">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <label>Note <span class="text-sm font-normal text-muted">(optional) shown to the author</span><textarea name="note" rows="2"></textarea></label>
+    <div class="flex gap-3"><button class="btn-primary" name="action" value="approve">Approve</button> <button name="action" value="reject">Reject</button></div>
+  </form>
+</section>
+{{end}}
+
+{{if and $d.CanWrite $d.Accounts}}
+<section class="card">
+  <h2>Send a test</h2>
+  <form method="post" action="/newsletters/{{issueID $is.ID}}/action" class="flex flex-wrap items-end gap-3">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="action" value="test">
+    <label>Through <select name="test_account">{{range $d.Accounts}}<option value="{{mailAccountID .Account.ID}}">{{.Account.Name}}</option>{{end}}</select></label>
+    <label>To <input name="test_to" value="{{$d.TestTo}}" required placeholder="you@example.com, a@example.com"></label>
+    <button>Send test</button>
+  </form>
+  <p class="text-sm text-muted">Up to five addresses, not stored; the subject is marked as a test.</p>
+</section>
+{{end}}
+
+{{if and $d.CanWrite $open}}
+<form method="post" action="/newsletters/{{issueID $is.ID}}/action" data-confirm="Cancel this issue? Copies not yet sent are stopped at the providers too.">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <input type="hidden" name="action" value="cancel">
+  <button class="btn-link">Cancel this issue</button>
+</form>
+{{end}}
+{{end}}
+{{end}}
+{{end}}
+
+{{define "guide"}}
+<h2>Writing</h2>
+<ul class="guide-tips">
+  <li><code># Heading</code>, <code>## Smaller</code></li>
+  <li><code>**bold**</code>, <code>*italic*</code>, <code>[a link](https://…)</code></li>
+  <li><code>- item</code> or <code>1. item</code> for lists, <code>&gt; quote</code></li>
+  <li><code>---</code> alone for a divider</li>
+  <li><code>![what it shows](media_…)</code> alone for an image from the <a href="/posts/new">media library</a>, or an https:// address</li>
+  <li><code>[Start a build](https://…){.button}</code> alone for a button</li>
+</ul>
+<h3>Best practices</h3>
+<ul class="guide-tips">
+  <li><strong>One main action.</strong> A single button gets more clicks than several links.</li>
+  <li><strong>Subjects under 50 characters</strong> read whole on phones; preview text finishes the thought.</li>
+  <li><strong>Describe every image</strong>; many readers see them blocked at first.</li>
+  <li><strong>Send yourself a test</strong> and read it on a phone before scheduling.</li>
+  <li><strong>Moving is safe</strong> until a copy is sent: Araldo moves it at each provider too.</li>
+</ul>
+{{end}}

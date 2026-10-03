@@ -23,6 +23,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/analytics"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/email"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
@@ -82,6 +83,25 @@ func TestPagesAreAccessible(t *testing.T) {
 		Fields: map[string]string{"name": "Accessible ads"}}); err != nil {
 		t.Fatal(err)
 	}
+	mailAcct, err := d.s.ConnectMailAccount(ctx, d.owner, core.MailAccountInput{BrandID: d.brand.ID, Provider: email.Sandbox, FromName: "News",
+		FromEmail: "news@a11y.example", DefaultAudiences: []string{"list-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.s.SetEmailTheme(ctx, d.owner, d.brand.ID, core.EmailThemeInput{LogoMediaID: &m.ID, PostalAddress: "1 Main St"}); err != nil {
+		t.Fatal(err)
+	}
+	draft, err := d.s.CreateIssue(ctx, d.owner, core.IssueInput{BrandID: d.brand.ID, Subject: "Draft issue", Body: "# Hello\n\n[Go](https://a11y.example){.button}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued, err := d.s.CreateIssue(ctx, d.owner, core.IssueInput{BrandID: d.brand.ID, Subject: "Scheduled issue", Body: "Hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.s.ScheduleIssue(ctx, d.owner, queued.ID, time.Now().Add(72*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 	_, key, err := d.s.CreateOperatorAPIKey(ctx, d.owner, core.APIKeyInput{Name: "ci", Scopes: []string{"posts:read"}})
 	if err != nil {
 		t.Fatal(err)
@@ -102,6 +122,8 @@ func TestPagesAreAccessible(t *testing.T) {
 	pages := []string{
 		"/", "/posts", "/posts?q=accessible&status=published", "/posts/new", "/posts/" + id.Format(id.Post, p.ID), "/posts/" + id.Format(id.Post, scheduled.ID),
 		"/sandbox/" + id.Format(id.Target, target.ID), "/performance", "/ads", "/ads?tag_url=https://example.com/&tag_campaign=launch",
+		"/newsletters", "/newsletters/new", "/newsletters/" + id.Format(id.Issue, draft.ID), "/newsletters/" + id.Format(id.Issue, queued.ID),
+		"/mail-accounts/" + id.Format(id.MailAccount, mailAcct.ID),
 		"/templates", "/templates/new", "/templates/" + id.Format(id.Template, tpl.ID),
 		"/channels", "/channels/apps", "/channels/new", "/channels/new?provider=bluesky", "/channels/" + id.Format(id.Channel, chans[0].ID) + "/reconnect",
 		"/brands", "/brands/new", "/brands/" + id.Format(id.Brand, d.brand.ID),

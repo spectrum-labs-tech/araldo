@@ -1,0 +1,25 @@
+{{define "content"}}
+{{$d := .Data}}
+<p class="mb-1 text-sm text-muted"><a href="/newsletters">Newsletters</a> / <code>{{mailAccountID $d.Account.ID}}</code></p>
+<h1>{{$d.Account.Name}}</h1>
+<p class="text-muted">{{$d.Account.Provider}} · {{$d.BrandName}} · <span class="pill {{statusClass $d.Account.Status}}">{{$d.Account.Status}}</span></p>
+{{if $d.Account.StatusNote}}<div class="alert" role="alert">{{$d.Account.StatusNote}}</div>{{end}}
+
+<form method="post" action="/mail-accounts/{{mailAccountID $d.Account.ID}}" class="flex max-w-xl flex-col gap-4">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <label>Sender name <input name="from_name" value="{{$d.Form.FromName}}" required maxlength="100" {{if not $d.CanWrite}}disabled{{end}}></label>
+  <label>Sender address <input name="from_email" type="email" value="{{$d.Form.FromEmail}}" required {{if not $d.CanWrite}}disabled{{end}}>
+    <span class="text-sm font-normal text-muted">Checked with {{$d.Account.Provider}} when it changes.</span></label>
+  <label>Reply-to <span class="text-sm font-normal text-muted">(optional)</span> <input name="reply_to" type="email" value="{{$d.Form.ReplyTo}}" {{if not $d.CanWrite}}disabled{{end}}></label>
+  <fieldset>
+    <legend>Default audiences</legend>
+    <p class="mt-0 text-sm text-muted">New issues for this brand go to these, read from {{$d.Account.Provider}} now. Araldo sees their names and sizes, never their members.</p>
+    {{if $d.AudienceErr}}<div class="alert" role="alert">{{$d.AudienceErr}}</div>
+    {{else}}{{range $d.Audiences}}
+    <label class="flex-row items-center gap-2 font-normal"><input type="checkbox" name="audience" value="{{.ID}}" {{if contains $d.Form.DefaultAudiences .ID}}checked{{end}} {{if not $d.CanWrite}}disabled{{end}}>
+      {{.Name}} <span class="text-muted">{{.Kind}}{{if ge .Size 0}}, {{.Size}} subscribers{{end}}</span></label>
+    {{else}}<p class="text-sm text-muted">{{$d.Account.Provider}} has no lists yet. Create one there, then reload this page.</p>{{end}}{{end}}
+  </fieldset>
+  {{if $d.CanWrite}}<div><button class="btn-primary">Save</button></div>{{end}}
+</form>
+{{end}}

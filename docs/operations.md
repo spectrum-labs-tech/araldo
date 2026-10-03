@@ -336,6 +336,45 @@ keys; use a project outside them.
 group the counts by post, source, medium, campaign, content or day; visits
 without Araldo's tags are reported as `untagged`.
 
+## Newsletters
+
+Araldo designs, approves and schedules newsletter issues; each mail
+account's provider sends them and owns the subscribers, unsubscribes,
+bounces and complaints ([ADR 0024](adr/0024-newsletters.md)). Araldo
+stores no subscriber address.
+
+1. **Send from a subdomain of its own**, such as `news.example.com`, so
+   complaints about newsletters never touch the domain your sign-in and
+   receipt mail use. Authenticate it at the provider: its DKIM record, the
+   provider in the subdomain's SPF record, and a DMARC record (start with
+   `p=none`).
+2. **Connect a mail account** on the dashboard's **Newsletters** page or
+   with `POST /v1/mail_accounts` (needs `channels:write`): the provider's
+   API key and a sender it will send as. Then choose its default
+   audiences.
+3. **Set the brand's email theme** on its page or with
+   `POST /v1/brands/{id}/email_theme`: logo, accent color and the postal
+   address anti-spam laws require. An issue cannot be scheduled without
+   the address.
+4. **Write an issue**, send yourself a test, and schedule it. It follows
+   the brand's approval policy. A day before its send time, the
+   `newsletters.handoff` task gives each delivery to its provider as a
+   scheduled campaign, which then goes out without Araldo; until then it
+   can be moved, sent back to draft or canceled, and afterwards moving and
+   canceling reach the provider too. `newsletters.read` reads each
+   delivery's results 1 hour, 1, 3, 7 and 30 days after it is sent.
+
+**Brevo**: an API key from SMTP & API → API keys. The sender must be an
+active Brevo sender or on a domain authenticated there. Audiences are
+Brevo's contact lists and segments. Tests go through Brevo's
+transactional API.
+
+Links to the brand's UTM domains carry `utm_medium=email`, the provider as
+source, the issue's ID as campaign and `link-N` as content, so the
+Performance page credits signups to issues. Images from the media library
+get a link that never expires, signed for newsletters only; the install
+needs its public URL (`ARALDO_BASE_URL`) and master keys for them.
+
 ## Health
 
 - `GET /healthz`: the process is up.

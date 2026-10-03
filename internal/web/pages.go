@@ -25,6 +25,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/media"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/newsletter"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
 	"github.com/spectrum-labs-tech/araldo/internal/tmpl"
@@ -129,6 +130,19 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /ads", s.app("ads", s.adsPage))
 	s.mux.HandleFunc("POST /ads/accounts", s.app("ads", s.connectAdAccount))
 	s.mux.HandleFunc("POST /ads/accounts/{id}/delete", s.app("ads", s.deleteAdAccount))
+	s.mux.HandleFunc("GET /newsletters", s.app("newsletters", s.newslettersPage))
+	s.mux.HandleFunc("POST /mail-accounts", s.app("newsletters", s.connectMailAccount))
+	s.mux.HandleFunc("GET /mail-accounts/{id}", s.app("newsletters", s.mailAccountPage))
+	s.mux.HandleFunc("POST /mail-accounts/{id}", s.app("newsletters", s.saveMailAccount))
+	s.mux.HandleFunc("POST /mail-accounts/{id}/delete", s.app("newsletters", s.deleteMailAccount))
+	s.mux.HandleFunc("GET /newsletters/new", s.app("newsletters", s.newIssue))
+	s.mux.HandleFunc("POST /newsletters", s.app("newsletters", s.createIssue))
+	s.mux.HandleFunc("POST /newsletters/preview", s.app("newsletters", s.renderPreview))
+	s.mux.HandleFunc("GET /newsletters/{id}", s.app("newsletters", s.issuePage))
+	s.mux.HandleFunc("POST /newsletters/{id}", s.app("newsletters", s.saveIssue))
+	s.mux.HandleFunc("POST /newsletters/{id}/action", s.app("newsletters", s.issueAction))
+	s.mux.HandleFunc("GET /newsletters/{id}/preview", s.app("newsletters", s.issuePreview))
+	s.mux.HandleFunc("POST /brands/{id}/email_theme", s.app("brands", s.saveEmailTheme))
 }
 
 func cacheStatic(h http.Handler) http.Handler {
@@ -1324,6 +1338,8 @@ type brandForm struct {
 	// UTMDomains is the form's text: domains separated by spaces, commas or lines.
 	UTMDomains string
 	Zones      []zoneGroup
+	// Theme is the brand's email theme form (ADR 0024).
+	Theme themeForm
 }
 
 // zoneGroup is one region's time zones, for the brand form's picker.
@@ -1378,13 +1394,34 @@ func (s *Server) brandDetail(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	slots, err := s.svc.Slots(c.ctx(), c.actor, bid)
+	f, err := s.brandForm(c, b)
 	if err != nil {
 		return err
 	}
-	f := brandForm{Brand: b, Name: b.Name, Slug: b.Slug, Timezone: b.Timezone, Policy: string(b.ApprovalPolicy), Slots: formatSlots(slots),
-		UTMDomains: strings.Join(b.UTMDomains, "\n"), Zones: zoneGroups}
 	return s.page(c, "brand_edit", "brands", b.Name, f)
+}
+
+// brandForm is a brand's edit forms, filled from the brand.
+func (s *Server) brandForm(c *reqCtx, b *model.Brand) (brandForm, error) {
+	slots, err := s.svc.Slots(c.ctx(), c.actor, b.ID)
+	if err != nil {
+		return brandForm{}, err
+	}
+	f := brandForm{Brand: b, Name: b.Name, Slug: b.Slug, Timezone: b.Timezone, Policy: string(b.ApprovalPolicy), Slots: formatSlots(slots),
+		UTMDomains: strings.Join(b.UTMDomains, "\n"), Zones: zoneGroups,
+		Theme: themeForm{Accent: b.EmailTheme.Accent, PostalAddress: b.EmailTheme.PostalAddress, Footer: b.EmailTheme.Footer}}
+	if f.Theme.Accent == "" {
+		f.Theme.Accent = newsletter.DefaultAccent
+	}
+	if b.EmailTheme.LogoMediaID != nil {
+		f.Theme.Logo = id.Format(id.Media, *b.EmailTheme.LogoMediaID)
+	}
+	if c.actor.Can(core.PermPostsRead) {
+		if f.Theme.Images, _, err = s.svc.MediaList(c.ctx(), c.actor, core.MediaFilter{BrandID: &b.ID}, store.Page{Limit: 100}); err != nil {
+			return brandForm{}, err
+		}
+	}
+	return f, nil
 }
 
 func (s *Server) saveBrand(c *reqCtx) error {

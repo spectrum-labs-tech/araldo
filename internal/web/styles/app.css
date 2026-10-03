@@ -287,6 +287,16 @@
   .callout {
     @apply my-3 rounded-lg bg-warn-bg px-4 py-3;
   }
+  /* Newsletter previews: the email in a frame of its own. */
+  .preview-frame {
+    @apply block h-[36rem] w-full rounded-md border border-line bg-panel;
+  }
+  .preview-phone {
+    @apply max-w-[375px];
+  }
+  .preview-text {
+    @apply max-h-[36rem] overflow-auto rounded-md border border-line bg-bg p-3 font-mono text-sm whitespace-pre-wrap;
+  }
   .facts {
     @apply my-2 grid grid-cols-[max-content_1fr] gap-x-5 gap-y-1;
   }

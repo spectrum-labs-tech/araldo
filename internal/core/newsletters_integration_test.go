@@ -12,11 +12,13 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spectrum-labs-tech/araldo/internal/analytics"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/email"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
 func connectSandboxMail(t *testing.T, w *world, from string, fields map[string]string) *model.MailAccount {
@@ -156,6 +158,32 @@ func TestNewsletterIsHandedOffAndRead(t *testing.T) {
 	}
 	if _, err := w.s.CancelIssue(ctx, w.owner, is.ID); kind(err) != apperr.KindConflict {
 		t.Fatalf("canceling a sent issue: %v", err)
+	}
+
+	// The brand's analytics credit the issue's links to it by name.
+	w.s.Now = time.Now
+	src, err := w.s.ConnectAnalyticsSource(ctx, w.owner, core.AnalyticsSourceInput{BrandID: w.brand.ID, Provider: analytics.Sandbox,
+		Goals: []string{"Signup"}, Fields: map[string]string{"site": "ar15.build", "tags": "sandbox/email/" + nl + "/link-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the analytics source to be read", func() {
+		if _, err := core.CollectAnalyticsOrg(w.s, w.org.ID); err != nil {
+			t.Fatal(err)
+		}
+	}, func() bool {
+		got, err := w.s.AnalyticsSource(ctx, w.owner, src.ID)
+		return err == nil && got.ReadAt != nil
+	})
+	until := time.Now().UTC().Truncate(24 * time.Hour)
+	byCampaign, err := w.s.AnalyticsSummary(ctx, w.owner, core.AnalyticsFilter{GroupBy: store.AnalyticsByCampaign, Since: until.AddDate(0, 0, -6),
+		Until: until, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byCampaign.Rows) != 1 || byCampaign.Rows[0].Key != nl || byCampaign.Rows[0].Label != "Newsletter: Builds of the week" ||
+		byCampaign.Rows[0].Conversions == 0 {
+		t.Fatalf("by campaign: %+v", byCampaign.Rows)
 	}
 }
 

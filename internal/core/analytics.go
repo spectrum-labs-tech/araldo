@@ -252,8 +252,11 @@ func (s *Service) AnalyticsSummary(ctx context.Context, a Actor, f AnalyticsFilt
 	sum := &AnalyticsSummary{GroupBy: f.GroupBy, Since: f.Since, Until: f.Until, Totals: totals}
 	for _, r := range rows {
 		row := AnalyticsSummaryRow{AnalyticsRow: r, Label: r.Key}
-		if f.GroupBy == store.AnalyticsByPost {
+		switch f.GroupBy {
+		case store.AnalyticsByPost:
 			row.Label = s.postLabel(ctx, a, r.Key)
+		case store.AnalyticsByCampaign:
+			row.Label = s.issueLabel(ctx, a, r.Key)
 		}
 		sum.Rows = append(sum.Rows, row)
 	}
@@ -276,6 +279,20 @@ func (s *Service) postLabel(ctx context.Context, a Actor, content string) string
 		text = string(r[:80]) + "…"
 	}
 	return text
+}
+
+// issueLabel is a newsletter issue's subject, for a utm_campaign naming
+// it (ADR 0024 decision 10); the campaign itself otherwise.
+func (s *Service) issueLabel(ctx context.Context, a Actor, campaign string) string {
+	iid, err := id.Parse(id.Issue, campaign)
+	if err != nil {
+		return campaign
+	}
+	is, err := s.Issue(ctx, a, iid)
+	if err != nil {
+		return campaign
+	}
+	return "Newsletter: " + is.Subject
 }
 
 // CollectAnalytics reads the sources that are due.

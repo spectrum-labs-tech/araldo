@@ -452,7 +452,15 @@ func (s *Server) postFormMedia(c *reqCtx, d *newPostData, brandID uuid.UUID) err
 		}
 		d.Media = append(d.Media, m)
 	}
-	d.Form["new_alt"] = ""
+	if ref := strings.TrimSpace(f.Get("media_url")); ref != "" {
+		m, err := s.svc.ImportMedia(c.ctx(), c.actor, brandID, ref, f.Get("new_alt"))
+		if err != nil {
+			d.Form["media_url"] = ref
+			return err
+		}
+		d.Media = append(d.Media, m)
+	}
+	d.Form["new_alt"], d.Form["media_url"] = "", ""
 	return nil
 }
 

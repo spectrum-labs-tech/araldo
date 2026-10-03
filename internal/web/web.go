@@ -465,6 +465,11 @@ var funcs = template.FuncMap{
 	"change":            change,
 	"changeClass":       changeClass,
 	"fmtPeriod":         fmtPeriod,
+	// duration shows a video's length in milliseconds as m:ss.
+	"duration": func(ms int64) string {
+		s := (ms + 500) / 1000
+		return fmt.Sprintf("%d:%02d", s/60, s%60)
+	},
 	"stat": func(label string, p core.Pair, lowerBetter string) statCard {
 		return statCard{Label: label, Pair: p, LowerBetter: lowerBetter}
 	},

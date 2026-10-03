@@ -35,13 +35,15 @@
   </div>
 
   <fieldset class="flex flex-col gap-3">
-    <legend>Images <span class="text-sm font-normal text-muted">(JPEG, PNG, GIF or WebP; preview checks each platform's limits)</span></legend>
+    <legend>Images and video <span class="text-sm font-normal text-muted">(JPEG, PNG, GIF or WebP images, or one MP4 video; preview checks each platform's limits)</span></legend>
     {{if .Data.Media}}
     <div class="thumbs">
       {{range .Data.Media}}
       <div class="thumb">
-        <img src="/media/{{mediaID .ID}}" alt="{{with .Alt}}{{.}}{{else}}Image without alt text{{end}}" width="{{.Width}}" height="{{.Height}}">
-        <span class="text-xs text-muted">{{.Width}}×{{.Height}} · {{fileSize .Size}}</span>
+        {{if .VideoCodec}}<video class="thumb-img" src="/media/{{mediaID .ID}}" controls preload="none" width="{{.Width}}" height="{{.Height}}" aria-label="{{with .Alt}}{{.}}{{else}}Video without a description{{end}}"></video>
+        <span class="text-xs text-muted">Video · {{.Width}}×{{.Height}} · {{duration .DurationMS}} · {{fileSize .Size}}</span>
+        {{else}}<img src="/media/{{mediaID .ID}}" alt="{{with .Alt}}{{.}}{{else}}Image without alt text{{end}}" width="{{.Width}}" height="{{.Height}}">
+        <span class="text-xs text-muted">{{.Width}}×{{.Height}} · {{fileSize .Size}}</span>{{end}}
         <input type="hidden" name="media" value="{{mediaID .ID}}">
         <label class="text-sm">Alt text <input name="alt_{{mediaID .ID}}" value="{{.Alt}}" maxlength="1000"></label>
         <label class="{{$radio}} text-sm"><input type="checkbox" name="remove_media" value="{{mediaID .ID}}"> Remove</label>
@@ -50,6 +52,8 @@
     </div>
     {{end}}
     <label>Add images <input type="file" name="images" accept="image/jpeg,image/png,image/gif,image/webp" multiple></label>
+    <label>Or add an image or video from a link <input type="url" name="media_url" value="{{index .Data.Form "media_url"}}" placeholder="https://example.com/launch.mp4">
+      <span class="text-sm font-normal text-muted">Araldo fetches it; a video streams into storage, up to this install's limit.</span></label>
     <label>Alt text for the new images <input name="new_alt" value="{{index .Data.Form "new_alt"}}" maxlength="1000" placeholder="What the image shows, for people who cannot see it"></label>
   </fieldset>
 

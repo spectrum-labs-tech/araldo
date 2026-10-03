@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS ad_results;
+DROP TABLE IF EXISTS ad_accounts;

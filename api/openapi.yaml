@@ -15,9 +15,9 @@ info:
 
     **Scopes.** A key with no scopes listed holds every integration scope;
     one with scopes holds those it lists. The administrative scopes
-    `keys:write`, `posts:approve` and `audit:read` are held only when listed
-    by name, and only a member (the dashboard, or `araldo apikeys create`)
-    can create a key with them.
+    `keys:write`, `posts:approve`, `audit:read` and `ads:write` are held
+    only when listed by name, and only a member (the dashboard, or
+    `araldo apikeys create`) can create a key with them.
 
     **Idempotency.** Every `POST` accepts an `Idempotency-Key` header. A
     retry with the same key and body returns the first response (with
@@ -50,6 +50,7 @@ tags:
   - name: Media
   - name: Posts
   - name: Engagement
+  - name: Ads
   - name: Events
   - name: Webhooks
   - name: API keys
@@ -760,6 +761,144 @@ paths:
                       data: { type: array, items: { $ref: "#/components/schemas/PublishAttempt" } }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/ad_networks:
+    get:
+      summary: List ad networks
+      description: |
+        The ad networks this install can read (ADR 0023), with the fields
+        needed to connect an account. Test mode has only `sandbox`, whose
+        results are invented.
+      tags: [Ads]
+      responses:
+        "200":
+          description: Ad networks.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/AdNetwork" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/ad_accounts:
+    get:
+      summary: List ad accounts
+      description: Ad accounts connected in the key's mode. Needs `ads:read`.
+      tags: [Ads]
+      parameters:
+        - { name: brand, in: query, schema: { type: string }, description: Brand ID or slug. }
+      responses:
+        "200":
+          description: Ad accounts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/AdAccount" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Connect an ad account
+      description: |
+        Checks the credentials with the network, reads the account's name,
+        currency and time zone, and stores the credentials encrypted. Its
+        results are read soon after, then daily. Needs the explicit
+        `ads:write` scope. Connecting spends nothing.
+      tags: [Ads]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [brand, network]
+              properties:
+                brand: { type: string }
+                network: { type: string, example: sandbox }
+                fields:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: The network's connect fields (see /v1/ad_networks).
+      responses:
+        "201":
+          description: The ad account.
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdAccount" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/ad_accounts/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Get an ad account
+      description: Needs `ads:read`.
+      tags: [Ads]
+      responses:
+        "200":
+          description: The ad account.
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdAccount" } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Disconnect an ad account
+      description: Forgets the account, its credentials and the results read from it. Needs `ads:write`.
+      tags: [Ads]
+      responses:
+        "200":
+          description: Deleted.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/ads/summary:
+    get:
+      summary: Summarize ad results
+      description: |
+        Adds up the daily results of every campaign in the connected ad
+        accounts (including campaigns made in the network's own tools)
+        between `since` and `until`, inclusive (default: the last 30 days),
+        grouped by brand, account, campaign or day: most spend first, or by
+        day, oldest first. Amounts are integers in the minor unit of each
+        group's currency; accounts can differ, so the currency is part of
+        every group. Signups are not here: landing links carry UTM
+        parameters for your own analytics. Needs `ads:read`.
+      tags: [Ads]
+      parameters:
+        - { name: group_by, in: query, schema: { type: string, enum: [brand, account, campaign, day], default: campaign } }
+        - { name: brand, in: query, schema: { type: string }, description: Brand ID or slug. }
+        - { name: account, in: query, schema: { type: string }, description: An ad account ID. }
+        - { name: since, in: query, schema: { type: string, format: date } }
+        - { name: until, in: query, schema: { type: string, format: date } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: The summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object: { type: string, enum: [ads_summary] }
+                  group_by: { type: string, enum: [brand, account, campaign, day] }
+                  since: { type: string, format: date }
+                  until: { type: string, format: date }
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, description: "The brand, ad account or campaign (the network's ID), or the day." }
+                        label: { type: string, description: "The brand's or account's name, the campaign's name, or the day." }
+                        network: { type: string, description: For accounts and campaigns. }
+                        currency: { type: string, example: USD }
+                        spend: { type: integer, description: In the currency's minor unit (cents). }
+                        impressions: { type: integer }
+                        clicks: { type: integer }
+                        results: { type: integer, description: "The network's count of results for the campaign's objective." }
+                        cost_per_click: { type: integer, description: "Spend divided by clicks, in the minor unit; 0 without clicks." }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/engagement/summary:
     get:
       summary: Summarize engagement
@@ -1152,6 +1291,42 @@ components:
         id: { type: string }
         object: { type: string }
         deleted: { type: boolean }
+
+    AdNetwork:
+      type: object
+      properties:
+        network: { type: string, example: sandbox }
+        name: { type: string }
+        reporting: { type: boolean, description: Araldo reads results from connected accounts. }
+        promotions: { type: boolean, description: Araldo can run promotions here (a later phase of ADR 0023). }
+        connect_fields:
+          type: array
+          items:
+            type: object
+            properties:
+              Name: { type: string }
+              Label: { type: string }
+              Help: { type: string }
+              Secret: { type: boolean }
+              Optional: { type: boolean }
+              Default: { type: string }
+
+    AdAccount:
+      type: object
+      properties:
+        id: { type: string, example: adacct_01j9x3k2v7e8f9g0h1j2k3m4n5 }
+        object: { type: string, enum: [ad_account] }
+        brand: { type: string }
+        livemode: { type: boolean }
+        network: { type: string }
+        external_id: { type: string, description: The network's ID for the account. }
+        name: { type: string }
+        currency: { type: string, example: USD }
+        timezone: { type: string, example: America/Denver }
+        status: { type: string, enum: [active, needs_reauth] }
+        status_note: { type: string }
+        read_at: { type: string, format: date-time, description: When results were last read. }
+        created_at: { type: string, format: date-time }
 
     Platform:
       type: object

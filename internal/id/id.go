@@ -35,6 +35,7 @@ const (
 	Slot            Prefix = "slot"
 	Media           Prefix = "media"
 	AuditEvent      Prefix = "audit"
+	AdAccount       Prefix = "adacct"
 )
 
 // ErrInvalid is returned for a malformed ID or one of another type.

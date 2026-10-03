@@ -366,6 +366,38 @@ type Media struct {
 	CreatedAt     time.Time
 }
 
+// AdAccountStatus is whether an ad account can be read (ADR 0023).
+type AdAccountStatus string
+
+// Ad account statuses.
+const (
+	AdAccountActive      AdAccountStatus = "active"
+	AdAccountNeedsReauth AdAccountStatus = "needs_reauth"
+)
+
+// AdAccount is an ad network account connected to a brand, read for its
+// campaigns' results (ADR 0023).
+type AdAccount struct {
+	ID         uuid.UUID
+	OrgID      uuid.UUID
+	BrandID    uuid.UUID
+	Livemode   bool
+	Network    string
+	ExternalID string
+	Name       string
+	// Currency is the ISO 4217 code its amounts are in, and Timezone the
+	// zone its days are in, both as the network reports them.
+	Currency    string
+	Timezone    string
+	Settings    map[string]string // non-secret fields
+	Credentials []byte            // encrypted secret fields
+	Status      AdAccountStatus
+	StatusNote  string
+	ReadAt      *time.Time
+	NextReadAt  time.Time
+	CreatedAt   time.Time
+}
+
 // TargetStatus is where one channel's copy of a post stands (ADR 0011).
 type TargetStatus string
 

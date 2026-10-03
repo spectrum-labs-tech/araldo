@@ -113,6 +113,7 @@ func (s *Service) Tasks() []opsched.Task {
 			return s.store.PruneOAuthStates(ctx, s.Now().Add(-OAuthStateTTL))
 		}},
 		{Name: "engagement.collect", Interval: 2 * time.Minute, Timeout: 5 * time.Minute, Run: s.CollectEngagement},
+		{Name: "ads.collect", Interval: 10 * time.Minute, Timeout: 5 * time.Minute, Run: s.CollectAds},
 	}
 }
 

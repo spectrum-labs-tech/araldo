@@ -122,6 +122,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /sandbox/{id}", s.app("posts", s.sandboxPost))
 	s.mux.HandleFunc("GET /media/{id}", s.app("posts", s.mediaFile))
 	s.mux.HandleFunc("GET /performance", s.app("performance", s.performance))
+	s.mux.HandleFunc("GET /ads", s.app("ads", s.adsPage))
+	s.mux.HandleFunc("POST /ads/accounts", s.app("ads", s.connectAdAccount))
+	s.mux.HandleFunc("POST /ads/accounts/{id}/delete", s.app("ads", s.deleteAdAccount))
 }
 
 func cacheStatic(h http.Handler) http.Handler {

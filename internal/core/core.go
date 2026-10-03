@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
@@ -38,6 +39,9 @@ type Config struct {
 	// Blobs, when set, stores new media files; otherwise they go in
 	// Postgres (ADR 0017).
 	Blobs Blobs
+	// AdNetworks are the ad networks live accounts can connect to (ADR
+	// 0023); test mode always has the sandbox.
+	AdNetworks []ads.Reporter
 }
 
 // Service is the application.
@@ -54,6 +58,8 @@ type Service struct {
 	// MediaHTTP fetches media by URL.
 	MediaHTTP *http.Client
 	blobs     Blobs
+	// adNetworks are the ad networks accounts can be read from.
+	adNetworks *ads.Registry
 	// metrics records nothing until Instrument.
 	metrics *metrics
 }
@@ -61,9 +67,10 @@ type Service struct {
 // New returns the application.
 func New(st *store.Store, keys *keyring.Keyring, platforms *platform.Registry, log *slog.Logger, cfg Config) *Service {
 	return &Service{store: st, keys: keys, platforms: platforms, log: log, cfg: cfg, Now: time.Now,
-		HTTP:      netguard.Client(cfg.AllowPrivateWebhooks, deliveryTimeout),
-		MediaHTTP: mediaClient(cfg.AllowPrivateWebhooks, netguard.Client(cfg.AllowPrivateWebhooks, mediaFetchTimeout)),
-		blobs:     cfg.Blobs, metrics: noopMetrics()}
+		adNetworks: ads.NewRegistry(append([]ads.Reporter{ads.SandboxAds{}}, cfg.AdNetworks...)...),
+		HTTP:       netguard.Client(cfg.AllowPrivateWebhooks, deliveryTimeout),
+		MediaHTTP:  mediaClient(cfg.AllowPrivateWebhooks, netguard.Client(cfg.AllowPrivateWebhooks, mediaFetchTimeout)),
+		blobs:      cfg.Blobs, metrics: noopMetrics()}
 }
 
 // Store exposes the store to the composition root (health checks).
@@ -93,26 +100,29 @@ const (
 	PermMembersWrite   Permission = "members:write"
 	PermOrgWrite       Permission = "org:write"
 	PermAuditRead      Permission = "audit:read"
+	PermAdsRead        Permission = "ads:read"
+	PermAdsWrite       Permission = "ads:write"
 )
 
 // KeyScopes are the integration permissions: an API key with no scopes
 // listed holds them all, or it holds those it lists.
 var KeyScopes = []Permission{
 	PermPostsRead, PermPostsWrite, PermTemplatesRead, PermTemplatesWrite, PermChannelsRead, PermChannelsWrite,
-	PermBrandsRead, PermBrandsWrite, PermEventsRead, PermWebhooksRead, PermWebhooksWrite,
+	PermBrandsRead, PermBrandsWrite, PermEventsRead, PermWebhooksRead, PermWebhooksWrite, PermAdsRead,
 }
 
 // AdminScopes are explicit-only (ADR 0019): a key holds one only when it
 // lists it by name, never through "no scopes, full access", and only a
 // member can create a key holding one.
-var AdminScopes = []Permission{PermKeysWrite, PermPostsApprove, PermAuditRead}
+var AdminScopes = []Permission{PermKeysWrite, PermPostsApprove, PermAuditRead, PermAdsWrite}
 
 var roleMin = map[Permission]model.Role{
 	PermPostsRead: model.RoleViewer, PermTemplatesRead: model.RoleViewer, PermChannelsRead: model.RoleViewer,
-	PermBrandsRead: model.RoleViewer, PermEventsRead: model.RoleViewer, PermWebhooksRead: model.RoleViewer,
+	PermBrandsRead: model.RoleViewer, PermEventsRead: model.RoleViewer, PermWebhooksRead: model.RoleViewer, PermAdsRead: model.RoleViewer,
 	PermPostsWrite: model.RoleEditor, PermTemplatesWrite: model.RoleEditor,
 	PermChannelsWrite: model.RoleAdmin, PermBrandsWrite: model.RoleAdmin, PermWebhooksWrite: model.RoleAdmin,
 	PermKeysWrite: model.RoleAdmin, PermMembersWrite: model.RoleAdmin, PermPostsApprove: model.RoleAdmin, PermAuditRead: model.RoleAdmin,
+	PermAdsWrite: model.RoleAdmin,
 	PermOrgWrite: model.RoleOwner,
 }
 

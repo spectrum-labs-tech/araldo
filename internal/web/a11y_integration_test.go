@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -72,6 +73,10 @@ func TestPagesAreAccessible(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, err := d.s.ConnectAdAccount(ctx, d.owner, core.AdAccountInput{BrandID: d.brand.ID, Network: ads.Sandbox,
+		Fields: map[string]string{"name": "Accessible ads"}}); err != nil {
+		t.Fatal(err)
+	}
 	_, key, err := d.s.CreateOperatorAPIKey(ctx, d.owner, core.APIKeyInput{Name: "ci", Scopes: []string{"posts:read"}})
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +96,7 @@ func TestPagesAreAccessible(t *testing.T) {
 
 	pages := []string{
 		"/", "/posts", "/posts?q=accessible&status=published", "/posts/new", "/posts/" + id.Format(id.Post, p.ID), "/posts/" + id.Format(id.Post, scheduled.ID),
-		"/sandbox/" + id.Format(id.Target, target.ID), "/performance",
+		"/sandbox/" + id.Format(id.Target, target.ID), "/performance", "/ads",
 		"/templates", "/templates/new", "/templates/" + id.Format(id.Template, tpl.ID),
 		"/channels", "/channels/apps", "/channels/new", "/channels/new?provider=bluesky", "/channels/" + id.Format(id.Channel, chans[0].ID) + "/reconnect",
 		"/brands", "/brands/new", "/brands/" + id.Format(id.Brand, d.brand.ID),

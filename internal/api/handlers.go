@@ -70,6 +70,12 @@ func (h *Handler) routes() {
 	h.handle("GET /v1/post_targets/{id}/engagement", h.listEngagement)
 	h.handle("GET /v1/post_targets/{id}/attempts", h.listAttempts)
 	h.handle("GET /v1/engagement/summary", h.engagementSummary, "group_by", "brand", "since", "until", "limit")
+	h.handle("GET /v1/ad_networks", h.listAdNetworks)
+	h.handle("GET /v1/ad_accounts", h.listAdAccounts, "brand")
+	h.handle("POST /v1/ad_accounts", h.createAdAccount)
+	h.handle("GET /v1/ad_accounts/{id}", h.getAdAccount)
+	h.handle("DELETE /v1/ad_accounts/{id}", h.deleteAdAccount)
+	h.handle("GET /v1/ads/summary", h.adsSummary, "group_by", "brand", "account", "since", "until", "limit")
 
 	h.handle("GET /v1/events", h.listEvents, paged("type")...)
 

@@ -344,5 +344,23 @@ func tools(api *Client) []Tool {
 				return get("/v1/engagement/summary", q)(ctx)
 			},
 		},
+		{
+			Name: "ads_summary", Title: "Summarize ad spend", ReadOnly: true, Idempotent: true,
+			Description: "Spend, impressions, clicks, cost per click and results of the connected ad accounts' campaigns, by brand, " +
+				"account, campaign or day. Amounts are in each row's currency's minor unit (cents). Reading only: Araldo spends nothing. " +
+				"Signups are in the brand's web analytics (UTM parameters).",
+			Input: object(nil, map[string]any{
+				"brand":    str(brandDesc),
+				"group_by": enum("How to group (default campaign).", "brand", "account", "campaign", "day"),
+				"days":     map[string]any{"type": "integer", "minimum": 1, "maximum": 365, "description": "How far back, ending today (default 30)."},
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				q := query(args, "brand", "group_by")
+				if d, ok := args["days"].(float64); ok && d >= 1 {
+					q.Set("since", time.Now().UTC().AddDate(0, 0, -(int(d)-1)).Format(time.DateOnly))
+				}
+				return get("/v1/ads/summary", q)(ctx)
+			},
+		},
 	}
 }

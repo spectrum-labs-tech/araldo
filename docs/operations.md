@@ -171,6 +171,7 @@ live key limited to the brand it should post for.
 | `cancel_post` | Stop what has not published yet (marked destructive). |
 | `reschedule_post` | Move a post to another time or slot, or swap it with another. |
 | `engagement_summary` | What did best, by post, channel or template (read-only). |
+| `ads_summary` | Ad spend and results, by brand, account, campaign or day (read-only). |
 
 Claude Code:
 
@@ -251,6 +252,27 @@ engagement. Posts published before an upgrade to a version with
 engagement are read once soon after it, then on the schedule. A failed
 reading is retried later and never affects publishing; see the target's
 `engagement.state` and the task on Organization → Background tasks.
+
+## Ads
+
+Araldo reads ad accounts' spend and results so they sit next to organic
+engagement, across brands ([ADR 0023](adr/0023-paid-promotion.md)). It
+spends nothing: campaigns are made in each network's own tools, and Araldo
+reads every campaign in a connected account. Connect accounts on the
+dashboard's **Ads** page or with `POST /v1/ad_accounts`; both need the
+explicit `ads:write` scope (admins and owners). Reading needs `ads:read`.
+
+The `ads.collect` task reads an account soon after it connects (the last
+30 days), then daily, each time re-reading the last 7 days, since networks
+revise a day's numbers as late conversions are attributed. Amounts are in
+the account's currency, in its minor unit. A network that refuses the
+credentials marks the account *needs reauth*; connect it again.
+
+Test mode has a sandbox network with invented numbers. Real networks are
+added as their ads APIs approve the install; until then the live Ads page
+says so. To count signups, tag ad links with UTM parameters
+(`utm_medium=paid`) and read them in your own analytics: Araldo never asks
+for a network's tracking pixel.
 
 ## Health
 

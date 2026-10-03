@@ -86,6 +86,17 @@ every problem in `errors`, each with its own `code` and `param`.
 - **group_by_invalid**: group a summary by `post`, `channel` or `template`.
 - **window_invalid**: `since` must be before `until`, at most a year apart.
 
+## Ads
+
+- **network_unsupported**: this install cannot read that network.
+- **livemode_required**, **testmode_required**: test mode connects only
+  sandbox ad accounts, and live mode only real ones.
+- **ad_account_connected**: that account is already connected to the brand.
+- **group_by_invalid**: group an ads summary by `brand`, `account`,
+  `campaign` or `day`.
+- **window_invalid**: `since` must be on or before `until`, at most a year
+  apart.
+
 ## API keys
 
 - **scope_not_grantable**: only a member can create a key with an

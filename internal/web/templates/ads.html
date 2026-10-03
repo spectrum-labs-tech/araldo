@@ -1,0 +1,79 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Ads</h1>
+<p class="text-muted">Spend and results of your ad accounts' campaigns, read daily, including campaigns made in each network's own tools. Araldo spends nothing: run campaigns in the network, and tag their links with <code>utm_medium=paid</code> so your analytics count the signups.{{if not .Livemode}} In test mode the sandbox invents these numbers.{{end}}</p>
+
+<form method="get" action="/ads" class="my-4 flex flex-wrap items-end gap-3">
+  <label>Brand
+    <select name="brand"><option value="">All brands</option>{{range $d.Brands}}<option value="{{brandID .ID}}" {{if eq $d.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+  </label>
+  <label>Period
+    <select name="days">{{range $n := (list "7" "30" "90" "365")}}<option value="{{$n}}" {{if eq (printf "%d" $d.Days) $n}}selected{{end}}>Last {{$n}} days</option>{{end}}</select>
+  </label>
+  <button>Show</button>
+</form>
+
+<section class="card">
+  <h2>By campaign</h2>
+  {{if $d.Campaigns.Rows}}
+  <table class="text-sm">
+    <thead><tr><th>Campaign</th><th>Network</th>{{template "adsHead"}}</tr></thead>
+    <tbody>{{range $d.Campaigns.Rows}}<tr><td>{{.Label}}</td><td>{{.Network}}</td>{{template "adsRow" .}}</tr>{{end}}</tbody>
+  </table>
+  {{else}}<p class="text-muted">No results for this period yet.</p>{{end}}
+</section>
+
+<section class="card">
+  <h2>By day</h2>
+  {{if $d.Daily.Rows}}
+  <table class="text-sm">
+    <thead><tr><th>Day</th>{{template "adsHead"}}</tr></thead>
+    <tbody>{{range $d.Daily.Rows}}<tr><td>{{.Label}}</td>{{template "adsRow" .}}</tr>{{end}}</tbody>
+  </table>
+  {{else}}<p class="text-muted">No results for this period yet.</p>{{end}}
+</section>
+
+<section class="card">
+  <h2>Ad accounts</h2>
+  {{if $d.Accounts}}
+  <table class="text-sm">
+    <thead><tr><th>Account</th><th>Network</th><th>Brand</th><th>Status</th><th>Read</th>{{if $d.CanWrite}}<th><span class="sr-only">Actions</span></th>{{end}}</tr></thead>
+    <tbody>{{range $d.Accounts}}<tr>
+      <td>{{.Name}} <span class="text-muted">{{.Currency}}</span></td><td>{{.Network}}</td><td>{{index $d.BrandName (brandID .BrandID)}}</td>
+      <td><span class="pill {{statusClass .Status}}">{{.Status}}</span>{{if .StatusNote}}<div class="text-muted">{{.StatusNote}}</div>{{end}}</td>
+      <td>{{fmtTime .ReadAt}}</td>
+      {{if $d.CanWrite}}<td><form method="post" action="/ads/accounts/{{adAccountID .ID}}/delete" data-confirm="Disconnect {{.Name}} and forget its results?">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-link" aria-label="Disconnect {{.Name}}">Disconnect</button></form></td>{{end}}
+    </tr>{{end}}</tbody>
+  </table>
+  {{else}}<p class="text-muted">No ad accounts are connected.</p>{{end}}
+</section>
+
+{{if $d.CanWrite}}
+<section class="card">
+  <h2>Connect an ad account</h2>
+  {{if not $d.Network}}
+  <p class="text-muted">This install reads no ad networks in live mode yet. Each network is added once its ads API approves the install (ADR 0023).</p>
+  {{else}}
+  {{if gt (len $d.Networks) 1}}<p class="text-sm">Network: {{range $d.Networks}}<a href="/ads?network={{.Network}}" {{if eq .Network $d.Network.Network}}aria-current="true"{{end}}>{{.Name}}</a> {{end}}</p>{{end}}
+  <form method="post" action="/ads/accounts" class="flex max-w-xl flex-col gap-4">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="network" value="{{$d.Network.Network}}">
+    <label>Brand
+      <select name="brand">{{range $d.Brands}}<option value="{{brandID .ID}}" {{if eq $d.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+    </label>
+    {{range $d.Network.Fields}}
+    <label>{{.Label}}{{if .Optional}} <span class="text-sm font-normal text-muted">(optional)</span>{{end}}
+      <input name="field_{{.Name}}" {{if .Secret}}type="password" autocomplete="off"{{else}}value="{{index $d.Values .Name}}"{{end}} {{if not .Optional}}required{{end}} placeholder="{{.Default}}">
+      {{if .Help}}<span class="text-sm font-normal text-muted">{{.Help}}</span>{{end}}</label>
+    {{end}}
+    <p class="text-sm text-muted">Araldo checks these with {{$d.Network.Name}} and stores secrets encrypted. Connecting spends nothing.</p>
+    <div><button class="btn-primary">Connect</button></div>
+  </form>
+  {{end}}
+</section>
+{{end}}
+{{end}}
+
+{{define "adsHead"}}<th class="text-right">Spend</th><th class="text-right">Impressions</th><th class="text-right">Clicks</th><th class="text-right">Cost per click</th><th class="text-right">Results</th>{{end}}
+{{define "adsRow"}}<td class="text-right">{{money .Spend .Currency}}</td><td class="text-right">{{.Impressions}}</td><td class="text-right">{{.Clicks}}</td><td class="text-right">{{money .CostPerClick .Currency}}</td><td class="text-right">{{.Results}}</td>{{end}}

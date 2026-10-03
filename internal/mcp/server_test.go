@@ -137,8 +137,8 @@ func TestToolsList(t *testing.T) {
 	t.Parallel()
 	out, _, _ := session(t, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	list, _ := result(t, out["1"])["tools"].([]any)
-	if len(list) != 13 {
-		t.Fatalf("%d tools, want 13", len(list))
+	if len(list) != 14 {
+		t.Fatalf("%d tools, want 14", len(list))
 	}
 	names := map[string]map[string]any{}
 	for _, raw := range list {
@@ -167,8 +167,9 @@ func TestToolsCallTheAPI(t *testing.T) {
 		call(6, "engagement_summary", `{"group_by":"channel","days":7}`),
 		call(7, "cancel_post", `{"post":"post_1"}`),
 		call(8, "reschedule_post", `{"post":"post_1","swap_with":"post_2"}`),
+		call(9, "ads_summary", `{"group_by":"day","days":7}`),
 	)
-	for i := 1; i <= 8; i++ {
+	for i := 1; i <= 9; i++ {
 		if text, isErr := toolText(t, out[itoa(i)]); isErr {
 			t.Fatalf("call %d failed: %s", i, text)
 		}
@@ -211,6 +212,9 @@ func TestToolsCallTheAPI(t *testing.T) {
 	}
 	if move := byPath["POST /v1/posts/post_1/reschedule"]; len(move.Body) != 1 || move.Body["swap_with"] != "post_2" {
 		t.Fatalf("reschedule_post body %v", move.Body)
+	}
+	if q := byPath["GET /v1/ads/summary"].Query; !strings.Contains(q, "group_by=day") || !strings.Contains(q, "since=") {
+		t.Fatalf("ads_summary query %q", q)
 	}
 }
 

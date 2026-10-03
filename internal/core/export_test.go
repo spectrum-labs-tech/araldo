@@ -46,3 +46,9 @@ func UsableCredentials(s *Service, ch *model.Channel) (platform.Credentials, err
 	adapter, _ := s.platforms.Get(ch.Provider)
 	return s.usableCredentials(context.Background(), ch, adapter)
 }
+
+// CollectAdsOrg is CollectAds for one org, so a test reads only its own
+// ad accounts.
+func CollectAdsOrg(s *Service, org uuid.UUID) (int, error) {
+	return s.collectAds(context.Background(), &org)
+}

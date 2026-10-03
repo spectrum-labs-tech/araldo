@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/authn"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
@@ -263,6 +264,13 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, checks["swap"] = b.s.ReschedulePost(ctx, b.owner, theirs.ID, core.RescheduleInput{SwapWith: &p.ID})
+	adAcct, err := a.s.ConnectAdAccount(ctx, a.owner, core.AdAccountInput{BrandID: a.brand.ID, Network: ads.Sandbox})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, checks["ad account"] = b.s.AdAccount(ctx, b.owner, adAcct.ID)
+	checks["delete ad account"] = b.s.DeleteAdAccount(ctx, b.owner, adAcct.ID)
+	_, checks["ad account for their brand"] = b.s.ConnectAdAccount(ctx, b.owner, core.AdAccountInput{BrandID: a.brand.ID, Network: ads.Sandbox})
 	_, checks["retry"] = b.s.RetryTarget(ctx, b.owner, p.Targets[0].ID)
 	_, checks["post to their brand"] = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: a.brand.ID, Content: &model.Content{Body: "x"}})
 	for what, err := range checks {

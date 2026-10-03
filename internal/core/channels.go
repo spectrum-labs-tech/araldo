@@ -59,7 +59,7 @@ func (s *Service) ConnectChannel(ctx context.Context, a Actor, in ConnectInput) 
 	if !ok {
 		return nil, apperr.Invalid("provider_unsupported", "provider", "Araldo cannot connect to %q yet.", in.Provider)
 	}
-	settings, secrets, err := splitFields(adapter, in.Fields)
+	settings, secrets, err := splitFields(adapter.Rules().Name+" channels", adapter.Fields(), in.Fields)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (s *Service) ReconnectChannel(ctx context.Context, a Actor, channelID uuid.
 		merged = map[string]string{}
 	}
 	maps.Copy(merged, fields)
-	settings, secrets, err := splitFields(adapter, merged)
+	settings, secrets, err := splitFields(adapter.Rules().Name+" channels", adapter.Fields(), merged)
 	if err != nil {
 		return nil, err
 	}
@@ -156,11 +156,11 @@ func (s *Service) ReconnectChannel(ctx context.Context, a Actor, channelID uuid.
 
 // splitFields checks fields against the adapter's list and separates
 // settings from secrets.
-func splitFields(adapter platform.Adapter, fields map[string]string) (settings, secrets map[string]string, err error) {
+func splitFields(what string, defs []platform.Field, fields map[string]string) (settings, secrets map[string]string, err error) {
 	settings, secrets = map[string]string{}, map[string]string{}
 	var ps apperr.Problems
 	known := map[string]bool{}
-	for _, f := range adapter.Fields() {
+	for _, f := range defs {
 		known[f.Name] = true
 		v := strings.TrimSpace(fields[f.Name])
 		if v == "" {
@@ -178,7 +178,7 @@ func splitFields(adapter platform.Adapter, fields map[string]string) (settings, 
 	}
 	for k := range fields {
 		if !known[k] {
-			ps.Add("field_unknown", "fields."+k, "%s channels have no field %q.", adapter.Rules().Name, k)
+			ps.Add("field_unknown", "fields."+k, "%s have no field %q.", what, k)
 		}
 	}
 	return settings, secrets, ps.Err("The channel settings are not valid.")

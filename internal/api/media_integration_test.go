@@ -54,7 +54,7 @@ type client struct {
 	channel string
 }
 
-func newClient(t *testing.T) *client {
+func newClient(t *testing.T, opts ...func(*core.Config)) *client {
 	t.Helper()
 	dsn := os.Getenv("ARALDO_TEST_DSN")
 	if dsn == "" {
@@ -74,8 +74,11 @@ func newClient(t *testing.T) *client {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s := core.New(shared, keyring.New(mk, shared), platform.NewRegistry(sandbox.New("https://araldo.test")), log,
-		core.Config{BaseURL: "https://araldo.test", AllowPrivateWebhooks: true})
+	cfg := core.Config{BaseURL: "https://araldo.test", AllowPrivateWebhooks: true}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	s := core.New(shared, keyring.New(mk, shared), platform.NewRegistry(sandbox.New("https://araldo.test")), log, cfg)
 	ctx := t.Context()
 	email := fmt.Sprintf("api-%s@example.com", uuid.NewString()[:8])
 	u, err := s.CreateUser(ctx, email, "Owner", "correct horse battery")

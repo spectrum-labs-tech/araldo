@@ -50,6 +50,9 @@ type Config struct {
 	// Mailers are the email providers live newsletters can be sent
 	// through (ADR 0024); test mode always has the sandbox.
 	Mailers []email.Mailer
+	// MaxVideoBytes is the largest video accepted (ADR 0027); zero is
+	// DefaultMaxVideoBytes.
+	MaxVideoBytes int64
 }
 
 // Service is the application.

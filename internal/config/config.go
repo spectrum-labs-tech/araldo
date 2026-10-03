@@ -41,6 +41,9 @@ type Config struct {
 	// S3 stores new media files in S3-compatible storage when its Bucket
 	// is set; otherwise they go in Postgres (ADR 0017).
 	S3 S3
+	// MaxVideoBytes is the largest video accepted (ARALDO_MAX_VIDEO_BYTES,
+	// default 1 GiB); video needs S3 (ADR 0027).
+	MaxVideoBytes int64
 }
 
 // S3 is an S3-compatible bucket (ARALDO_S3_*).
@@ -83,6 +86,14 @@ func Load(needKeys bool) (Config, error) {
 	}
 	if c.AllowPrivateNetworks, err = boolEnv("ARALDO_ALLOW_PRIVATE_NETWORKS", false); err != nil {
 		errs = append(errs, err)
+	}
+	c.MaxVideoBytes = 1 << 30
+	if v := os.Getenv("ARALDO_MAX_VIDEO_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err != nil || n <= 0 {
+			errs = append(errs, fmt.Errorf("ARALDO_MAX_VIDEO_BYTES %q is not a positive number of bytes", v))
+		} else {
+			c.MaxVideoBytes = n
+		}
 	}
 	if f := os.Getenv("ARALDO_MASTER_KEYS_FILE"); f != "" && c.MasterKeys == "" {
 		b, err := os.ReadFile(f) //nolint:gosec // G304: the operator chooses this path

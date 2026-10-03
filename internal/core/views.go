@@ -305,25 +305,39 @@ func ViewPost(p *model.Post) PostView {
 
 // MediaView is an uploaded image (ADR 0017).
 type MediaView struct {
-	ID        string    `json:"id"`
-	Object    string    `json:"object"`
-	Brand     string    `json:"brand"`
-	Livemode  bool      `json:"livemode"`
-	Type      string    `json:"type"`
-	Size      int64     `json:"size"`
-	Width     int       `json:"width"`
-	Height    int       `json:"height"`
-	Alt       string    `json:"alt"`
-	Filename  string    `json:"filename,omitempty"`
-	SHA256    string    `json:"sha256"`
-	CreatedAt time.Time `json:"created_at"`
+	ID       string `json:"id"`
+	Object   string `json:"object"`
+	Brand    string `json:"brand"`
+	Livemode bool   `json:"livemode"`
+	Type     string `json:"type"`
+	Size     int64  `json:"size"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	Alt      string `json:"alt"`
+	Filename string `json:"filename,omitempty"`
+	SHA256   string `json:"sha256"`
+	// Video, for a video: its length, frame rate and codecs.
+	Video     *MediaVideoView `json:"video,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
+// MediaVideoView is what a video's index says.
+type MediaVideoView struct {
+	DurationMS int64   `json:"duration_ms"`
+	FrameRate  float64 `json:"frame_rate"`
+	VideoCodec string  `json:"video_codec"`
+	AudioCodec string  `json:"audio_codec,omitempty"`
 }
 
 // ViewMedia renders media. Where the file is stored is not shown.
 func ViewMedia(m *model.Media) MediaView {
-	return MediaView{ID: id.Format(id.Media, m.ID), Object: "media", Brand: id.Format(id.Brand, m.BrandID), Livemode: m.Livemode,
+	v := MediaView{ID: id.Format(id.Media, m.ID), Object: "media", Brand: id.Format(id.Brand, m.BrandID), Livemode: m.Livemode,
 		Type: m.ContentType, Size: m.Size, Width: m.Width, Height: m.Height, Alt: m.Alt, Filename: m.Filename,
 		SHA256: hex.EncodeToString(m.SHA256), CreatedAt: m.CreatedAt.UTC()}
+	if m.VideoCodec != "" {
+		v.Video = &MediaVideoView{DurationMS: m.DurationMS, FrameRate: m.FrameRate, VideoCodec: m.VideoCodec, AudioCodec: m.AudioCodec}
+	}
+	return v
 }
 
 // EventView is an event.

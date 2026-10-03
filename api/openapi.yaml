@@ -460,16 +460,23 @@ paths:
                       data: { type: array, items: { $ref: "#/components/schemas/Media" } }
         default: { $ref: "#/components/responses/Error" }
     post:
-      summary: Upload an image
+      summary: Upload an image or a video
       description: |
-        Stores a JPEG, PNG, GIF or WebP image of at most 16 MiB for posts
-        to attach (`media` on a post). Upload the file as
-        `multipart/form-data`, or send JSON with a `url` for Araldo to
-        fetch (public addresses only). The type comes from the file's
-        bytes. Each platform's own limits (size, type, aspect ratio) are
-        checked when a post uses the image; see `images` in
-        `/v1/platforms`. Media no post uses is deleted after 24 hours.
-        Needs the `posts:write` scope.
+        Stores a JPEG, PNG, GIF or WebP image of at most 16 MiB, or an MP4
+        or QuickTime video, for posts to attach (`media` on a post).
+        Upload the file as `multipart/form-data`, or send JSON with a
+        `url` for Araldo to fetch (public addresses only). The type comes
+        from the file's bytes. Each platform's own limits are checked when
+        a post uses the file; an image too big for a platform is resized
+        for it, never cropped (ADR 0027). Media no post uses is deleted
+        after 24 hours. Needs the `posts:write` scope.
+
+        Video needs the install's S3-compatible storage and is streamed
+        into it, up to the install's limit (1 GiB unless configured). Its
+        length, frame rate and codecs are read from its index; Araldo
+        does not transcode, so export it as H.264 with AAC in an MP4. An
+        `Idempotency-Key` makes Araldo hold the request in memory, which
+        limits it to 16 MiB: upload a video without one.
       tags: [Media]
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:
@@ -2212,13 +2219,21 @@ components:
         object: { type: string, enum: [media] }
         brand: { type: string }
         livemode: { type: boolean }
-        type: { type: string, enum: [image/jpeg, image/png, image/gif, image/webp] }
+        type: { type: string, enum: [image/jpeg, image/png, image/gif, image/webp, video/mp4, video/quicktime] }
         size: { type: integer, description: Bytes. }
-        width: { type: integer }
+        width: { type: integer, description: "As shown: a video recorded upright on a phone is taller than wide." }
         height: { type: integer }
         alt: { type: string }
         filename: { type: string }
         sha256: { type: string }
+        video:
+          type: object
+          description: For a video, what its index says (ADR 0027). Araldo does not transcode.
+          properties:
+            duration_ms: { type: integer }
+            frame_rate: { type: number }
+            video_codec: { type: string, example: avc1, description: "The video's sample entry: avc1 is H.264, hvc1 HEVC." }
+            audio_codec: { type: string, example: mp4a, description: "mp4a is AAC; absent for a silent video." }
         created_at: { type: string, format: date-time }
 
     PostStatus:

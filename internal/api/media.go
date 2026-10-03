@@ -3,6 +3,7 @@
 package api
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"mime"
@@ -35,22 +36,19 @@ func bodyLimit(r *http.Request) int64 {
 func (h *Handler) createMedia(w http.ResponseWriter, r *http.Request) error {
 	a := actor(r)
 	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	var (
-		m   *model.Media
-		err error
-	)
+	var m *model.Media
 	if ct == "multipart/form-data" {
-		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBody)
-		var up upload
-		if up, err = readUpload(r); err != nil {
-			return err
+		limit := int64(maxUploadBody)
+		if v := h.svc.MaxVideoBytes(); v+64<<10 > limit {
+			limit = v + 64<<10
 		}
-		b, err := h.svc.ResolveBrand(r.Context(), a, up.brand)
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		up, err := h.readUpload(r, a)
 		if err != nil {
 			return err
 		}
-		m, err = h.svc.CreateMedia(r.Context(), a, core.MediaInput{BrandID: b.ID, Data: up.data, Filename: up.filename, Alt: up.alt})
-		if err != nil {
+		if m, err = h.finishUpload(r, a, up); err != nil {
+			h.svc.DiscardVideo(r.Context(), up.video)
 			return err
 		}
 	} else {
@@ -79,18 +77,40 @@ func (h *Handler) createMedia(w http.ResponseWriter, r *http.Request) error {
 
 type upload struct {
 	brand, alt, filename string
-	data                 []byte
+	// data is an image, read in memory; video is a video, streamed into
+	// storage as it arrived (ADR 0027).
+	data  []byte
+	video *core.StagedVideo
 }
 
-// readUpload reads an upload form part by part, in memory: the image in
-// "file", and the fields "brand" and "alt". Nothing goes to temporary
-// files (the container's file system is read-only).
-func readUpload(r *http.Request) (upload, error) {
+// finishUpload makes an upload media, once its brand is known.
+func (h *Handler) finishUpload(r *http.Request, a core.Actor, up upload) (*model.Media, error) {
+	b, err := h.svc.ResolveBrand(r.Context(), a, up.brand)
+	if err != nil {
+		return nil, err
+	}
+	if up.video != nil {
+		return h.svc.CreateVideo(r.Context(), a, up.video, b.ID, up.alt)
+	}
+	return h.svc.CreateMedia(r.Context(), a, core.MediaInput{BrandID: b.ID, Data: up.data, Filename: up.filename, Alt: up.alt})
+}
+
+// readUpload reads an upload form part by part: the file in "file" (an
+// image in memory, a video streamed to storage), and the fields "brand"
+// and "alt", in any order. Nothing goes to temporary files (the
+// container's file system is read-only). On an error, a staged video is
+// discarded.
+func (h *Handler) readUpload(r *http.Request, a core.Actor) (up upload, err error) {
+	ctx := r.Context()
+	defer func() {
+		if err != nil {
+			h.svc.DiscardVideo(ctx, up.video)
+		}
+	}()
 	mr, err := r.MultipartReader()
 	if err != nil {
-		return upload{}, badRequest("form_invalid", "", "The multipart form could not be read: %v", err)
+		return up, badRequest("form_invalid", "", "The multipart form could not be read: %v", err)
 	}
-	var up upload
 	gotFile := false
 	for {
 		part, err := mr.NextPart()
@@ -98,21 +118,26 @@ func readUpload(r *http.Request) (upload, error) {
 			break
 		}
 		if err != nil {
-			return upload{}, formError(err)
+			return up, formError(err)
 		}
 		name := part.FormName()
 		switch name {
 		case "file":
 			if gotFile {
-				return upload{}, badRequest("parameter_invalid", "file", "Send one file per request.")
+				return up, badRequest("parameter_invalid", "file", "Send one file per request.")
 			}
-			up.data, err = io.ReadAll(io.LimitReader(part, media.MaxBytes+1))
+			br := bufio.NewReader(part)
+			if head, _ := br.Peek(12); core.IsVideoStart(head) {
+				up.video, err = h.svc.StageVideo(ctx, a, br, part.FileName())
+			} else {
+				up.data, err = io.ReadAll(io.LimitReader(br, media.MaxBytes+1))
+			}
 			up.filename, gotFile = part.FileName(), true
 		case "brand", "alt":
 			var v []byte
 			v, err = io.ReadAll(io.LimitReader(part, maxFormField+1))
 			if err == nil && len(v) > maxFormField {
-				return upload{}, badRequest("parameter_invalid", name, "%s is too long.", name)
+				return up, badRequest("parameter_invalid", name, "%s is too long.", name)
 			}
 			if name == "brand" {
 				up.brand = string(v)
@@ -120,15 +145,15 @@ func readUpload(r *http.Request) (upload, error) {
 				up.alt = string(v)
 			}
 		default:
-			return upload{}, badRequest("parameter_unknown", name, "Unknown parameter %q.", name)
+			return up, badRequest("parameter_unknown", name, "Unknown parameter %q.", name)
 		}
 		_ = part.Close()
 		if err != nil {
-			return upload{}, formError(err)
+			return up, formError(err)
 		}
 	}
 	if !gotFile {
-		return upload{}, badRequest("file_missing", "file", "Send the image in a part named file.")
+		return up, badRequest("file_missing", "file", "Send the image in a part named file.")
 	}
 	return up, nil
 }

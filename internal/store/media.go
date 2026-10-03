@@ -13,13 +13,15 @@ import (
 )
 
 const mediaCols = `m.id, m.org_id, m.brand_id, m.livemode, m.content_type, m.size_bytes, m.width, m.height, m.sha256, m.alt, m.filename,
-	m.storage, m.storage_key, m.created_by_user, m.created_by_key, m.created_at, m.transparent`
+	m.storage, m.storage_key, m.created_by_user, m.created_by_key, m.created_at, m.transparent, m.duration_ms, m.frame_rate, m.video_codec,
+	m.audio_codec`
 
 // scanMedia reads mediaCols, then any extra columns into extra.
 func scanMedia(r pgx.Row, extra ...any) (*model.Media, error) {
 	var m model.Media
 	dest := append([]any{&m.ID, &m.OrgID, &m.BrandID, &m.Livemode, &m.ContentType, &m.Size, &m.Width, &m.Height, &m.SHA256, &m.Alt,
-		&m.Filename, &m.Storage, &m.StorageKey, &m.CreatedByUser, &m.CreatedByKey, &m.CreatedAt, &m.Transparent}, extra...)
+		&m.Filename, &m.Storage, &m.StorageKey, &m.CreatedByUser, &m.CreatedByKey, &m.CreatedAt, &m.Transparent, &m.DurationMS, &m.FrameRate,
+		&m.VideoCodec, &m.AudioCodec}, extra...)
 	if err := r.Scan(dest...); err != nil {
 		return nil, mapErr(err)
 	}
@@ -30,9 +32,10 @@ func scanMedia(r pgx.Row, extra ...any) (*model.Media, error) {
 // Postgres (data is ignored otherwise).
 func (s *Store) CreateMedia(ctx context.Context, m *model.Media, data []byte) error {
 	_, err := s.q.Exec(ctx, `INSERT INTO media (id, org_id, brand_id, livemode, content_type, size_bytes, width, height, sha256, alt, filename,
-		storage, storage_key, created_by_user, created_by_key, transparent) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+		storage, storage_key, created_by_user, created_by_key, transparent, duration_ms, frame_rate, video_codec, audio_codec)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
 		m.ID, m.OrgID, m.BrandID, m.Livemode, m.ContentType, m.Size, m.Width, m.Height, m.SHA256, m.Alt, m.Filename,
-		m.Storage, m.StorageKey, m.CreatedByUser, m.CreatedByKey, m.Transparent)
+		m.Storage, m.StorageKey, m.CreatedByUser, m.CreatedByKey, m.Transparent, m.DurationMS, m.FrameRate, m.VideoCodec, m.AudioCodec)
 	if err != nil {
 		return mapErr(err)
 	}

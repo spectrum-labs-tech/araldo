@@ -99,12 +99,20 @@ type Media struct {
 	Alt           string
 	// Transparent images are never resized into a JPEG (ADR 0027).
 	Transparent bool
+	// A video's length, frames per second and codecs (ADR 0027).
+	Duration   time.Duration
+	FrameRate  float64
+	VideoCodec string
+	AudioCodec string
 	// URL is a public, expiring link to the file, for platforms that fetch
 	// images themselves (ADR 0021); empty when the install cannot sign one.
 	URL string
 	// Open returns the file. Rule checks leave it nil.
 	Open func(ctx context.Context) (io.ReadCloser, error)
 }
+
+// IsVideo reports whether m is a video.
+func (m Media) IsVideo() bool { return media.IsVideo(m.Type) }
 
 // WithData returns m serving data, which also sets its size.
 func (m Media) WithData(data []byte) Media {

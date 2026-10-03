@@ -5,6 +5,7 @@ package platform
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func rulesOf(t *testing.T, p Provider) Rules {
@@ -234,5 +235,53 @@ func TestEveryPlatformDocumentsItsImages(t *testing.T) {
 		if len(r.Images) == 0 || r.ImageSource == "" || r.MaxMedia < 1 {
 			t.Errorf("%s: images %v from %q, max %d: every platform needs image rules with a source", p, r.Images, r.ImageSource, r.MaxMedia)
 		}
+	}
+}
+
+func TestCheckVideo(t *testing.T) {
+	t.Parallel()
+	r := Rules{Provider: "test", Name: "Test", MaxLength: 100, Counting: CountRunes, MaxMedia: 4,
+		Images: map[string]int64{"image/jpeg": 0},
+		Video: &VideoRules{Types: map[string]int64{"video/mp4": 100 << 20}, MinDuration: 3 * time.Second, MaxDuration: 140 * time.Second,
+			MinAspect: 1.0 / 3, MaxAspect: 3, MaxFrameRate: 60, Codecs: []string{"avc1"}}}
+	video := func(change func(*Media)) Media {
+		m := Media{Type: "video/mp4", Size: 10 << 20, Width: 1080, Height: 1920, Duration: 30 * time.Second, FrameRate: 30, VideoCodec: "avc1"}
+		if change != nil {
+			change(&m)
+		}
+		return m
+	}
+	tests := []struct {
+		name  string
+		r     Rules
+		media []Media
+		want  string
+	}{
+		{"fits", r, []Media{video(nil)}, ""},
+		{"a platform without video", Rules{Name: "Plain", MaxLength: 100, MaxMedia: 4}, []Media{video(nil)}, "video_unsupported"},
+		{"with an image too", r, []Media{video(nil), {Type: "image/jpeg", Size: 1, Width: 1, Height: 1}}, "video_alone"},
+		{"quicktime", r, []Media{video(func(m *Media) { m.Type = "video/quicktime" })}, "media_type_unsupported"},
+		{"too big", r, []Media{video(func(m *Media) { m.Size = 200 << 20 })}, "media_too_large"},
+		{"too short", r, []Media{video(func(m *Media) { m.Duration = time.Second })}, "video_too_short"},
+		{"too long", r, []Media{video(func(m *Media) { m.Duration = 3 * time.Minute })}, "video_too_long"},
+		{"too narrow", r, []Media{video(func(m *Media) { m.Width = 300 })}, "media_aspect_ratio"},
+		{"too fast", r, []Media{video(func(m *Media) { m.FrameRate = 120 })}, "video_frame_rate"},
+		{"hevc", r, []Media{video(func(m *Media) { m.VideoCodec = "hvc1" })}, "video_codec_unsupported"},
+	}
+	for _, tt := range tests {
+		var codes []string
+		for _, v := range tt.r.Check([]string{"watch"}, tt.media) {
+			codes = append(codes, v.Code)
+		}
+		if got := strings.Join(codes, ","); got != tt.want {
+			t.Errorf("%s: %q, want %q", tt.name, got, tt.want)
+		}
+	}
+	got := r.Check([]string{"x"}, []Media{video(func(m *Media) { m.VideoCodec = "hvc1" })})
+	if got[0].Message != "Test takes H.264 video; video 1 is HEVC: export it as H.264" {
+		t.Fatalf("message %q", got[0].Message)
+	}
+	if _, needed, _ := r.ResizeFor(video(nil)); needed || len(r.Notices([]Media{video(nil)})) != 0 {
+		t.Fatal("a video is never resized")
 	}
 }

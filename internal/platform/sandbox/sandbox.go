@@ -11,9 +11,11 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/media"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
@@ -57,7 +59,8 @@ func (a *Adapter) Provider() platform.Provider { return platform.Sandbox }
 // Rules are permissive; a sandbox channel is checked against the rules of
 // the platform it emulates.
 func (a *Adapter) Rules() platform.Rules {
-	return platform.Rules{Provider: platform.Sandbox, Name: "Sandbox", MaxLength: 100_000, Counting: platform.CountRunes, Threads: true, MaxThreadParts: 100, MaxMedia: 100}
+	return platform.Rules{Provider: platform.Sandbox, Name: "Sandbox", MaxLength: 100_000, Counting: platform.CountRunes, Threads: true, MaxThreadParts: 100, MaxMedia: 100,
+		Video: &platform.VideoRules{Types: map[string]int64{media.MP4: 0, media.QuickTime: 0}}}
 }
 
 func (a *Adapter) Fields() []platform.Field {
@@ -96,10 +99,16 @@ func (a *Adapter) Publish(ctx context.Context, _ platform.Credentials, p platfor
 		}
 	}
 	if len(p.Posted) == 0 {
-		// Read every image as a real adapter would upload it, so test mode
-		// finds an unreadable file before live mode does.
+		// Read every file as a real adapter would upload it, so test mode
+		// finds an unreadable one before live mode does. A video streams.
 		for _, m := range p.Media {
-			if _, err := m.Read(ctx); err != nil {
+			if !m.IsVideo() {
+				if _, err := m.Read(ctx); err != nil {
+					return platform.Result{}, err
+				}
+				continue
+			}
+			if err := drain(ctx, m); err != nil {
 				return platform.Result{}, err
 			}
 		}
@@ -129,4 +138,21 @@ func (a *Adapter) Engagement(_ context.Context, _ platform.Credentials, refs []p
 		out[r.ID] = platform.Counts{Likes: n(0, 60), Reposts: n(1, 15), Replies: n(2, 8), Quotes: n(3, 4), Views: &views}
 	}
 	return out, nil
+}
+
+// drain reads a video through, as an upload would.
+func drain(ctx context.Context, m platform.Media) error {
+	if m.Open == nil {
+		return &platform.Error{Kind: platform.Transient, Code: "media_unreadable", Msg: "the video is not available"}
+	}
+	rc, err := m.Open(ctx)
+	if err != nil {
+		return &platform.Error{Kind: platform.Transient, Code: "media_unreadable", Msg: "reading the video", Err: err}
+	}
+	defer func() { _ = rc.Close() }()
+	n, err := io.Copy(io.Discard, rc)
+	if err != nil || n != m.Size {
+		return &platform.Error{Kind: platform.Transient, Code: "media_unreadable", Msg: fmt.Sprintf("read %d of the video's %d bytes", n, m.Size), Err: err}
+	}
+	return nil
 }

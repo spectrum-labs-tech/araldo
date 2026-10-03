@@ -3,6 +3,7 @@
 package core
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/hmac"
@@ -51,7 +52,9 @@ type Blobs interface {
 // allowed, and following up to five redirects, each checked again.
 func mediaClient(allowPrivate bool, base *http.Client) *http.Client {
 	c := *base
-	c.Timeout = mediaFetchTimeout
+	// Each fetch bounds itself with its context: an image briefly, a video
+	// for as long as it takes to arrive.
+	c.Timeout = 0
 	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {
 			return errors.New("too many redirects")
@@ -124,7 +127,8 @@ func (s *Service) CreateMedia(ctx context.Context, a Actor, in MediaInput) (*mod
 	return stored, err
 }
 
-// ImportMedia fetches an image from a public URL and stores it.
+// ImportMedia fetches an image or a video from a public URL and stores
+// it. A video streams into storage (ADR 0027).
 func (s *Service) ImportMedia(ctx context.Context, a Actor, brandID uuid.UUID, rawURL, alt string) (*model.Media, error) {
 	if err := a.require(PermPostsWrite); err != nil {
 		return nil, err
@@ -133,25 +137,21 @@ func (s *Service) ImportMedia(ctx context.Context, a Actor, brandID uuid.UUID, r
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return nil, apperr.Invalid("url_invalid", "url", "Give an http or https URL.")
 	}
-	data, err := s.fetch(ctx, u.String())
-	if err != nil {
-		return nil, err
-	}
-	return s.CreateMedia(ctx, a, MediaInput{BrandID: brandID, Data: data, Filename: path.Base(u.Path), Alt: alt})
-}
-
-func (s *Service) fetch(ctx context.Context, rawURL string) ([]byte, error) {
 	fail := func(format string, args ...any) error {
-		return apperr.Invalid("url_unreachable", "url", "Could not fetch the image: "+format, args...)
+		return apperr.Invalid("url_unreachable", "url", "Could not fetch the file: "+format, args...)
 	}
-	ctx, cancel := context.WithTimeout(ctx, mediaFetchTimeout)
+	// An image, and every answer's headers, must come quickly; once the
+	// body is known to be a video, it may take longer.
+	ctx, cancel := context.WithTimeout(ctx, videoFetchTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	quick := time.AfterFunc(mediaFetchTimeout, cancel)
+	defer quick.Stop()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fail("%v.", err)
 	}
 	req.Header.Set("User-Agent", "Araldo (+https://github.com/spectrum-labs-tech/araldo)")
-	req.Header.Set("Accept", strings.Join(media.Types, ", "))
+	req.Header.Set("Accept", strings.Join(append(append([]string{}, media.Types...), media.VideoTypes...), ", "))
 	resp, err := s.MediaHTTP.Do(req) //nolint:gosec // G704: the client refuses private addresses unless the operator allows them
 	if err != nil {
 		var ue *url.Error
@@ -164,14 +164,36 @@ func (s *Service) fetch(ctx context.Context, rawURL string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fail("the server answered HTTP %d.", resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, media.MaxBytes+1))
+	br := bufio.NewReader(resp.Body)
+	if head, _ := br.Peek(12); IsVideoStart(head) {
+		quick.Stop()
+		st, err := s.StageVideo(ctx, a, br, path.Base(u.Path))
+		if err != nil {
+			return nil, err
+		}
+		m, err := s.CreateVideo(ctx, a, st, brandID, alt)
+		if err != nil {
+			s.DiscardVideo(ctx, st)
+		}
+		return m, err
+	}
+	data, err := io.ReadAll(io.LimitReader(br, media.MaxBytes+1))
 	if err != nil {
 		return nil, fail("%v.", err)
 	}
 	if len(data) > media.MaxBytes {
 		return nil, apperr.Invalid("media_too_large", "url", "Images are limited to %d MiB.", media.MaxBytes>>20)
 	}
-	return data, nil
+	return s.CreateMedia(ctx, a, MediaInput{BrandID: brandID, Data: data, Filename: path.Base(u.Path), Alt: alt})
+}
+
+// MaxVideoBytes is the largest video this install accepts, or 0 when it
+// cannot store video.
+func (s *Service) MaxVideoBytes() int64 {
+	if _, err := s.videoBlobs(); err != nil {
+		return 0
+	}
+	return s.maxVideoBytes()
 }
 
 // cleanFilename keeps the last path element of a client's file name, for
@@ -388,7 +410,8 @@ func (s *Service) postMedia(ctx context.Context, a Actor, brandID uuid.UUID, ids
 func ruleMedia(ms []*model.Media) []platform.Media {
 	out := make([]platform.Media, 0, len(ms))
 	for _, m := range ms {
-		out = append(out, platform.Media{Type: m.ContentType, Size: m.Size, Width: m.Width, Height: m.Height, Alt: m.Alt, Transparent: m.Transparent})
+		out = append(out, platform.Media{Type: m.ContentType, Size: m.Size, Width: m.Width, Height: m.Height, Alt: m.Alt, Transparent: m.Transparent,
+			Duration: time.Duration(m.DurationMS) * time.Millisecond, FrameRate: m.FrameRate, VideoCodec: m.VideoCodec, AudioCodec: m.AudioCodec})
 	}
 	return out
 }

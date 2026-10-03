@@ -20,6 +20,7 @@ Everything comes from environment variables.
 | `ARALDO_S3_ACCESS_KEY_ID`, `ARALDO_S3_SECRET_ACCESS_KEY` | with a bucket | Credentials that can put, get and delete objects. |
 | `ARALDO_S3_REGION` | | Default `auto` (R2); AWS needs the bucket's region. |
 | `ARALDO_S3_PREFIX` | | Key prefix, default `media/`. |
+| `ARALDO_MAX_VIDEO_BYTES` | | The largest video accepted, in bytes; default 1073741824 (1 GiB). Video needs S3. |
 
 ## First run
 
@@ -270,6 +271,14 @@ image the wrong shape for a platform is still refused. GIFs, images with
 transparent pixels and images over 50 megapixels are not resized; they are
 refused with the reason. Platforms that fetch images by link get the resized
 copy through a link signed for that platform.
+
+**Video** (MP4 or QuickTime) needs S3-compatible storage: uploads through
+`POST /v1/media`, or from a URL, stream straight into the bucket, up to
+`ARALDO_MAX_VIDEO_BYTES`, and are never held in memory or Postgres. Araldo
+reads each video's length, frame rate and codecs from its index and does
+not transcode, so export H.264 with AAC in an MP4. Each platform's video
+rules are checked as images' are; a platform takes video once its adapter
+can post it, and the preview says when one cannot yet.
 
 Mastodon and Gab channels need an access token with the `write:media` scope
 to post images; one made before images were supported must be replaced.

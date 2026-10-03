@@ -374,9 +374,15 @@ type Media struct {
 	// Transparent is set for an image with transparent pixels, which is
 	// never resized into a JPEG (ADR 0027).
 	Transparent bool
-	SHA256      []byte
-	Alt         string
-	Filename    string
+	// A video's length, frames per second and codecs, from its index (ADR
+	// 0027); zero and empty for an image.
+	DurationMS int64
+	FrameRate  float64
+	VideoCodec string
+	AudioCodec string
+	SHA256     []byte
+	Alt        string
+	Filename   string
 	// Storage is where the file is: StoragePostgres, or StorageS3 at
 	// StorageKey.
 	Storage       string

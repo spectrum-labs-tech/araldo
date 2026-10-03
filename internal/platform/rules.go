@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/rivo/uniseg"
@@ -60,6 +62,24 @@ type Rules struct {
 	// text becomes the image's caption.
 	MaxCaption  int
 	ImageSource string
+	// Video is what the platform takes as video, once its adapter can post
+	// it; nil means no video (ADR 0027).
+	Video *VideoRules
+}
+
+// VideoRules are a platform's limits on video, each from its own
+// documentation (Source).
+type VideoRules struct {
+	// Types maps each video type to its size limit in bytes; 0 means none
+	// is documented.
+	Types                    map[string]int64
+	MinDuration, MaxDuration time.Duration
+	MinAspect, MaxAspect     float64
+	MaxFrameRate             float64
+	// Codecs are the video codecs it takes, as sample entry codes ("avc1"
+	// is H.264); empty means any.
+	Codecs []string
+	Source string
 }
 
 var rules = map[Provider]Rules{
@@ -265,6 +285,13 @@ func (r Rules) Check(parts []string, media []Media) []Violation {
 	if r.MediaRequired && len(media) == 0 {
 		out = append(out, Violation{Code: "media_required", Message: r.Name + " posts need an image or video"})
 	}
+	hasVideo := false
+	for _, m := range media {
+		hasVideo = hasVideo || m.IsVideo()
+	}
+	if hasVideo && len(media) > 1 {
+		out = append(out, Violation{Code: "video_alone", Message: "a post with a video carries nothing else", Length: len(media), Limit: 1})
+	}
 	if r.MaxMedia >= 0 && len(media) > r.MaxMedia {
 		msg := r.Name + " takes at most " + strconv.Itoa(r.MaxMedia) + " images"
 		if r.MaxMedia == 0 {
@@ -273,9 +300,80 @@ func (r Rules) Check(parts []string, media []Media) []Violation {
 		out = append(out, Violation{Code: "too_much_media", Message: msg, Length: len(media), Limit: r.MaxMedia})
 	}
 	for i, m := range media {
-		out = append(out, r.checkImage(i+1, m)...)
+		if m.IsVideo() {
+			out = append(out, r.checkVideo(i+1, m)...)
+		} else {
+			out = append(out, r.checkImage(i+1, m)...)
+		}
 	}
 	return out
+}
+
+func (r Rules) checkVideo(pos int, m Media) []Violation {
+	v := r.Video
+	if v == nil {
+		return []Violation{{Code: "video_unsupported", Media: pos, Message: r.Name + " posts take no video in Araldo yet"}}
+	}
+	limit, ok := v.Types[m.Type]
+	if !ok {
+		return []Violation{{Code: "media_type_unsupported", Media: pos,
+			Message: fmt.Sprintf("%s does not take %s video", r.Name, strings.TrimPrefix(m.Type, "video/"))}}
+	}
+	var out []Violation
+	if limit > 0 && m.Size > limit {
+		out = append(out, Violation{Code: "media_too_large", Media: pos, Length: int(min(m.Size, math.MaxInt32)), Limit: int(min(limit, math.MaxInt32)),
+			Message: fmt.Sprintf("%s takes videos up to %s; video %d is %s", r.Name, humanBytes(limit), pos, humanBytes(m.Size))})
+	}
+	switch {
+	case v.MinDuration > 0 && m.Duration < v.MinDuration:
+		out = append(out, Violation{Code: "video_too_short", Media: pos,
+			Message: fmt.Sprintf("%s takes videos of at least %s; video %d is %s", r.Name, v.MinDuration, pos, m.Duration.Round(time.Millisecond))})
+	case v.MaxDuration > 0 && m.Duration > v.MaxDuration:
+		out = append(out, Violation{Code: "video_too_long", Media: pos,
+			Message: fmt.Sprintf("%s takes videos up to %s; video %d is %s", r.Name, v.MaxDuration, pos, m.Duration.Round(time.Second))})
+	}
+	if m.Width > 0 && m.Height > 0 {
+		aspect := float64(m.Width) / float64(m.Height)
+		if v.MinAspect > 0 && aspect < v.MinAspect-0.005 || v.MaxAspect > 0 && aspect > v.MaxAspect+0.005 {
+			out = append(out, Violation{Code: "media_aspect_ratio", Media: pos,
+				Message: fmt.Sprintf("%s takes videos from %s to %s (width:height); video %d is %d×%d",
+					r.Name, ratio(v.MinAspect), ratio(v.MaxAspect), pos, m.Width, m.Height)})
+		}
+	}
+	if v.MaxFrameRate > 0 && m.FrameRate > v.MaxFrameRate+0.01 {
+		out = append(out, Violation{Code: "video_frame_rate", Media: pos,
+			Message: fmt.Sprintf("%s takes up to %g frames a second; video %d has %g", r.Name, v.MaxFrameRate, pos, m.FrameRate)})
+	}
+	if len(v.Codecs) > 0 && !slices.Contains(v.Codecs, m.VideoCodec) {
+		out = append(out, Violation{Code: "video_codec_unsupported", Media: pos,
+			Message: fmt.Sprintf("%s takes %s video; video %d is %s: export it as H.264", r.Name, codecNames(v.Codecs), pos, codecName(m.VideoCodec))})
+	}
+	return out
+}
+
+// codecName names a video sample entry code.
+func codecName(c string) string {
+	switch c {
+	case "avc1", "avc3":
+		return "H.264"
+	case "hvc1", "hev1":
+		return "HEVC"
+	case "av01":
+		return "AV1"
+	case "vp09":
+		return "VP9"
+	}
+	return c
+}
+
+func codecNames(cs []string) string {
+	var names []string
+	for _, c := range cs {
+		if n := codecName(c); !slices.Contains(names, n) {
+			names = append(names, n)
+		}
+	}
+	return strings.Join(names, " or ")
 }
 
 // Resize is how an image must change to fit a platform (ADR 0027):
@@ -293,6 +391,9 @@ type Resize struct {
 // when the image fits; it cannot be done for a GIF, a transparent image,
 // one over media.MaxPixels, or a platform that takes no JPEGs.
 func (r Rules) ResizeFor(m Media) (rs Resize, needed, possible bool) {
+	if m.IsVideo() {
+		return rs, false, true // video is never transcoded
+	}
 	limit, accepted := r.Images[m.Type]
 	switch {
 	case !accepted:

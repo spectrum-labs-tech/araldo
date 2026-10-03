@@ -381,6 +381,45 @@ func tools(api *Client) []Tool {
 			},
 		},
 		{
+			Name: "preview_newsletter", Title: "Preview a newsletter issue", ReadOnly: true, Idempotent: true,
+			Description: "Renders a newsletter issue as the brand's email provider would send it, links tagged, and returns its " +
+				"plain-text version (and HTML) without saving anything. Use it to check a draft. " + newsletterBodyHelp,
+			Input: object([]string{"brand", "subject", "body"}, newsletterProps()),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				return api.Do(ctx, http.MethodPost, "/v1/newsletters/preview", nil, newsletterBody(args), "")
+			},
+		},
+		{
+			Name: "draft_newsletter", Title: "Draft a newsletter issue",
+			Description: "Saves a newsletter issue as a draft, going to each of the brand's mail accounts with their default " +
+				"audiences. A person reviews, schedules and approves it in Araldo; nothing is sent from here. " + newsletterBodyHelp,
+			Input: func() map[string]any {
+				props := newsletterProps()
+				props["idempotency_key"] = str("Any unique string. Sending the same key again returns the first draft.")
+				return object([]string{"brand", "subject", "body"}, props)
+			}(),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				key := argString(args, "idempotency_key")
+				if key == "" {
+					key = uuid.NewString()
+				}
+				return api.Do(ctx, http.MethodPost, "/v1/newsletters", nil, newsletterBody(args), key)
+			},
+		},
+		{
+			Name: "list_newsletters", Title: "List newsletter issues", ReadOnly: true, Idempotent: true,
+			Description: "Newsletter issues, newest first, with each mail account's delivery status and results (delivered, " +
+				"clicks, unsubscribes). Clicks are the better signal; opens are inflated by mail apps.",
+			Input: object(nil, map[string]any{
+				"brand":  str(brandDesc),
+				"status": enum("Only issues in this state.", "draft", "pending_approval", "scheduled", "sending", "sent", "partially_sent", "canceled", "failed"),
+				"limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "How many (default 20)."},
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				return get("/v1/newsletters", query(args, "brand", "status", "limit"))(ctx)
+			},
+		},
+		{
 			Name: "brand_report", Title: "Report on a brand's month", ReadOnly: true, Idempotent: true,
 			Description: "A brand's results for a month (or any period) beside the period before: posts published, engagement, " +
 				"web visitors and signups, ad spend and cost per signup, and newsletters sent. Use it to write the month's summary " +
@@ -396,4 +435,27 @@ func tools(api *Client) []Tool {
 			},
 		},
 	}
+}
+
+// newsletterBodyHelp is the body syntax, for the newsletter tools.
+const newsletterBodyHelp = "The body is Markdown: # headings, paragraphs, - lists, > quotes, --- dividers, " +
+	"![alt](media_… or https://…) images and [Label](https://…){.button} buttons on lines of their own, and **bold**, *italic* and links."
+
+func newsletterProps() map[string]any {
+	return map[string]any{
+		"brand":        str(brandDesc),
+		"subject":      str("The subject line; under 50 characters reads whole on phones."),
+		"preview_text": str("The line inboxes show after the subject."),
+		"body":         str("The issue, in the Markdown described above."),
+	}
+}
+
+func newsletterBody(args map[string]any) map[string]any {
+	body := map[string]any{}
+	for _, k := range []string{"brand", "subject", "preview_text", "body"} {
+		if v := argString(args, k); v != "" {
+			body[k] = v
+		}
+	}
+	return body
 }

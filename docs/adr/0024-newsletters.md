@@ -158,7 +158,9 @@ into spam.
   that a retry can find by its tag. Test sends go through the provider's
   transactional API instead of a draft campaign, so they reach any
   address. An unscheduled issue returns to draft and needs approval
-  again; a rejected one returns to draft with the note.
+  again; a rejected one returns to draft with the note. Phase 2's MCP
+  tools came early: an agent can preview an issue, save it as a draft and
+  follow results, and a person schedules it.
 - **Phase 2:** templates with data for issues, a "top posts" block from
   engagement, MCP tools.
 - **Phase 3:** more providers (Listmonk, Buttondown), and send slots per

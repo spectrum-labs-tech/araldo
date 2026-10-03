@@ -137,8 +137,8 @@ func TestToolsList(t *testing.T) {
 	t.Parallel()
 	out, _, _ := session(t, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	list, _ := result(t, out["1"])["tools"].([]any)
-	if len(list) != 16 {
-		t.Fatalf("%d tools, want 16", len(list))
+	if len(list) != 19 {
+		t.Fatalf("%d tools, want 19", len(list))
 	}
 	names := map[string]map[string]any{}
 	for _, raw := range list {
@@ -170,8 +170,11 @@ func TestToolsCallTheAPI(t *testing.T) {
 		call(9, "ads_summary", `{"group_by":"day","days":7}`),
 		call(10, "analytics_summary", `{"group_by":"post","days":14}`),
 		call(11, "brand_report", `{"brand":"ar15","month":"2026-09"}`),
+		call(12, "draft_newsletter", `{"brand":"ar15","subject":"October","body":"# Hi"}`),
+		call(13, "preview_newsletter", `{"brand":"ar15","subject":"October","preview_text":"What shipped","body":"# Hi"}`),
+		call(14, "list_newsletters", `{"status":"sent"}`),
 	)
-	for i := 1; i <= 11; i++ {
+	for i := 1; i <= 14; i++ {
 		if text, isErr := toolText(t, out[itoa(i)]); isErr {
 			t.Fatalf("call %d failed: %s", i, text)
 		}
@@ -223,6 +226,15 @@ func TestToolsCallTheAPI(t *testing.T) {
 	}
 	if q := byPath["GET /v1/reports"].Query; q != "brand=ar15&month=2026-09" {
 		t.Fatalf("brand_report query %q", q)
+	}
+	if d := byPath["POST /v1/newsletters"]; d.Body["subject"] != "October" || d.Body["brand"] != "ar15" || d.IdemKey == "" {
+		t.Fatalf("draft_newsletter %+v", d)
+	}
+	if p := byPath["POST /v1/newsletters/preview"]; p.Body["preview_text"] != "What shipped" || p.IdemKey != "" {
+		t.Fatalf("preview_newsletter %+v", p)
+	}
+	if q := byPath["GET /v1/newsletters"].Query; q != "status=sent" {
+		t.Fatalf("list_newsletters query %q", q)
 	}
 }
 

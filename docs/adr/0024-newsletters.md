@@ -178,6 +178,13 @@ into spam.
 
 - Araldo's scope grows from social posts to newsletters, still without any
   audience data of its own.
+- **Switching providers is cheap.** Issues, templates, the theme, approval
+  history, past results and the tags tying signups to issues stay in
+  Araldo; only the subscriber list moves, by the providers' own export and
+  import. Connect the new account, point the next issue at it, and keep
+  sending; a gradual move can send to both while each subscriber is on one
+  side only. The same holds for platforms and ad networks: Araldo keeps the
+  work, adapters are replaceable.
 - New tables (`mail_accounts`, `newsletter_issues`,
   `newsletter_deliveries`, results), a package per provider, scopes,
   events (`newsletter.*`) and tasks (hand-off, results).

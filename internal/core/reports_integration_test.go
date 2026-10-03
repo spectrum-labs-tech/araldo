@@ -1,0 +1,134 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+//go:build integration
+
+package core_test
+
+import (
+	"testing"
+	"time"
+
+	"github.com/spectrum-labs-tech/araldo/internal/ads"
+	"github.com/spectrum-labs-tech/araldo/internal/analytics"
+	"github.com/spectrum-labs-tech/araldo/internal/apperr"
+	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/model"
+)
+
+// A report gathers every section from what the brand's sources gave, and
+// shows a key only the sections its scopes allow (ADR 0026).
+func TestBrandReport(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+
+	// Publishing and engagement.
+	p, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "Report-worthy post"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	published := *settle(t, w, p.ID).Targets[0].PublishedAt
+	w.s.Now = func() time.Time { return published.Add(2 * time.Hour) }
+	if _, err := core.CollectEngagementOrg(w.s, w.org.ID); err != nil {
+		t.Fatal(err)
+	}
+	w.s.Now = time.Now
+
+	// Web analytics and ads.
+	src, err := w.s.ConnectAnalyticsSource(ctx, w.owner, core.AnalyticsSourceInput{BrandID: w.brand.ID, Provider: analytics.Sandbox,
+		Goals: []string{"Signup"}, Fields: map[string]string{"site": "report.example", "tags": "sandbox/paid/launch/ad-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	acct := connectSandboxAds(t, w, w.owner, "Report ads", nil)
+	waitFor(t, "the analytics and ads to be read", func() {
+		if _, err := core.CollectAnalyticsOrg(w.s, w.org.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := core.CollectAdsOrg(w.s, w.org.ID); err != nil {
+			t.Fatal(err)
+		}
+	}, func() bool {
+		s, err := w.s.AnalyticsSource(ctx, w.owner, src.ID)
+		a, err2 := w.s.AdAccount(ctx, w.owner, acct.ID)
+		return err == nil && err2 == nil && s.ReadAt != nil && a.ReadAt != nil
+	})
+
+	// A newsletter, sent.
+	setTheme(t, w)
+	connectSandboxMail(t, w, "news@ar15.build", nil)
+	is, err := w.s.CreateIssue(ctx, w.owner, core.IssueInput{BrandID: w.brand.ID, Subject: "The monthly", Body: "Hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendAt := time.Now().Add(5 * time.Minute)
+	if _, err := w.s.ScheduleIssue(ctx, w.owner, is.ID, sendAt); err != nil {
+		t.Fatal(err)
+	}
+	waitDelivery(t, w, is.ID, model.DeliveryHandedOff, func() {
+		if _, err := core.HandOffNewslettersOrg(w.s, w.org.ID); err != nil {
+			t.Fatal(err)
+		}
+	})
+	w.s.Now = func() time.Time { return sendAt.Add(20 * time.Minute) }
+	waitDelivery(t, w, is.ID, model.DeliverySent, func() {
+		if _, err := core.ReadNewsletterResultsOrg(w.s, w.org.ID); err != nil {
+			t.Fatal(err)
+		}
+	})
+	w.s.Now = time.Now
+
+	// The last week, through tomorrow so nothing near midnight falls out.
+	today := ads.Date(time.Now(), time.UTC)
+	in := core.ReportInput{BrandID: w.brand.ID, Since: today.AddDate(0, 0, -6), Until: today.AddDate(0, 0, 1)}
+	r, err := w.s.BrandReport(ctx, w.owner, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.PrevUntil.Equal(in.Since.AddDate(0, 0, -1)) || !r.PrevSince.Equal(in.Since.AddDate(0, 0, -8)) || !r.Settling {
+		t.Fatalf("periods %v..%v before %v..%v, settling %t", r.PrevSince, r.PrevUntil, r.Since, r.Until, r.Settling)
+	}
+	if r.Publishing == nil || r.Publishing.Published.Now != 1 || len(r.Publishing.ByNetwork) != 1 || r.Publishing.ByNetwork[0].Provider != "sandbox" {
+		t.Fatalf("publishing %+v", r.Publishing)
+	}
+	if r.Engagement == nil || r.Engagement.Interactions().Now == 0 || len(r.Engagement.TopPosts) != 1 || *r.Engagement.TopPosts[0].ID != p.ID {
+		t.Fatalf("engagement %+v", r.Engagement)
+	}
+	if r.Web == nil || r.Web.Visitors.Now == 0 || r.Web.Signups.Now == 0 || r.Web.Visitors.Before == 0 || len(r.Web.Sources) != 1 {
+		t.Fatalf("web %+v", r.Web)
+	}
+	if r.Ads == nil || len(r.Ads.Totals) != 1 || r.Ads.Totals[0].Currency != "USD" || r.Ads.Totals[0].Spend.Now == 0 ||
+		r.Ads.Totals[0].Spend.Before == 0 || r.Ads.Totals[0].Signups.Now == 0 || len(r.Ads.Campaigns) != 2 {
+		t.Fatalf("ads %+v", r.Ads)
+	}
+	if r.Newsletters == nil || r.Newsletters.Issues.Now != 1 || r.Newsletters.Delivered.Now == 0 || r.Newsletters.Sent[0].ID != is.ID {
+		t.Fatalf("newsletters %+v", r.Newsletters)
+	}
+	if v := core.ViewReport(r); v.Object != "report" || v.Ads == nil || len(v.Newsletters.Sent) != 1 {
+		t.Fatalf("view %+v", v)
+	}
+
+	// A key that may read posts but not ads or newsletters sees neither.
+	_, key, err := w.s.CreateOperatorAPIKey(ctx, w.owner, core.APIKeyInput{Name: "reports", Scopes: []string{"posts:read"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ka := w.owner
+	ka.UserID, ka.KeyID, ka.Scopes = nil, &key.ID, []string{"posts:read"}
+	if r, err = w.s.BrandReport(ctx, ka, in); err != nil || r.Ads != nil || r.Newsletters != nil || r.Web == nil {
+		t.Fatalf("a posts:read key: ads %v, newsletters %v, web %v, %v", r.Ads, r.Newsletters, r.Web, err)
+	}
+
+	// A brand with nothing has no sections.
+	empty, err := w.s.CreateBrand(ctx, w.owner, core.BrandInput{Name: "Quiet", Timezone: "UTC"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err = w.s.BrandReport(ctx, w.owner, core.ReportInput{BrandID: empty.ID})
+	if err != nil || r.Publishing != nil || r.Engagement != nil || r.Web != nil || r.Ads != nil || r.Newsletters != nil {
+		t.Fatalf("an empty brand: %+v, %v", r, err)
+	}
+	if _, err := w.s.BrandReport(ctx, w.owner, core.ReportInput{BrandID: w.brand.ID, Month: "October"}); kind(err) != apperr.KindInvalid {
+		t.Fatalf("a bad month: %v", err)
+	}
+}

@@ -462,6 +462,15 @@ var funcs = template.FuncMap{
 	"mailAccountID":     func(u uuid.UUID) string { return id.Format(id.MailAccount, u) },
 	"issueID":           func(u uuid.UUID) string { return id.Format(id.Issue, u) },
 	"money":             money,
+	"change":            change,
+	"changeClass":       changeClass,
+	"fmtPeriod":         fmtPeriod,
+	"stat": func(label string, p core.Pair, lowerBetter string) statCard {
+		return statCard{Label: label, Pair: p, LowerBetter: lowerBetter}
+	},
+	"moneyStat": func(label string, p core.Pair, currency, lowerBetter string) statCard {
+		return statCard{Label: label, Pair: p, Currency: currency, LowerBetter: lowerBetter}
+	},
 	// issueResults adds up an issue's deliveries' results.
 	"issueResults": func(is *model.Issue) model.MailResults {
 		var r model.MailResults

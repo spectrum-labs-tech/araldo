@@ -123,7 +123,7 @@ func TestPagesAreAccessible(t *testing.T) {
 		"/", "/posts", "/posts?q=accessible&status=published", "/posts/new", "/posts/" + id.Format(id.Post, p.ID), "/posts/" + id.Format(id.Post, scheduled.ID),
 		"/sandbox/" + id.Format(id.Target, target.ID), "/performance", "/ads", "/ads?tag_url=https://example.com/&tag_campaign=launch",
 		"/newsletters", "/newsletters/new", "/newsletters/" + id.Format(id.Issue, draft.ID), "/newsletters/" + id.Format(id.Issue, queued.ID),
-		"/mail-accounts/" + id.Format(id.MailAccount, mailAcct.ID),
+		"/mail-accounts/" + id.Format(id.MailAccount, mailAcct.ID), "/reports", "/reports?month=" + thisMonth(t, d.brand),
 		"/templates", "/templates/new", "/templates/" + id.Format(id.Template, tpl.ID),
 		"/channels", "/channels/apps", "/channels/new", "/channels/new?provider=bluesky", "/channels/" + id.Format(id.Channel, chans[0].ID) + "/reconnect",
 		"/brands", "/brands/new", "/brands/" + id.Format(id.Brand, d.brand.ID),

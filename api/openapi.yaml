@@ -53,6 +53,7 @@ tags:
   - name: Ads
   - name: Analytics
   - name: Newsletters
+  - name: Reports
   - name: Events
   - name: Webhooks
   - name: API keys
@@ -1113,6 +1114,7 @@ paths:
                   until: { type: string, format: date }
                   visitors: { type: integer, description: All visitors in the window. }
                   untagged: { type: integer, description: Visitors who came without Araldo's tags. }
+                  conversions: { type: integer, description: "Every conversion in the window, tagged or not." }
                   data:
                     type: array
                     items:
@@ -1540,6 +1542,29 @@ paths:
                 properties:
                   object: { type: string, enum: [newsletter_test] }
                   sent: { type: integer }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/reports:
+    get:
+      summary: Get a brand's report
+      description: |
+        A brand's results over a period, beside the period of the same
+        length just before it: publishing, engagement, web traffic, ads and
+        newsletters, computed now from what Araldo has read (ADR 0026). A
+        section is null when the brand has nothing in it, or the key may
+        not see it (ads need `ads:read`, newsletters `newsletters:read`).
+        Without `month`, `since` or `until`, the last full month in the
+        brand's time zone. Needs `posts:read`.
+      tags: [Reports]
+      parameters:
+        - { name: brand, in: query, required: true, schema: { type: string }, description: Brand ID or slug. }
+        - { name: month, in: query, schema: { type: string, example: "2026-09" }, description: "A calendar month, YYYY-MM." }
+        - { name: since, in: query, schema: { type: string, format: date } }
+        - { name: until, in: query, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: The report.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Report" } } }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/events:
@@ -2511,6 +2536,118 @@ components:
         media: { type: array, items: { type: string }, description: The library images it uses. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+
+    Pair:
+      type: object
+      description: A figure for the period and for the one before it.
+      properties:
+        value: { type: integer }
+        previous: { type: integer }
+
+    ReportEngaged:
+      type: object
+      properties:
+        id: { type: string }
+        label: { type: string }
+        provider: { type: string }
+        likes: { type: integer }
+        reposts: { type: integer }
+        replies: { type: integer }
+        quotes: { type: integer }
+
+    ReportAnalyticsRow:
+      type: object
+      properties:
+        id: { type: string }
+        label: { type: string }
+        visitors: { type: integer }
+        visits: { type: integer }
+        conversions: { type: integer }
+        goals: { type: object, additionalProperties: { type: integer } }
+
+    Report:
+      type: object
+      properties:
+        object: { type: string, enum: [report] }
+        brand: { type: string }
+        since: { type: string, format: date }
+        until: { type: string, format: date }
+        previous:
+          type: object
+          properties:
+            since: { type: string, format: date }
+            until: { type: string, format: date }
+        settling: { type: boolean, description: "The period takes in the last week, whose analytics and ad figures sources still revise." }
+        publishing:
+          type: object
+          nullable: true
+          properties:
+            published: { $ref: "#/components/schemas/Pair" }
+            failed: { $ref: "#/components/schemas/Pair" }
+            by_network:
+              type: array
+              items:
+                type: object
+                properties:
+                  provider: { type: string }
+                  published: { type: integer }
+                  failed: { type: integer }
+        engagement:
+          type: object
+          nullable: true
+          description: The latest engagement of posts published in the period.
+          properties:
+            likes: { $ref: "#/components/schemas/Pair" }
+            reposts: { $ref: "#/components/schemas/Pair" }
+            replies: { $ref: "#/components/schemas/Pair" }
+            quotes: { $ref: "#/components/schemas/Pair" }
+            views: { $ref: "#/components/schemas/Pair" }
+            top_posts: { type: array, items: { $ref: "#/components/schemas/ReportEngaged" } }
+            by_channel: { type: array, items: { $ref: "#/components/schemas/ReportEngaged" } }
+        web:
+          type: object
+          nullable: true
+          properties:
+            visitors: { $ref: "#/components/schemas/Pair" }
+            signups: { $ref: "#/components/schemas/Pair" }
+            untagged: { $ref: "#/components/schemas/Pair" }
+            top_sources: { type: array, items: { $ref: "#/components/schemas/ReportAnalyticsRow" } }
+            top_campaigns: { type: array, items: { $ref: "#/components/schemas/ReportAnalyticsRow" } }
+            top_posts: { type: array, items: { $ref: "#/components/schemas/ReportAnalyticsRow" } }
+        ads:
+          type: object
+          nullable: true
+          properties:
+            totals:
+              type: array
+              description: One per currency; amounts are never converted.
+              items:
+                type: object
+                properties:
+                  currency: { type: string }
+                  spend: { $ref: "#/components/schemas/Pair" }
+                  clicks: { $ref: "#/components/schemas/Pair" }
+                  signups: { $ref: "#/components/schemas/Pair" }
+                  cost_per_click: { $ref: "#/components/schemas/Pair" }
+                  cost_per_signup: { $ref: "#/components/schemas/Pair" }
+            campaigns: { type: array, items: { type: object } }
+        newsletters:
+          type: object
+          nullable: true
+          properties:
+            issues: { $ref: "#/components/schemas/Pair" }
+            delivered: { $ref: "#/components/schemas/Pair" }
+            clicks: { $ref: "#/components/schemas/Pair" }
+            unsubscribes: { $ref: "#/components/schemas/Pair" }
+            sent:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  subject: { type: string }
+                  send_at: { type: string, format: date-time, nullable: true }
+                  results: { $ref: "#/components/schemas/MailResults" }
 
     EventType:
       type: string

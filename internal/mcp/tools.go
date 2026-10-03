@@ -380,5 +380,20 @@ func tools(api *Client) []Tool {
 				return get("/v1/analytics/summary", q)(ctx)
 			},
 		},
+		{
+			Name: "brand_report", Title: "Report on a brand's month", ReadOnly: true, Idempotent: true,
+			Description: "A brand's results for a month (or any period) beside the period before: posts published, engagement, " +
+				"web visitors and signups, ad spend and cost per signup, and newsletters sent. Use it to write the month's summary " +
+				"for a team or a client. Sections the key may not see, or that are empty, are null.",
+			Input: object([]string{"brand"}, map[string]any{
+				"brand": str(brandDesc),
+				"month": str("A calendar month, YYYY-MM, in the brand's time zone (default: the last full month)."),
+				"since": str("The first day, YYYY-MM-DD, instead of a month."),
+				"until": str("The last day, YYYY-MM-DD."),
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				return get("/v1/reports", query(args, "brand", "month", "since", "until"))(ctx)
+			},
+		},
 	}
 }

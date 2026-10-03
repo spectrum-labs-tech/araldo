@@ -47,7 +47,8 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
+/* Screens only: printed pages keep the light colors. */
+@media screen and (prefers-color-scheme: dark) {
   :root {
     --bg: #15140f;
     --panel: #1f1d17;
@@ -287,6 +288,28 @@
   .callout {
     @apply my-3 rounded-lg bg-warn-bg px-4 py-3;
   }
+  /* A report's figures, each with its change from the period before. */
+  .stats {
+    @apply my-3 grid grid-cols-2 gap-3 sm:grid-cols-4;
+  }
+  .stat {
+    @apply rounded-md border border-line px-3 py-2;
+  }
+  .stat-label {
+    @apply text-xs font-semibold tracking-wide text-muted uppercase;
+  }
+  .stat-value {
+    @apply text-xl font-semibold;
+  }
+  .stat-change {
+    @apply text-sm;
+  }
+  .stat-change.good {
+    @apply text-good;
+  }
+  .stat-change.bad {
+    @apply text-bad;
+  }
   /* Newsletter previews: the email in a frame of its own. */
   .preview-frame {
     @apply block h-[36rem] w-full rounded-md border border-line bg-panel;
@@ -449,5 +472,31 @@
   }
   .copy-box {
     @apply rounded-md border border-line bg-bg px-2.5 py-1.5 break-all;
+  }
+}
+
+/* Printing (reports, ADR 0026): the page's content only, in light colors,
+   with sections kept whole. */
+@media print {
+  .mode-banner,
+  .topbar,
+  .side-nav,
+  .skip-link,
+  .guide,
+  .no-print,
+  body > footer {
+    display: none !important;
+  }
+  .with-guide {
+    display: block;
+  }
+  .card,
+  .stat,
+  table {
+    break-inside: avoid;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
   }
 }

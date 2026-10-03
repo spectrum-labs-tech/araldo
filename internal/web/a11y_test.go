@@ -58,7 +58,7 @@ func TestContrast(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(css)
-	dark := strings.Index(s, "@media (prefers-color-scheme: dark)")
+	dark := strings.Index(s, "@media screen and (prefers-color-scheme: dark)")
 	themes := map[string]map[string]string{"light": tokens(s[:dark]), "dark": tokens(s[dark:])}
 	pairs := []struct {
 		fg, bg string

@@ -137,9 +137,10 @@ type AnalyticsRow struct {
 	Goals       map[string]int64
 }
 
-// AnalyticsTotals are all visitors in a window and those who came untagged.
+// AnalyticsTotals are all visitors in a window, those who came untagged,
+// and all conversions, tagged or not.
 type AnalyticsTotals struct {
-	Visitors, Untagged int64
+	Visitors, Untagged, Conversions int64
 }
 
 const untaggedSQL = `r.utm_source = '' AND r.utm_medium = '' AND r.utm_campaign = '' AND r.utm_content = ''`
@@ -173,7 +174,8 @@ func (s *Store) AnalyticsSummary(ctx context.Context, orgID uuid.UUID, livemode 
 	args := []any{orgID, livemode, f.BrandID, f.Since, f.Until}
 	var totals AnalyticsTotals
 	if err := s.q.QueryRow(ctx, `SELECT COALESCE(sum(r.visitors) FILTER (WHERE r.goal = ''), 0),
-		COALESCE(sum(r.visitors) FILTER (WHERE r.goal = '' AND `+untaggedSQL+`), 0) `+scope, args...).Scan(&totals.Visitors, &totals.Untagged); err != nil {
+		COALESCE(sum(r.visitors) FILTER (WHERE r.goal = '' AND `+untaggedSQL+`), 0),
+		COALESCE(sum(r.visitors) FILTER (WHERE r.goal <> ''), 0) `+scope, args...).Scan(&totals.Visitors, &totals.Untagged, &totals.Conversions); err != nil {
 		return nil, totals, err
 	}
 	rows, err := s.q.Query(ctx, `SELECT `+key+` AS key, COALESCE(sum(r.visitors) FILTER (WHERE r.goal = ''), 0) AS visitors,

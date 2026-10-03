@@ -106,6 +106,8 @@ func (h *Handler) routes() {
 	h.handle("POST /v1/newsletters/{id}/reject", h.reviewIssue(false))
 	h.handle("POST /v1/newsletters/{id}/test", h.testIssue)
 
+	h.handle("GET /v1/reports", h.report, "brand", "month", "since", "until")
+
 	h.handle("GET /v1/events", h.listEvents, paged("type")...)
 
 	h.handle("GET /v1/api_keys", h.listKeys)

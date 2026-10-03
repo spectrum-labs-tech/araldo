@@ -178,6 +178,7 @@ live key limited to the brand it should post for.
 | `engagement_summary` | What did best, by post, channel or template (read-only). |
 | `ads_summary` | Ad spend and results, by brand, account, campaign or day (read-only). |
 | `analytics_summary` | Visitors and signups by post, network, campaign or day, from the brand's web analytics (read-only). |
+| `brand_report` | A brand's month beside the one before: publishing, engagement, web traffic, ads and newsletters (read-only). |
 
 Claude Code:
 
@@ -374,6 +375,20 @@ source, the issue's ID as campaign and `link-N` as content, so the
 Performance page credits signups to issues. Images from the media library
 get a link that never expires, signed for newsletters only; the install
 needs its public URL (`ARALDO_BASE_URL`) and master keys for them.
+
+## Reports
+
+The dashboard's **Reports** page, `GET /v1/reports` and the MCP tool
+`brand_report` show one brand's period, a calendar month in its time zone
+by default, beside the period of the same length before it: posts
+published and failed by network, engagement and the top posts, visitors
+and signups with the top sources, campaigns and posts, ad spend and cost
+per signup per currency, and newsletters sent with their results
+([ADR 0026](adr/0026-reports.md)). It is computed when asked for, so it
+always has the latest figures; sections a key may not see (ads need
+`ads:read`, newsletters `newsletters:read`) or that are empty are left
+out. Print the page, or save it as a PDF from the browser, to keep or send
+a copy.
 
 ## Health
 

@@ -1,0 +1,144 @@
+{{define "content"}}
+{{$d := .Data}}
+{{if not $d.Brand}}
+<h1>Reports</h1>
+<p>Create a <a href="/brands/new">brand</a> first.</p>
+{{else}}
+{{$r := $d.Report}}
+<h1>{{$d.Brand.Name}}: {{fmtPeriod $r.Since $r.Until}}</h1>
+<p class="text-muted">Compared with {{fmtPeriod $r.PrevSince $r.PrevUntil}}.{{if $r.Settling}} The last week's analytics and ad figures may still change as sources revise them.{{end}}
+  To keep a copy, print the page or save it as a PDF from your browser.</p>
+
+<form method="get" action="/reports" class="no-print my-4 flex flex-wrap items-end gap-3">
+  <label>Brand
+    <select name="brand">{{range $d.Brands}}<option value="{{brandID .ID}}" {{if eq .ID $d.Brand.ID}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+  </label>
+  <label>Month <input type="month" name="month" value="{{$d.Month}}"></label>
+  <button>Show</button>
+</form>
+
+{{if not (or $r.Publishing $r.Engagement $r.Web $r.Ads $r.Newsletters)}}
+<p class="card">Nothing happened for this brand in this period: no posts published, and no analytics, ads or newsletters connected with results.</p>
+{{end}}
+
+{{with $r.Publishing}}
+<section class="card">
+  <h2>Publishing</h2>
+  <div class="stats">
+    {{template "stat" (stat "Posts published" .Published "")}}
+    {{template "stat" (stat "Failed" .Failed "true")}}
+  </div>
+  {{if .ByNetwork}}
+  <table class="text-sm">
+    <thead><tr><th>Network</th><th class="text-right">Published</th><th class="text-right">Failed</th></tr></thead>
+    <tbody>{{range .ByNetwork}}<tr><td>{{icon .Provider}} {{.Provider}}</td><td class="text-right">{{.Published}}</td><td class="text-right">{{.Failed}}</td></tr>{{end}}</tbody>
+  </table>
+  {{end}}
+</section>
+{{end}}
+
+{{with $r.Engagement}}
+<section class="card">
+  <h2>Engagement</h2>
+  <p class="mt-0 text-sm text-muted">The latest readings of posts published in the period.</p>
+  <div class="stats">
+    {{template "stat" (stat "Interactions" .Interactions "")}}
+    {{template "stat" (stat "Likes" .Likes "")}}
+    {{template "stat" (stat "Reposts" .Reposts "")}}
+    {{template "stat" (stat "Replies" .Replies "")}}
+    {{if or .Views.Now .Views.Before}}{{template "stat" (stat "Views" .Views "")}}{{end}}
+  </div>
+  {{if .TopPosts}}
+  <h3>Top posts</h3>
+  <table class="text-sm">
+    <thead><tr><th>Post</th><th class="text-right">Likes</th><th class="text-right">Reposts</th><th class="text-right">Replies</th></tr></thead>
+    <tbody>{{range .TopPosts}}<tr><td>{{if .ID}}<a href="/posts/{{postID (derefUUID .ID)}}">{{.Label}}</a>{{else}}{{.Label}}{{end}}</td>
+      <td class="text-right">{{.Likes}}</td><td class="text-right">{{.Reposts}}</td><td class="text-right">{{.Replies}}</td></tr>{{end}}</tbody>
+  </table>
+  {{end}}
+  {{if .ByChannel}}
+  <h3>By channel</h3>
+  <table class="text-sm">
+    <thead><tr><th>Channel</th><th class="text-right">Posts</th><th class="text-right">Interactions</th></tr></thead>
+    <tbody>{{range .ByChannel}}<tr><td>{{icon .Provider}} {{.Label}}</td><td class="text-right">{{.Posts}}</td><td class="text-right">{{.Total}}</td></tr>{{end}}</tbody>
+  </table>
+  {{end}}
+</section>
+{{end}}
+
+{{with $r.Web}}
+<section class="card">
+  <h2>Web traffic</h2>
+  <div class="stats">
+    {{template "stat" (stat "Visitors" .Visitors "")}}
+    {{template "stat" (stat "Signups" .Signups "")}}
+    {{template "stat" (stat "Came untagged" .Untagged "")}}
+  </div>
+  {{if .Sources}}
+  <h3>Top sources</h3>
+  {{template "webRows" .Sources}}
+  {{end}}
+  {{if .Campaigns}}
+  <h3>Top campaigns</h3>
+  {{template "webRows" .Campaigns}}
+  {{end}}
+  {{if .Posts}}
+  <h3>Posts that brought visitors</h3>
+  {{template "webRows" .Posts}}
+  {{end}}
+</section>
+{{end}}
+
+{{with $r.Ads}}
+<section class="card">
+  <h2>Ads</h2>
+  {{range .Totals}}
+  <div class="stats">
+    {{template "moneyStat" (moneyStat "Spend" .Spend .Currency "")}}
+    {{template "stat" (stat "Clicks" .Clicks "")}}
+    {{template "stat" (stat "Signups" .Signups "")}}
+    {{template "moneyStat" (moneyStat "Cost per signup" .CostPerSignup .Currency "true")}}
+  </div>
+  {{end}}
+  {{if .Campaigns}}
+  <table class="text-sm">
+    <thead><tr><th>Campaign</th><th>Network</th><th class="text-right">Spend</th><th class="text-right">Clicks</th><th class="text-right">Signups</th><th class="text-right">Cost per signup</th></tr></thead>
+    <tbody>{{range .Campaigns}}<tr><td>{{.Label}}</td><td>{{.Network}}</td><td class="text-right">{{money .Spend .Currency}}</td><td class="text-right">{{.Clicks}}</td>
+      <td class="text-right">{{.Signups}}</td><td class="text-right">{{if .Signups}}{{money (costPer .Spend .Signups) .Currency}}{{else}}—{{end}}</td></tr>{{end}}</tbody>
+  </table>
+  {{end}}
+</section>
+{{end}}
+
+{{with $r.Newsletters}}
+<section class="card">
+  <h2>Newsletters</h2>
+  <div class="stats">
+    {{template "stat" (stat "Issues sent" .Issues "")}}
+    {{template "stat" (stat "Delivered" .Delivered "")}}
+    {{template "stat" (stat "Clicks" .Clicks "")}}
+    {{template "stat" (stat "Unsubscribes" .Unsubscribes "true")}}
+  </div>
+  {{if .Sent}}
+  <table class="text-sm">
+    <thead><tr><th>Issue</th><th>Sent</th><th class="text-right">Delivered</th><th class="text-right">Clicks</th><th class="text-right">Unsubscribes</th></tr></thead>
+    <tbody>{{range .Sent}}{{$res := issueResults .}}<tr><td><a href="/newsletters/{{issueID .ID}}">{{.Subject}}</a></td><td>{{fmtDate .SendAt}}</td>
+      <td class="text-right">{{$res.Delivered}}</td><td class="text-right">{{$res.Clicks}} <span class="text-muted">({{percent $res.Clicks $res.Delivered}})</span></td>
+      <td class="text-right">{{$res.Unsubscribes}}</td></tr>{{end}}</tbody>
+  </table>
+  {{end}}
+</section>
+{{end}}
+{{end}}
+{{end}}
+
+{{define "stat"}}<div class="stat"><div class="stat-label">{{.Label}}</div><div class="stat-value">{{.Pair.Now}}</div>
+  <div class="stat-change {{changeClass .Pair .LowerBetter}}">{{change .Pair}} <span class="text-muted">from {{.Pair.Before}}</span></div></div>{{end}}
+
+{{define "moneyStat"}}<div class="stat"><div class="stat-label">{{.Label}}</div><div class="stat-value">{{money .Pair.Now .Currency}}</div>
+  <div class="stat-change {{changeClass .Pair .LowerBetter}}">{{change .Pair}} <span class="text-muted">from {{money .Pair.Before .Currency}}</span></div></div>{{end}}
+
+{{define "webRows"}}<table class="text-sm">
+  <thead><tr><th>Name</th><th class="text-right">Visitors</th><th class="text-right">Signups</th></tr></thead>
+  <tbody>{{range .}}<tr><td>{{.Label}}</td><td class="text-right">{{.Visitors}}</td><td class="text-right">{{.Conversions}}</td></tr>{{end}}</tbody>
+</table>{{end}}

@@ -433,20 +433,23 @@ type AnalyticsRowView struct {
 
 // AnalyticsSummaryView is a summary in the API.
 type AnalyticsSummaryView struct {
-	Object   string             `json:"object"`
-	GroupBy  string             `json:"group_by"`
-	Since    string             `json:"since"`
-	Until    string             `json:"until"`
-	Visitors int64              `json:"visitors"`
-	Untagged int64              `json:"untagged"`
-	Data     []AnalyticsRowView `json:"data"`
+	Object   string `json:"object"`
+	GroupBy  string `json:"group_by"`
+	Since    string `json:"since"`
+	Until    string `json:"until"`
+	Visitors int64  `json:"visitors"`
+	Untagged int64  `json:"untagged"`
+	// Conversions counts every conversion in the window, tagged or not.
+	Conversions int64              `json:"conversions"`
+	Data        []AnalyticsRowView `json:"data"`
 }
 
 // ViewAnalyticsSummary renders a summary.
 func ViewAnalyticsSummary(sum *AnalyticsSummary) AnalyticsSummaryView {
 	v := AnalyticsSummaryView{Object: "analytics_summary", GroupBy: string(sum.GroupBy), Since: sum.Since.Format(time.DateOnly),
 		Until: sum.Until.Format(time.DateOnly), Visitors: sum.Totals.Visitors, Untagged: sum.Totals.Untagged,
-		Data: make([]AnalyticsRowView, 0, len(sum.Rows))}
+		Conversions: sum.Totals.Conversions,
+		Data:        make([]AnalyticsRowView, 0, len(sum.Rows))}
 	for _, r := range sum.Rows {
 		v.Data = append(v.Data, AnalyticsRowView{ID: r.Key, Label: r.Label, Visitors: r.Visitors, Visits: r.Visits, Conversions: r.Conversions, Goals: r.Goals})
 	}

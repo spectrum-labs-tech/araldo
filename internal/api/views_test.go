@@ -13,6 +13,7 @@ import (
 	contract "github.com/spectrum-labs-tech/araldo/api"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
 // Posts render as the contract says, including a next_slot post that has
@@ -109,5 +110,39 @@ func TestNewsletterViewsMatchContract(t *testing.T) {
 				t.Fatalf("does not match the contract: %v\n%s", err, raw)
 			}
 		})
+	}
+}
+
+// Reports render as the contract says, with empty sections as null.
+func TestReportViewsMatchContract(t *testing.T) {
+	t.Parallel()
+	doc, err := openapi3.NewLoader().LoadFromData(contract.OpenAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	post := uuid.New()
+	views := int64(40)
+	full := &core.Report{Brand: &model.Brand{ID: uuid.New()}, Since: day, Until: day.AddDate(0, 1, -1), PrevSince: day.AddDate(0, -1, 0),
+		PrevUntil:  day.AddDate(0, 0, -1),
+		Publishing: &core.ReportPublishing{Published: core.Pair{Now: 3, Before: 2}},
+		Engagement: &core.ReportEngagement{Likes: core.Pair{Now: 9}, TopPosts: []core.EngagementRow{{ID: &post, Label: "x",
+			Counts: platform.Counts{Likes: 9, Views: &views}}}},
+		Web:         &core.ReportWeb{Visitors: core.Pair{Now: 100}},
+		Ads:         &core.ReportAds{Totals: []core.ReportSpend{{Currency: "USD", Spend: core.Pair{Now: 1000}}}},
+		Newsletters: &core.ReportNewsletters{Issues: core.Pair{Now: 1}, Sent: []*model.Issue{{ID: uuid.New(), Subject: "x", SendAt: &day}}}}
+	empty := &core.Report{Brand: &model.Brand{ID: uuid.New()}, Since: day, Until: day, PrevSince: day, PrevUntil: day}
+	for name, r := range map[string]*core.Report{"full": full, "empty": empty} {
+		raw, err := json.Marshal(core.ViewReport(r))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v any
+		if err := json.Unmarshal(raw, &v); err != nil {
+			t.Fatal(err)
+		}
+		if err := doc.Components.Schemas["Report"].Value.VisitJSON(v); err != nil {
+			t.Fatalf("%s: does not match the contract: %v\n%s", name, err, raw)
+		}
 	}
 }

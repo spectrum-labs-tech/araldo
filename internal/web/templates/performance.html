@@ -102,8 +102,8 @@
 <p>See which posts bring visitors and signups, from your own web analytics.</p>
 <ol class="guide-steps">
   <li{{if $d.Tagging}} class="done"{{end}}>{{template "perfMark" (list "1" (printf "%t" $d.Tagging))}}<div><strong>Tag your links.</strong> List your site's domains under the brand's <a href="/brands">UTM domains</a>; Araldo then tags every link to them with the network, template and post.</div></li>
-  <li>{{template "perfMark" (list "2" "false")}}<div><strong>Set up a goal</strong> in your analytics for what counts as a signup, e.g. a Plausible goal named "Waitlist Signup".</div></li>
-  <li{{if $d.Sources}} class="done"{{end}}>{{template "perfMark" (list "3" (printf "%t" (gt (len $d.Sources) 0)))}}<div><strong>Connect the site</strong> below with a stats API key and the goals' names.</div></li>
+  <li>{{template "perfMark" (list "2" "false")}}<div><strong>Set up a goal</strong> in your analytics for what counts as a signup, e.g. a Plausible goal named "Waitlist Signup", or a GA4 key event such as <code>sign_up</code>.</div></li>
+  <li{{if $d.Sources}} class="done"{{end}}>{{template "perfMark" (list "3" (printf "%t" (gt (len $d.Sources) 0)))}}<div><strong>Connect the site</strong> below with read-only access (a Plausible stats API key, or a Google service account added to the GA4 property as a Viewer) and the goals' names.</div></li>
   <li{{if and $d.Signups $d.Signups.Rows}} class="done"{{end}}>{{template "perfMark" (list "4" (printf "%t" (and $d.Signups (gt (len $d.Signups.Rows) 0))))}}<div><strong>See signups by post</strong> within minutes: the last 30 days, then a daily update.</div></li>
 </ol>
 <h3>Good to know</h3>
@@ -112,6 +112,7 @@
   <li><strong>Untagged traffic</strong> (search, direct visits, links typed by hand) is counted but credited to no post.</li>
   <li><strong>Recent days settle</strong>: analytics revise them, and Araldo re-reads the last week daily.</li>
   <li><strong>Visitors add up by day</strong>: someone who came on two days counts twice.</li>
+  <li><strong>GA4 hides small counts</strong> when Google signals is on, and takes a day or two to settle; Plausible shows every visit.</li>
 </ul>
 {{end}}
 

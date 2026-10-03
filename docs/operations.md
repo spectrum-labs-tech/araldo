@@ -320,7 +320,19 @@ individual visitors, and adds no tracking script.
 from Account settings → API keys, the site's domain, and your install's
 address if you self-host. The `analytics.collect` task reads the last 30
 days at first, then daily, re-reading the last 7 because tools revise
-them. `GET /v1/analytics/summary` and the MCP tool `analytics_summary`
+them.
+
+**Google Analytics 4**: the property ID (GA4 → Admin → Property details,
+a number, not the `G-` measurement ID) and a service account's JSON key.
+Create the service account in a Google Cloud project with the Google
+Analytics Data API enabled, add a JSON key, and add the account's email to
+the property as a **Viewer** (Admin → Property access management). Goals
+are key event names (`sign_up`); tags are the session's. A key Google
+refuses, or an account taken off the property, marks the source for
+reconnecting. Some Google Workspace organizations forbid service account
+keys; use a project outside them.
+
+`GET /v1/analytics/summary` and the MCP tool `analytics_summary`
 group the counts by post, source, medium, campaign, content or day; visits
 without Araldo's tags are reported as `untagged`.
 

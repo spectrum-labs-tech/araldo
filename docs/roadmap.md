@@ -66,7 +66,7 @@ Principles every feature keeps:
 | --- | --- | --- | --- |
 | 1 | Prove the adapters with real accounts on every network; a daily credential check per channel; a daily test post on dedicated test accounts so a platform change is caught early | ADR 0011 | Adapters and the daily check built; real-account runs and test posts not yet |
 | 2 | MCP over HTTP at `POST /v1/mcp` | ADR 0020 | Done |
-| 3 | Web analytics adapters: signups by post, network and campaign (Plausible), then cost per signup beside ad spend and GA4 | ADR 0025 | Plausible, signups by post and cost per signup by ad campaign built; GA4 next |
+| 3 | Web analytics adapters: signups by post, network and campaign (Plausible), then cost per signup beside ad spend and GA4 | ADR 0025 | Done: Plausible and GA4, signups by post, cost per signup by ad campaign |
 | 4 | Newsletters phase 1: mail accounts, issues with a delivery per account, renderer and theme, Brevo and sandbox providers | ADR 0024 | Decided |
 | 5 | Client reports: one page per brand per month across posts, ads, newsletters and analytics | ADR 0024, 0025 | Planned |
 | 6 | Pinterest (images) | ADR 0009 | Planned |

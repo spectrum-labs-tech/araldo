@@ -3,7 +3,7 @@
 {{if .Data.Key}}
 <section class="card secret" role="alert">
   <h2>Paste this {{if .Data.Live}}live{{else}}test{{end}} key into your terminal</h2>
-  <p class="mb-2"><code>araldo auth login</code>{{with .Data.Device}} on <strong>{{.}}</strong>{{end}} is waiting for it. This is the only time it is shown.</p>
+  <p class="mb-2"><code>araldo auth login{{if .Data.Live}} --live{{end}}</code>{{with .Data.Device}} on <strong>{{.}}</strong>{{end}} is waiting for it. This is the only time it is shown.</p>
   <div class="flex flex-wrap items-center gap-2"><code id="new-key" class="copy-box">{{.Data.Key}}</code> <button type="button" data-copy="new-key">Copy</button></div>
   <p class="mt-3 text-sm text-muted">Then close this tab. The key is listed under <a href="/keys">API keys</a>, where you can revoke it.</p>
 </section>

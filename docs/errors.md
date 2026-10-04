@@ -45,6 +45,9 @@ every problem in `errors`, each with its own `code` and `param`.
 
 ## Posts and templates
 
+- **publish_at_invalid**: `publish_at` is not `"now"`, `"next_slot"` or an
+  RFC 3339 time, is more than a year ahead, or is more than 15 minutes in
+  the past (use `"now"` to publish right away).
 - **too_long**: text exceeds a platform's limit. `detail` has the channel,
   part, measured length and limit. Shorten it, or set `fit` to `truncate`
   or `thread`.

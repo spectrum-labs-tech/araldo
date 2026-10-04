@@ -206,6 +206,11 @@ func TestMediaValidation(t *testing.T) {
 			}
 		})
 	}
+	// Refusing a file says what it is, not "not an image (not an image)".
+	_, err := w.s.CreateMedia(t.Context(), w.owner, core.MediaInput{BrandID: w.brand.ID, Data: []byte("<!DOCTYPE html><html></html>")})
+	if err == nil || !strings.Contains(err.Error(), "Send a JPEG, PNG, GIF or WebP image; this is text/html.") {
+		t.Fatalf("an HTML page: %v", err)
+	}
 }
 
 func TestMediaBelongsToItsBrandAndMode(t *testing.T) {

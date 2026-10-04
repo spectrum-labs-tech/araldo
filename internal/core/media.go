@@ -101,7 +101,11 @@ func (s *Service) CreateMedia(ctx context.Context, a Actor, in MediaInput) (*mod
 	}
 	info, err := media.Inspect(in.Data)
 	if err != nil {
-		return nil, apperr.Invalid("media_type_unsupported", "file", "Send a JPEG, PNG, GIF or WebP image (%v).", err)
+		reason := err.Error()
+		if errors.Is(err, media.ErrUnsupported) {
+			reason = "this is " + strings.SplitN(http.DetectContentType(in.Data), ";", 2)[0]
+		}
+		return nil, apperr.Invalid("media_type_unsupported", "file", "Send a JPEG, PNG, GIF or WebP image; %s.", reason)
 	}
 	sum := sha256.Sum256(in.Data)
 	m := &model.Media{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, ContentType: info.Type, Size: int64(len(in.Data)),

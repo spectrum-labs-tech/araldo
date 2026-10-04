@@ -29,8 +29,12 @@ import (
 const (
 	DefaultPublishWindow = 24 * time.Hour
 	maxScheduleAhead     = 366 * 24 * time.Hour
-	slotSearchDays       = 56
-	maxMetadataKeys      = 50
+	// pastTolerance is how far behind a publish_at may be and still mean
+	// "now", for a caller whose clock or request runs a little late; older
+	// is a mistake (2020 for 2027) that would otherwise publish at once.
+	pastTolerance   = 15 * time.Minute
+	slotSearchDays  = 56
+	maxMetadataKeys = 50
 )
 
 // PostInput creates (or previews) a post.
@@ -345,6 +349,10 @@ func parsePublishAt(s string, now time.Time) (*time.Time, bool, error) {
 	}
 	if t.After(now.Add(maxScheduleAhead)) {
 		return nil, false, apperr.Invalid("publish_at_invalid", "publish_at", "Posts can be scheduled at most a year ahead.")
+	}
+	if t.Before(now.Add(-pastTolerance)) {
+		return nil, false, apperr.Invalid("publish_at_invalid", "publish_at",
+			`publish_at %s is in the past; use "now" to publish right away.`, t.UTC().Format(time.RFC3339))
 	}
 	t = maxTime(t, now)
 	return &t, false, nil

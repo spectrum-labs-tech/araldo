@@ -21,7 +21,9 @@ and a crashed worker's claim simply expires.
    `pending_approval`, `scheduled`, `publishing`, `published`,
    `partially_published`, `failed`, `canceled`.
 2. **Scheduling:**
-   - `publish_at` is a time, `"now"`, or `"next_slot"`. Each brand has
+   - `publish_at` is a time, `"now"`, or `"next_slot"`. A time up to 15
+     minutes past means now (a late clock); older is refused, so a
+     mistyped year cannot publish at once. Each brand has
      weekly slots in its time zone (for example weekdays at 09:00 and
      13:00); `next_slot` takes the earliest free slot for each channel,
      guarded by a unique constraint so two posts cannot take the same slot.

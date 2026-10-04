@@ -243,6 +243,7 @@ araldo channels list                    # a table in a terminal; tab-separated w
 araldo channels list --json handle,status --jq '.[] | select(.status != "active")'
 araldo api channels                     # any /v1 request, authenticated
 araldo api -X GET posts -f limit=5      # -f fields are the query with -X GET...
+araldo api posts --paginate --jq '.data | length'   # every page of a list, as one list
 araldo api -X POST posts --input post.json   # ...and otherwise make it a POST, as with gh api
 ```
 

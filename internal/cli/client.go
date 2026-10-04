@@ -278,6 +278,51 @@ var openBrowser = func(url string) error {
 	return cmd.Start()
 }
 
+// maxPages bounds --paginate, so a list that keeps growing cannot run
+// forever.
+const maxPages = 1000
+
+// allPages follows a list's has_more with starting_after, the last object's
+// ID (ADR 0005), and returns one list of every page's data.
+func allPages(ctx context.Context, c *apiclient.Client, path string, query url.Values) (json.RawMessage, error) {
+	var all []json.RawMessage
+	for range maxPages {
+		raw, err := c.Do(ctx, http.MethodGet, path, query, nil, "")
+		if err != nil {
+			return nil, err
+		}
+		var page struct {
+			Object  string            `json:"object"`
+			Data    []json.RawMessage `json:"data"`
+			HasMore bool              `json:"has_more"`
+		}
+		if err := json.Unmarshal(raw, &page); err != nil || page.Object != "list" {
+			return nil, fmt.Errorf("--paginate needs a list; %s is not one", path)
+		}
+		all = append(all, page.Data...)
+		if !page.HasMore || len(page.Data) == 0 {
+			return json.Marshal(map[string]any{"object": "list", "data": all, "has_more": false})
+		}
+		var last struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(page.Data[len(page.Data)-1], &last); err != nil || last.ID == "" {
+			return nil, fmt.Errorf("--paginate: the last object on a page of %s has no id", path)
+		}
+		query = cloneValues(query)
+		query.Set("starting_after", last.ID)
+	}
+	return nil, fmt.Errorf("--paginate stopped after %d pages", maxPages)
+}
+
+func cloneValues(v url.Values) url.Values {
+	out := url.Values{}
+	for k, vs := range v {
+		out[k] = append([]string(nil), vs...)
+	}
+	return out
+}
+
 // stringsFlag collects a repeatable flag.
 type stringsFlag []string
 
@@ -288,6 +333,7 @@ func (s *stringsFlag) Set(v string) error { *s = append(*s, v); return nil }
 func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	var hostname, method, input, jq string
 	var fields stringsFlag
+	var paginate bool
 	fs := flag.NewFlagSet("api", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&hostname, "hostname", "", "the Araldo server (default: the one signed in to)")
@@ -295,6 +341,7 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	fs.Var(&fields, "f", "a key=value field: a query parameter for GET, else a JSON body field (repeatable)")
 	fs.StringVar(&input, "input", "", "a file with the JSON request body (- for standard input)")
 	fs.StringVar(&jq, "jq", "", "filter the response with a jq expression")
+	fs.BoolVar(&paginate, "paginate", false, "fetch every page of a list and print them as one list")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintln(stderr, "usage: araldo api [flags] <path>   e.g. araldo api channels, araldo api -X POST posts --input post.json")
 		fs.PrintDefaults()
@@ -362,7 +409,15 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	if err != nil {
 		return err
 	}
-	raw, err := c.Do(ctx, method, path, query, payload, "")
+	if paginate && method != http.MethodGet {
+		return usageErr("--paginate works with GET")
+	}
+	var raw json.RawMessage
+	if paginate {
+		raw, err = allPages(ctx, c, path, query)
+	} else {
+		raw, err = c.Do(ctx, method, path, query, payload, "")
+	}
 	if err != nil {
 		var ae *apiclient.APIError
 		if errors.As(err, &ae) {

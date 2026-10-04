@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -52,6 +53,17 @@ func fakeAraldo(t *testing.T) (*httptest.Server, *map[string]any) {
 				`{"id":"chan_2","brand":"brand_1","provider":"x","display_name":"Otium","status":"needs_reauth","status_note":"token revoked",`+
 				`"checked_at":"2026-10-04T19:40:23Z","check_error":"401 from X"},`+
 				`{"id":"chan_3","brand":"brand_9","provider":"sandbox","emulates":"mastodon","handle":"test","status":"active"}]}`)
+		case "GET /v1/posts":
+			// Five posts, two to a page, after starting_after.
+			start := 0
+			if after := r.URL.Query().Get("starting_after"); after != "" {
+				_, _ = fmt.Sscanf(after, "post_%d", &start)
+			}
+			var items []string
+			for i := start + 1; i <= start+2 && i <= 5; i++ {
+				items = append(items, fmt.Sprintf(`{"id":"post_%d"}`, i))
+			}
+			_, _ = fmt.Fprintf(w, `{"object":"list","data":[%s],"has_more":%t}`, strings.Join(items, ","), start+2 < 5)
 		case "GET /v1/brands":
 			_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"brand_1","name":"Otium"}]}`)
 		case "POST /v1/brands":
@@ -216,5 +228,13 @@ func TestAPICommand(t *testing.T) {
 	}
 	if code, out, _ := runCLI(t, "", "api", "nowhere"); code == ExitOK || !strings.Contains(out, "resource_missing") {
 		t.Fatalf("api on a missing route: exit %d %q", code, out)
+	}
+	// --paginate follows has_more with starting_after and prints one list.
+	if code, out, errOut := runCLI(t, "", "api", "posts", "--paginate", "--jq", "[.data[].id] | join(\",\")"); code != ExitOK ||
+		out != "post_1,post_2,post_3,post_4,post_5\n" {
+		t.Fatalf("--paginate: exit %d %q %q", code, out, errOut)
+	}
+	if code, _, errOut := runCLI(t, "", "api", "-X", "POST", "posts", "--paginate"); code != ExitUsage || !strings.Contains(errOut, "GET") {
+		t.Fatalf("--paginate on a POST: exit %d %q", code, errOut)
 	}
 }

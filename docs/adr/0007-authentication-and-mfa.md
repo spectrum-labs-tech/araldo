@@ -53,8 +53,8 @@ out of the box; single sign-on is an addition, not a requirement.
 
 ## Alternatives considered
 
-- **OIDC only** (caseline). Right for health departments that all run an
-  identity provider; wrong for a developer self-hosting on a small server.
+- **OIDC only.** Right for organizations that all run an identity
+  provider; wrong for a developer self-hosting on a small server.
 - **An external auth service** (Ory, Keycloak, Authentik). Another service
   to run and upgrade, and one more thing between "download" and "working".
 - **SMS codes.** Weak against SIM swapping, and they need a paid provider.

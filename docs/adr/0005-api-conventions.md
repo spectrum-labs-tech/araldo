@@ -73,14 +73,14 @@ set the bar most developers now expect.
 
 - **Code-first with a generated spec.** Faster to start, but the spec drifts
   toward whatever the code happens to do.
-- **Generated server code** (`oapi-codegen`, as caseline does). It would
+- **Generated server code** (`oapi-codegen`). It would
   guarantee request and response shapes too, but the idempotency, error and
   pagination conventions are easier to apply uniformly in hand-written
   handlers. Revisit if the contract and handlers start to disagree.
 - **GraphQL.** Flexible reads, but idempotent writes, webhooks, caching and
   a clean CLI are all harder, and most integrations here are "create one
   post".
-- **Offset pagination with totals** (caseline). Simple, but slow on large
+- **Offset pagination with totals.** Simple, but slow on large
   tables, and rows shift between pages under concurrent writes.
 
 ## Consequences

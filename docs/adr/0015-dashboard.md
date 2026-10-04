@@ -18,7 +18,6 @@ Self-hosting should remain "one binary and a Postgres".
    classes in `internal/web/styles/app.css` for anything repeated (shell,
    buttons, cards, pills, fields). Colors are semantic tokens (`bg-panel`,
    `text-muted`) that switch with the system's light or dark preference.
-   The same approach as caseline's ADRs 0005 and 0015.
 2. **Embedded in the binary** (`embed.FS`) and served by `araldo server`
    next to the API, on the same origin.
 3. **The dashboard calls services directly**, never the HTTP API, and uses

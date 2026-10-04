@@ -3,9 +3,9 @@
 // Package opsched runs Araldo's periodic background tasks: refreshing
 // channel health, reclaiming lost leases, pruning old rows (ADR 0011).
 //
-// It follows caseline's scheduler (its ADR 0019): every task has a row in
-// the database, and a worker runs a task only after leasing that row, so
-// any number of workers can run and each task still runs once at a time.
+// Every task has a row in the database, and a worker runs a task only after
+// leasing that row, so any number of workers can run and each task still
+// runs once at a time.
 // A worker that dies loses its lease when it expires.
 package opsched
 

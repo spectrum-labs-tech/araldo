@@ -11,8 +11,8 @@ an idempotency key: if a request times out after sending, the post may or
 may not exist, and simply retrying can publish it twice, publicly.
 
 ar15.build polls a job table every 15 minutes and retries up to five times.
-Caseline's outbox and `opsched` (its ADRs 0006 and 0019) have the lease
-mechanics we want.
+We want lease-based queues instead: a worker claims a row for a while,
+and a crashed worker's claim simply expires.
 
 ## Decision
 

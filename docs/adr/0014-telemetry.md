@@ -13,8 +13,7 @@ token in a log line, an unannounced product launch in a trace attribute.
 
 1. **OpenTelemetry** for traces, metrics and logs, configured only through
    the standard `OTEL_*` variables (`autoexport`, so Prometheus scraping
-   works with `OTEL_METRICS_EXPORTER=prometheus`). This is the same setup as
-   caseline's ADR 0017.
+   works with `OTEL_METRICS_EXPORTER=prometheus`).
 2. **Logging is `log/slog`**, JSON to stderr, with `…Context` methods inside
    requests so records carry trace IDs. The linter rejects the `log`
    package and `fmt.Print*`.

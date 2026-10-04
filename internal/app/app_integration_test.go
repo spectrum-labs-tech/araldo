@@ -282,19 +282,19 @@ func TestAPIEndToEnd(t *testing.T) {
 		_ = json.NewDecoder(resp.Body).Decode(&out)
 		return resp.StatusCode, resp.Header, out
 	}
-	code, _, b := call("POST", "/v1/brands", `{"name":"Draft Forge","timezone":"UTC"}`, "")
-	if code != 201 || b["slug"] != "draft-forge" {
+	code, _, b := call("POST", "/v1/brands", `{"name":"Northwind","timezone":"UTC"}`, "")
+	if code != 201 || b["slug"] != "northwind" {
 		t.Fatalf("create brand: %d %v", code, b)
 	}
-	code, _, ch := call("POST", "/v1/channels", `{"brand":"draft-forge","provider":"sandbox","emulates":"x"}`, "")
+	code, _, ch := call("POST", "/v1/channels", `{"brand":"northwind","provider":"sandbox","emulates":"x"}`, "")
 	if code != 201 || ch["emulates"] != "x" {
 		t.Fatalf("create channel: %d %v", code, ch)
 	}
-	code, _, b = call("POST", "/v1/posts/preview", `{"brand":"draft-forge","content":{"body":"`+strings.Repeat("a", 300)+`"}}`, "")
+	code, _, b = call("POST", "/v1/posts/preview", `{"brand":"northwind","content":{"body":"`+strings.Repeat("a", 300)+`"}}`, "")
 	if code != 200 || b["valid"] != false {
 		t.Fatalf("preview: %d %v", code, b)
 	}
-	body := `{"brand":"draft-forge","content":{"body":"Launch day"},"metadata":{"release":"v1"}}`
+	body := `{"brand":"northwind","content":{"body":"Launch day"},"metadata":{"release":"v1"}}`
 	code, h1, first := call("POST", "/v1/posts", body, "launch-1")
 	if code != 201 || h1.Get("Idempotent-Replayed") != "" {
 		t.Fatalf("create post: %d %v", code, first)
@@ -303,10 +303,10 @@ func TestAPIEndToEnd(t *testing.T) {
 	if code != 201 || h2.Get("Idempotent-Replayed") != "true" || again["id"] != first["id"] {
 		t.Fatalf("replay: %d %v %v", code, h2, again["id"])
 	}
-	if code, _, b := call("POST", "/v1/posts", `{"brand":"draft-forge","content":{"body":"other"}}`, "launch-1"); code != 409 || b["code"] != "idempotency_key_reused" {
+	if code, _, b := call("POST", "/v1/posts", `{"brand":"northwind","content":{"body":"other"}}`, "launch-1"); code != 409 || b["code"] != "idempotency_key_reused" {
 		t.Fatalf("reused key: %d %v", code, b)
 	}
-	if code, _, b := call("POST", "/v1/posts", `{"brand":"draft-forge","contnet":{}}`, ""); code != 400 || b["code"] != "parameter_unknown" {
+	if code, _, b := call("POST", "/v1/posts", `{"brand":"northwind","contnet":{}}`, ""); code != 400 || b["code"] != "parameter_unknown" {
 		t.Fatalf("typo: %d %v", code, b)
 	}
 	if code, _, b := call("GET", "/v1/posts?metadata[release]=v1", "", ""); code != 200 || len(b["data"].([]any)) != 1 {

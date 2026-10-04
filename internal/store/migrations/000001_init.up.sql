@@ -336,7 +336,7 @@ CREATE TABLE audit_events (
 );
 CREATE INDEX audit_events_org_idx ON audit_events (org_id, id DESC);
 
--- Background task leases (caseline ADR 0019).
+-- Background task leases.
 CREATE TABLE scheduled_tasks (
     name        text        PRIMARY KEY,
     enabled     boolean     NOT NULL DEFAULT true,

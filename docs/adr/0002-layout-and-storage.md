@@ -7,7 +7,7 @@
 
 Araldo must be easy to self-host ("one binary and a Postgres") and easy for
 contributors to find their way around. The author's other Go services
-(caseline, open-b00ks, otium) settled on conventions worth keeping: an
+(open-b00ks, otium) settled on conventions worth keeping: an
 `internal/` tree, hand-written SQL, golang-migrate, model and storage kept
 apart, and a Taskfile for every command.
 
@@ -61,9 +61,8 @@ apart, and a Taskfile for every command.
      real database;
    - handlers (`api`, `web`, `cli`) never call the store; they call `core`,
      which applies tenancy ([ADR 0004](0004-tenancy-roles-approvals.md)).
-6. **Background work** is an `opsched` task (copied from caseline's ADR
-   0019 into `internal/`, to move to `go-toolkit` once both projects agree
-   on the API), or one of the two lease-based queues in `core`: publishing
+6. **Background work** is an `opsched` task (in `internal/`, to move to
+   `go-toolkit` once its API settles), or one of the two lease-based queues in `core`: publishing
    targets and webhook deliveries.
 7. **Code rules**:
    - every function that does I/O takes `ctx context.Context` first;
@@ -74,11 +73,11 @@ apart, and a Taskfile for every command.
 
 ## Alternatives considered
 
-- **Separate server and worker binaries** (caseline). Clearer process
+- **Separate server and worker binaries.** Clearer process
   boundaries, but more to download and package. One binary with
   subcommands, run as two Deployments, gives the same isolation at runtime.
-- **Supporting SQLite as well**, for a zero-dependency demo mode. Caseline
-  pays a real cost for database portability; Araldo's queue relies on
+- **Supporting SQLite as well**, for a zero-dependency demo mode. Database
+  portability has a real cost; Araldo's queue relies on
   Postgres features. Revisit if "try it in 30 seconds" becomes a goal.
 - **sqlx or sqlc.** sqlx adds little on top of pgx; sqlc's generated code
   would sit awkwardly with the separation between model and store.

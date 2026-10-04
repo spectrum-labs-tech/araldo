@@ -5,8 +5,8 @@
 
 ## Context
 
-One operator (Spectrum Labs) runs several products (ar15.build, Draft
-Forge, otium), each with its own accounts, voice and schedule, and one
+One operator (Spectrum Labs) runs several products (ar15.build, otium,
+open-b00ks), each with its own accounts, voice and schedule, and one
 team across all of them. A hosted Araldo would also serve unrelated
 customers who must never see each other's data. A leak between tenants is
 the worst bug this system can have: it could publish one customer's content
@@ -18,7 +18,7 @@ on another customer's account.
    tenant-owned row carries `org_id`.
 2. **Brand** is a product or voice inside an org. Channels, templates,
    schedule slots and the approval policy belong to a brand. An org can have
-   many brands; ar15.build, Draft Forge and otium are brands of one
+   many brands; ar15.build, otium and open-b00ks are brands of one
    Spectrum Labs org.
 3. **Users are global** (one login, many orgs, as on GitHub). A
    **membership** gives a user one role in one org:

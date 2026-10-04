@@ -31,7 +31,7 @@ to call Araldo from closed-source products without licensing worries.
 
 ## Alternatives considered
 
-- **Apache-2.0 for everything** (like caseline). Maximum adoption, but a
+- **Apache-2.0 for everything.** Maximum adoption, but a
   larger company could offer hosted Araldo without contributing back.
 - **Source-available licenses** (BSL, Elastic License, FSL). Not open source
   by the OSI definition, which costs trust with the developers we are

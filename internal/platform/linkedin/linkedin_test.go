@@ -62,7 +62,7 @@ func (f *fakeLinkedIn) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case r.URL.Path == "/v2/userinfo":
-		_, _ = w.Write([]byte(`{"sub":"abc123","name":"Chris Mancini"}`))
+		_, _ = w.Write([]byte(`{"sub":"abc123","name":"Ada Lovelace"}`))
 	case r.URL.Path == "/rest/images" && r.URL.Query().Get("action") == "initializeUpload":
 		n := string(rune('0' + len(f.uploads) + 1))
 		_, _ = w.Write([]byte(`{"value":{"uploadUrl":"` + f.srv.URL + `/upload/` + n + `","image":"urn:li:image:I` + n + `"}}`))
@@ -124,7 +124,7 @@ func TestVerifyAndPublish(t *testing.T) {
 	f, a := setup(t)
 	creds := platform.Credentials{"access_token": "tok"}
 	acct, err := a.Verify(t.Context(), creds)
-	if err != nil || acct.ExternalID != "abc123" || acct.Handle != "Chris Mancini" {
+	if err != nil || acct.ExternalID != "abc123" || acct.Handle != "Ada Lovelace" {
 		t.Fatalf("Verify = %+v, %v", acct, err)
 	}
 	res, err := a.Publish(t.Context(), creds, platform.Payload{Parts: []string{"Shipped (v2) #Araldo"}}, nil)

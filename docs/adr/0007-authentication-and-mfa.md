@@ -49,8 +49,7 @@ out of the box; single sign-on is an addition, not a requirement.
 8. **Bootstrap:** `araldo users create --email … --owner-of "Org name"`
    creates the first account. There is no default admin password.
 9. **Single sign-on** (OIDC) and SCIM provisioning come later, each with its
-   own ADR. Spectrum Labs' own deployment also sits behind Cloudflare
-   Access.
+   own ADR.
 
 ## Alternatives considered
 

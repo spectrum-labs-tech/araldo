@@ -8,7 +8,7 @@ the order it is being built in (update its status with the work).
 
 ## Ground rules
 
-- **This repo is (going to be) public.** Never reference private
+- **This repo is public.** Never reference private
   deployments, deploy repos, infrastructure repos, hostnames or secrets
   paths. Deployments pull published images and charts; nothing here
   triggers or names them.

@@ -5,7 +5,8 @@
 
 ## Context
 
-Araldo will be open source under Spectrum Labs, and a hosted offering is a
+Araldo will be open source under Spectrum Labs LLC, which holds the copyright
+(there is no separate Araldo entity), and a hosted offering is a
 possibility we want to keep open. At the same time, developers must be able
 to call Araldo from closed-source products without licensing worries.
 

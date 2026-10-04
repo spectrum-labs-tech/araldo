@@ -88,7 +88,7 @@ Principles every feature keeps:
 | 7 | Video media and resizing images to fit each platform, then YouTube and TikTok | ADR 0027 | Done: images resized per platform; video on Bluesky, X, Mastodon, Gab, LinkedIn, Facebook, Instagram (reels), Threads, Telegram, Discord, YouTube and TikTok |
 | 8 | Ads phase 2: promotions on the first network with real spend, under per-brand caps | ADR 0023 | Decided |
 | 9 | LinkedIn company pages (its Community Management API); engagement from X and LinkedIn | ADR 0018, 0021 | Planned |
-| 10 | Developer tooling: `araldo listen` (webhooks to localhost), SDKs generated from the contract, a request log in the dashboard | ADR 0005 | Planned |
+| 10 | Developer tooling: the CLI as an API client with `araldo login` (device sign-in), `araldo listen` (webhooks to localhost), SDKs generated from the contract, a request log in the dashboard | ADR 0005, 0028 | Planned |
 | 11 | AI drafting in the dashboard with the organization's own model key | ADR 0001 | Planned |
 | 12 | Built-in backups, and the rest of OpenTelemetry (traces, logs, publish lateness) | ADR 0013, 0014 | Planned |
 | 13 | Passkeys (WebAuthn) and OIDC single sign-on | ADR 0007 | Planned |

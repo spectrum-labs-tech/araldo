@@ -27,7 +27,9 @@ Two facts constrain the answer:
 
 ## Decision
 
-1. **Three surfaces, each with one kind of caller.** `/v1` takes API keys;
+1. **Three surfaces, each with one kind of caller.** (Superseded for the CLI by
+   [ADR 0028](0028-cli-as-api-client.md): the CLI becomes an API client, and only server
+   administration keeps direct access.) `/v1` takes API keys;
    the dashboard takes members' sessions; the CLI takes operators with
    database access. There is no session-authenticated API.
 2. **Explicit-only scopes.** Some scopes are held only when a key lists them

@@ -99,6 +99,10 @@ func runMigrate(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		return err
 	}
 	cfg.AutoMigrate = true
+	// Migrating touches no secrets. Opening the keyring would need the
+	// master keys, and a Transit key needs a login the migration Job (a
+	// pre-install hook, before the ServiceAccount exists) cannot make.
+	cfg.MasterKeys, cfg.Transit = "", config.Transit{}
 	a, err := app.Open(ctx, cfg, app.Logger(cfg.LogLevel))
 	if err != nil {
 		return err

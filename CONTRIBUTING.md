@@ -32,10 +32,20 @@ task web:watch   # rebuild on every save while you work
 3. **Tests come with changes.** Tenant-facing operations need a test that
    calls them as another org and expects "not found".
 
-## Sign your commits
+## Sign the CLA once
 
-Contributions are accepted under the
-[Developer Certificate of Origin](https://developercertificate.org/). Add a
-`Signed-off-by` line to every commit (`git commit -s`), certifying that you
-wrote the change or otherwise have the right to submit it under the
-project's license.
+Araldo is stewarded by Spectrum Labs LLC. Before your first pull request can
+be merged, you sign the [Contributor License Agreement](CLA.md): a bot
+comments on the pull request, and you reply with the sentence it gives you.
+You sign once, for all future contributions.
+
+You keep the copyright to your work. The CLA lets Spectrum Labs distribute
+Araldo under the AGPL and also offer it under separate commercial terms,
+which is how the project pays for itself.
+
+## Sign off your commits
+
+Also add a `Signed-off-by` line to every commit (`git commit -s`). Under the
+[Developer Certificate of Origin](https://developercertificate.org/), it
+certifies that you wrote the change or otherwise have the right to submit
+it.

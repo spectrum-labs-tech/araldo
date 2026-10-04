@@ -20,11 +20,14 @@ to call Araldo from closed-source products without licensing worries.
    integrations use Apache-2.0. Calling Araldo's API does not make a
    product a derivative work either way; the permissive license removes the
    doubt.
-3. **Contributions use the Developer Certificate of Origin** (a
-   `Signed-off-by` line), not a contributor license agreement. If a
-   commercial license alongside the AGPL becomes likely, we decide on a CLA
-   *before* accepting substantial outside contributions, since relicensing
-   later needs every contributor's consent.
+3. **Contributors sign a CLA** ([CLA.md](../../CLA.md), adapted from the
+   Apache individual CLA) once, before their first contribution is merged,
+   and sign off every commit under the Developer Certificate of Origin.
+   Contributors keep their copyright; the CLA lets Spectrum Labs LLC offer
+   Araldo under commercial terms alongside the AGPL (a hosted plan and
+   commercial licenses), which without it would need every contributor's
+   consent. It is in place before the repository goes public, so no
+   contribution predates it.
 
 ## Alternatives considered
 

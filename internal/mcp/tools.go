@@ -249,7 +249,7 @@ func tools(api *Client) []Tool {
 				"if the brand requires it. With a test key it reaches only sandbox channels.",
 			Input: func() map[string]any {
 				props := postProps()
-				props["publish_at"] = str(`"now" (default), "next_slot" (the brand's next free weekly slot), or an RFC 3339 time.`)
+				props["publish_at"] = str(`"now" (default), "next_slot" (the brand's next free weekly slot), or an RFC 3339 time up to a year ahead; a time more than 15 minutes past is refused.`)
 				props["publish_by"] = str("RFC 3339 time to give up publishing by (default: a day after publish_at).")
 				props["metadata"] = map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"},
 					"description": "Up to 50 string key-value pairs of your own, e.g. {\"campaign\": \"launch\"}."}
@@ -309,7 +309,7 @@ func tools(api *Client) []Tool {
 			Input: object([]string{"post"}, map[string]any{
 				"post": str(postDesc),
 				"publish_at": str(`"now", "next_slot" (the brand's next free slot; a post waiting for approval takes it when approved), ` +
-					"or an RFC 3339 time."),
+					"or an RFC 3339 time up to a year ahead; a time more than 15 minutes past is refused."),
 				"publish_by": str("RFC 3339 time to give up publishing by (default: a day after publish_at)."),
 				"swap_with":  str("Instead of publish_at: the ID of a post to trade places with."),
 			}),

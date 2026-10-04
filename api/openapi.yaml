@@ -1608,6 +1608,22 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Event" } } }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/me:
+    get:
+      summary: Who the credential is
+      description: |
+        The org and mode the calling credential acts in, and the API key it
+        is. Any credential may read itself, whatever its scopes. Clients
+        such as the `araldo` CLI use it to show who they are signed in as.
+      tags: [API keys]
+      responses:
+        "200":
+          description: The credential.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/api_keys:
     get:
       summary: List API keys
@@ -2349,6 +2365,20 @@ components:
         last_used_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
         revoked_at: { type: string, format: date-time }
+
+    Me:
+      type: object
+      required: [object, livemode, org]
+      properties:
+        object: { type: string, enum: [me] }
+        livemode: { type: boolean }
+        org:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: string }
+            name: { type: string }
+        api_key: { $ref: "#/components/schemas/APIKey" }
 
     AuditEvent:
       type: object

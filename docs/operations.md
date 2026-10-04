@@ -230,6 +230,33 @@ under Developer apps once as Facebook and once as Instagram. Page tokens
 do not expire. Facebook images are uploaded; Instagram fetches them from a
 link to the install, like Threads.
 
+## The command-line client
+
+`araldo` is also a client of the API, from any machine that can reach `/v1`
+([ADR 0028](adr/0028-cli-as-api-client.md)), modeled on GitHub's `gh`.
+
+```sh
+araldo auth login --hostname araldo.example.com --with-token < key.txt
+araldo auth status                      # who you are on each server, and whether it still works
+araldo channels list                    # a table in a terminal; tab-separated when piped
+araldo channels list --json handle,status --jq '.[] | select(.status != "active")'
+araldo api channels                     # any /v1 request, authenticated
+araldo api -X POST posts --input post.json
+```
+
+- The token is kept in the system keychain (macOS Keychain, Windows
+  Credential Manager, the Secret Service on Linux), or in `hosts.yaml` in the
+  config directory, mode 0600, where there is no keychain or with
+  `--insecure-storage`.
+- `ARALDO_TOKEN` (or `ARALDO_API_KEY`) and `ARALDO_HOST` override the stored
+  sign-in, for CI; `ARALDO_CONFIG_DIR` moves the config directory.
+- Signing in through the browser (a one-time code approved in the dashboard)
+  comes next; until then, sign in with an API key.
+
+Commands that change the server itself (`migrate`, `bootstrap`, `keys`,
+`users`, `apikeys create`) still run where the deployment's configuration
+is, with direct access to its database.
+
 ## AI assistants (MCP)
 
 `araldo mcp` gives an AI assistant Araldo's tools over the Model Context

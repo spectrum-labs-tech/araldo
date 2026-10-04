@@ -359,3 +359,16 @@ func TestRescheduleOverTheAPI(t *testing.T) {
 		}
 	}
 }
+
+// GET /v1/me tells a key who it is, whatever its scopes (ADR 0028).
+func TestMe(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	status, me := c.json(http.MethodGet, "/v1/me", nil)
+	key, _ := me["api_key"].(map[string]any)
+	org, _ := me["org"].(map[string]any)
+	if status != http.StatusOK || me["object"] != "me" || me["livemode"] != false || key == nil || key["secret"] != nil ||
+		org == nil || org["name"] == "" {
+		t.Fatalf("GET /v1/me: %d %v", status, me)
+	}
+}

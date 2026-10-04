@@ -146,3 +146,25 @@ func TestReportViewsMatchContract(t *testing.T) {
 		}
 	}
 }
+
+// A credential's description of itself renders as the contract says.
+func TestMeViewMatchesContract(t *testing.T) {
+	t.Parallel()
+	doc, err := openapi3.NewLoader().LoadFromData(contract.OpenAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := core.ViewAPIKey(&model.APIKey{ID: uuid.New(), Name: "cli", Hint: "abcd", Scopes: []string{"posts:read"}, CreatedAt: time.Now()})
+	me := core.MeView{Object: "me", Livemode: true, Org: core.MeOrgView{ID: "org_1", Name: "Otium"}, APIKey: &key}
+	raw, err := json.Marshal(me)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v map[string]any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Components.Schemas["Me"].Value.VisitJSON(v); err != nil {
+		t.Fatalf("does not match the contract: %v\n%s", err, raw)
+	}
+}

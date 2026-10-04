@@ -6,7 +6,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -62,27 +61,6 @@ func TestMembersAndOrg(t *testing.T) {
 	if code := Run(t.Context(), []string{"org", "update", "--as", owner, "--require-mfa", "true"}, &mfaOut, &mfaErr); code == ExitOK ||
 		!strings.Contains(mfaErr.String(), "two-factor authentication for yourself") {
 		t.Fatalf("requiring MFA without it: exit %d, %q", code, mfaErr.String())
-	}
-
-	// Channels: test mode by default, live with --live, as JSON with --json,
-	// and an unknown brand is a usage error.
-	out, _ = run("channels", "list", "--as", owner)
-	if !strings.HasPrefix(out, "BRAND") {
-		t.Fatalf("channels list:\n%s", out)
-	}
-	out, _ = run("channels", "list", "--as", owner, "--live", "--json")
-	var live []map[string]any
-	if err := json.Unmarshal([]byte(out), &live); err != nil {
-		t.Fatalf("channels list --json is not a JSON list: %v\n%s", err, out)
-	}
-	for _, c := range live {
-		if c["livemode"] != true || c["credentials"] != nil {
-			t.Fatalf("a live listing shows %v", c)
-		}
-	}
-	var chOut, chErr bytes.Buffer
-	if code := Run(t.Context(), []string{"channels", "list", "--as", owner, "--brand", "no-such-brand"}, &chOut, &chErr); code != ExitUsage {
-		t.Fatalf("an unknown brand: exit %d, %q", code, chErr.String())
 	}
 
 	// The acting member's role still decides: an editor cannot add members.

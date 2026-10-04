@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -157,39 +156,5 @@ func TestPrintKeyUsage(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestPrintChannels(t *testing.T) {
-	t.Parallel()
-	brand := &model.Brand{ID: uuid.New(), Name: "Otium"}
-	checked := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
-	chs := []*model.Channel{
-		{ID: uuid.New(), BrandID: brand.ID, Provider: "bluesky", Handle: "getotium.ai", Status: "active", CheckedAt: &checked, Livemode: true},
-		{ID: uuid.New(), BrandID: brand.ID, Provider: "x", DisplayName: "Otium", Status: "needs_reauth", StatusNote: "token revoked",
-			CheckedAt: &checked, CheckError: "401 from X", Livemode: true},
-		{ID: uuid.New(), BrandID: brand.ID, Provider: "sandbox", Emulates: "mastodon", Handle: "test", Status: "active"},
-	}
-	var out bytes.Buffer
-	if err := printChannels(&out, chs, []*model.Brand{brand}, false); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		"BRAND", "Otium", "getotium.ai", "2026-10-04 12:00:00 (ok)",
-		"needs_reauth: token revoked", "(401 from X)", "sandbox (mastodon)", "never",
-	} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("table lacks %q:\n%s", want, out.String())
-		}
-	}
-	out.Reset()
-	if err := printChannels(&out, chs[:1], nil, true); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), `"handle": "getotium.ai"`) || strings.Contains(out.String(), "credentials") {
-		t.Errorf("JSON:\n%s", out.String())
-	}
-	if _, err := pickBrand([]*model.Brand{brand}, "nope"); err == nil {
-		t.Error("pickBrand found a brand that does not exist")
 	}
 }

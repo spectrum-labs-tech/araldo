@@ -16,6 +16,16 @@ import (
 // defaultRollOverlap is how long a rolled key's old secret keeps working.
 const defaultRollOverlap = 24 * time.Hour
 
+// me tells a credential who it is (ADR 0028), whatever its scopes.
+func (h *Handler) me(w http.ResponseWriter, r *http.Request) error {
+	v, err := h.svc.Me(r.Context(), actor(r))
+	if err != nil {
+		return err
+	}
+	ok(w, http.StatusOK, v)
+	return nil
+}
+
 func (h *Handler) listKeys(w http.ResponseWriter, r *http.Request) error {
 	keys, err := h.svc.APIKeys(r.Context(), actor(r))
 	if err != nil {

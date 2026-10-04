@@ -110,6 +110,7 @@ func (h *Handler) routes() {
 
 	h.handle("GET /v1/events", h.listEvents, paged("type")...)
 
+	h.handle("GET /v1/me", h.me)
 	h.handle("GET /v1/api_keys", h.listKeys)
 	h.handle("POST /v1/api_keys", h.createKey)
 	h.handle("POST /v1/api_keys/self/roll", h.rollOwnKey)

@@ -658,3 +658,38 @@ func (s *Service) AuthenticateKey(ctx context.Context, plain, requestID string) 
 	_ = s.store.TouchAPIKey(ctx, k.ID, now)
 	return Actor{OrgID: k.OrgID, Livemode: k.Livemode, KeyID: &k.ID, Scopes: k.Scopes, BrandID: k.BrandID, RequestID: requestID}, nil
 }
+
+// MeView is what a credential can learn about itself: the org and mode it
+// acts in, and the API key or member it is (ADR 0028). Clients use it to
+// show who they are signed in as.
+type MeView struct {
+	Object   string      `json:"object"`
+	Livemode bool        `json:"livemode"`
+	Org      MeOrgView   `json:"org"`
+	APIKey   *APIKeyView `json:"api_key,omitempty"`
+}
+
+// MeOrgView is the org a credential acts in.
+type MeOrgView struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// Me describes the actor's own credential. Every credential may read
+// itself, whatever its scopes.
+func (s *Service) Me(ctx context.Context, a Actor) (MeView, error) {
+	o, err := s.store.Org(ctx, a.OrgID)
+	if err != nil {
+		return MeView{}, notFound(err, "org")
+	}
+	v := MeView{Object: "me", Livemode: a.Livemode, Org: MeOrgView{ID: id.Format(id.Org, o.ID), Name: o.Name}}
+	if a.KeyID != nil {
+		k, err := s.store.APIKey(ctx, a.OrgID, *a.KeyID)
+		if err != nil {
+			return MeView{}, notFound(err, "API key")
+		}
+		kv := ViewAPIKey(k)
+		v.APIKey = &kv
+	}
+	return v, nil
+}

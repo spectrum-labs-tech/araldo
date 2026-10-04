@@ -173,6 +173,9 @@ func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
 // sees them and can correct itself; an API error carries its problem
 // details (code, param, errors) as they are.
 func (s *Server) call(ctx context.Context, t Tool, args map[string]any) map[string]any {
+	if err := checkArgs(t.Input, args); err != nil {
+		return map[string]any{"content": []map[string]any{{"type": "text", "text": err.Error()}}, "isError": true}
+	}
 	out, err := t.Run(ctx, args)
 	if err != nil {
 		text := err.Error()

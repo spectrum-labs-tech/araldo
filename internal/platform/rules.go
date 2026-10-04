@@ -38,6 +38,16 @@ const (
 	CountBluesky Counting = "bluesky"
 )
 
+// Unit names what a limit counts, for people: "Bluesky allows 300
+// characters". Graphemes and the per-platform rules are all characters to a
+// reader; X's weighting is worth saying.
+func (c Counting) Unit() string {
+	if c == CountXWeighted {
+		return "weighted characters (links count as 23)"
+	}
+	return "characters"
+}
+
 // Rules are a platform's limits (ADR 0009). Every limit cites its source.
 type Rules struct {
 	Provider  Provider
@@ -336,7 +346,7 @@ func (r Rules) Check(parts []string, media []Media) []Violation {
 		if n := r.Length(p); n > r.MaxLength {
 			out = append(out, Violation{
 				Code: "too_long", Part: i + 1, Length: n, Limit: r.MaxLength,
-				Message: r.Name + " allows " + strconv.Itoa(r.MaxLength) + " " + string(r.Counting) + "; this has " + strconv.Itoa(n),
+				Message: r.Name + " allows " + strconv.Itoa(r.MaxLength) + " " + r.Counting.Unit() + "; this has " + strconv.Itoa(n),
 			})
 		}
 	}

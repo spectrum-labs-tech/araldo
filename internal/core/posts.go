@@ -500,7 +500,7 @@ func (s *Service) CancelPost(ctx context.Context, a Actor, postID uuid.UUID) (*m
 			return err
 		}
 		if n == 0 {
-			return apperr.Conflict("post_not_cancelable", "Nothing left to cancel: every target has published, failed or is publishing now.")
+			return apperr.Conflict("post_not_cancelable", "Nothing left to cancel: every target is already canceled, published, failed or publishing now.")
 		}
 		out, err = s.refreshPost(ctx, tx, a.OrgID, p.ID, a.RequestID, model.PostCanceled)
 		if err != nil {

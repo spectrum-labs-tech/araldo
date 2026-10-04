@@ -293,3 +293,25 @@ func TestCheckVideo(t *testing.T) {
 		t.Fatal("a video is never resized")
 	}
 }
+
+// A too-long message counts in words a reader knows, not the counting
+// method's internal name.
+func TestTooLongSaysCharacters(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("a", 6000)
+	for _, p := range []Provider{Bluesky, X, Mastodon} {
+		r, ok := RulesFor(p)
+		if !ok {
+			t.Fatalf("no rules for %s", p)
+		}
+		var msg string
+		for _, v := range r.Check([]string{long}, nil) {
+			if v.Code == "too_long" {
+				msg = v.Message
+			}
+		}
+		if msg == "" || !strings.Contains(msg, " characters") || strings.Contains(msg, string(r.Counting)+";") {
+			t.Errorf("%s: %q", p, msg)
+		}
+	}
+}

@@ -1,6 +1,6 @@
 # ADR 0008: Secrets are envelope-encrypted per org; the master keys never touch the database
 
-- Status: proposed
+- Status: accepted; built, except `keys rotate-org`, `keys export` and deleting an org
 - Date: 2026-09-28
 
 ## Context
@@ -81,8 +81,9 @@ to another row, where it would decrypt without error.
 
 ## Consequences
 
-- Operators must provide and keep a master key; `araldo server` refuses to
-  start without one.
+- Operators must provide and keep a master key. Without one, `araldo server`
+  still starts, and what needs a secret fails until a key is available
+  (decision 1).
 - Encrypted columns cannot be searched or indexed; nothing needs to be.
 - Tests cover: round trips, a ciphertext moved to another row failing,
   rotation keeping every secret readable, and org deletion making its

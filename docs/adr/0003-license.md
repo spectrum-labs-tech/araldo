@@ -1,6 +1,6 @@
 # ADR 0003: AGPL-3.0-or-later for the server; permissive licenses for clients
 
-- Status: proposed
+- Status: accepted; in effect (the DCO sign-off is not checked in CI)
 - Date: 2026-09-28
 
 ## Context

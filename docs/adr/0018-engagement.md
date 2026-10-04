@@ -1,6 +1,6 @@
 # ADR 0018: Read each published post's engagement on a fixed schedule and keep every reading
 
-- Status: proposed
+- Status: accepted; built; readers for X, LinkedIn, Pinterest and TikTok not yet
 - Date: 2026-10-02
 
 ## Context

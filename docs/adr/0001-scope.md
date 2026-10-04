@@ -1,6 +1,6 @@
 # ADR 0001: Araldo is a distribution API for developers; callers bring the content
 
-- Status: proposed
+- Status: accepted; ads narrowed by [ADR 0023](0023-paid-promotion.md)
 - Date: 2026-09-28
 
 ## Context

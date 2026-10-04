@@ -1,6 +1,6 @@
 # ADR 0013: Built-in encrypted backups that the server itself cannot read
 
-- Status: proposed
+- Status: accepted; not built
 - Date: 2026-09-28
 
 ## Context

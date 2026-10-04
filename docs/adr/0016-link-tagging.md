@@ -1,6 +1,6 @@
 # ADR 0016: Tag links with UTM parameters at render time; leave clicks to web analytics
 
-- Status: proposed
+- Status: accepted; built
 - Date: 2026-09-29
 
 ## Context

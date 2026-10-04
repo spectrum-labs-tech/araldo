@@ -1,6 +1,6 @@
 # ADR 0011: Publishing is an outbox with leases, and it never double-posts silently
 
-- Status: proposed
+- Status: accepted; built, with slots as changed by [ADR 0022](0022-slots-at-approval.md); uncertain attempts are retried only on idempotent adapters and otherwise go to `needs_attention` (no `Finder` reconciliation yet); editing a queued target not yet
 - Date: 2026-09-28
 
 ## Context

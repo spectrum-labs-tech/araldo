@@ -1,6 +1,6 @@
 # ADR 0022: A post takes its publishing slot when it is approved, and posts can be moved
 
-- Status: proposed
+- Status: accepted; built
 - Date: 2026-10-02
 
 ## Context

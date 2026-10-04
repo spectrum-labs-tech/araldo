@@ -1,6 +1,6 @@
 # ADR 0004: Orgs are the tenant boundary; brands group channels; four roles and optional approvals
 
-- Status: proposed
+- Status: accepted; built, except auditing denials (brand-limited members remain deferred)
 - Date: 2026-09-28
 
 ## Context

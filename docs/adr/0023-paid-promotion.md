@@ -1,6 +1,6 @@
 # ADR 0023: Paid promotion on any network, with spend that cannot exceed a cap
 
-- Status: proposed
+- Status: accepted; phase 1 (reporting) built; promotions not yet
 - Date: 2026-10-02
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR 0005: A contract-first API with Stripe-style conventions
 
-- Status: proposed
+- Status: accepted; built, except SDKs and the dashboard's request log; amended by [ADR 0019](0019-administration-api.md) and [ADR 0028](0028-cli-as-api-client.md)
 - Date: 2026-09-28
 
 ## Context

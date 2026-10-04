@@ -1,6 +1,6 @@
 # ADR 0009: Platforms are adapters; developer app credentials live in the database
 
-- Status: proposed
+- Status: accepted; built for every platform but Reddit; install-wide apps and Mastodon app registration not yet ([ADR 0021](0021-oauth-connections.md))
 - Date: 2026-09-28
 
 ## Context

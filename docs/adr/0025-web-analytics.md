@@ -1,6 +1,6 @@
 # ADR 0025: Web analytics are provider adapters that report visits and signups by Araldo's own link tags
 
-- Status: proposed
+- Status: accepted; built for Plausible and GA4
 - Date: 2026-10-03
 
 ## Context
@@ -43,7 +43,9 @@ analytics (PostHog). Each has a reporting API.
    `utm_content` names the post, promotion or issue and `utm_campaign`
    its campaign. Rows carrying tags Araldo did not write stay
    unattributed and are shown as such, so a brand sees how much of its
-   traffic the matching explains.
+   traffic the matching explains. (A newsletter issue is named by
+   `utm_campaign`, and `utm_content` gives the link's place in it, as
+   [ADR 0024](0024-newsletters.md) decision 10 says.)
 5. **Readings follow a schedule**: daily, re-reading the last 7 days, since
    tools revise recent days (GA4 most of all, which can take a day or two
    and hides small counts). Recent figures are marked provisional.

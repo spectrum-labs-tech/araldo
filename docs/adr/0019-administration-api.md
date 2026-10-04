@@ -1,6 +1,6 @@
 # ADR 0019: The API manages everything a declarative tool needs; admin powers are explicit-only scopes
 
-- Status: proposed
+- Status: accepted; built; decision 1 and the CLI half of decision 6 superseded by [ADR 0028](0028-cli-as-api-client.md)
 - Date: 2026-10-02
 
 ## Context

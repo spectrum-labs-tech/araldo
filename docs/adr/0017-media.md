@@ -1,6 +1,6 @@
 # ADR 0017: Images are uploaded once, checked against every platform's rules, and stored in Postgres unless S3 is configured
 
-- Status: proposed
+- Status: accepted; built; extended by [ADR 0027](0027-video-and-resizing.md)
 - Date: 2026-10-02
 
 ## Context

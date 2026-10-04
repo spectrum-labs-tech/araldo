@@ -1,6 +1,6 @@
 # ADR 0021: Channels connect with OAuth through an org's developer apps; images reach platforms by signed links
 
-- Status: proposed
+- Status: accepted; built (install-wide apps later)
 - Date: 2026-10-02
 
 ## Context
@@ -54,7 +54,9 @@ URL: they fetch the file themselves.
    (links last an hour). The API is the public part of an install, so the
    platform can fetch from it; adapters get the link in the payload.
    Changing the primary master key invalidates old links, which is fine for
-   links this short.
+   links this short. (Changed by [ADR 0008](0008-encryption.md) decision 6:
+   the signing key is stored, not derived, so changing master keys keeps
+   links valid.)
 
 ## Alternatives considered
 

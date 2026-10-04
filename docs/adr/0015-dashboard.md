@@ -1,6 +1,6 @@
 # ADR 0015: A server-rendered dashboard embedded in the binary
 
-- Status: proposed
+- Status: accepted; built, except the calendar and the request log
 - Date: 2026-09-28
 
 ## Context

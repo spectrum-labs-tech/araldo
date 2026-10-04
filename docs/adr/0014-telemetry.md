@@ -1,6 +1,6 @@
 # ADR 0014: OpenTelemetry and slog, with no secrets or unpublished content
 
-- Status: proposed
+- Status: accepted; slog and metrics built; traces, logs through OpenTelemetry and publish lateness not yet
 - Date: 2026-09-28
 
 ## Context

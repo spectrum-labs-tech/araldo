@@ -1,6 +1,6 @@
 # ADR 0012: Events are written in the same transaction; webhooks are signed and retried
 
-- Status: proposed
+- Status: accepted; built, except the overlap when rolling a secret, notice of a disabled endpoint, and the event stream for `araldo listen`
 - Date: 2026-09-28
 
 ## Context

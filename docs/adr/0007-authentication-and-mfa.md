@@ -1,6 +1,6 @@
 # ADR 0007: Passwords, passkeys and TOTP built in; MFA can be required per org
 
-- Status: proposed
+- Status: accepted; passwords, TOTP, recovery codes and required MFA built; passkeys, email flows and the breached-password check not yet
 - Date: 2026-09-28
 
 ## Context

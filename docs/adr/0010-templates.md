@@ -1,6 +1,6 @@
 # ADR 0010: Templates are versioned Go text/templates with a JSON Schema and per-platform bodies
 
-- Status: proposed
+- Status: accepted; built, except the per-version `media` field and warnings on save
 - Date: 2026-09-28
 
 ## Context

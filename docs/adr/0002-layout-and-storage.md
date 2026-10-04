@@ -1,6 +1,6 @@
 # ADR 0002: One module, one binary, Postgres only, a fixed layout
 
-- Status: proposed
+- Status: accepted; built
 - Date: 2026-09-28
 
 ## Context

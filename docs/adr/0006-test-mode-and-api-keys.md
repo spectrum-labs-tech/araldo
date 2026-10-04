@@ -1,6 +1,6 @@
 # ADR 0006: Every org has a test mode that can never post publicly
 
-- Status: proposed
+- Status: accepted; built; key rolling amended by [ADR 0019](0019-administration-api.md)
 - Date: 2026-09-28
 
 ## Context

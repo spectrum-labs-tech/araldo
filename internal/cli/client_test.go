@@ -38,6 +38,10 @@ func fakeAraldo(t *testing.T) (*httptest.Server, *map[string]any) {
 			_, _ = io.WriteString(w, `{"object":"me","livemode":true,"org":{"id":"org_1","name":"Spectrum Labs"},`+
 				`"api_key":{"id":"key_1","object":"api_key","name":"cli","hint":"ald_live_…test","livemode":true,"scopes":[]}}`)
 		case "GET /v1/channels":
+			if r.URL.Query().Get("brand") == "empty" {
+				_, _ = io.WriteString(w, `{"object":"list","data":[]}`)
+				return
+			}
 			if r.URL.Query().Get("brand") == "nope" {
 				w.WriteHeader(http.StatusNotFound)
 				_, _ = io.WriteString(w, `{"code":"resource_missing","detail":"No such brand.","status":404}`)
@@ -122,6 +126,15 @@ func TestChannelsListThroughTheAPI(t *testing.T) {
 	}
 	if code, _, errOut = runCLI(t, "", "channels", "list", "--brand", "nope"); code == ExitOK || !strings.Contains(errOut, "No such brand.") {
 		t.Fatalf("an unknown brand: exit %d %q", code, errOut)
+	}
+	// As gh: an empty list piped prints nothing, and a bare --json lists the fields.
+	if code, out, errOut = runCLI(t, "", "channels", "list", "--brand", "empty"); code != ExitOK || out != "" || errOut != "" {
+		t.Fatalf("an empty list: exit %d %q %q", code, out, errOut)
+	}
+	for _, args := range [][]string{{"channels", "list", "--json"}, {"channels", "list", "--json", "--brand", "x"}} {
+		if code, _, errOut = runCLI(t, "", args...); code != ExitUsage || !strings.Contains(errOut, "fields for --json") || !strings.Contains(errOut, "status_note") {
+			t.Fatalf("%v: exit %d %q", args, code, errOut)
+		}
 	}
 }
 

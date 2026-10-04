@@ -19,9 +19,12 @@ var channelFields = []string{"brand", "check_error", "checked_at", "created_at",
 
 func runChannels(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] != "list" {
-		return usageErr("channels list")
+		return usageErr("usage: araldo channels list [--brand ID or slug] [--json fields] [--jq expression] [--hostname host]")
 	}
 	var hostname, brand, jsonFields, jq string
+	if bareJSON(args[1:]) {
+		return jsonFieldsHelp(channelFields)
+	}
 	if err := flags("channels list", stderr, args[1:], func(fs *flag.FlagSet) {
 		fs.StringVar(&hostname, "hostname", "", "the Araldo server (default: the one signed in to)")
 		fs.StringVar(&brand, "brand", "", "only this brand's channels (ID or slug)")
@@ -52,6 +55,10 @@ func runChannels(ctx context.Context, args []string, stdout, stderr io.Writer) e
 	}
 	if out.fields != nil {
 		return out.printJSON(chs.Data)
+	}
+	if len(chs.Data) == 0 {
+		out.empty(stderr, "no channels")
+		return nil
 	}
 	raw, err = c.Do(ctx, http.MethodGet, "/v1/brands", nil, nil, "")
 	if err != nil {

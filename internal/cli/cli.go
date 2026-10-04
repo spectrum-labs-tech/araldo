@@ -26,25 +26,33 @@ const (
 type command struct {
 	name    string
 	summary string
-	run     func(ctx context.Context, args []string, stdout, stderr io.Writer) error
+	// group is the heading the command is listed under in the help.
+	group string
+	run   func(ctx context.Context, args []string, stdout, stderr io.Writer) error
 }
+
+// Help groups: using a server from anywhere, and running one (ADR 0028).
+const (
+	groupClient = "Use an Araldo server (from anywhere; sign in with araldo auth login):"
+	groupServer = "Run and administer a server (where its configuration and database are):"
+)
 
 func commands() []command {
 	return []command{
-		{name: "server", summary: "Run the API and dashboard", run: runServer},
-		{name: "worker", summary: "Publish posts, deliver webhooks and run background tasks", run: runWorker},
-		{name: "all", summary: "Run server and worker in one process (small installs, development)", run: runAll},
-		{name: "migrate", summary: "Bring the database schema up to date", run: runMigrate},
-		{name: "bootstrap", summary: "Create the first user, org and brand", run: runBootstrap},
-		{name: "users", summary: "Manage users: create, reset-password", run: runUsers},
-		{name: "keys", summary: "Master keys: generate, rotate", run: runKeys},
-		{name: "apikeys", summary: "API keys: create (prints only the key, for piping into a secret store)", run: runAPIKeys},
-		{name: "members", summary: "Org members: list, add, role, remove (acting as a member)", run: runMembers},
-		{name: "auth", summary: "Sign in to an Araldo server: login, status, logout, token", run: runAuth},
-		{name: "api", summary: "Make an authenticated request to the Araldo API", run: runAPI},
-		{name: "channels", summary: "Channels: list, with their status and last check", run: runChannels},
-		{name: "org", summary: "Org settings: update (acting as an owner)", run: runOrg},
-		{name: "mcp", summary: "Serve Araldo's tools to an AI assistant over stdio (MCP), with ARALDO_URL and ARALDO_API_KEY", run: runMCP},
+		{name: "auth", group: groupClient, summary: "Sign in to a server: login, status, logout, token", run: runAuth},
+		{name: "channels", group: groupClient, summary: "Channels: list, with their status and last check", run: runChannels},
+		{name: "api", group: groupClient, summary: "Make an authenticated request to the API", run: runAPI},
+		{name: "mcp", group: groupClient, summary: "Serve Araldo's tools to an AI assistant over stdio (MCP)", run: runMCP},
+		{name: "server", group: groupServer, summary: "Run the API and dashboard", run: runServer},
+		{name: "worker", group: groupServer, summary: "Publish posts, deliver webhooks and run background tasks", run: runWorker},
+		{name: "all", group: groupServer, summary: "Run server and worker in one process (small installs, development)", run: runAll},
+		{name: "migrate", group: groupServer, summary: "Bring the database schema up to date", run: runMigrate},
+		{name: "bootstrap", group: groupServer, summary: "Create the first user, org and brand", run: runBootstrap},
+		{name: "users", group: groupServer, summary: "Manage users: create, reset-password", run: runUsers},
+		{name: "keys", group: groupServer, summary: "Master keys: generate, rotate, status", run: runKeys},
+		{name: "apikeys", group: groupServer, summary: "API keys: create (prints only the key, for piping into a secret store)", run: runAPIKeys},
+		{name: "members", group: groupServer, summary: "Org members: list, add, role, remove (acting as a member)", run: runMembers},
+		{name: "org", group: groupServer, summary: "Org settings: update (acting as an owner)", run: runOrg},
 		{name: "version", summary: "Print the araldo version", run: runVersion},
 	}
 }
@@ -101,13 +109,19 @@ func message(err error) string {
 
 func usage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "Usage: araldo <command> [arguments]")
-	_, _ = fmt.Fprintln(w)
-	_, _ = fmt.Fprintln(w, "Commands:")
-	for _, c := range commands() {
-		_, _ = fmt.Fprintf(w, "  %-10s %s\n", c.name, c.summary)
+	for _, group := range []string{groupClient, groupServer, ""} {
+		_, _ = fmt.Fprintln(w)
+		if group != "" {
+			_, _ = fmt.Fprintln(w, group)
+		}
+		for _, c := range commands() {
+			if c.group == group {
+				_, _ = fmt.Fprintf(w, "  %-10s %s\n", c.name, c.summary)
+			}
+		}
 	}
 	_, _ = fmt.Fprintln(w)
-	_, _ = fmt.Fprintln(w, "Configuration comes from ARALDO_* environment variables; see docs/operations.md.")
+	_, _ = fmt.Fprintln(w, "A server is configured with ARALDO_* environment variables; see docs/operations.md.")
 }
 
 func runVersion(_ context.Context, args []string, stdout, _ io.Writer) error {

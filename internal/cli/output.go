@@ -35,6 +35,30 @@ func isTerminal(w io.Writer) bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
+// bareJSON reports whether --json was given without fields (last, or
+// followed by another flag). gh answers that with the fields it offers.
+func bareJSON(args []string) bool {
+	for i, a := range args {
+		if a == "--json" || a == "-json" {
+			return i == len(args)-1 || strings.HasPrefix(args[i+1], "-")
+		}
+	}
+	return false
+}
+
+// jsonFieldsHelp is gh's answer to a bare --json.
+func jsonFieldsHelp(fields []string) error {
+	return usageErr("specify one or more comma-separated fields for --json:\n  %s", strings.Join(fields, "\n  "))
+}
+
+// empty says, in a terminal, that a list has nothing in it, as gh does;
+// piped, an empty list prints nothing.
+func (o *output) empty(stderr io.Writer, what string) {
+	if o.tty {
+		_, _ = fmt.Fprintln(stderr, what)
+	}
+}
+
 // newOutput checks --json and --jq against the fields a command offers.
 func newOutput(w io.Writer, jsonFields, jq string, available []string) (*output, error) {
 	o := &output{w: w, tty: isTerminal(w), jq: jq}

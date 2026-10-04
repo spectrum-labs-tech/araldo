@@ -16,16 +16,21 @@ import (
 	"testing"
 )
 
-const testToken = "ald_live_cli-test"
+// testToken and liveToken are the only keys fakeAraldo knows, one per mode.
+const (
+	testToken = "ald_test_cli-test"
+	liveToken = "ald_live_cli-test"
+)
 
-// fakeAraldo answers the /v1 routes the client commands use, for the test
-// token only, and remembers the last request body.
+// fakeAraldo answers the /v1 routes the client commands use, for testToken
+// and liveToken only, and remembers the last request body.
 func fakeAraldo(t *testing.T) (*httptest.Server, *map[string]any) {
 	t.Helper()
 	var lastBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.Header.Get("Authorization") != "Bearer "+testToken {
+		auth := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if auth != testToken && auth != liveToken {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = io.WriteString(w, `{"code":"api_key_invalid","detail":"The key is malformed or unknown.","status":401}`)
 			return
@@ -36,8 +41,9 @@ func fakeAraldo(t *testing.T) (*httptest.Server, *map[string]any) {
 		}
 		switch r.Method + " " + r.URL.Path {
 		case "GET /v1/me":
-			_, _ = io.WriteString(w, `{"object":"me","livemode":true,"org":{"id":"org_1","name":"Spectrum Labs"},`+
-				`"api_key":{"id":"key_1","object":"api_key","name":"cli","hint":"ald_live_…test","livemode":true,"scopes":[]}}`)
+			live := auth == liveToken
+			_, _ = fmt.Fprintf(w, `{"object":"me","livemode":%t,"org":{"id":"org_1","name":"Spectrum Labs"},`+
+				`"api_key":{"id":"key_1","object":"api_key","name":"cli","hint":%q,"livemode":%t,"scopes":[]}}`, live, auth[:9]+"…test", live)
 		case "GET /v1/channels":
 			if r.URL.Query().Get("brand") == "empty" {
 				_, _ = io.WriteString(w, `{"object":"list","data":[]}`)
@@ -49,8 +55,8 @@ func fakeAraldo(t *testing.T) (*httptest.Server, *map[string]any) {
 				return
 			}
 			_, _ = io.WriteString(w, `{"object":"list","data":[`+
-				`{"id":"chan_1","brand":"brand_1","provider":"bluesky","handle":"getotium.ai","status":"active","checked_at":"2026-10-04T19:40:23Z"},`+
-				`{"id":"chan_2","brand":"brand_1","provider":"x","display_name":"Otium","status":"needs_reauth","status_note":"token revoked",`+
+				`{"id":"chan_1","brand":"brand_1","provider":"bluesky","handle":"araldo.dev","status":"active","checked_at":"2026-10-04T19:40:23Z"},`+
+				`{"id":"chan_2","brand":"brand_1","provider":"x","display_name":"Araldo","status":"needs_reauth","status_note":"token revoked",`+
 				`"checked_at":"2026-10-04T19:40:23Z","check_error":"401 from X"},`+
 				`{"id":"chan_3","brand":"brand_9","provider":"sandbox","emulates":"mastodon","handle":"test","status":"active"}]}`)
 		case "GET /v1/posts":
@@ -65,7 +71,7 @@ func fakeAraldo(t *testing.T) (*httptest.Server, *map[string]any) {
 			}
 			_, _ = fmt.Fprintf(w, `{"object":"list","data":[%s],"has_more":%t}`, strings.Join(items, ","), start+2 < 5)
 		case "GET /v1/brands":
-			_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"brand_1","name":"Otium"}]}`)
+			_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"brand_1","name":"Araldo"}]}`)
 		case "POST /v1/brands":
 			w.WriteHeader(http.StatusCreated)
 			_, _ = io.WriteString(w, `{"id":"brand_2","object":"brand","name":"New"}`)
@@ -113,8 +119,8 @@ func TestChannelsListThroughTheAPI(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errOut)
 	}
 	for _, want := range []string{
-		"Otium\tbluesky\tgetotium.ai\tactive\t2026-10-04 19:40:23 (ok)\tchan_1",
-		"Otium\tx\tOtium\tneeds_reauth: token revoked\t2026-10-04 19:40:23 (401 from X)\tchan_2",
+		"Araldo\tbluesky\taraldo.dev\tactive\t2026-10-04 19:40:23 (ok)\tchan_1",
+		"Araldo\tx\tAraldo\tneeds_reauth: token revoked\t2026-10-04 19:40:23 (401 from X)\tchan_2",
 		"brand_9\tsandbox (mastodon)\ttest\tactive\tnever\tchan_3",
 	} {
 		if !strings.Contains(out, want+"\n") {
@@ -127,10 +133,10 @@ func TestChannelsListThroughTheAPI(t *testing.T) {
 
 	code, out, _ = runCLI(t, "", "channels", "list", "--json", "handle,status")
 	var picked []map[string]any
-	if code != ExitOK || json.Unmarshal([]byte(out), &picked) != nil || len(picked) != 3 || len(picked[0]) != 2 || picked[0]["handle"] != "getotium.ai" {
+	if code != ExitOK || json.Unmarshal([]byte(out), &picked) != nil || len(picked) != 3 || len(picked[0]) != 2 || picked[0]["handle"] != "araldo.dev" {
 		t.Fatalf("--json: exit %d\n%s", code, out)
 	}
-	if code, out, _ = runCLI(t, "", "channels", "list", "--json", "handle", "--jq", ".[0].handle"); code != ExitOK || out != "getotium.ai\n" {
+	if code, out, _ = runCLI(t, "", "channels", "list", "--json", "handle", "--jq", ".[0].handle"); code != ExitOK || out != "araldo.dev\n" {
 		t.Fatalf("--jq: exit %d %q", code, out)
 	}
 	if code, _, errOut = runCLI(t, "", "channels", "list", "--json", "secret"); code != ExitUsage || !strings.Contains(errOut, "status_note") {
@@ -161,15 +167,42 @@ func TestAuthLoginStatusLogout(t *testing.T) {
 		t.Fatalf("a bad token: exit %d %q", code, errOut)
 	}
 	code, out, errOut := runCLI(t, testToken+"\n", "auth", "login", "--with-token", "--insecure-storage")
-	if code != ExitOK || !strings.Contains(out, `Logged in to`) || !strings.Contains(out, `Spectrum Labs, live API key "cli" (ald_live_…test)`) {
+	if code != ExitOK || !strings.Contains(out, `Logged in to`) || !strings.Contains(out, `Spectrum Labs, test API key "cli" (ald_test_…test)`) {
 		t.Fatalf("login: exit %d %q %q", code, out, errOut)
 	}
-	if code, out, _ = runCLI(t, "", "auth", "status"); code != ExitOK || !strings.Contains(out, "✓ Logged in as Spectrum Labs") ||
-		!strings.Contains(out, "(file)") {
-		t.Fatalf("status: exit %d %q", code, out)
+	if code, out, _ = runCLI(t, "", "auth", "status"); code != ExitOK || !strings.Contains(out, "✓ test: Spectrum Labs") ||
+		!strings.Contains(out, "(file)") || !strings.Contains(out, "- live: no key (araldo auth login --hostname 127.0.0.1") {
+		t.Fatalf("status with a test key: exit %d %q", code, out)
 	}
-	if code, out, _ = runCLI(t, "", "auth", "token"); code != ExitOK || out != testToken+"\n" {
-		t.Fatalf("token: exit %d %q", code, out)
+	if code, _, errOut = runCLI(t, "", "channels", "list", "--live"); code == ExitOK || !strings.Contains(errOut, "--live") {
+		t.Fatalf("--live without a live key: exit %d %q", code, errOut)
+	}
+	// A live key read from stdin goes in the live slot, beside the test key.
+	if code, _, errOut = runCLI(t, liveToken+"\n", "auth", "login", "--with-token", "--insecure-storage"); code != ExitOK ||
+		!strings.Contains(errOut, "unless given --live") {
+		t.Fatalf("live login: exit %d %q", code, errOut)
+	}
+	// --live insists on a live key.
+	if code, _, errOut = runCLI(t, testToken+"\n", "auth", "login", "--live", "--with-token", "--insecure-storage"); code != ExitUsage ||
+		!strings.Contains(errOut, "that is a test key") {
+		t.Fatalf("a test key for --live: exit %d %q", code, errOut)
+	}
+	if code, out, _ = runCLI(t, "", "auth", "status"); code != ExitOK || !strings.Contains(out, "✓ test: ") || !strings.Contains(out, "✓ live: ") {
+		t.Fatalf("status with both keys: exit %d %q", code, out)
+	}
+	for _, tt := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"auth", "token"}, testToken},
+		{[]string{"auth", "token", "--live"}, liveToken},
+	} {
+		if code, out, _ = runCLI(t, "", tt.args...); code != ExitOK || out != tt.want+"\n" {
+			t.Fatalf("%v: exit %d %q", tt.args, code, out)
+		}
+	}
+	if code, _, errOut = runCLI(t, "", "channels", "list", "--live"); code != ExitOK {
+		t.Fatalf("channels --live: exit %d %q", code, errOut)
 	}
 	if code, _, errOut = runCLI(t, "", "channels", "list"); code != ExitOK {
 		t.Fatalf("channels with the stored token: exit %d %q", code, errOut)
@@ -177,8 +210,10 @@ func TestAuthLoginStatusLogout(t *testing.T) {
 	if code, _, errOut = runCLI(t, "", "auth", "logout"); code != ExitOK {
 		t.Fatalf("logout: exit %d %q", code, errOut)
 	}
-	if code, _, _ = runCLI(t, "", "channels", "list"); code == ExitOK {
-		t.Fatal("channels list worked after logging out")
+	for _, args := range [][]string{{"channels", "list"}, {"channels", "list", "--live"}} {
+		if code, _, _ = runCLI(t, "", args...); code == ExitOK {
+			t.Fatalf("%v worked after logging out", args)
+		}
 	}
 }
 
@@ -211,6 +246,16 @@ func TestAuthLoginThroughTheBrowser(t *testing.T) {
 	if code, _, errOut = runCLI(t, "\n", "auth", "login", "--insecure-storage"); code != ExitUsage {
 		t.Fatalf("nothing pasted: exit %d %q", code, errOut)
 	}
+	// --live asks the page for a live key, and refuses a test one pasted back.
+	openBrowser = func(u string) error { opened = u; return nil }
+	if code, _, errOut = runCLI(t, testToken+"\n", "auth", "login", "--live", "--insecure-storage"); code != ExitUsage ||
+		!strings.HasSuffix(opened, "&mode=live") || !strings.Contains(errOut, "that is a test key") {
+		t.Fatalf("a test key for --live: exit %d, opened %q, %q", code, opened, errOut)
+	}
+	if code, out, errOut = runCLI(t, liveToken+"\n", "auth", "login", "--live", "--insecure-storage"); code != ExitOK ||
+		!strings.Contains(out, "live API key") || !strings.Contains(errOut, "Create a live API key") {
+		t.Fatalf("live login: exit %d %q %q", code, out, errOut)
+	}
 }
 
 // araldo api: GET by default with fields as the query, POST with fields as
@@ -219,7 +264,7 @@ func TestAPICommand(t *testing.T) {
 	srv, lastBody := fakeAraldo(t)
 	cliEnv(t, srv, true)
 
-	if code, out, errOut := runCLI(t, "", "api", "channels", "--jq", ".data[0].handle"); code != ExitOK || out != "getotium.ai\n" {
+	if code, out, errOut := runCLI(t, "", "api", "channels", "--jq", ".data[0].handle"); code != ExitOK || out != "araldo.dev\n" {
 		t.Fatalf("api channels: exit %d %q %q", code, out, errOut)
 	}
 	if code, out, _ := runCLI(t, "", "api", "-f", "name=New", "/v1/brands"); code != ExitOK || !strings.Contains(out, `"brand_2"`) ||

@@ -16,14 +16,16 @@ import (
 // It needs no database: it calls an Araldo API with a key.
 func runMCP(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	base, key := os.Getenv("ARALDO_URL"), os.Getenv("ARALDO_API_KEY")
+	var live bool
 	if err := flags("mcp", stderr, args, func(fs *flag.FlagSet) {
 		fs.StringVar(&base, "url", base, "the Araldo to use, e.g. https://araldo.example.com (or ARALDO_URL)")
+		fs.BoolVar(&live, "live", false, "use the stored live key (default: the test key, which reaches only sandbox channels)")
 	}); err != nil {
 		return err
 	}
 	if base == "" || key == "" {
-		// Otherwise the server and credential `araldo auth login` stored.
-		c, _, err := connect(base)
+		// Otherwise the server and key `araldo auth login` stored.
+		c, _, err := connect(base, live)
 		if err != nil {
 			return usageErr("sign in with araldo auth login, or set ARALDO_URL (or --url) and ARALDO_API_KEY; the credential decides what the tools may do (%v)", err)
 		}

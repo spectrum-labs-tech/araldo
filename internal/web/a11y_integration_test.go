@@ -127,7 +127,7 @@ func TestPagesAreAccessible(t *testing.T) {
 		"/templates", "/templates/new", "/templates/" + id.Format(id.Template, tpl.ID),
 		"/channels", "/channels/apps", "/channels/new", "/channels/new?provider=bluesky", "/channels/" + id.Format(id.Channel, chans[0].ID) + "/reconnect",
 		"/brands", "/brands/new", "/brands/" + id.Format(id.Brand, d.brand.ID),
-		"/keys", "/keys/" + id.Format(id.APIKey, key.ID), "/cli?device=laptop", "/webhooks", "/webhooks/" + id.Format(id.WebhookEndpoint, ep.ID),
+		"/keys", "/keys/" + id.Format(id.APIKey, key.ID), "/cli?device=laptop", "/cli?device=laptop&mode=live", "/webhooks", "/webhooks/" + id.Format(id.WebhookEndpoint, ep.ID),
 		"/events", "/events/" + id.Format(id.Event, events[0].ID), "/api-reference",
 		"/org", "/org/members/" + id.Format(id.User, *d.owner.UserID), "/org/audit", "/org/tasks", "/account", "/confirm",
 	}

@@ -19,14 +19,15 @@ var channelFields = []string{"brand", "check_error", "checked_at", "created_at",
 
 func runChannels(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] != "list" {
-		return usageErr("usage: araldo channels list [--brand ID or slug] [--json fields] [--jq expression] [--hostname host]")
+		return usageErr("usage: araldo channels list [--live] [--brand ID or slug] [--json fields] [--jq expression] [--hostname host]")
 	}
 	var hostname, brand, jsonFields, jq string
+	var live bool
 	if bareJSON(args[1:]) {
 		return jsonFieldsHelp(channelFields)
 	}
 	if err := flags("channels list", stderr, args[1:], func(fs *flag.FlagSet) {
-		fs.StringVar(&hostname, "hostname", "", "the Araldo server (default: the one signed in to)")
+		clientFlags(fs, &hostname, &live)
 		fs.StringVar(&brand, "brand", "", "only this brand's channels (ID or slug)")
 		fs.StringVar(&jsonFields, "json", "", "print these fields as JSON (comma-separated): "+joinFields(channelFields))
 		fs.StringVar(&jq, "jq", "", "filter the --json output with a jq expression")
@@ -37,7 +38,7 @@ func runChannels(ctx context.Context, args []string, stdout, stderr io.Writer) e
 	if err != nil {
 		return err
 	}
-	c, _, err := connect(hostname)
+	c, _, err := connect(hostname, live)
 	if err != nil {
 		return err
 	}

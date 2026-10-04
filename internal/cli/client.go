@@ -32,17 +32,24 @@ import (
 // openHosts is the credential store; tests replace it.
 var openHosts = hosts.Default
 
-// connect returns a client for hostname (or the default server).
-func connect(hostname string) (*apiclient.Client, hosts.Credential, error) {
+// connect returns a client for hostname (or the default server) with its
+// test key, or its live key when live (ADR 0028, as the Stripe CLI).
+func connect(hostname string, live bool) (*apiclient.Client, hosts.Credential, error) {
 	store, err := openHosts()
 	if err != nil {
 		return nil, hosts.Credential{}, err
 	}
-	cred, err := store.Resolve(hostname)
+	cred, err := store.Resolve(hostname, live)
 	if err != nil {
 		return nil, hosts.Credential{}, err
 	}
 	return apiclient.New(cred.URL, cred.Token, "araldo-cli/"+buildinfo.Version), cred, nil
+}
+
+// clientFlags are the flags every client command takes.
+func clientFlags(fs *flag.FlagSet, hostname *string, live *bool) {
+	fs.StringVar(hostname, "hostname", "", "the Araldo server, e.g. araldo.example.com (default: the one signed in to, or ARALDO_HOST)")
+	fs.BoolVar(live, "live", false, "use the live key (default: the test key, which reaches only sandbox channels)")
 }
 
 // me describes the credential, as GET /v1/me answers.
@@ -59,14 +66,10 @@ type me struct {
 
 // account names the credential the way auth status shows it.
 func (m me) account() string {
-	mode := "test"
-	if m.Livemode {
-		mode = "live"
-	}
 	if m.APIKey != nil {
-		return fmt.Sprintf("%s, %s API key %q (%s)", m.Org.Name, mode, m.APIKey.Name, m.APIKey.Hint)
+		return fmt.Sprintf("%s, %s API key %q (%s)", m.Org.Name, hosts.Mode(m.Livemode), m.APIKey.Name, m.APIKey.Hint)
 	}
-	return fmt.Sprintf("%s (%s)", m.Org.Name, mode)
+	return fmt.Sprintf("%s (%s)", m.Org.Name, hosts.Mode(m.Livemode))
 }
 
 func whoami(ctx context.Context, c *apiclient.Client) (me, error) {
@@ -80,50 +83,59 @@ func whoami(ctx context.Context, c *apiclient.Client) (me, error) {
 
 func runAuth(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return usageErr("auth login | status | logout | token")
+		return usageErr("usage: araldo auth login | status | logout | token")
 	}
 	var hostname string
-	hostFlag := func(fs *flag.FlagSet) {
-		fs.StringVar(&hostname, "hostname", "", "the Araldo server, e.g. araldo.example.com (default: the one signed in to, or ARALDO_HOST)")
-	}
+	var live bool
 	switch args[0] {
 	case "login":
 		var withToken, insecure bool
 		if err := flags("auth login", stderr, args[1:], func(fs *flag.FlagSet) {
-			hostFlag(fs)
+			fs.StringVar(&hostname, "hostname", "", "the Araldo server to sign in to, e.g. araldo.example.com (or ARALDO_HOST)")
+			fs.BoolVar(&live, "live", false, "add a live key (default: a test key, which reaches only sandbox channels)")
 			fs.BoolVar(&withToken, "with-token", false, "read an API key from standard input instead of opening the browser")
-			fs.BoolVar(&insecure, "insecure-storage", false, "keep the token in hosts.yaml instead of the system keychain")
+			fs.BoolVar(&insecure, "insecure-storage", false, "keep the key in hosts.yaml instead of the system keychain")
 		}); err != nil {
 			return err
 		}
-		return authLogin(ctx, hostname, withToken, insecure, stdout, stderr)
+		return authLogin(ctx, hostname, live, withToken, insecure, stdout, stderr)
 	case "status":
-		if err := flags("auth status", stderr, args[1:], hostFlag); err != nil {
+		if err := flags("auth status", stderr, args[1:], func(fs *flag.FlagSet) {
+			fs.StringVar(&hostname, "hostname", "", "only this server")
+		}); err != nil {
 			return err
 		}
 		return authStatus(ctx, hostname, stdout)
 	case "logout":
-		if err := flags("auth logout", stderr, args[1:], hostFlag); err != nil {
+		if err := flags("auth logout", stderr, args[1:], func(fs *flag.FlagSet) {
+			fs.StringVar(&hostname, "hostname", "", "the server to sign out of (default: the default one)")
+		}); err != nil {
 			return err
 		}
 		store, err := openHosts()
 		if err != nil {
 			return err
 		}
-		cred, err := store.Resolve(hostname)
+		f, err := store.Load()
 		if err != nil {
 			return err
 		}
-		if err := store.SignOut(cred.Name); err != nil {
+		name := first(hostname, f.Default)
+		if name != "" {
+			if name, _, err = hosts.Name(name); err != nil {
+				return usageErr("%v", err)
+			}
+		}
+		if err := store.SignOut(name); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(stderr, "✓ Logged out of %s\n", cred.Name)
+		_, _ = fmt.Fprintf(stderr, "✓ Logged out of %s (test and live keys)\n", name)
 		return nil
 	case "token":
-		if err := flags("auth token", stderr, args[1:], hostFlag); err != nil {
+		if err := flags("auth token", stderr, args[1:], func(fs *flag.FlagSet) { clientFlags(fs, &hostname, &live) }); err != nil {
 			return err
 		}
-		_, cred, err := connect(hostname)
+		_, cred, err := connect(hostname, live)
 		if err != nil {
 			return err
 		}
@@ -133,10 +145,17 @@ func runAuth(ctx context.Context, args []string, stdout, stderr io.Writer) error
 	return usageErr("unknown auth command %q", args[0])
 }
 
-func authLogin(ctx context.Context, hostname string, withToken, insecure bool, stdout, stderr io.Writer) error {
-	if hostname == "" {
-		hostname = os.Getenv("ARALDO_HOST")
+func first(vs ...string) string {
+	for _, v := range vs {
+		if v != "" {
+			return v
+		}
 	}
+	return ""
+}
+
+func authLogin(ctx context.Context, hostname string, live, withToken, insecure bool, stdout, stderr io.Writer) error {
+	hostname = first(hostname, os.Getenv("ARALDO_HOST"))
 	if hostname == "" {
 		return usageErr("--hostname is required: the Araldo server to sign in to, e.g. araldo.example.com")
 	}
@@ -151,32 +170,41 @@ func authLogin(ctx context.Context, hostname string, withToken, insecure bool, s
 			return err
 		}
 		if token = strings.TrimSpace(line); token == "" {
-			return usageErr("no token on standard input")
+			return usageErr("no key on standard input")
 		}
-	} else if token, err = keyFromBrowser(base, stderr); err != nil {
+	} else if token, err = keyFromBrowser(base, live, stderr); err != nil {
 		return err
 	}
 	m, err := whoami(ctx, apiclient.New(base, token, "araldo-cli/"+buildinfo.Version))
 	if err != nil {
-		return fmt.Errorf("checking the token with %s: %w", name, err)
+		return fmt.Errorf("checking the key with %s: %w", name, err)
+	}
+	// A key belongs to one mode (ADR 0006). Pasted from the browser it must be
+	// the mode asked for; read from stdin it is kept under its own, unless
+	// --live said otherwise.
+	if m.Livemode != live && (!withToken || live) {
+		return usageErr("that is a %s key; run araldo auth login%s for it", hosts.Mode(m.Livemode), map[bool]string{true: " --live", false: ""}[m.Livemode])
 	}
 	store, err := openHosts()
 	if err != nil {
 		return err
 	}
-	where, err := store.SignIn(name, base, m.account(), token, insecure)
+	where, err := store.SignIn(name, base, m.account(), token, m.Livemode, insecure)
 	if err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(stdout, "✓ Logged in to %s as %s\n", name, m.account())
 	if where == hosts.InFile {
-		_, _ = fmt.Fprintf(stderr, "! The token is in %s/hosts.yaml (no system keychain was available)\n", store.Dir)
+		_, _ = fmt.Fprintf(stderr, "! The key is in %s/hosts.yaml (no system keychain was available)\n", store.Dir)
+	}
+	if m.Livemode {
+		_, _ = fmt.Fprintln(stderr, "! Commands use the test key unless given --live.")
 	}
 	return nil
 }
 
-// authStatus checks every server signed in to (or the one named), as gh
-// auth status does, and fails if any token no longer works.
+// authStatus checks each server signed in to (or the one named), both its
+// keys, as gh auth status does, and fails if a stored key no longer works.
 func authStatus(ctx context.Context, hostname string, stdout io.Writer) error {
 	store, err := openHosts()
 	if err != nil {
@@ -186,42 +214,74 @@ func authStatus(ctx context.Context, hostname string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	names := []string{hostname}
-	if hostname == "" {
-		names = names[:0]
+	if os.Getenv("ARALDO_TOKEN") != "" || os.Getenv("ARALDO_API_KEY") != "" {
+		c, cred, err := connect(hostname, false)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(stdout, cred.Name)
+		m, err := whoami(ctx, c)
+		if err != nil {
+			_, _ = fmt.Fprintf(stdout, "  X The key in the environment does not work: %v\n", err)
+			return errors.New("the key in the environment does not work")
+		}
+		_, _ = fmt.Fprintf(stdout, "  ✓ %s (environment)\n", m.account())
+		return nil
+	}
+	names := []string{}
+	if n := first(hostname, os.Getenv("ARALDO_HOST")); n != "" {
+		name, _, err := hosts.Name(n)
+		if err != nil {
+			return usageErr("%v", err)
+		}
+		names = append(names, name)
+	} else {
 		for n := range f.Hosts {
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		if env := os.Getenv("ARALDO_HOST"); env != "" {
-			names = []string{env}
-		}
 	}
 	if len(names) == 0 {
 		return fmt.Errorf("%w to any Araldo: run araldo auth login", hosts.ErrNotSignedIn)
 	}
 	failed := false
 	for _, n := range names {
-		c, cred, err := connect(n)
-		if err != nil {
-			_, _ = fmt.Fprintf(stdout, "%s\n  X %v\n", n, err)
+		_, _ = fmt.Fprintln(stdout, n)
+		if f.Hosts[n] == nil {
+			_, _ = fmt.Fprintf(stdout, "  X not signed in: run araldo auth login --hostname %s\n", n)
 			failed = true
 			continue
 		}
-		_, _ = fmt.Fprintln(stdout, cred.Name)
-		m, err := whoami(ctx, c)
-		if err != nil {
-			_, _ = fmt.Fprintf(stdout, "  X The token in the %s no longer works: %v\n", cred.Where, err)
-			failed = true
-			continue
+		for _, live := range []bool{false, true} {
+			mode := hosts.Mode(live)
+			c, cred, err := connect(n, live)
+			if errors.Is(err, hosts.ErrNotSignedIn) {
+				hint := ""
+				if live {
+					hint = " --live"
+				}
+				_, _ = fmt.Fprintf(stdout, "  - %s: no key (araldo auth login --hostname %s%s)\n", mode, n, hint)
+				continue
+			}
+			if err != nil {
+				_, _ = fmt.Fprintf(stdout, "  X %s: %v\n", mode, err)
+				failed = true
+				continue
+			}
+			m, err := whoami(ctx, c)
+			if err != nil {
+				_, _ = fmt.Fprintf(stdout, "  X %s: the key in the %s no longer works: %v\n", mode, cred.Where, err)
+				failed = true
+				continue
+			}
+			_, _ = fmt.Fprintf(stdout, "  ✓ %s: %s (%s)\n", mode, m.account(), cred.Where)
 		}
-		_, _ = fmt.Fprintf(stdout, "  ✓ Logged in as %s (%s)\n", m.account(), cred.Where)
-		if cred.Name == f.Default {
+		if n == f.Default {
 			_, _ = fmt.Fprintln(stdout, "  - Default server: yes")
 		}
 	}
 	if failed {
-		return errors.New("some credentials do not work")
+		return errors.New("some keys do not work")
 	}
 	return nil
 }
@@ -229,10 +289,13 @@ func authStatus(ctx context.Context, hostname string, stdout io.Writer) error {
 // keyFromBrowser opens the dashboard's API key page, which says the CLI is
 // waiting and suggests a name, and reads the key the user pastes back
 // (ADR 0028). Without a browser (over SSH, say) the user opens the URL.
-func keyFromBrowser(base string, stderr io.Writer) (string, error) {
+func keyFromBrowser(base string, live bool, stderr io.Writer) (string, error) {
 	device, _ := os.Hostname()
 	page := base + "/cli?device=" + url.QueryEscape(device)
-	_, _ = fmt.Fprintf(stderr, "! Create an API key in Araldo, then paste it here.\n")
+	if live {
+		page += "&mode=live"
+	}
+	_, _ = fmt.Fprintf(stderr, "! Create a %s API key in Araldo, then paste it here.\n", hosts.Mode(live))
 	if err := openBrowser(page); err != nil {
 		_, _ = fmt.Fprintf(stderr, "  Open this page in a browser: %s\n", page)
 	} else {
@@ -336,7 +399,8 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	var paginate bool
 	fs := flag.NewFlagSet("api", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.StringVar(&hostname, "hostname", "", "the Araldo server (default: the one signed in to)")
+	var live bool
+	clientFlags(fs, &hostname, &live)
 	fs.StringVar(&method, "X", "", "the HTTP method (default GET, or POST with fields or --input)")
 	fs.Var(&fields, "f", "a key=value field: a query parameter for GET, else a JSON body field (repeatable)")
 	fs.StringVar(&input, "input", "", "a file with the JSON request body (- for standard input)")
@@ -405,7 +469,7 @@ func runAPI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	} else if len(body) > 0 {
 		payload = body
 	}
-	c, _, err := connect(hostname)
+	c, _, err := connect(hostname, live)
 	if err != nil {
 		return err
 	}

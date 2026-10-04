@@ -155,7 +155,7 @@ func TestMeViewMatchesContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := core.ViewAPIKey(&model.APIKey{ID: uuid.New(), Name: "cli", Hint: "abcd", Scopes: []string{"posts:read"}, CreatedAt: time.Now()})
-	me := core.MeView{Object: "me", Livemode: true, Org: core.MeOrgView{ID: "org_1", Name: "Otium"}, APIKey: &key}
+	me := core.MeView{Object: "me", Livemode: true, Org: core.MeOrgView{ID: "org_1", Name: "Araldo"}, APIKey: &key}
 	raw, err := json.Marshal(me)
 	if err != nil {
 		t.Fatal(err)

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package hosts keeps the Araldo servers the CLI is signed in to, as gh
-// keeps GitHub hosts (ADR 0028): hosts.yaml in the config directory names
-// each server and the account on it, and each credential lives in the OS
+// Package hosts keeps the Araldo servers the CLI is signed in to (ADR
+// 0028): hosts.yaml in the config directory names each server and, as the
+// Stripe CLI does, up to two keys on it, a test one and a live one, since
+// every key belongs to one mode (ADR 0006). Each key lives in the OS
 // keychain, or in hosts.yaml (mode 0600) where there is no keychain.
 // ARALDO_TOKEN and ARALDO_HOST override both, for CI.
 package hosts
@@ -23,14 +24,40 @@ import (
 // ErrNotSignedIn means no credential was found for the server.
 var ErrNotSignedIn = errors.New("not signed in")
 
-// Host is one server and the account signed in to it.
+// Host is one server and the keys signed in to it, one per mode.
 type Host struct {
 	// URL is the server, e.g. https://araldo.example.com.
-	URL string `yaml:"url"`
-	// User describes the account, as the server reported it at sign-in.
+	URL  string   `yaml:"url"`
+	Test *Account `yaml:"test,omitempty"`
+	Live *Account `yaml:"live,omitempty"`
+	// User and Token are the one key of a file written before modes, read
+	// as the test key: that is what the CLI made then.
+	User  string `yaml:"user,omitempty"`
+	Token string `yaml:"token,omitempty"`
+}
+
+// Account is one key on a host.
+type Account struct {
+	// User describes the key, as the server reported it at sign-in.
 	User string `yaml:"user,omitempty"`
 	// Token is set only when there was no keychain to keep it in.
 	Token string `yaml:"token,omitempty"`
+}
+
+// account is the host's key for a mode, or nil.
+func (h *Host) account(live bool) *Account {
+	if live {
+		return h.Live
+	}
+	return h.Test
+}
+
+// Mode names a mode for messages.
+func Mode(live bool) string {
+	if live {
+		return "live"
+	}
+	return "test"
 }
 
 // File is hosts.yaml.
@@ -95,6 +122,12 @@ func (s *Store) Load() (*File, error) {
 	if f.Hosts == nil {
 		f.Hosts = map[string]*Host{}
 	}
+	for _, h := range f.Hosts {
+		if h.Test == nil && (h.User != "" || h.Token != "") {
+			h.Test = &Account{User: h.User, Token: h.Token}
+		}
+		h.User, h.Token = "", ""
+	}
 	return f, nil
 }
 
@@ -129,6 +162,15 @@ func Name(s string) (name, base string, err error) {
 
 func service(name string) string { return "araldo:" + name }
 
+// keyUser is the keychain entry for a host's key in a mode. The test key
+// keeps the name the one key had before modes.
+func keyUser(name string, live bool) string {
+	if live {
+		return name + "#live"
+	}
+	return name
+}
+
 // Where says where a host's credential is kept.
 type Where string
 
@@ -139,27 +181,37 @@ const (
 	InEnv     Where = "environment"
 )
 
-// SignIn records an account on a host and keeps its token: in the keychain,
-// or in hosts.yaml when there is none (or insecure is set). It becomes the
-// default host when there is no other.
-func (s *Store) SignIn(name, base, user, token string, insecure bool) (Where, error) {
+// SignIn keeps a host's key for a mode, replacing any earlier one for that
+// mode: in the keychain, or in hosts.yaml when there is none (or insecure
+// is set). The host becomes the default when there is no other.
+func (s *Store) SignIn(name, base, user, token string, live, insecure bool) (Where, error) {
 	f, err := s.Load()
 	if err != nil {
 		return "", err
 	}
-	h := &Host{URL: base, User: user}
-	where := InKeyring
-	if insecure || s.Keyring.Set(service(name), name, token) != nil {
-		h.Token, where = token, InFile
+	h := f.Hosts[name]
+	if h == nil {
+		h = &Host{}
+		f.Hosts[name] = h
 	}
-	f.Hosts[name] = h
+	h.URL = base
+	a := &Account{User: user}
+	where := InKeyring
+	if insecure || s.Keyring.Set(service(name), keyUser(name, live), token) != nil {
+		a.Token, where = token, InFile
+	}
+	if live {
+		h.Live = a
+	} else {
+		h.Test = a
+	}
 	if f.Default == "" || f.Hosts[f.Default] == nil {
 		f.Default = name
 	}
 	return where, s.Save(f)
 }
 
-// SignOut forgets a host and its token.
+// SignOut forgets a host and both its keys.
 func (s *Store) SignOut(name string) error {
 	f, err := s.Load()
 	if err != nil {
@@ -168,7 +220,8 @@ func (s *Store) SignOut(name string) error {
 	if _, ok := f.Hosts[name]; !ok {
 		return fmt.Errorf("%w to %s", ErrNotSignedIn, name)
 	}
-	_ = s.Keyring.Delete(service(name), name)
+	_ = s.Keyring.Delete(service(name), keyUser(name, false))
+	_ = s.Keyring.Delete(service(name), keyUser(name, true))
 	delete(f.Hosts, name)
 	if f.Default == name {
 		f.Default = ""
@@ -188,13 +241,16 @@ func (s *Store) SignOut(name string) error {
 type Credential struct {
 	Name, URL, Token, User string
 	Where                  Where
+	// Live is the mode asked for; a token from the environment is in
+	// whatever mode it is.
+	Live bool
 }
 
-// Resolve finds the server and token for a command: the --hostname given
-// (or ARALDO_HOST, or the default host), and ARALDO_TOKEN or the stored
-// token. ARALDO_URL and ARALDO_API_KEY are read as well, as `araldo mcp`
-// always has.
-func (s *Store) Resolve(hostname string) (Credential, error) {
+// Resolve finds the server and key for a command: the --hostname given (or
+// ARALDO_HOST, or the default host), and ARALDO_TOKEN or the stored key for
+// the mode (test unless live). ARALDO_URL and ARALDO_API_KEY are read as
+// well, as `araldo mcp` always has.
+func (s *Store) Resolve(hostname string, live bool) (Credential, error) {
 	if hostname == "" {
 		hostname = first(os.Getenv("ARALDO_HOST"), os.Getenv("ARALDO_URL"))
 	}
@@ -213,24 +269,36 @@ func (s *Store) Resolve(hostname string) (Credential, error) {
 	if err != nil {
 		return Credential{}, err
 	}
-	c := Credential{Name: name, URL: base}
-	if h := f.Hosts[name]; h != nil {
-		c.URL, c.User = h.URL, h.User
+	c := Credential{Name: name, URL: base, Live: live}
+	h := f.Hosts[name]
+	if h != nil && h.URL != "" {
+		c.URL = h.URL
 	}
-	switch {
-	case envToken != "":
+	if envToken != "" {
 		c.Token, c.Where = envToken, InEnv
-	case f.Hosts[name] == nil:
-		return Credential{}, fmt.Errorf("%w to %s: run araldo auth login --hostname %s", ErrNotSignedIn, name, name)
-	case f.Hosts[name].Token != "":
-		c.Token, c.Where = f.Hosts[name].Token, InFile
-	default:
-		t, err := s.Keyring.Get(service(name), name)
-		if err != nil {
-			return Credential{}, fmt.Errorf("%w to %s: run araldo auth login (the keychain has no token: %w)", ErrNotSignedIn, name, err)
-		}
-		c.Token, c.Where = t, InKeyring
+		return c, nil
 	}
+	login := "araldo auth login --hostname " + name
+	if live {
+		login += " --live"
+	}
+	var a *Account
+	if h != nil {
+		a = h.account(live)
+	}
+	if a == nil {
+		return Credential{}, fmt.Errorf("%w to %s in %s mode: run %s", ErrNotSignedIn, name, Mode(live), login)
+	}
+	c.User = a.User
+	if a.Token != "" {
+		c.Token, c.Where = a.Token, InFile
+		return c, nil
+	}
+	t, err := s.Keyring.Get(service(name), keyUser(name, live))
+	if err != nil {
+		return Credential{}, fmt.Errorf("%w to %s in %s mode: run %s (the keychain has no key: %w)", ErrNotSignedIn, name, Mode(live), login, err)
+	}
+	c.Token, c.Where = t, InKeyring
 	return c, nil
 }
 

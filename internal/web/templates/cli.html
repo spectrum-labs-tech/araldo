@@ -2,20 +2,21 @@
 <h1>Connect the araldo CLI</h1>
 {{if .Data.Key}}
 <section class="card secret" role="alert">
-  <h2>Paste this key into your terminal</h2>
+  <h2>Paste this {{if .Data.Live}}live{{else}}test{{end}} key into your terminal</h2>
   <p class="mb-2"><code>araldo auth login</code>{{with .Data.Device}} on <strong>{{.}}</strong>{{end}} is waiting for it. This is the only time it is shown.</p>
   <div class="flex flex-wrap items-center gap-2"><code id="new-key" class="copy-box">{{.Data.Key}}</code> <button type="button" data-copy="new-key">Copy</button></div>
   <p class="mt-3 text-sm text-muted">Then close this tab. The key is listed under <a href="/keys">API keys</a>, where you can revoke it.</p>
 </section>
 {{else}}
-<p class="mb-4"><code>araldo auth login</code>{{with .Data.Device}} on <strong>{{.}}</strong>{{end}} is waiting for an API key. Create one, then paste it into the terminal.</p>
+<p class="mb-4"><code>araldo auth login{{if .Data.Live}} --live{{end}}</code>{{with .Data.Device}} on <strong>{{.}}</strong>{{end}} is waiting for a <strong>{{if .Data.Live}}live{{else}}test{{end}}</strong> API key. Create one, then paste it into the terminal.</p>
 <form method="post" action="/cli" class="flex max-w-xl flex-col gap-4">
   <input type="hidden" name="csrf" value="{{.CSRF}}">
   <input type="hidden" name="device" value="{{.Data.Device}}">
+  {{if .Data.Live}}<input type="hidden" name="mode" value="live">{{end}}
   <label>Name <input name="name" required maxlength="100" value="araldo CLI{{with .Data.Device}} on {{.}}{{end}}"></label>
   <label>Brand
     <select name="brand"><option value="">All brands</option>{{range .Data.Brands}}<option value="{{brandID .ID}}">{{.Name}}</option>{{end}}</select></label>
-  <p class="text-sm text-muted">The key works in <strong>{{if .Livemode}}live{{else}}test{{end}} mode</strong>{{if not .Livemode}}, so it only reaches sandbox channels{{end}}; switch with Test and Live at the top of the page. It has full access; make a restricted one under <a href="/keys">API keys</a>.</p>
+  <p class="text-sm text-muted">{{if .Data.Live}}The key works in <strong>live mode</strong>: it posts to real accounts. For one that only reaches sandbox channels, run <code>araldo auth login</code> without <code>--live</code>.{{else}}The key works in <strong>test mode</strong>, so it only reaches sandbox channels. For live channels, run <code>araldo auth login --live</code>.{{end}} It has full access; make a restricted one under <a href="/keys">API keys</a>.</p>
   <div><button class="btn-primary">Create key</button></div>
 </form>
 {{end}}

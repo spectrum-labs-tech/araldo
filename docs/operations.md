@@ -236,10 +236,12 @@ link to the install, like Threads.
 ([ADR 0028](adr/0028-cli-as-api-client.md)), modeled on GitHub's `gh`.
 
 ```sh
-araldo auth login --hostname araldo.example.com   # opens the dashboard to make a key; paste it back
+araldo auth login --hostname araldo.example.com   # opens the dashboard to make a test key; paste it back
+araldo auth login --hostname araldo.example.com --live   # ...and a live key beside it
 araldo auth login --hostname araldo.example.com --with-token < key.txt   # scripts and CI
-araldo auth status                      # who you are on each server, and whether it still works
+araldo auth status                      # both keys on each server, and whether they still work
 araldo channels list                    # a table in a terminal; tab-separated when piped
+araldo channels list --live             # the same, with the live key
 araldo channels list --json handle,status --jq '.[] | select(.status != "active")'
 araldo api channels                     # any /v1 request, authenticated
 araldo api -X GET posts -f limit=5      # -f fields are the query with -X GET...
@@ -247,7 +249,10 @@ araldo api posts --paginate --jq '.data | length'   # every page of a list, as o
 araldo api -X POST posts --input post.json   # ...and otherwise make it a POST, as with gh api
 ```
 
-- The token is kept in the system keychain (macOS Keychain, Windows
+- As the Stripe CLI does, it keeps a **test key and a live key** for each
+  server, since every key belongs to one mode. Commands use the test key,
+  which reaches only sandbox channels, unless given `--live`.
+- Keys are kept in the system keychain (macOS Keychain, Windows
   Credential Manager, the Secret Service on Linux), or in `hosts.yaml` in the
   config directory, mode 0600, where there is no keychain or with
   `--insecure-storage`.
@@ -255,7 +260,8 @@ araldo api -X POST posts --input post.json   # ...and otherwise make it a POST, 
   sign-in, for CI; `ARALDO_CONFIG_DIR` moves the config directory.
 - `auth login` opens the dashboard's **Connect the araldo CLI** page (or
   prints its address, over SSH): confirm your password, pick a brand or all,
-  create the key, and paste it at the prompt, which does not echo it.
+  create the key (in the mode asked for, whatever mode the dashboard shows),
+  and paste it at the prompt, which does not echo it.
 
 Commands that change the server itself (`migrate`, `bootstrap`, `keys`,
 `users`, `apikeys create`) still run where the deployment's configuration
@@ -267,7 +273,9 @@ is, with direct access to its database.
 Protocol ([ADR 0020](adr/0020-mcp.md)). It talks to an Araldo API with a
 key, so it needs no database, and the key decides what the assistant may
 do: start with a test key (its posts reach only sandbox channels), then a
-live key limited to the brand it should post for.
+live key limited to the brand it should post for. Without `ARALDO_URL` and
+`ARALDO_API_KEY` it uses the key `araldo auth login` stored: the test key,
+or the live one with `araldo mcp --live`.
 
 | Tool | Does |
 |---|---|

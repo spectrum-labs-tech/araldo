@@ -412,12 +412,37 @@ func TestConnectTheCLI(t *testing.T) {
 	rec = d.send(r)
 	page = rec.Body.String()
 	m := regexp.MustCompile(`id="new-key" class="copy-box">(ald_test_[^<]+)<`).FindStringSubmatch(page)
-	if rec.Code != http.StatusOK || m == nil || !strings.Contains(page, "Paste this key into your terminal") ||
+	if rec.Code != http.StatusOK || m == nil || !strings.Contains(page, "Paste this test key into your terminal") ||
 		strings.Contains(page, "curl") || strings.Contains(page, `action="/cli"`) {
 		t.Fatalf("the key: %d\n%s", rec.Code, page)
 	}
 	a, err := d.s.AuthenticateKey(t.Context(), m[1], "")
-	if err != nil || a.BrandID == nil || *a.BrandID != d.brand.ID {
-		t.Fatalf("the new key: %+v, %v (want it limited to the brand)", a, err)
+	if err != nil || a.BrandID == nil || *a.BrandID != d.brand.ID || a.Livemode {
+		t.Fatalf("the new key: %+v, %v (want a test key limited to the brand)", a, err)
+	}
+
+	// --live asks for a live key, whichever mode the dashboard shows, and
+	// keeps asking for one through the password confirmation.
+	d.s.Now = func() time.Time { return time.Now().Add(time.Hour) }
+	rec = d.send(httptest.NewRequest(http.MethodGet, "/cli?device=chris-laptop&mode=live", nil))
+	if loc := rec.Header().Get("Location"); !strings.HasPrefix(loc, "/confirm?next="+url.QueryEscape("/cli?device=chris-laptop&mode=live")+"&") {
+		t.Fatalf("live, outside the window: %d %q", rec.Code, loc)
+	}
+	d.s.Now = time.Now
+	rec = d.send(httptest.NewRequest(http.MethodGet, "/cli?device=chris-laptop&mode=live", nil))
+	if page = rec.Body.String(); !strings.Contains(page, "araldo auth login --live") || !strings.Contains(page, `name="mode" value="live"`) {
+		t.Fatalf("the live form: %d\n%s", rec.Code, page)
+	}
+	form.Set("mode", "live")
+	form.Del("brand")
+	r = httptest.NewRequest(http.MethodPost, "/cli", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	page = d.send(r).Body.String()
+	m = regexp.MustCompile(`id="new-key" class="copy-box">(ald_live_[^<]+)<`).FindStringSubmatch(page)
+	if m == nil || !strings.Contains(page, "Paste this live key") {
+		t.Fatalf("the live key:\n%s", page)
+	}
+	if a, err = d.s.AuthenticateKey(t.Context(), m[1], ""); err != nil || !a.Livemode {
+		t.Fatalf("the new live key: %+v, %v", a, err)
 	}
 }

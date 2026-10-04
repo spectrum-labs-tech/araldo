@@ -19,8 +19,9 @@ import (
 // (ADR 0019): these commands act as a member, named with --as, whose role
 // must allow the change.
 
-// actAs opens Araldo and returns the actor for member email in org.
-func actAs(ctx context.Context, email, org string) (*app.App, core.Actor, model.Membership, error) {
+// actAs opens Araldo and returns the actor for member email in org, in test
+// mode unless live.
+func actAs(ctx context.Context, email, org string, live bool) (*app.App, core.Actor, model.Membership, error) {
 	if email == "" {
 		return nil, core.Actor{}, model.Membership{}, usageErr("--as (the member acting) is required")
 	}
@@ -43,7 +44,7 @@ func actAs(ctx context.Context, email, org string) (*app.App, core.Actor, model.
 		a.Close()
 		return nil, core.Actor{}, model.Membership{}, err
 	}
-	actor, _, err := a.Svc.MemberActor(ctx, u.ID, m.OrgID, false, "cli")
+	actor, _, err := a.Svc.MemberActor(ctx, u.ID, m.OrgID, live, "cli")
 	if err != nil {
 		a.Close()
 		return nil, core.Actor{}, model.Membership{}, err
@@ -99,7 +100,7 @@ func runMembers(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if (cmd == "add" || cmd == "role") && !model.Role(role).Valid() {
 		return usageErr("--role is owner, admin, editor or viewer")
 	}
-	a, actor, m, err := actAs(ctx, as, org)
+	a, actor, m, err := actAs(ctx, as, org, false)
 	if err != nil {
 		return err
 	}
@@ -168,7 +169,7 @@ func runOrg(ctx context.Context, args []string, _, stderr io.Writer) error {
 	}); err != nil {
 		return err
 	}
-	a, actor, _, err := actAs(ctx, as, org)
+	a, actor, _, err := actAs(ctx, as, org, false)
 	if err != nil {
 		return err
 	}

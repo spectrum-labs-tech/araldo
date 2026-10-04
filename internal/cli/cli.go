@@ -40,6 +40,7 @@ func commands() []command {
 		{name: "keys", summary: "Master keys: generate, rotate", run: runKeys},
 		{name: "apikeys", summary: "API keys: create (prints only the key, for piping into a secret store)", run: runAPIKeys},
 		{name: "members", summary: "Org members: list, add, role, remove (acting as a member)", run: runMembers},
+		{name: "channels", summary: "Channels: list, with their status and last check (acting as a member)", run: runChannels},
 		{name: "org", summary: "Org settings: update (acting as an owner)", run: runOrg},
 		{name: "mcp", summary: "Serve Araldo's tools to an AI assistant over stdio (MCP), with ARALDO_URL and ARALDO_API_KEY", run: runMCP},
 		{name: "version", summary: "Print the araldo version", run: runVersion},

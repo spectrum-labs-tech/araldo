@@ -231,7 +231,7 @@ func authStatus(ctx context.Context, hostname string, stdout io.Writer) error {
 // (ADR 0028). Without a browser (over SSH, say) the user opens the URL.
 func keyFromBrowser(base string, stderr io.Writer) (string, error) {
 	device, _ := os.Hostname()
-	page := base + "/keys?cli=" + url.QueryEscape(device)
+	page := base + "/cli?device=" + url.QueryEscape(device)
 	_, _ = fmt.Fprintf(stderr, "! Create an API key in Araldo, then paste it here.\n")
 	if err := openBrowser(page); err != nil {
 		_, _ = fmt.Fprintf(stderr, "  Open this page in a browser: %s\n", page)

@@ -86,6 +86,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /brands/{id}", s.app("brands", s.brandDetail))
 	s.mux.HandleFunc("POST /brands/{id}", s.app("brands", s.saveBrand))
 
+	s.mux.HandleFunc("GET /cli", s.app("developers", s.cliPage))
+	s.mux.HandleFunc("POST /cli", s.app("developers", s.cliCreateKey))
 	s.mux.HandleFunc("GET /keys", s.app("developers", s.keys))
 	s.mux.HandleFunc("POST /keys", s.app("developers", s.createKey))
 	s.mux.HandleFunc("GET /keys/{id}", s.app("developers", s.keyDetail))

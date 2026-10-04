@@ -236,7 +236,7 @@ link to the install, like Threads.
 ([ADR 0028](adr/0028-cli-as-api-client.md)), modeled on GitHub's `gh`.
 
 ```sh
-araldo auth login --hostname araldo.example.com   # opens the dashboard to create a key; paste it back
+araldo auth login --hostname araldo.example.com   # opens the dashboard to make a key; paste it back
 araldo auth login --hostname araldo.example.com --with-token < key.txt   # scripts and CI
 araldo auth status                      # who you are on each server, and whether it still works
 araldo channels list                    # a table in a terminal; tab-separated when piped
@@ -251,9 +251,9 @@ araldo api -X POST posts --input post.json
   `--insecure-storage`.
 - `ARALDO_TOKEN` (or `ARALDO_API_KEY`) and `ARALDO_HOST` override the stored
   sign-in, for CI; `ARALDO_CONFIG_DIR` moves the config directory.
-- `auth login` opens the dashboard's API key page (or prints its address,
-  over SSH), which says the CLI is waiting and suggests a name for the key;
-  create the key, then paste it at the prompt, which does not echo it.
+- `auth login` opens the dashboard's **Connect the araldo CLI** page (or
+  prints its address, over SSH): confirm your password, pick a brand or all,
+  create the key, and paste it at the prompt, which does not echo it.
 
 Commands that change the server itself (`migrate`, `bootstrap`, `keys`,
 `users`, `apikeys create`) still run where the deployment's configuration

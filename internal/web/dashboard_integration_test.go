@@ -382,31 +382,42 @@ func TestPostsListFiltersAndPages(t *testing.T) {
 	}
 }
 
-// The key page, opened by `araldo auth login` (ADR 0028), says the CLI is
-// waiting, suggests a name, and after creating the key says where to paste
-// it.
-func TestKeysPageForTheCLI(t *testing.T) {
+// The page `araldo auth login` opens (ADR 0028): the password first, then a
+// short form, then the key alone.
+func TestConnectTheCLI(t *testing.T) {
 	t.Parallel()
 	d := newDash(t)
-	rec := d.send(httptest.NewRequest(http.MethodGet, "/keys?cli="+url.QueryEscape("chris-laptop"), nil))
-	page := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(page, "Connect the araldo CLI") ||
-		!strings.Contains(page, `value="araldo CLI on chris-laptop"`) || !strings.Contains(page, `name="cli" value="chris-laptop"`) {
-		t.Fatalf("keys page for the CLI: %d\n%s", rec.Code, page)
+
+	// Outside the password window it asks for the password before the form,
+	// and comes back here with the device.
+	d.s.Now = func() time.Time { return time.Now().Add(time.Hour) }
+	rec := d.send(httptest.NewRequest(http.MethodGet, "/cli?device=chris-laptop", nil))
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther ||
+		!strings.HasPrefix(loc, "/confirm?next="+url.QueryEscape("/cli?device=chris-laptop")+"&") {
+		t.Fatalf("outside the window: %d %q", rec.Code, loc)
 	}
-	form := url.Values{"csrf": {d.login.Session.CSRFToken}, "name": {"araldo CLI on chris-laptop"}, "access": {"full"},
-		"expires": {"never"}, "cli": {"chris-laptop"}}
-	r := httptest.NewRequest(http.MethodPost, "/keys", strings.NewReader(form.Encode()))
+	d.s.Now = time.Now
+
+	rec = d.send(httptest.NewRequest(http.MethodGet, "/cli?device=chris-laptop", nil))
+	page := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(page, "<h1>Connect the araldo CLI</h1>") ||
+		!strings.Contains(page, `value="araldo CLI on chris-laptop"`) || !strings.Contains(page, "test mode") ||
+		strings.Contains(page, "<table") {
+		t.Fatalf("the form: %d\n%s", rec.Code, page)
+	}
+	form := url.Values{"csrf": {d.login.Session.CSRFToken}, "name": {"araldo CLI on chris-laptop"}, "device": {"chris-laptop"},
+		"brand": {id.Format(id.Brand, d.brand.ID)}}
+	r := httptest.NewRequest(http.MethodPost, "/cli", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec = d.send(r)
 	page = rec.Body.String()
 	m := regexp.MustCompile(`id="new-key" class="copy-box">(ald_test_[^<]+)<`).FindStringSubmatch(page)
-	if rec.Code != http.StatusOK || m == nil || !strings.Contains(page, "Paste it into the terminal on chris-laptop") {
-		t.Fatalf("created for the CLI: %d\n%s", rec.Code, page)
+	if rec.Code != http.StatusOK || m == nil || !strings.Contains(page, "Paste this key into your terminal") ||
+		strings.Contains(page, "curl") || strings.Contains(page, `action="/cli"`) {
+		t.Fatalf("the key: %d\n%s", rec.Code, page)
 	}
-	// Without the parameter, the page is as it was.
-	rec = d.send(httptest.NewRequest(http.MethodGet, "/keys", nil))
-	if strings.Contains(rec.Body.String(), "Connect the araldo CLI") {
-		t.Fatal("the plain keys page talks about the CLI")
+	a, err := d.s.AuthenticateKey(t.Context(), m[1], "")
+	if err != nil || a.BrandID == nil || *a.BrandID != d.brand.ID {
+		t.Fatalf("the new key: %+v, %v (want it limited to the brand)", a, err)
 	}
 }

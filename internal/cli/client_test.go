@@ -172,7 +172,7 @@ func TestAuthLoginThroughTheBrowser(t *testing.T) {
 		t.Fatalf("login: exit %d %q %q", code, out, errOut)
 	}
 	host, _ := os.Hostname()
-	if want := srv.URL + "/keys?cli=" + url.QueryEscape(host); opened != want {
+	if want := srv.URL + "/cli?device=" + url.QueryEscape(host); opened != want {
 		t.Fatalf("opened %q, want %q", opened, want)
 	}
 	if !strings.Contains(errOut, "Paste your API key") || strings.Contains(errOut, testToken) {
@@ -180,7 +180,7 @@ func TestAuthLoginThroughTheBrowser(t *testing.T) {
 	}
 	// Without a browser, it prints the page to open instead.
 	openBrowser = func(string) error { return errors.New("no browser") }
-	if _, _, errOut = runCLI(t, testToken+"\n", "auth", "login", "--insecure-storage"); !strings.Contains(errOut, "Open this page in a browser: "+srv.URL+"/keys?cli=") {
+	if _, _, errOut = runCLI(t, testToken+"\n", "auth", "login", "--insecure-storage"); !strings.Contains(errOut, "Open this page in a browser: "+srv.URL+"/cli?device=") {
 		t.Fatalf("without a browser: %q", errOut)
 	}
 	if code, _, errOut = runCLI(t, "\n", "auth", "login", "--insecure-storage"); code != ExitUsage {

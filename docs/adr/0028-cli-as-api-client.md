@@ -43,10 +43,11 @@ developers already know, so where this ADR does not say otherwise, do what `gh` 
      migration Job runs `araldo migrate`), `mcp` and `version`.
 2. **`araldo auth`, as `gh auth`:**
    - **First, the simplest sign-in that works:** `araldo auth login --hostname h` opens the
-     dashboard's API key page in the browser (or prints its address, over SSH) with `?cli=<this
-     computer>`, so the page says the CLI is waiting and suggests "araldo CLI on <computer>" as the
-     key's name. The member creates the key there, as any key, with the dashboard's sign-in,
-     two-factor and sudo mode, copies it, and pastes it at the CLI's prompt, which does not echo.
+     dashboard's `/cli?device=<this computer>` page in the browser (or prints its address, over
+     SSH). The page asks for the password first (sudo mode), so nothing typed is lost to the
+     confirmation; then a short form (the name, "araldo CLI on <computer>", and a brand or all)
+     makes a full-access key in the dashboard's current mode, and shows only that key, to paste at
+     the CLI's prompt, which does not echo.
      This is `gh`'s "paste a token" path with the page opened for you: no new endpoints. The
      credential is an API key, so commands that only members may run (`members`, `org`) wait for
      the device flow below, built when the CLI needs them.

@@ -37,7 +37,6 @@ func TestRun(t *testing.T) {
 		{name: "members add needs a target", args: []string{"members", "add", "--as", "a@example.com", "--role", "editor"}, wantCode: ExitUsage, wantStderr: "--email"},
 		{name: "members role needs a real role", args: []string{"members", "role", "--as", "a@example.com", "--email", "b@example.com", "--role", "boss"}, wantCode: ExitUsage, wantStderr: "--role is owner, admin, editor or viewer"},
 		{name: "org needs update", args: []string{"org"}, wantCode: ExitUsage, wantStderr: "org update"},
-		{name: "mcp needs a URL and key", args: []string{"mcp", "--url", ""}, wantCode: ExitUsage, wantStderr: "ARALDO_API_KEY"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -156,5 +155,20 @@ func TestPrintKeyUsage(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Without a URL and key, or a stored sign-in, mcp says how to get one. It
+// points the config directory at an empty one, so a developer's own
+// sign-in cannot satisfy it, and so cannot run in parallel.
+func TestMCPNeedsACredential(t *testing.T) {
+	t.Setenv("ARALDO_CONFIG_DIR", t.TempDir())
+	for _, k := range []string{"ARALDO_URL", "ARALDO_API_KEY", "ARALDO_HOST", "ARALDO_TOKEN"} {
+		t.Setenv(k, "")
+	}
+	var stdout, stderr bytes.Buffer
+	if code := Run(t.Context(), []string{"mcp"}, &stdout, &stderr); code != ExitUsage ||
+		!strings.Contains(stderr.String(), "araldo auth login") || !strings.Contains(stderr.String(), "ARALDO_API_KEY") {
+		t.Fatalf("exit %d, stderr %q", code, stderr.String())
 	}
 }

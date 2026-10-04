@@ -33,4 +33,4 @@ open a pull request.
 | [0025](0025-web-analytics.md) | Web analytics are provider adapters that report visits and signups by Araldo's own link tags | proposed |
 | [0026](0026-reports.md) | A brand's report is computed on demand from what Araldo already reads, one period at a time | proposed |
 | [0027](0027-video-and-resizing.md) | Images too big for a platform are resized for it, and video is media stored in object storage | accepted |
-| [0028](0028-cli-as-api-client.md) | The CLI is an API client; members sign in with a device code, and only server administration touches the database | proposed |
+| [0028](0028-cli-as-api-client.md) | The CLI is an API client, modeled on `gh`; only server administration touches the database | proposed |

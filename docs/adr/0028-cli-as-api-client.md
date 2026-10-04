@@ -1,4 +1,4 @@
-# ADR 0028: The CLI is an API client; members sign in with a device code, and only server administration touches the database
+# ADR 0028: The CLI is an API client, modeled on `gh`; only server administration touches the database
 
 - Status: proposed
 - Date: 2026-10-04
@@ -29,50 +29,72 @@ the wrong credential for a person.
 
 ## Decision
 
+The model is the GitHub CLI (`gh`): its sign-in, credential handling and output are the standard
+developers already know, so where this ADR does not say otherwise, do what `gh` does.
+
 1. **Two kinds of command.**
-   - **Client commands call `/v1` over HTTPS and never open the database.** They read
-     `ARALDO_URL` and a credential: a member token from `araldo login`, or an API key
-     (`ARALDO_API_KEY`, as `araldo mcp` does) for scripts. They work from anywhere `/v1` is reachable.
+   - **Client commands call `/v1` over HTTPS and never open the database**: `channels`, `members`,
+     `org`, and later posts and templates. They work from anywhere `/v1` is reachable.
    - **Server administration lives under `araldo admin …`** and keeps direct access: `bootstrap`,
      `keys generate|rotate|status`, `users create|reset-password`, `apikeys create`. It runs where the
      deployment's configuration is (a pod, the host). It acts as **the operator**, not as a member:
      audit entries carry no member, request ID `admin-cli`, and the command's name. `--as` goes away.
    - The process commands stay top level: `server`, `worker`, `all`, `migrate` (the chart's
-     migration Job runs `araldo migrate`), and `mcp` and `version`.
-2. **`araldo login` uses the OAuth 2.0 device authorization grant (RFC 8628).**
-   - The CLI asks `POST /v1/auth/device` for a device code, a short user code (eight letters,
-     `ABCD-EFGH`) and the dashboard page to approve it at (`/device`). It prints the code and the
-     URL, and polls `POST /v1/auth/device/token` at the interval given until the code is approved,
-     denied or expires (10 minutes).
-   - The member approves in the **dashboard**, signed in, which already enforces the org's
-     two-factor policy and, in an install behind an access proxy, the proxy too. Approving creates a
-     credential, so it needs **sudo mode** ([ADR 0007](0007-authentication-and-mfa.md) decision 4).
-     The page shows what is asking (the device name the CLI sent, its IP) and which org and mode the
-     token is for, and the member chooses.
+     migration Job runs `araldo migrate`), `mcp` and `version`.
+2. **`araldo auth`, as `gh auth`:**
+   - `araldo auth login [--hostname h] [--with-token]`: the OAuth 2.0 device authorization grant
+     (RFC 8628). The CLI asks `POST /v1/auth/device` for a device code and a short user code
+     (`ABCD-EFGH`), prints `! First copy your one-time code: ABCD-EFGH`, offers to open the
+     dashboard's `/device` page in the browser, and polls `POST /v1/auth/device/token` at the
+     interval given until the code is approved, denied or expires (15 minutes). `--with-token` reads
+     a token or an API key from stdin instead, for scripts and CI.
+   - `araldo auth status` (each server, the account, where the token is stored, and whether it still
+     works), `auth logout`, `auth token` (prints it, for piping), `auth switch` (between accounts
+     signed in on one server).
+   - The member approves in the **dashboard**, signed in, which enforces the org's two-factor policy
+     and, in an install behind an access proxy, the proxy too. Approving creates a credential, so it
+     needs **sudo mode** ([ADR 0007](0007-authentication-and-mfa.md) decision 4). The page shows what
+     is asking: the device name the CLI sent and its IP.
    - It works the same on a laptop, over SSH and in a container, with no local web server.
-3. **Member tokens.**
-   - `ald_user_` followed by 32 random characters (the distinctive prefix lets secret scanners
-     find leaks, as with keys), shown once to the CLI, stored only as a SHA-256 hash.
-   - Bound to **one member, one org and one mode** (test or live), like a key; `araldo login --live`
-     asks for a live one.
-   - **They are the member, never more:** every request is checked against the member's current
-     role, so a role change or removal takes effect at once. Sudo-mode actions (creating API keys,
-     changing two-factor, removing owners, deleting the org) stay dashboard-only.
-   - Expire after 30 days, or 7 days unused; `araldo login` again to renew. Listed under
-     **Your account → Devices** with device name, created and last used, and revocable there or
-     with `araldo logout`. Removing a member revokes their tokens.
-   - Audited as the member, with the token's ID, so CLI changes are both attributable and
-     distinguishable from the dashboard's.
-4. **`/v1` takes member tokens as well as keys.** A route checks the caller's permissions the same
-   way for both. New routes for what only members may do, `/v1/members` and `/v1/org`, accept
-   member tokens and refuse keys ([ADR 0019](0019-administration-api.md) decision 6 stands for
-   keys). Tokens are bearer credentials, not cookies, so CSRF does not apply.
-5. **On the client,** `araldo login` stores the token in `~/.config/araldo/credentials.json` (mode
-   0600) under a profile per server (`--profile`, default `default`); `ARALDO_TOKEN` or
-   `ARALDO_API_KEY` in the environment override it. An OS keychain can come later.
-6. **Order of work:**
-   1. `channels list` becomes a client command now: `GET /v1/channels` already takes a key.
-   2. The device flow, member tokens and the Devices page.
+3. **User tokens.**
+   - `ald_user_` followed by 32 random characters (the distinctive prefix lets secret scanners find
+     leaks, as with keys), shown once to the CLI, stored only as a SHA-256 hash.
+   - **A token is the person, like a `gh` token**: not bound to an org or a mode. Each request names
+     the org (`Araldo-Org`, an ID or name) and asks for live mode (`Araldo-Livemode: true`) or gets
+     test mode, as Stripe's `Stripe-Account` header names an account. The CLI sends them from
+     `--org` and `--live`, or the defaults set with `araldo config set org …`, as `gh` remembers a
+     default repository.
+   - **Never more than the member:** every request is checked against the member's current role in
+     that org, so a role change or removal takes effect at once. Sudo-mode actions (creating API
+     keys, changing two-factor, removing owners, deleting the org) stay dashboard-only.
+   - **Valid until revoked**, expiring only after a year unused, as GitHub does for `gh`. Listed under
+     **Your account → Devices** with device name, created and last used, and revocable there or with
+     `araldo auth logout`. Disabling or deleting the user revokes their tokens.
+   - Audited as the member, with the token's ID, so CLI changes are attributable and distinguishable
+     from the dashboard's.
+4. **`/v1` takes user tokens as well as keys.** A route checks the caller's permissions the same way
+   for both. New routes for what only members may do, `/v1/members` and `/v1/org`, accept user
+   tokens and refuse keys ([ADR 0019](0019-administration-api.md) decision 6 stands for keys).
+   Tokens are bearer credentials, not cookies, so CSRF does not apply.
+5. **Credentials and configuration on the client, as `gh` keeps them:**
+   - the token in the **OS keychain** (macOS Keychain, Windows Credential Manager, the Secret Service
+     on Linux) through `zalando/go-keyring`, the library `gh` uses: the standard library cannot reach
+     a keychain, and a token on disk is the one secret a CLI most needs to protect. Without a
+     keychain (a container, a headless server) it falls back to `~/.config/araldo/hosts.yaml`, mode
+     0600, and `auth status` says so;
+   - servers and defaults in `~/.config/araldo/` (`$ARALDO_CONFIG_DIR`, or the platform's config
+     directory on Windows);
+   - `ARALDO_TOKEN` (a user token or an API key) and `ARALDO_HOST` in the environment override both,
+     for CI.
+6. **Output, as `gh`'s:** aligned tables in a terminal and tab-separated values when piped; color
+   only in a terminal (`NO_COLOR` respected); `--json [fields]` with `--jq` (`itchyny/gojq`, as `gh`)
+   for scripts; errors on stderr with a non-zero exit. `araldo api <path>` makes an authenticated
+   request and prints the response, as `gh api` does.
+7. **Order of work:**
+   1. The client foundation: hosts and credentials, `araldo api`, table/JSON output, and
+      `channels list` as a client command (`GET /v1/channels` already takes keys, so it works with
+      `araldo auth login --with-token` before the device flow exists).
+   2. The device flow, user tokens, the `/device` page and the Devices list.
    3. `/v1/members` and `/v1/org`; `members` and `org` become client commands; `--as` is removed.
    4. Server administration moves under `araldo admin`, audited as the operator.
 
@@ -85,16 +107,21 @@ the wrong credential for a person.
 - **Browser sign-in with a localhost callback (PKCE).** Smooth on a desktop, but fails over SSH and
   in containers, where operators often are. The device flow works everywhere.
 - **Personal access tokens pasted from the dashboard.** The same token, with a worse handoff
-  (copying a secret by hand). A pasted token remains possible for unattended use through an API key.
+  (copying a secret by hand). `auth login --with-token` keeps that path open for unattended use.
+- **Tokens bound to one org and mode,** like keys. Safer in the abstract, but a person belongs to
+  several orgs and works in both modes; a token per combination is the friction `gh` avoids by
+  making the token the person and the repository a per-command choice.
 - **Reusing dashboard session cookies.** Cookies carry CSRF rules and browser-only flags, and
   sessions are not meant to leave the browser.
 
 ## Consequences
 
-- Routine work no longer needs cluster access: a member runs `araldo login` against the public
+- Routine work no longer needs cluster access: a member runs `araldo auth login` against the public
   `/v1` from their own machine, and the audit log says who did what.
 - Shell access to the deployment becomes break-glass (`araldo admin`), which operators can restrict.
-- The API grows a second credential type, `/v1/auth/device*`, `/v1/members` and `/v1/org`, and the
-  dashboard a device-approval page and a Devices list; the contract tests cover them.
+- The API grows a second credential type, the `Araldo-Org` and `Araldo-Livemode` headers,
+  `/v1/auth/device*`, `/v1/members` and `/v1/org`; the dashboard a device-approval page and a Devices
+  list. The contract tests cover them.
+- Two new dependencies, `zalando/go-keyring` and `itchyny/gojq`, both what `gh` uses.
 - `araldo members`, `araldo org` and the `--as` flag change incompatibly. Before 1.0 that is
   acceptable; the release notes say so.

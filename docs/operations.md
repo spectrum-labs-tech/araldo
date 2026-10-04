@@ -242,7 +242,8 @@ araldo auth status                      # who you are on each server, and whethe
 araldo channels list                    # a table in a terminal; tab-separated when piped
 araldo channels list --json handle,status --jq '.[] | select(.status != "active")'
 araldo api channels                     # any /v1 request, authenticated
-araldo api -X POST posts --input post.json
+araldo api -X GET posts -f limit=5      # -f fields are the query with -X GET...
+araldo api -X POST posts --input post.json   # ...and otherwise make it a POST, as with gh api
 ```
 
 - The token is kept in the system keychain (macOS Keychain, Windows

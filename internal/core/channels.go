@@ -49,6 +49,8 @@ func (s *Service) ConnectChannel(ctx context.Context, a Actor, in ConnectInput) 
 		return nil, err
 	}
 	switch {
+	case in.Provider == "":
+		return nil, apperr.Invalid("field_required", "provider", "Name the platform to connect, e.g. bluesky.")
 	case !a.Livemode && in.Provider != platform.Sandbox:
 		return nil, apperr.Invalid("livemode_required", "provider",
 			"Test mode can only connect sandbox channels. Switch to live mode to connect a real %s account.", in.Provider)

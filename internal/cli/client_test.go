@@ -36,7 +36,7 @@ func fakeAraldo(t *testing.T) (*httptest.Server, *map[string]any) {
 		switch r.Method + " " + r.URL.Path {
 		case "GET /v1/me":
 			_, _ = io.WriteString(w, `{"object":"me","livemode":true,"org":{"id":"org_1","name":"Spectrum Labs"},`+
-				`"api_key":{"id":"key_1","object":"api_key","name":"cli","hint":"test","livemode":true,"scopes":[]}}`)
+				`"api_key":{"id":"key_1","object":"api_key","name":"cli","hint":"ald_live_…test","livemode":true,"scopes":[]}}`)
 		case "GET /v1/channels":
 			if r.URL.Query().Get("brand") == "nope" {
 				w.WriteHeader(http.StatusNotFound)
@@ -136,7 +136,7 @@ func TestAuthLoginStatusLogout(t *testing.T) {
 		t.Fatalf("a bad token: exit %d %q", code, errOut)
 	}
 	code, out, errOut := runCLI(t, testToken+"\n", "auth", "login", "--with-token", "--insecure-storage")
-	if code != ExitOK || !strings.Contains(out, `Logged in to`) || !strings.Contains(out, `Spectrum Labs, live API key "cli" (…test)`) {
+	if code != ExitOK || !strings.Contains(out, `Logged in to`) || !strings.Contains(out, `Spectrum Labs, live API key "cli" (ald_live_…test)`) {
 		t.Fatalf("login: exit %d %q %q", code, out, errOut)
 	}
 	if code, out, _ = runCLI(t, "", "auth", "status"); code != ExitOK || !strings.Contains(out, "✓ Logged in as Spectrum Labs") ||

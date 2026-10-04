@@ -16,15 +16,16 @@ type Kind int
 
 // Error kinds.
 const (
-	KindInternal     Kind = iota // 500
-	KindInvalid                  // 422: understood, but not acceptable
-	KindBadRequest               // 400: malformed
-	KindNotFound                 // 404, also for other orgs' records (ADR 0004)
-	KindForbidden                // 403
-	KindUnauthorized             // 401
-	KindConflict                 // 409
-	KindRateLimited              // 429
-	KindUnavailable              // 503: a dependency is down; try again
+	KindInternal         Kind = iota // 500
+	KindInvalid                      // 422: understood, but not acceptable
+	KindBadRequest                   // 400: malformed
+	KindNotFound                     // 404, also for other orgs' records (ADR 0004)
+	KindForbidden                    // 403
+	KindUnauthorized                 // 401
+	KindConflict                     // 409
+	KindRateLimited                  // 429
+	KindUnavailable                  // 503: a dependency is down; try again
+	KindMethodNotAllowed             // 405
 )
 
 // Problem is one thing wrong with a request.

@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"log/slog"
 	"math"
 	"net/http"
@@ -120,7 +121,12 @@ func (h *Handler) public(pattern string, fn handlerFunc, query ...string) {
 // ServeHTTP authenticates, rate limits and applies idempotency, then
 // routes.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if _, pattern := h.mux.Handler(r); h.open[pattern] {
+	_, pattern := h.mux.Handler(r)
+	if pattern == "" {
+		h.noRoute(w, r)
+		return
+	}
+	if h.open[pattern] {
 		h.mux.ServeHTTP(w, r)
 		return
 	}
@@ -147,6 +153,27 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.mux.ServeHTTP(w, r)
+}
+
+// noRoute answers a request no route matches as a problem, like every other
+// error: 405 with Allow when the path takes other methods, else 404.
+func (h *Handler) noRoute(w http.ResponseWriter, r *http.Request) {
+	var allow []string
+	for _, m := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		probe := r.Clone(r.Context())
+		probe.Method = m
+		if _, p := h.mux.Handler(probe); p != "" {
+			allow = append(allow, m)
+		}
+	}
+	if len(allow) > 0 {
+		w.Header().Set("Allow", strings.Join(allow, ", "))
+		h.fail(w, r, &apperr.Error{Kind: apperr.KindMethodNotAllowed, Code: "method_not_allowed",
+			Message: fmt.Sprintf("%s %s is not supported; use %s.", r.Method, r.URL.Path, strings.Join(allow, " or "))})
+		return
+	}
+	h.fail(w, r, &apperr.Error{Kind: apperr.KindNotFound, Code: "route_unknown",
+		Message: fmt.Sprintf("There is no %s; see /v1/openapi.yaml for the routes.", r.URL.Path)})
 }
 
 func (h *Handler) authenticate(r *http.Request) (core.Actor, error) {

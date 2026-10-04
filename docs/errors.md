@@ -27,6 +27,9 @@ every problem in `errors`, each with its own `code` and `param`.
 
 ## Requests
 
+- **route_unknown** (404): no route has this path; the routes are in
+  `/v1/openapi.yaml`. **method_not_allowed** (405): the path takes other
+  methods, listed in `Allow`.
 - **json_invalid**, **parameter_unknown**, **parameter_invalid**,
   **body_too_large** (400): the request itself is malformed. An unknown
   query parameter is refused like an unknown body field, so a misspelled

@@ -211,3 +211,27 @@ func TestLimiter(t *testing.T) {
 		t.Fatal("no token after refill")
 	}
 }
+
+// A path no route takes is a problem like any other error, not net/http's
+// plain text: 405 with Allow when the path takes other methods, else 404.
+func TestUnknownRoutesGetAProblem(t *testing.T) {
+	t.Parallel()
+	h := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	tests := []struct {
+		method, path string
+		status       int
+		code, allow  string
+	}{
+		{http.MethodGet, "/v1/nope", http.StatusNotFound, `"code":"route_unknown"`, ""},
+		{http.MethodDelete, "/v1/brands", http.StatusMethodNotAllowed, `"code":"method_not_allowed"`, "GET, POST"},
+	}
+	for _, tt := range tests {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, nil))
+		if rec.Code != tt.status || !strings.Contains(rec.Body.String(), tt.code) || rec.Header().Get("Allow") != tt.allow ||
+			rec.Header().Get("Content-Type") != "application/problem+json" {
+			t.Errorf("%s %s = %d %q (Allow %q, %s)", tt.method, tt.path, rec.Code, rec.Body.String(), rec.Header().Get("Allow"),
+				rec.Header().Get("Content-Type"))
+		}
+	}
+}

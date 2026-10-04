@@ -64,7 +64,7 @@ func (m me) account() string {
 		mode = "live"
 	}
 	if m.APIKey != nil {
-		return fmt.Sprintf("%s, %s API key %q (…%s)", m.Org.Name, mode, m.APIKey.Name, m.APIKey.Hint)
+		return fmt.Sprintf("%s, %s API key %q (%s)", m.Org.Name, mode, m.APIKey.Name, m.APIKey.Hint)
 	}
 	return fmt.Sprintf("%s (%s)", m.Org.Name, mode)
 }

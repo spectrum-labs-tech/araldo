@@ -41,15 +41,16 @@ type problem struct {
 }
 
 var kindStatus = map[apperr.Kind]int{
-	apperr.KindInternal:     http.StatusInternalServerError,
-	apperr.KindInvalid:      http.StatusUnprocessableEntity,
-	apperr.KindBadRequest:   http.StatusBadRequest,
-	apperr.KindNotFound:     http.StatusNotFound,
-	apperr.KindForbidden:    http.StatusForbidden,
-	apperr.KindUnauthorized: http.StatusUnauthorized,
-	apperr.KindConflict:     http.StatusConflict,
-	apperr.KindRateLimited:  http.StatusTooManyRequests,
-	apperr.KindUnavailable:  http.StatusServiceUnavailable,
+	apperr.KindInternal:         http.StatusInternalServerError,
+	apperr.KindInvalid:          http.StatusUnprocessableEntity,
+	apperr.KindBadRequest:       http.StatusBadRequest,
+	apperr.KindNotFound:         http.StatusNotFound,
+	apperr.KindForbidden:        http.StatusForbidden,
+	apperr.KindUnauthorized:     http.StatusUnauthorized,
+	apperr.KindConflict:         http.StatusConflict,
+	apperr.KindRateLimited:      http.StatusTooManyRequests,
+	apperr.KindUnavailable:      http.StatusServiceUnavailable,
+	apperr.KindMethodNotAllowed: http.StatusMethodNotAllowed,
 }
 
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {

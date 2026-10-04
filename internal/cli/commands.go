@@ -24,8 +24,8 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
-func open(ctx context.Context, needKeys bool) (*app.App, error) {
-	cfg, err := config.Load(needKeys)
+func open(ctx context.Context) (*app.App, error) {
+	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +36,7 @@ func runServer(ctx context.Context, args []string, _, stderr io.Writer) error {
 	if err := flags("server", stderr, args, func(*flag.FlagSet) {}); err != nil {
 		return err
 	}
-	a, err := open(ctx, true)
+	a, err := open(ctx)
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func runWorker(ctx context.Context, args []string, _, stderr io.Writer) error {
 	if err := flags("worker", stderr, args, func(*flag.FlagSet) {}); err != nil {
 		return err
 	}
-	a, err := open(ctx, true)
+	a, err := open(ctx)
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func runAll(ctx context.Context, args []string, _, stderr io.Writer) error {
 	if err := flags("all", stderr, args, func(*flag.FlagSet) {}); err != nil {
 		return err
 	}
-	a, err := open(ctx, true)
+	a, err := open(ctx)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func runMigrate(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if err := flags("migrate", stderr, args, func(*flag.FlagSet) {}); err != nil {
 		return err
 	}
-	cfg, err := config.Load(false)
+	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
@@ -162,7 +162,7 @@ func runBootstrap(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if email == "" || org == "" {
 		return usageErr("--email and --org are required")
 	}
-	a, err := open(ctx, true)
+	a, err := open(ctx)
 	if err != nil {
 		return err
 	}
@@ -224,7 +224,7 @@ func runUsers(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 		if email == "" {
 			return usageErr("--email is required")
 		}
-		a, err := open(ctx, false)
+		a, err := open(ctx)
 		if err != nil {
 			return err
 		}
@@ -256,7 +256,7 @@ func runUsers(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 		if email == "" {
 			return usageErr("--email is required")
 		}
-		a, err := open(ctx, false)
+		a, err := open(ctx)
 		if err != nil {
 			return err
 		}
@@ -301,7 +301,7 @@ func runKeys(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		if err := flags("keys rotate", stderr, args[1:], func(*flag.FlagSet) {}); err != nil {
 			return err
 		}
-		a, err := open(ctx, true)
+		a, err := open(ctx)
 		if err != nil {
 			return err
 		}
@@ -316,7 +316,7 @@ func runKeys(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		if err := flags("keys status", stderr, args[1:], func(*flag.FlagSet) {}); err != nil {
 			return err
 		}
-		a, err := open(ctx, true)
+		a, err := open(ctx)
 		if err != nil {
 			return err
 		}
@@ -381,7 +381,7 @@ func runAPIKeys(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if email == "" || name == "" {
 		return usageErr("--email and --name are required")
 	}
-	a, err := open(ctx, true)
+	a, err := open(ctx)
 	if err != nil {
 		return err
 	}

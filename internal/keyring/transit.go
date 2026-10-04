@@ -139,12 +139,18 @@ func (t *Transit) call(ctx context.Context, op string, body, out any) error {
 	for attempt := 0; ; attempt++ {
 		token, err := t.currentToken(ctx)
 		if err != nil {
-			return err
+			return unavailable(err)
 		}
 		status, err := t.post(ctx, path, token, body, out)
 		if status == http.StatusForbidden && attempt == 0 && t.cfg.Token == "" {
 			t.forget()
 			continue
+		}
+		// A rejected ciphertext is a broken secret; anything else (no
+		// answer, a server error, a refused token) is the service being
+		// unavailable.
+		if err != nil && status != http.StatusBadRequest {
+			return unavailable(err)
 		}
 		return err
 	}

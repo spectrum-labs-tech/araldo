@@ -319,7 +319,7 @@ func (s *Server) page(c *reqCtx, page, nav, title string, data any) error {
 // formErr re-renders a form page with a problem.
 func (s *Server) formErr(c *reqCtx, page, nav, title string, data any, err error) error {
 	ae := apperr.As(err)
-	if ae.Kind == apperr.KindInternal {
+	if ae.Kind == apperr.KindInternal || ae.Kind == apperr.KindUnavailable {
 		return err
 	}
 	v := s.view(c, nav, title, data)
@@ -338,6 +338,10 @@ func (s *Server) handleErr(c *reqCtx, err error) {
 	case apperr.KindInternal:
 		s.log.ErrorContext(c.ctx(), "page failed", "path", c.r.URL.Path, "err", err)
 		s.renderError(c, http.StatusInternalServerError, "Something went wrong on our side. Request "+api.RequestID(c.ctx())+".")
+	case apperr.KindUnavailable:
+		s.log.WarnContext(c.ctx(), "page failed: a dependency is unavailable", "path", c.r.URL.Path, "err", err)
+		c.w.Header().Set("Retry-After", "30")
+		s.renderError(c, http.StatusServiceUnavailable, ae.Message)
 	case apperr.KindNotFound:
 		s.renderError(c, http.StatusNotFound, ae.Message)
 	case apperr.KindForbidden:

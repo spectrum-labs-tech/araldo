@@ -73,9 +73,9 @@ type S3 struct {
 	Prefix          string // ARALDO_S3_PREFIX (default media/)
 }
 
-// Load reads the environment. needKeys requires master keys (server and
-// worker); one-off commands that touch no secrets can skip them.
-func Load(needKeys bool) (Config, error) {
+// Load reads the environment. Master keys are optional: without them
+// Araldo runs, but cannot use stored credentials (see app.Open).
+func Load() (Config, error) {
 	c := Config{
 		DatabaseURL: first(os.Getenv("ARALDO_DATABASE_URL"), os.Getenv("DATABASE_URL")),
 		MasterKeys:  os.Getenv("ARALDO_MASTER_KEYS"),
@@ -145,9 +145,6 @@ func Load(needKeys bool) (Config, error) {
 	}
 	if c.DatabaseURL == "" {
 		errs = append(errs, errors.New("ARALDO_DATABASE_URL is required"))
-	}
-	if needKeys && c.MasterKeys == "" && c.Transit.Addr == "" {
-		errs = append(errs, errors.New("ARALDO_MASTER_KEYS or ARALDO_TRANSIT_ADDR is required (generate a local key with: araldo keys generate)"))
 	}
 	if u, err := url.Parse(c.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
 		errs = append(errs, fmt.Errorf("ARALDO_BASE_URL %q is not an absolute URL", c.BaseURL))

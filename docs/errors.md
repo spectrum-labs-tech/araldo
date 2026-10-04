@@ -15,6 +15,16 @@ every problem in `errors`, each with its own `code` and `param`.
 - **forbidden** (403): the caller may not do this.
 - **rate_limited** (429): slow down; see `Retry-After`.
 
+## Availability
+
+- **database_unavailable** (503): the database cannot be reached; retry
+  after `Retry-After`.
+- **keys_unavailable** (503): stored credentials cannot be read right now,
+  because no master key is configured or its key service is unreachable.
+  Retry later.
+- **service_unavailable** (503): another service Araldo depends on cannot
+  be reached; retry later.
+
 ## Requests
 
 - **json_invalid**, **parameter_unknown**, **parameter_invalid**,

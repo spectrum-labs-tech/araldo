@@ -22,9 +22,13 @@ import (
 // Readiness reports whether the server can take traffic.
 type Readiness func(ctx context.Context) error
 
+// Health is the database's last known state (store.HealthMonitor).
+type Health interface{ Healthy() bool }
+
 // Handler routes /v1/ to the API, health checks, and everything else to
-// the dashboard.
-func Handler(apiH, webH http.Handler, ready Readiness, log *slog.Logger) http.Handler {
+// the dashboard. While db is unhealthy, everything but the health checks
+// and static files gets a 503 at once.
+func Handler(apiH, webH http.Handler, ready Readiness, db Health, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
@@ -40,9 +44,31 @@ func Handler(apiH, webH http.Handler, ready Readiness, log *slog.Logger) http.Ha
 		}
 		_, _ = w.Write([]byte("ready\n"))
 	})
-	mux.Handle("/v1/", apiH)
-	mux.Handle("/", webH)
+	mux.Handle("/v1/", dbGuard(db, apiH, true))
+	mux.Handle("/", dbGuard(db, webH, false))
 	return middleware(mux, log)
+}
+
+// dbGuard answers 503 while the database is down, as an API problem or a
+// plain page, so a Postgres outage is one quick refusal per request rather
+// than a failure partway through each. Static files need no database.
+func dbGuard(db Health, next http.Handler, isAPI bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if db == nil || db.Healthy() || strings.HasPrefix(r.URL.Path, "/static/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Retry-After", "30")
+		w.Header().Set("Cache-Control", "no-store")
+		if isAPI {
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"type":"about:blank","title":"Service Unavailable","status":503,` +
+				`"code":"database_unavailable","detail":"The database is unavailable; try again shortly."}` + "\n"))
+			return
+		}
+		http.Error(w, "Araldo cannot reach its database right now. Try again in a minute.", http.StatusServiceUnavailable)
+	})
 }
 
 type statusWriter struct {

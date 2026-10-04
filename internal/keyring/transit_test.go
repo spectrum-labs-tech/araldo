@@ -212,7 +212,7 @@ func TestMoveToTransit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	link := before.Derive("media-links")
+	link := derive(t, before, "media-links")
 
 	mk, err := ParseMasterKeys(local)
 	if err != nil {
@@ -222,10 +222,7 @@ func TestMoveToTransit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	during, err := Open(t.Context(), both, st)
-	if err != nil {
-		t.Fatal(err)
-	}
+	during := New(both, st)
 	if n, err := during.RewrapAll(t.Context()); err != nil || n != 2 {
 		t.Fatalf("RewrapAll = %d, %v; want 2 (the org's key and the signing key)", n, err)
 	}
@@ -241,15 +238,12 @@ func TestMoveToTransit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := Open(t.Context(), only, st)
-	if err != nil {
-		t.Fatal(err)
-	}
+	after := New(only, st)
 	got, err := after.Decrypt(t.Context(), org, "a", ct)
 	if err != nil || string(got) != "app-password" {
 		t.Fatalf("Decrypt after the move = %q, %v", got, err)
 	}
-	if !bytes.Equal(after.Derive("media-links"), link) {
+	if !bytes.Equal(derive(t, after, "media-links"), link) {
 		t.Fatal("the move changed signed links")
 	}
 }
@@ -258,7 +252,9 @@ func TestUsageReportsUnconfiguredKeys(t *testing.T) {
 	t.Parallel()
 	st := NewMemStore()
 	old, newer := masterKeys(t, "old"), masterKeys(t, "new")
-	newKeyring(t, old, st)
+	if _, err := newKeyring(t, old, st).Encrypt(t.Context(), uuid.New(), "a", []byte("x")); err != nil {
+		t.Fatal(err)
+	}
 	k := newKeyring(t, newer+","+old, st)
 	use, err := k.Usage(t.Context())
 	if err != nil {

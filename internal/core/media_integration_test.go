@@ -490,7 +490,7 @@ func TestImagesAreResizedForAPlatform(t *testing.T) {
 	}
 
 	// A platform that fetches the image gets the resized copy.
-	link := core.MediaLinkFor(w.s, m, platform.Bluesky)
+	link := core.MediaLinkFor(t.Context(), w.s, m, platform.Bluesky)
 	u, err := url.Parse(link)
 	if err != nil {
 		t.Fatal(err)

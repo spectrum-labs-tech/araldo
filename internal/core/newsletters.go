@@ -575,7 +575,7 @@ func (im *issueImages) resolve(src string) (newsletter.Image, error) {
 	if err != nil || m.BrandID != im.brandID || m.Livemode != im.livemode {
 		return newsletter.Image{}, fmt.Errorf("%s is not one of the brand's images", src)
 	}
-	link := im.s.EmailMediaLink(m)
+	link := im.s.EmailMediaLink(im.ctx, m)
 	if link == "" {
 		return newsletter.Image{}, errors.New("library images need the install's public URL and master keys; use an https:// URL")
 	}
@@ -750,7 +750,7 @@ func (s *Service) renderIssue(ctx context.Context, b *model.Brand, livemode bool
 		Footer: b.EmailTheme.Footer}
 	if b.EmailTheme.LogoMediaID != nil {
 		if m, err := s.store.Media(ctx, b.OrgID, *b.EmailTheme.LogoMediaID); err == nil {
-			theme.LogoURL = s.EmailMediaLink(m)
+			theme.LogoURL = s.EmailMediaLink(ctx, m)
 		}
 	}
 	campaign := "preview"

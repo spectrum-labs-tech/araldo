@@ -27,8 +27,11 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 )
 
 // Install is the scope of secrets that belong to no org.
@@ -50,7 +53,18 @@ var (
 	// ErrDecrypt means a ciphertext is corrupt, was moved, or was sealed
 	// under a key this keyring does not have.
 	ErrDecrypt = errors.New("keyring: cannot decrypt")
+	// ErrUnavailable means no master key is configured, or its key service
+	// cannot be reached: a 503 to retry, not a broken secret. Errors that
+	// wrap it say why.
+	ErrUnavailable = &apperr.Error{Kind: apperr.KindUnavailable, Code: "keys_unavailable",
+		Message: "Stored credentials cannot be read right now: the master keys are not configured or their key service is unreachable. Try again shortly."}
 )
+
+// unavailable wraps cause as ErrUnavailable.
+func unavailable(cause error) error { return fmt.Errorf("%w: %w", ErrUnavailable, cause) }
+
+// errNoMasterKeys is why a keyring without master keys is unavailable.
+var errNoMasterKeys = errors.New("no master keys are configured")
 
 const (
 	formatV1  = 1
@@ -240,6 +254,9 @@ func (m *MasterKeys) unwrap(ctx context.Context, k WrappedKey) ([]byte, error) {
 		return nil, fmt.Errorf("%w: master key %q is not configured", ErrNoKey, k.KEKID)
 	}
 	dek, err := kek.Unwrap(ctx, k.Wrapped, wrapAAD(k.Scope, k.Version))
+	if errors.Is(err, ErrUnavailable) {
+		return nil, fmt.Errorf("unwrap with master key %q: %w", k.KEKID, err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: data key %s v%d under master key %q: %w", ErrDecrypt, k.Scope, k.Version, k.KEKID, err)
 	}
@@ -262,14 +279,27 @@ func open(aead cipher.AEAD, sealed, aad []byte) ([]byte, error) {
 	return aead.Open(nil, sealed[:n], sealed[n:], aad)
 }
 
-// Keyring seals and opens secrets.
+// Keyring seals and opens secrets. It works without its master keys, failing
+// each operation that needs one with ErrUnavailable, so the rest of Araldo
+// keeps running while a key service is down or no key is configured.
 type Keyring struct {
-	master *MasterKeys
+	master *MasterKeys // nil: none configured
 	store  Store
 	cache  *keyCache
-	// signing is the root of Derive, loaded by Open.
-	signing []byte
+	sign   *signer
 }
+
+// signer holds the root of Derive, loaded on first use and shared by the
+// copies With makes. A failed load is retried, but not more often than
+// signRetry, so an outage does not become a call per request.
+type signer struct {
+	mu      sync.Mutex
+	root    []byte
+	err     error
+	retryAt time.Time
+}
+
+const signRetry = 15 * time.Second
 
 // keyCache holds unwrapped data keys, shared by a keyring and the copies
 // With makes.
@@ -283,17 +313,55 @@ type cacheKey struct {
 	version int
 }
 
-// Open returns a keyring using master keys m and data keys in st. It loads
-// the signing root, creating it on first use, so the master keys must be
-// reachable: a key service that is down fails Open.
-func Open(ctx context.Context, m *MasterKeys, st Store) (*Keyring, error) {
-	k := &Keyring{master: m, store: st, cache: &keyCache{aead: map[cacheKey]cipher.AEAD{}}}
+// New returns a keyring using master keys m (nil when none are configured)
+// and data keys in st. It reaches neither: Check does, and so does each
+// operation when it needs a key.
+func New(m *MasterKeys, st Store) *Keyring {
+	return &Keyring{master: m, store: st, cache: &keyCache{aead: map[cacheKey]cipher.AEAD{}}, sign: &signer{}}
+}
+
+// Check reports whether secrets can be sealed and opened: the primary
+// master key wraps and unwraps a probe, and the signing key loads. A nil
+// error means usable; otherwise it says why.
+func (k *Keyring) Check(ctx context.Context) error {
+	if k.master == nil {
+		return unavailable(errNoMasterKeys)
+	}
+	probe := make([]byte, keySize)
+	wk, err := k.master.wrap(ctx, Signing, 0, probe)
+	if err == nil {
+		_, err = k.master.unwrap(ctx, wk)
+	}
+	if err != nil {
+		return fmt.Errorf("keyring: master key %q: %w", k.master.primary, err)
+	}
+	if _, err := k.signingKey(ctx); err != nil {
+		return fmt.Errorf("keyring: signing key: %w", err)
+	}
+	return nil
+}
+
+// signingKey returns the root of Derive, loading it when needed.
+func (k *Keyring) signingKey(ctx context.Context) ([]byte, error) {
+	s := k.sign
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.root != nil {
+		return s.root, nil
+	}
+	if k.master == nil {
+		return nil, unavailable(errNoMasterKeys)
+	}
+	if time.Now().Before(s.retryAt) {
+		return nil, s.err
+	}
 	root, err := k.signingRoot(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("keyring: signing key: %w", err)
+		s.err, s.retryAt = err, time.Now().Add(signRetry)
+		return nil, err
 	}
-	k.signing = root
-	return k, nil
+	s.root = root
+	return root, nil
 }
 
 // signingRoot reads the Signing scope's data key, creating it when there
@@ -330,7 +398,7 @@ func (k *Keyring) signingRoot(ctx context.Context) ([]byte, error) {
 // keyring's own store would wait for another pooled connection while the
 // transaction holds one, and enough of those at once exhaust the pool.
 func (k *Keyring) With(st Store) *Keyring {
-	return &Keyring{master: k.master, store: st, cache: k.cache, signing: k.signing}
+	return &Keyring{master: k.master, store: st, cache: k.cache, sign: k.sign}
 }
 
 // AAD names the place a secret is stored: its table, column and row.
@@ -374,9 +442,13 @@ func (k *Keyring) Decrypt(ctx context.Context, scope uuid.UUID, aad string, ciph
 
 // Derive returns a 32-byte key for one purpose (label): for signing, not
 // for encrypting stored data. It comes from the stored signing root, so it
-// survives master key changes.
-func (k *Keyring) Derive(label string) []byte {
-	return hmacSHA256(k.signing, label)
+// survives master key changes. It fails while the root cannot be loaded.
+func (k *Keyring) Derive(ctx context.Context, label string) ([]byte, error) {
+	root, err := k.signingKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return hmacSHA256(root, label), nil
 }
 
 func hmacSHA256(key []byte, label string) []byte {
@@ -397,6 +469,9 @@ func (k *Keyring) Forget(scope uuid.UUID) {
 }
 
 func (k *Keyring) current(ctx context.Context, scope uuid.UUID) (int, cipher.AEAD, error) {
+	if k.master == nil {
+		return 0, nil, unavailable(errNoMasterKeys)
+	}
 	wk, err := k.store.CurrentDataKey(ctx, scope)
 	if errors.Is(err, ErrNoKey) {
 		wk, err = k.create(ctx, scope, 1)
@@ -411,6 +486,9 @@ func (k *Keyring) current(ctx context.Context, scope uuid.UUID) (int, cipher.AEA
 // Rotate starts a new data key version for scope; new secrets use it, old
 // ones stay readable.
 func (k *Keyring) Rotate(ctx context.Context, scope uuid.UUID) (int, error) {
+	if k.master == nil {
+		return 0, unavailable(errNoMasterKeys)
+	}
 	next := 1
 	wk, err := k.store.CurrentDataKey(ctx, scope)
 	switch {
@@ -462,6 +540,9 @@ func (k *Keyring) load(ctx context.Context, wk WrappedKey) (cipher.AEAD, error) 
 		return aead, nil
 	}
 	k.cache.mu.Unlock()
+	if k.master == nil {
+		return nil, unavailable(errNoMasterKeys)
+	}
 	dek, err := k.master.unwrap(ctx, wk)
 	if err != nil {
 		return nil, err
@@ -480,6 +561,9 @@ func (k *Keyring) load(ctx context.Context, wk WrappedKey) (cipher.AEAD, error) 
 // master keys can be retired. Secrets themselves are untouched. It returns
 // how many keys changed.
 func (k *Keyring) RewrapAll(ctx context.Context) (int, error) {
+	if k.master == nil {
+		return 0, unavailable(errNoMasterKeys)
+	}
 	keys, err := k.store.DataKeys(ctx)
 	if err != nil {
 		return 0, err
@@ -528,8 +612,12 @@ func (k *Keyring) Usage(ctx context.Context) ([]KeyUse, error) {
 		counts[wk.KEKID]++
 	}
 	var out []KeyUse
-	for _, kid := range k.master.order {
-		out = append(out, KeyUse{ID: kid, Configured: true, Primary: kid == k.master.primary, DataKeys: counts[kid]})
+	var order []string
+	if k.master != nil {
+		order = k.master.order
+	}
+	for _, kid := range order {
+		out = append(out, KeyUse{ID: kid, Configured: true, Primary: kid == order[0], DataKeys: counts[kid]})
 		delete(counts, kid)
 	}
 	for _, kid := range slices.Sorted(maps.Keys(counts)) {

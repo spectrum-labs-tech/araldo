@@ -139,14 +139,27 @@ func (s *Scheduler) Instrument(mp metric.MeterProvider) error {
 }
 
 // Run registers the tasks, then runs each whenever it is due until ctx
-// ends, and waits for in-flight runs.
+// ends, and waits for in-flight runs. While the database is unreachable it
+// keeps trying to register them rather than giving up.
 func (s *Scheduler) Run(ctx context.Context) error {
 	defs := make([]TaskDef, len(s.tasks))
 	for i, t := range s.tasks {
 		defs[i] = TaskDef{Name: t.Name, Enabled: true, Interval: t.Interval}
 	}
-	if err := s.store.EnsureTasks(ctx, defs); err != nil {
-		return fmt.Errorf("opsched: register tasks: %w", err)
+	for wait := time.Second; ; wait = min(wait*2, time.Minute) {
+		err := s.store.EnsureTasks(ctx, defs)
+		if err == nil {
+			break
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		s.log.WarnContext(ctx, "registering tasks failed; retrying", "err", err, "retry_in", wait.String())
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
 	}
 	var wg sync.WaitGroup
 	for _, t := range s.tasks {

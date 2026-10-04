@@ -31,6 +31,12 @@ the order it is being built in (update its status with the work).
   operations get a cross-org test in `internal/core/core_integration_test.go`.
 - **Modes** ([ADR 0006](docs/adr/0006-test-mode-and-api-keys.md)): activity
   tables carry `livemode`; test mode only ever touches sandbox channels.
+- **Degrade, don't collapse.** A missing or unreachable dependency (the
+  database, the master keys, a provider) never stops Araldo from starting or
+  running: what needs it fails with a 503 (`apperr.KindUnavailable`) and is
+  retried, everything else keeps working, and it recovers on its own (see
+  `store.HealthMonitor`, `keyring.HealthMonitor`). Only configuration that
+  cannot work as written (a malformed URL or key) is fatal.
 - **Secrets** ([ADR 0008](docs/adr/0008-encryption.md)): encrypt with
   `keyring` using `keyring.AAD(table, column, rowID)`. Never log, return or
   put in an event a token, key, secret or credential.

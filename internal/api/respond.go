@@ -49,13 +49,18 @@ var kindStatus = map[apperr.Kind]int{
 	apperr.KindUnauthorized: http.StatusUnauthorized,
 	apperr.KindConflict:     http.StatusConflict,
 	apperr.KindRateLimited:  http.StatusTooManyRequests,
+	apperr.KindUnavailable:  http.StatusServiceUnavailable,
 }
 
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	ae := apperr.As(err)
 	status := kindStatus[ae.Kind]
-	if ae.Kind == apperr.KindInternal {
+	switch ae.Kind {
+	case apperr.KindInternal:
 		h.log.ErrorContext(r.Context(), "request failed", "path", r.URL.Path, "err", err)
+	case apperr.KindUnavailable:
+		h.log.WarnContext(r.Context(), "request failed: a dependency is unavailable", "path", r.URL.Path, "err", err)
+		w.Header().Set("Retry-After", "30")
 	}
 	p := problem{Type: "about:blank", Title: http.StatusText(status), Status: status, Detail: ae.Message, Code: ae.Code, Param: ae.Param,
 		RequestID: RequestID(r.Context()), Errors: ae.Problems}

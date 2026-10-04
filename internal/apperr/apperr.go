@@ -24,6 +24,7 @@ const (
 	KindUnauthorized             // 401
 	KindConflict                 // 409
 	KindRateLimited              // 429
+	KindUnavailable              // 503: a dependency is down; try again
 )
 
 // Problem is one thing wrong with a request.
@@ -110,11 +111,25 @@ func (ps Problems) Err(message string) error {
 	return &Error{Kind: KindInvalid, Code: ps[0].Code, Param: ps[0].Param, Message: message, Problems: ps}
 }
 
-// As returns err as an *Error, wrapping unknown errors as internal.
+// As returns err as an *Error: unavailable when a registered check says a
+// dependency is down, else internal for unknown errors.
 func As(err error) *Error {
 	var e *Error
 	if errors.As(err, &e) {
 		return e
 	}
+	for _, down := range unavailable {
+		if down(err) {
+			return &Error{Kind: KindUnavailable, Code: "service_unavailable",
+				Message: "A service Araldo depends on is unavailable; try again shortly."}
+		}
+	}
 	return &Error{Kind: KindInternal, Code: "internal_error", Message: "Something went wrong on our side."}
 }
+
+var unavailable []func(error) bool
+
+// RegisterUnavailable adds a check that recognizes a dependency being down
+// (the database, say) in errors that carry no Kind, so As reports them as
+// unavailable instead of internal. Call it once at startup.
+func RegisterUnavailable(down func(error) bool) { unavailable = append(unavailable, down) }

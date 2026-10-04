@@ -24,7 +24,7 @@ func actAs(ctx context.Context, email, org string) (*app.App, core.Actor, model.
 	if email == "" {
 		return nil, core.Actor{}, model.Membership{}, usageErr("--as (the member acting) is required")
 	}
-	a, err := open(ctx, false)
+	a, err := open(ctx)
 	if err != nil {
 		return nil, core.Actor{}, model.Membership{}, err
 	}

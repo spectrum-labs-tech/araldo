@@ -4,6 +4,7 @@ package keyring
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -33,11 +34,7 @@ func newKeyring(t *testing.T, spec string, st Store) *Keyring {
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, err := Open(t.Context(), m, st)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return k
+	return New(m, st)
 }
 
 func TestRoundTrip(t *testing.T) {
@@ -115,15 +112,15 @@ func TestRotationKeepsOldSecretsReadable(t *testing.T) {
 
 	// A new primary master key: rewrap everything, then drop k1.
 	n, err := newKeyring(t, k2+","+k1, st).RewrapAll(t.Context())
-	if err != nil || n != 3 {
-		t.Fatalf("RewrapAll = %d, %v; want 3 keys (two versions and the signing key)", n, err)
+	if err != nil || n != 2 {
+		t.Fatalf("RewrapAll = %d, %v; want 2 keys (the signing key is made on first use)", n, err)
 	}
 	m3, err := ParseMasterKeys(masterKeys(t, "k3"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(t.Context(), m3, st); !errors.Is(err, ErrNoKey) {
-		t.Fatalf("Open with an unknown master key = %v, want ErrNoKey", err)
+	if _, err := New(m3, st).Decrypt(t.Context(), org, "a", old); !errors.Is(err, ErrNoKey) {
+		t.Fatalf("Decrypt with an unknown master key = %v, want ErrNoKey", err)
 	}
 	onlyK2 := newKeyring(t, k2, st)
 	for want, ct := range map[string][]byte{"before": old, "after": newer} {
@@ -183,7 +180,7 @@ func TestDerive(t *testing.T) {
 	first, second, _ := strings.Cut(spec, ",")
 	st := NewMemStore()
 	a := newKeyring(t, first, st)
-	if got := a.Derive("media-urls"); len(got) != 32 || bytes.Equal(got, a.Derive("other")) {
+	if got := derive(t, a, "media-urls"); len(got) != 32 || bytes.Equal(got, derive(t, a, "other")) {
 		t.Fatalf("Derive: %x (labels must give different keys)", got)
 	}
 	// Earlier versions derived from the primary key's raw bytes; the stored
@@ -193,16 +190,90 @@ func TestDerive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := hmacSHA256(hmacSHA256(raw, "araldo:v1:derive"), "media-urls"); !bytes.Equal(a.Derive("media-urls"), want) {
+	if want := hmacSHA256(hmacSHA256(raw, "araldo:v1:derive"), "media-urls"); !bytes.Equal(derive(t, a, "media-urls"), want) {
 		t.Fatal("Derive differs from the earlier derivation")
 	}
 	// A new primary master key leaves the stored root, and so every derived
 	// key, unchanged.
-	if !bytes.Equal(a.Derive("media-urls"), newKeyring(t, second+","+first, st).Derive("media-urls")) {
+	if !bytes.Equal(derive(t, a, "media-urls"), derive(t, newKeyring(t, second+","+first, st), "media-urls")) {
 		t.Fatal("a new primary master key changed Derive")
 	}
 	// Seeded from the same local key, another store starts from the same root.
-	if !bytes.Equal(a.Derive("media-urls"), newKeyring(t, first, NewMemStore()).Derive("media-urls")) {
+	if !bytes.Equal(derive(t, a, "media-urls"), derive(t, newKeyring(t, first, NewMemStore()), "media-urls")) {
 		t.Fatal("the same local key should seed the same root")
 	}
+}
+
+func derive(t *testing.T, k *Keyring, label string) []byte {
+	t.Helper()
+	key, err := k.Derive(t.Context(), label)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
+// failingKEK is a key service that cannot be reached.
+type failingKEK struct{}
+
+func (failingKEK) ID() string { return "down" }
+func (failingKEK) Wrap(context.Context, []byte, []byte) ([]byte, error) {
+	return nil, unavailable(errors.New("connection refused"))
+}
+func (failingKEK) Unwrap(context.Context, []byte, []byte) ([]byte, error) {
+	return nil, unavailable(errors.New("connection refused"))
+}
+
+// Without master keys, or with their service down, the keyring still
+// exists: what needs a key fails with ErrUnavailable, nothing panics, and
+// it recovers once keys are back.
+func TestKeyringDegrades(t *testing.T) {
+	t.Parallel()
+	down, err := NewMasterKeys(failingKEK{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, k := range map[string]*Keyring{"no master keys": New(nil, NewMemStore()), "key service down": New(down, NewMemStore())} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if err := k.Check(t.Context()); !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("Check = %v, want ErrUnavailable", err)
+			}
+			if _, err := k.Encrypt(t.Context(), uuid.New(), "a", []byte("x")); !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("Encrypt = %v, want ErrUnavailable", err)
+			}
+			if _, err := k.Derive(t.Context(), "media-links"); !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("Derive = %v, want ErrUnavailable", err)
+			}
+		})
+	}
+	// A data key wrapped by a service that is now down is unavailable, not
+	// corrupt.
+	st := NewMemStore()
+	local := masterKeys(t, "k1")
+	ok := newKeyring(t, local, st)
+	org := uuid.New()
+	ct, err := ok.Encrypt(t.Context(), org, "a", []byte("secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := New(mustPrepend(t, local, failingKEK{}), st).RewrapAll(t.Context()); !errors.Is(err, ErrUnavailable) || n != 0 {
+		t.Fatalf("RewrapAll to a down service = %d, %v; want ErrUnavailable", n, err)
+	}
+	if got, err := newKeyring(t, local, st).Decrypt(t.Context(), org, "a", ct); err != nil || string(got) != "secret" {
+		t.Fatalf("Decrypt after a failed move = %q, %v", got, err)
+	}
+}
+
+func mustPrepend(t *testing.T, spec string, k KEK) *MasterKeys {
+	t.Helper()
+	m, err := ParseMasterKeys(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	both, err := m.Prepend(k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return both
 }

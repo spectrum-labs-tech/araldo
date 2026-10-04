@@ -24,6 +24,7 @@ import (
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/keyring"
 	"github.com/spectrum-labs-tech/araldo/internal/media"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
@@ -425,7 +426,7 @@ func (s *Service) payloadMedia(ctx context.Context, ms []*model.Media, rules pla
 		rs, needed, possible := rules.ResizeFor(out[i])
 		if !needed || !possible {
 			out[i].Open = func(ctx context.Context) (io.ReadCloser, error) { return s.openMedia(ctx, m) }
-			out[i].URL = s.MediaLink(m)
+			out[i].URL = s.MediaLink(ctx, m)
 			continue
 		}
 		data, info, err := s.fitMedia(ctx, m, rs)
@@ -433,7 +434,7 @@ func (s *Service) payloadMedia(ctx context.Context, ms []*model.Media, rules pla
 			return nil, err
 		}
 		fitted := platform.Media{Type: info.Type, Width: info.Width, Height: info.Height, Alt: m.Alt}.WithData(data)
-		fitted.URL = s.mediaLinkFor(m, rules.Provider)
+		fitted.URL = s.mediaLinkFor(ctx, m, rules.Provider)
 		out[i] = fitted
 	}
 	return out, nil
@@ -463,30 +464,50 @@ func (s *Service) fitMedia(ctx context.Context, m *model.Media, rs platform.Resi
 const MediaLinkTTL = time.Hour
 
 // MediaLink is a public link to m's file, signed and expiring (ADR 0021),
-// for platforms that fetch images themselves. Without master keys there is
-// nothing to sign with, and it is empty.
-func (s *Service) MediaLink(m *model.Media) string {
-	if s.keys == nil || s.cfg.BaseURL == "" {
+// for platforms that fetch images themselves. Without a signing key (no
+// master keys, or their key service down) it is empty.
+func (s *Service) MediaLink(ctx context.Context, m *model.Media) string {
+	key := s.linkKey(ctx)
+	if key == nil || s.cfg.BaseURL == "" {
 		return ""
 	}
 	exp := s.Now().Add(MediaLinkTTL).Unix()
 	return s.cfg.BaseURL + "/v1/media/" + id.Format(id.Media, m.ID) + "/content?expires=" + strconv.FormatInt(exp, 10) +
-		"&signature=" + s.mediaSignature(m.ID, exp)
+		"&signature=" + mediaSignature(key, m.ID, exp)
+}
+
+// linkKey is the key media links are signed with, or nil (logged) while it
+// cannot be loaded.
+func (s *Service) linkKey(ctx context.Context) []byte {
+	key, err := s.signingKey(ctx)
+	if err != nil {
+		s.log.WarnContext(ctx, "media links unavailable", "err", err)
+		return nil
+	}
+	return key
+}
+
+func (s *Service) signingKey(ctx context.Context) ([]byte, error) {
+	if s.keys == nil {
+		return nil, keyring.ErrUnavailable
+	}
+	return s.keys.Derive(ctx, "media-links")
 }
 
 // mediaLinkFor is MediaLink for the copy of an image resized for a
 // platform; the platform is signed with the rest.
-func (s *Service) mediaLinkFor(m *model.Media, p platform.Provider) string {
-	if s.keys == nil || s.cfg.BaseURL == "" {
+func (s *Service) mediaLinkFor(ctx context.Context, m *model.Media, p platform.Provider) string {
+	key := s.linkKey(ctx)
+	if key == nil || s.cfg.BaseURL == "" {
 		return ""
 	}
 	exp := s.Now().Add(MediaLinkTTL).Unix()
 	return s.cfg.BaseURL + "/v1/media/" + id.Format(id.Media, m.ID) + "/content?expires=" + strconv.FormatInt(exp, 10) +
-		"&for=" + url.QueryEscape(string(p)) + "&signature=" + s.mediaSignature(m.ID, exp, p)
+		"&for=" + url.QueryEscape(string(p)) + "&signature=" + mediaSignature(key, m.ID, exp, p)
 }
 
-func (s *Service) mediaSignature(mediaID uuid.UUID, expires int64, forProvider ...platform.Provider) string {
-	mac := hmac.New(sha256.New, s.keys.Derive("media-links"))
+func mediaSignature(key []byte, mediaID uuid.UUID, expires int64, forProvider ...platform.Provider) string {
+	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(mediaID.String() + "|" + strconv.FormatInt(expires, 10)))
 	for _, p := range forProvider {
 		mac.Write([]byte("|" + string(p)))
@@ -498,15 +519,16 @@ func (s *Service) mediaSignature(mediaID uuid.UUID, expires int64, forProvider .
 // newsletters, which are read long after they are sent (ADR 0024). Its
 // signature is bound to that purpose, so it cannot stand in for a
 // platform's expiring link. Empty without master keys or a base URL.
-func (s *Service) EmailMediaLink(m *model.Media) string {
-	if s.keys == nil || s.cfg.BaseURL == "" {
+func (s *Service) EmailMediaLink(ctx context.Context, m *model.Media) string {
+	key := s.linkKey(ctx)
+	if key == nil || s.cfg.BaseURL == "" {
 		return ""
 	}
-	return s.cfg.BaseURL + "/v1/media/" + id.Format(id.Media, m.ID) + "/content?signature=" + s.emailMediaSignature(m.ID)
+	return s.cfg.BaseURL + "/v1/media/" + id.Format(id.Media, m.ID) + "/content?signature=" + emailMediaSignature(key, m.ID)
 }
 
-func (s *Service) emailMediaSignature(mediaID uuid.UUID) string {
-	mac := hmac.New(sha256.New, s.keys.Derive("media-links"))
+func emailMediaSignature(key []byte, mediaID uuid.UUID) string {
+	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(mediaID.String() + "|email"))
 	return hex.EncodeToString(mac.Sum(nil))
 }
@@ -514,19 +536,24 @@ func (s *Service) emailMediaSignature(mediaID uuid.UUID) string {
 // LinkedMedia opens a file by a signed link: the signature must match and
 // the link must not have expired, or, without an expiry, the signature must
 // be a newsletter's. Any failure is "not found", saying nothing about which
-// part was wrong.
+// part was wrong, except that the signing key is unavailable, which is a
+// 503 for the fetcher to retry.
 //
 // With forProvider, the link is to the copy resized for that platform.
 func (s *Service) LinkedMedia(ctx context.Context, ref, expires, signature, forProvider string) (*model.Media, io.ReadCloser, error) {
 	missing := apperr.NotFound("media")
 	mid, err := id.Parse(id.Media, ref)
-	if err != nil || s.keys == nil {
+	if err != nil {
 		return nil, nil, missing
+	}
+	key, err := s.signingKey(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 	var want string
 	switch {
 	case expires == "" && forProvider == "":
-		want = s.emailMediaSignature(mid)
+		want = emailMediaSignature(key, mid)
 	case expires == "":
 		return nil, nil, missing
 	default:
@@ -536,9 +563,9 @@ func (s *Service) LinkedMedia(ctx context.Context, ref, expires, signature, forP
 			return nil, nil, missing
 		}
 		if forProvider != "" {
-			want = s.mediaSignature(mid, exp, platform.Provider(forProvider))
+			want = mediaSignature(key, mid, exp, platform.Provider(forProvider))
 		} else {
-			want = s.mediaSignature(mid, exp)
+			want = mediaSignature(key, mid, exp)
 		}
 	}
 	if !hmac.Equal([]byte(want), []byte(signature)) {

@@ -46,10 +46,7 @@ func TestAgentWorkflow(t *testing.T) {
 	}
 	mk, _ := keyring.ParseMasterKeys("test:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	kr, krErr := keyring.Open(t.Context(), mk, st)
-	if krErr != nil {
-		t.Fatal(krErr)
-	}
+	kr := keyring.New(mk, st)
 	s := core.New(st, kr, platform.NewRegistry(sandbox.New("https://araldo.test")), log, core.Config{BaseURL: "https://araldo.test"})
 	email := fmt.Sprintf("mcp-%s@example.com", uuid.NewString()[:8])
 	u, err := s.CreateUser(ctx, email, "", "correct horse battery")

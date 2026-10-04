@@ -25,7 +25,10 @@ to another row, where it would decrypt without error.
      (OpenBao/Vault Transit now, cloud KMS later). A Transit key never
      leaves the service: Araldo sends it data keys to wrap and unwrap, and
      binds each to its scope and version by prefixing a hash of them, which
-     unwrapping checks, since Transit has no associated data.
+     unwrapping checks, since Transit has no associated data. While the
+     master keys are unavailable (none configured, or the service down),
+     Araldo keeps running: only operations that need a key fail, with a
+     503 to retry.
    - **Each org has a data key** (256-bit, random), stored in the database
      wrapped by the primary master key, together with that key's ID.
    - Secrets are encrypted with the org's data key using AES-256-GCM.

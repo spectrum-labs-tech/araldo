@@ -10,6 +10,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -47,7 +48,10 @@ type Store struct {
 	inTx bool
 }
 
-// Open connects to Postgres.
+// Open returns a store on a Postgres pool. It does not wait for the
+// database: the pool connects on first use, so Araldo starts while Postgres
+// is down and its queries fail as Unavailable until it is back. Only a
+// malformed URL is an error.
 func Open(ctx context.Context, dsn string) (*Store, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
@@ -57,11 +61,15 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: connect: %w", err)
 	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("store: ping: %w", err)
-	}
 	return &Store{pool: pool, q: pool}, nil
+}
+
+// Unavailable reports whether err means the database could not be reached
+// (rather than that a query was wrong).
+func Unavailable(err error) bool {
+	var connect *pgconn.ConnectError
+	var netErr net.Error
+	return errors.As(err, &connect) || errors.As(err, &netErr)
 }
 
 // Close closes the pool.

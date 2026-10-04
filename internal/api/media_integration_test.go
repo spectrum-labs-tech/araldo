@@ -78,10 +78,7 @@ func newClient(t *testing.T, opts ...func(*core.Config)) *client {
 	for _, o := range opts {
 		o(&cfg)
 	}
-	kr, krErr := keyring.Open(t.Context(), mk, shared)
-	if krErr != nil {
-		t.Fatal(krErr)
-	}
+	kr := keyring.New(mk, shared)
 	s := core.New(shared, kr, platform.NewRegistry(sandbox.New("https://araldo.test")), log, cfg)
 	ctx := t.Context()
 	email := fmt.Sprintf("api-%s@example.com", uuid.NewString()[:8])
@@ -294,7 +291,7 @@ func TestSignedMediaLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	link := c.s.MediaLink(m)
+	link := c.s.MediaLink(t.Context(), m)
 	u, err := url.Parse(link)
 	if err != nil || !strings.HasPrefix(link, "https://araldo.test/v1/media/media_") {
 		t.Fatalf("link %q", link)

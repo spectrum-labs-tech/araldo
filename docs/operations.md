@@ -55,9 +55,10 @@ two-factor authentication under **Your account**.
 A local master key sits in the environment, so anyone who can read the
 pods' environment or Secrets can read it. A key in an OpenBao or Vault
 Transit engine never leaves it: Araldo asks Transit to wrap and unwrap data
-keys, and caches the unwrapped data keys in memory. Araldo cannot start
-while Transit is unreachable (it needs Transit to read its signing key);
-running pods keep working on cached keys.
+keys, and caches the unwrapped data keys in memory. While Transit is
+unreachable Araldo keeps running: data keys already cached keep working,
+and what needs one that is not fails with `keys_unavailable` until Transit
+is back (see Health).
 
 Transit needs a key (`aes256-gcm96`, the default type) and a token or role
 whose policy allows `update` on `<mount>/encrypt/<key>` and
@@ -487,6 +488,22 @@ out. Print the page, or save it as a PDF from the browser, to keep or send
 a copy.
 
 ## Health
+
+Araldo degrades rather than stops when something it depends on is missing
+or down, and recovers on its own:
+
+- **The database is down** (at startup or later): Araldo starts anyway and
+  checks Postgres every few seconds. Meanwhile the API answers
+  `database_unavailable` (503, `Retry-After`) and the dashboard a short
+  503 page, `/readyz` fails, the worker waits, and a startup migration is
+  retried until it succeeds. A malformed `ARALDO_DATABASE_URL` still stops
+  it: that needs fixing, not waiting out.
+- **The master keys are unavailable** (none configured, or their Transit
+  service down): everything that needs no stored credential works.
+  Connecting channels, publishing to them, and signed media links fail with
+  `keys_unavailable` (503) and are retried; the log says when the keys
+  become unavailable and when they recover. A malformed master key still
+  stops Araldo.
 
 - `GET /healthz`: the process is up.
 - `GET /readyz`: the database answers and the schema is current.

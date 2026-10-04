@@ -79,10 +79,7 @@ func service(t *testing.T, opts ...option) *core.Service {
 	for _, o := range opts {
 		o(&cfg, &adapters)
 	}
-	kr, krErr := keyring.Open(t.Context(), mk, st)
-	if krErr != nil {
-		t.Fatal(krErr)
-	}
+	kr := keyring.New(mk, st)
 	return core.New(st, kr, platform.NewRegistry(adapters...), slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
 }
 

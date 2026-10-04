@@ -74,6 +74,6 @@ func ReadNewsletterResultsOrg(s *Service, org uuid.UUID) (int, error) {
 }
 
 // MediaLinkFor is mediaLinkFor, for tests of resized copies.
-func MediaLinkFor(s *Service, m *model.Media, p platform.Provider) string {
-	return s.mediaLinkFor(m, p)
+func MediaLinkFor(ctx context.Context, s *Service, m *model.Media, p platform.Provider) string {
+	return s.mediaLinkFor(ctx, m, p)
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/analytics/ga4"
 	"github.com/spectrum-labs-tech/araldo/internal/analytics/plausible"
 	"github.com/spectrum-labs-tech/araldo/internal/api"
+	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/blob"
 	"github.com/spectrum-labs-tech/araldo/internal/buildinfo"
 	"github.com/spectrum-labs-tech/araldo/internal/config"
@@ -62,9 +63,18 @@ type App struct {
 	Store *store.Store
 	Keys  *keyring.Keyring
 	Svc   *core.Service
+	// DB and KeyHealth watch the database and the master keys once
+	// started (Serve, RunWorker).
+	DB        *store.HealthMonitor
+	KeyHealth *keyring.HealthMonitor
 	// meters is where instruments go: a no-op until StartTelemetry.
 	meters metric.MeterProvider
+	// migrate is true while a startup migration has yet to succeed.
+	migrate bool
+	started sync.Once
 }
+
+var registerUnavailable sync.Once
 
 // Logger returns the JSON logger at level.
 func Logger(level string) *slog.Logger {
@@ -75,28 +85,33 @@ func Logger(level string) *slog.Logger {
 	return slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: l}))
 }
 
-// Open connects to the database (migrating it when configured) and builds
-// the application. Without master keys, secrets cannot be read or written;
-// only commands that need none may skip them.
+// Open builds the application. It degrades rather than fails: it does not
+// wait for the database (requests get 503 and readiness stays false until
+// Postgres answers, and a startup migration is retried until it succeeds),
+// and without usable master keys only what needs a stored credential fails.
+// Only configuration that cannot work as written (a malformed database URL
+// or master key) is an error.
 func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error) {
+	registerUnavailable.Do(func() { apperr.RegisterUnavailable(store.Unavailable) })
 	st, err := store.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, err
 	}
-	if cfg.AutoMigrate {
-		if err := st.Migrate(ctx); err != nil {
-			st.Close()
-			return nil, err
-		}
-	}
-	a := &App{Cfg: cfg, Log: log, Store: st, meters: noop.NewMeterProvider()}
-	if mk, err := masterKeys(cfg); err != nil {
+	mk, err := masterKeys(cfg)
+	if err != nil {
 		st.Close()
 		return nil, err
-	} else if mk != nil {
-		if a.Keys, err = keyring.Open(ctx, mk, st); err != nil {
-			st.Close()
-			return nil, err
+	}
+	if mk == nil {
+		log.WarnContext(ctx, "no master keys are configured (ARALDO_MASTER_KEYS or ARALDO_TRANSIT_ADDR): channels and other stored credentials cannot be used")
+	}
+	a := &App{Cfg: cfg, Log: log, Store: st, meters: noop.NewMeterProvider(), Keys: keyring.New(mk, st),
+		DB: store.NewHealthMonitor(st, log, 0)}
+	a.KeyHealth = keyring.NewHealthMonitor(a.Keys, log, 0)
+	if cfg.AutoMigrate {
+		if err := st.Migrate(ctx); err != nil {
+			log.WarnContext(ctx, "migration failed; retrying in the background, not ready until it succeeds", "err", err)
+			a.migrate = true
 		}
 	}
 	client := netguard.Client(cfg.AllowPrivateNetworks, 60*time.Second)
@@ -133,6 +148,35 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 
 // Close releases the database pool.
 func (a *App) Close() { a.Store.Close() }
+
+// start runs the health monitors and any migration still owed until ctx
+// ends; Serve and RunWorker call it, and only the first call counts.
+func (a *App) start(ctx context.Context) {
+	a.started.Do(func() { a.startOnce(ctx) })
+}
+
+func (a *App) startOnce(ctx context.Context) {
+	a.DB.Start(ctx)
+	a.KeyHealth.Start(ctx)
+	if !a.migrate {
+		return
+	}
+	go func() {
+		for wait := 5 * time.Second; ; wait = min(wait*2, time.Minute) {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+			if err := a.Store.Migrate(ctx); err != nil {
+				a.Log.WarnContext(ctx, "migration failed; retrying", "err", err, "retry_in", (wait * 2).String())
+				continue
+			}
+			a.Log.InfoContext(ctx, "migration succeeded")
+			return
+		}
+	}()
+}
 
 // masterKeys builds the configured master keys: the Transit key first,
 // then local keys. Nil when none are configured.
@@ -190,11 +234,12 @@ func (a *App) Handler() (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return server.Handler(api.New(a.Svc, a.Log), dash, a.Svc.Ready, a.Log), nil
+	return server.Handler(api.New(a.Svc, a.Log), dash, a.Svc.Ready, a.DB, a.Log), nil
 }
 
 // Serve runs the HTTP server until ctx ends.
 func (a *App) Serve(ctx context.Context) error {
+	a.start(ctx)
 	h, err := a.Handler()
 	if err != nil {
 		return err
@@ -205,6 +250,7 @@ func (a *App) Serve(ctx context.Context) error {
 // RunWorker publishes, delivers webhooks and runs periodic tasks until ctx
 // ends.
 func (a *App) RunWorker(ctx context.Context) error {
+	a.start(ctx)
 	host, _ := os.Hostname()
 	owner := host + "/" + strconv.Itoa(os.Getpid())
 	sched, err := opsched.New(a.Store, a.Log, a.Svc.Tasks()...)

@@ -44,7 +44,7 @@
   {{$radio := "flex-row items-center gap-1.5 font-normal"}}
   <form method="post" action="/keys" class="flex max-w-xl flex-col gap-4">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <label>Name <input name="name" required maxlength="100" placeholder="ar15.build production"></label>
+    <label>Name <input name="name" required maxlength="100" placeholder="araldo.dev production"></label>
     <fieldset class="flex flex-wrap gap-5"><legend>Access</legend>
       <label class="{{$radio}}"><input type="radio" name="access" value="full" checked data-toggle="access"> Full</label>
       <label class="{{$radio}}"><input type="radio" name="access" value="restricted" data-toggle="access"> Restricted</label>

@@ -950,7 +950,7 @@ func countingLabel(c platform.Counting) string {
 	return "characters"
 }
 
-var starterBody = "New on AR15.build: {{.name}}\n{{.url}}\n\n{{hashtags .tags}}"
+var starterBody = "New: {{.name}}\n{{.url}}\n\n{{hashtags .tags}}"
 
 const starterVariables = `{
   "type": "object",
@@ -962,7 +962,7 @@ const starterVariables = `{
   }
 }`
 
-const starterExample = `{"name": "Recce build", "url": "https://example.com/builds/1", "tags": ["AR-15", "range day"]}`
+const starterExample = `{"name": "Atlas build", "url": "https://example.com/builds/1", "tags": ["Wi-Fi 6", "launch day"]}`
 
 // withChoices fills what every render of the editor needs.
 func (s *Server) withChoices(c *reqCtx, f *templateForm, brandID uuid.UUID) {

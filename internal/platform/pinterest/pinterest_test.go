@@ -191,7 +191,7 @@ func TestPublish(t *testing.T) {
 	m := platform.Media{Type: "image/png", Alt: strings.Repeat("a", 600)}.WithData(img)
 	var parts []platform.RemoteRef
 	res, err := a.Publish(t.Context(), platform.Credentials{"access_token": "t", "board_id": "1000"},
-		platform.Payload{Parts: []string{"Recce build of the week\nA 16\" upper on a light lower: https://ar15.build/b/1?utm_source=pinterest."},
+		platform.Payload{Parts: []string{"Atlas build of the week\nA 16\" upper on a light lower: https://araldo.dev/b/1?utm_source=pinterest."},
 			Media: []platform.Media{m}},
 		func(r platform.RemoteRef) error { parts = append(parts, r); return nil })
 	if err != nil {
@@ -202,8 +202,8 @@ func TestPublish(t *testing.T) {
 	}
 	got := f.pins[0]
 	data, _ := base64.StdEncoding.DecodeString(got.MediaSource.Data)
-	if got.BoardID != "1000" || got.Title != "Recce build of the week" || !strings.HasPrefix(got.Description, "A 16\" upper") ||
-		got.Link != "https://ar15.build/b/1?utm_source=pinterest" || len([]rune(got.AltText)) != maxAlt ||
+	if got.BoardID != "1000" || got.Title != "Atlas build of the week" || !strings.HasPrefix(got.Description, "A 16\" upper") ||
+		got.Link != "https://araldo.dev/b/1?utm_source=pinterest" || len([]rune(got.AltText)) != maxAlt ||
 		got.MediaSource.SourceType != "image_base64" || got.MediaSource.ContentType != "image/png" || string(data) != string(img) {
 		t.Fatalf("pin %+v", got)
 	}

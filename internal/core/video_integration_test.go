@@ -89,7 +89,7 @@ func TestVideoIsStreamedAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := w.s.CreateVideo(ctx, w.owner, st, w.brand.ID, "A rifle on a bench")
+	m, err := w.s.CreateVideo(ctx, w.owner, st, w.brand.ID, "A lamp on a desk")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,12 +5,11 @@
 
 ## Context
 
-Products announce the same kinds of things again and again: ar15.build's
-featured brand and featured build, a new release, a weekly digest. The
+Products announce the same kinds of things again and again: a featured
+item, a new release, a weekly digest. The
 caller knows the facts (name, image, link); the wording, and how it
 differs between X and LinkedIn, belongs to whoever runs the brand, and
-should change without redeploying the caller. ar15.build hard-codes these
-bodies in Go today.
+should change without redeploying the caller.
 
 ## Decision
 

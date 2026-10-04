@@ -13,26 +13,26 @@ func TestTag(t *testing.T) {
 	t.Parallel()
 	p := Params{Source: "bluesky", Medium: "social", Campaign: "brand-spotlight", Content: "post_123"}
 	const tags = "utm_campaign=brand-spotlight&utm_content=post_123&utm_medium=social&utm_source=bluesky"
-	domains := []string{"ar15.build"}
+	domains := []string{"araldo.dev"}
 	tests := []struct {
 		name string
 		text string
 		want string
 	}{
-		{name: "tags a listed domain", text: "See https://ar15.build/brands/10 now",
-			want: "See https://ar15.build/brands/10?" + tags + " now"},
-		{name: "keeps an existing query and fragment", text: "https://ar15.build/b?ref=x#top",
-			want: "https://ar15.build/b?ref=x&" + tags + "#top"},
-		{name: "subdomains count", text: "https://staging.ar15.build/b.",
-			want: "https://staging.ar15.build/b?" + tags + "."},
-		{name: "other domains are left alone", text: "https://example.com/ar15.build",
-			want: "https://example.com/ar15.build"},
-		{name: "a lookalike is not a subdomain", text: "https://notar15.build/b",
-			want: "https://notar15.build/b"},
-		{name: "links already tagged are left alone", text: "https://ar15.build/b?UTM_source=newsletter",
-			want: "https://ar15.build/b?UTM_source=newsletter"},
-		{name: "every link", text: "https://ar15.build/a and https://ar15.build/b",
-			want: "https://ar15.build/a?" + tags + " and https://ar15.build/b?" + tags},
+		{name: "tags a listed domain", text: "See https://araldo.dev/brands/10 now",
+			want: "See https://araldo.dev/brands/10?" + tags + " now"},
+		{name: "keeps an existing query and fragment", text: "https://araldo.dev/b?ref=x#top",
+			want: "https://araldo.dev/b?ref=x&" + tags + "#top"},
+		{name: "subdomains count", text: "https://staging.araldo.dev/b.",
+			want: "https://staging.araldo.dev/b?" + tags + "."},
+		{name: "other domains are left alone", text: "https://example.com/araldo.dev",
+			want: "https://example.com/araldo.dev"},
+		{name: "a lookalike is not a subdomain", text: "https://notaraldo.dev/b",
+			want: "https://notaraldo.dev/b"},
+		{name: "links already tagged are left alone", text: "https://araldo.dev/b?UTM_source=newsletter",
+			want: "https://araldo.dev/b?UTM_source=newsletter"},
+		{name: "every link", text: "https://araldo.dev/a and https://araldo.dev/b",
+			want: "https://araldo.dev/a?" + tags + " and https://araldo.dev/b?" + tags},
 		{name: "no links", text: "just words", want: "just words"},
 	}
 	for _, tt := range tests {
@@ -47,21 +47,21 @@ func TestTag(t *testing.T) {
 
 func TestTagSkipsEmptyValuesAndLists(t *testing.T) {
 	t.Parallel()
-	if got := Tag("https://ar15.build/b", nil, Params{Source: "x"}); got != "https://ar15.build/b" {
+	if got := Tag("https://araldo.dev/b", nil, Params{Source: "x"}); got != "https://araldo.dev/b" {
 		t.Errorf("no domains: %q", got)
 	}
-	if got := Tag("https://ar15.build/b", []string{"ar15.build"}, Params{Source: "x", Medium: "social"}); got != "https://ar15.build/b?utm_medium=social&utm_source=x" {
+	if got := Tag("https://araldo.dev/b", []string{"araldo.dev"}, Params{Source: "x", Medium: "social"}); got != "https://araldo.dev/b?utm_medium=social&utm_source=x" {
 		t.Errorf("empty campaign and content: %q", got)
 	}
 }
 
 func TestNormalizeDomains(t *testing.T) {
 	t.Parallel()
-	got, err := NormalizeDomains([]string{" AR15.build ", "https://www.ar15.build/brands", "shop.example.com:443", "", "ar15.build."})
+	got, err := NormalizeDomains([]string{" ARALDO.dev ", "https://www.araldo.dev/brands", "shop.example.com:443", "", "araldo.dev."})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"ar15.build", "shop.example.com"}; !slices.Equal(got, want) {
+	if want := []string{"araldo.dev", "shop.example.com"}; !slices.Equal(got, want) {
 		t.Errorf("NormalizeDomains = %q, want %q", got, want)
 	}
 	for _, bad := range []string{"localhost", "not a domain", "-bad.com", "a..b", "exa_mple.com"} {

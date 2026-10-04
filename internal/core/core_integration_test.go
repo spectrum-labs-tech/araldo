@@ -113,7 +113,7 @@ func newWorld(t *testing.T, opts ...option) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := s.CreateBrand(ctx, owner, core.BrandInput{Name: "AR15.build", Timezone: "America/Denver"})
+	b, err := s.CreateBrand(ctx, owner, core.BrandInput{Name: "Araldo", Timezone: "America/Denver"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,18 +138,18 @@ func TestPostPublishesThroughTheSandbox(t *testing.T) {
 	ctx := t.Context()
 	_, _, err := w.s.CreateTemplate(ctx, w.owner, core.TemplateInput{BrandID: w.brand.ID, Key: "featured-build", Name: "Featured build", Source: tmpl.Source{
 		Variables: json.RawMessage(`{"type":"object","required":["name","url"],"properties":{"name":{"type":"string"},"url":{"type":"string"}}}`),
-		Examples:  []json.RawMessage{json.RawMessage(`{"name":"Recce","url":"https://ar15.build/b/1"}`)},
+		Examples:  []json.RawMessage{json.RawMessage(`{"name":"Atlas","url":"https://araldo.dev/b/1"}`)},
 		Body:      "Featured build: {{.name}} {{.url}}",
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	p, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Template: "featured-build",
-		Data: json.RawMessage(`{"name":"Recce","url":"https://ar15.build/b/1"}`), PublishAt: "now", Metadata: map[string]string{"build_id": "1"}})
+		Data: json.RawMessage(`{"name":"Atlas","url":"https://araldo.dev/b/1"}`), PublishAt: "now", Metadata: map[string]string{"build_id": "1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Status != model.PostScheduled || len(p.Targets) != 1 || p.Targets[0].Parts[0] != "Featured build: Recce https://ar15.build/b/1" {
+	if p.Status != model.PostScheduled || len(p.Targets) != 1 || p.Targets[0].Parts[0] != "Featured build: Atlas https://araldo.dev/b/1" {
 		t.Fatalf("post = %+v", p)
 	}
 	settle(t, w, p.ID)
@@ -484,7 +484,7 @@ func TestAPIKeys(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
-	plain, k, err := w.s.CreateAPIKey(ctx, w.owner, w.session, core.APIKeyInput{Name: "ar15.build", Scopes: []string{"posts:read"}})
+	plain, k, err := w.s.CreateAPIKey(ctx, w.owner, w.session, core.APIKeyInput{Name: "araldo.dev", Scopes: []string{"posts:read"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,7 +522,7 @@ func TestOperatorAPIKeys(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
-	plain, k, err := w.s.CreateOperatorAPIKey(ctx, w.owner, core.APIKeyInput{Name: "ar15.build staging",
+	plain, k, err := w.s.CreateOperatorAPIKey(ctx, w.owner, core.APIKeyInput{Name: "araldo.dev staging",
 		Scopes: []string{"posts:write", "templates:write"}, BrandID: &w.brand.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -730,20 +730,20 @@ func TestUTMTagging(t *testing.T) {
 	w := newWorld(t)
 	ctx := t.Context()
 	b, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
-		UTMDomains: []string{"https://www.AR15.build/", "ar15.build"}})
+		UTMDomains: []string{"https://www.ARALDO.dev/", "araldo.dev"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(b.UTMDomains, []string{"ar15.build"}) {
+	if !slices.Equal(b.UTMDomains, []string{"araldo.dev"}) {
 		t.Fatalf("stored domains %q", b.UTMDomains)
 	}
 	if _, _, err := w.s.CreateTemplate(ctx, w.owner, core.TemplateInput{BrandID: w.brand.ID, Key: "brand-spotlight", Name: "Spotlight",
 		Source: tmpl.Source{Body: "{{.name}} {{.url}} via https://example.com/x"}}); err != nil {
 		t.Fatal(err)
 	}
-	in := core.PostInput{BrandID: w.brand.ID, Template: "brand-spotlight", Data: json.RawMessage(`{"name":"Aero","url":"https://ar15.build/brands/7?ref=a"}`)}
+	in := core.PostInput{BrandID: w.brand.ID, Template: "brand-spotlight", Data: json.RawMessage(`{"name":"Aero","url":"https://araldo.dev/brands/7?ref=a"}`)}
 	tagged := func(postID string) string {
-		return "Aero https://ar15.build/brands/7?ref=a&utm_campaign=brand-spotlight&utm_content=" + postID +
+		return "Aero https://araldo.dev/brands/7?ref=a&utm_campaign=brand-spotlight&utm_content=" + postID +
 			"&utm_medium=social&utm_source=sandbox via https://example.com/x"
 	}
 
@@ -776,7 +776,7 @@ func TestUTMTagging(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "Aero https://ar15.build/brands/7?ref=a via https://example.com/x"; p2.Targets[0].Parts[0] != want {
+	if want := "Aero https://araldo.dev/brands/7?ref=a via https://example.com/x"; p2.Targets[0].Parts[0] != want {
 		t.Fatalf("untagged parts %q", p2.Targets[0].Parts)
 	}
 }

@@ -12,7 +12,7 @@ import (
 
 func opts() Options {
 	return Options{
-		Theme: Theme{BrandName: "Otium & Co", Accent: "#1d4ed8", PostalAddress: "1 Main St\nSpringfield", Footer: "You signed up at otium.example."},
+		Theme: Theme{BrandName: "Open B00KS & Co", Accent: "#1d4ed8", PostalAddress: "1 Main St\nSpringfield", Footer: "You signed up at openb00ks.example."},
 		Image: func(src string) (Image, error) {
 			if src == "media_1" {
 				return Image{URL: "https://araldo.example/v1/media/media_1/content?signature=s", Alt: "Library alt", Width: 300}, nil
@@ -30,8 +30,8 @@ func opts() Options {
 func TestRenderBlocks(t *testing.T) {
 	t.Parallel()
 	body := "# What shipped\n\nHello **builders**, and *welcome*.\nSecond line with `code`.\n\n" +
-		"- one [docs](https://otium.example/docs)\n- two\n  continued\n\n1. first\n2. second\n\n> quoted\n> more\n\n---\n\n" +
-		"![](media_1)\n\n[Try it](https://otium.example/try){.button}\n\nSee https://otium.example/blog. Or mail me@otium.example."
+		"- one [docs](https://openb00ks.example/docs)\n- two\n  continued\n\n1. first\n2. second\n\n> quoted\n> more\n\n---\n\n" +
+		"![](media_1)\n\n[Try it](https://openb00ks.example/try){.button}\n\nSee https://openb00ks.example/blog. Or mail me@openb00ks.example."
 	r, err := Render(Issue{Subject: "October <news>", PreviewText: "Three things", Body: body}, opts())
 	if err != nil {
 		t.Fatal(err)
@@ -42,17 +42,17 @@ func TestRenderBlocks(t *testing.T) {
 		`<h1 style="margin:0 0 16px;font-size:26px;`,
 		`Hello <strong>builders</strong>, and <em>welcome</em>.<br>`,
 		`<code style="font-family:Menlo,Consolas,monospace;font-size:14px;">code</code>`,
-		`<li style="margin:0 0 6px;">one <a href="https://otium.example/docs#1" style="color:#1d4ed8;text-decoration:underline;">docs</a></li>`,
+		`<li style="margin:0 0 6px;">one <a href="https://openb00ks.example/docs#1" style="color:#1d4ed8;text-decoration:underline;">docs</a></li>`,
 		`<li style="margin:0 0 6px;">two continued</li>`,
 		`<ol style=`,
 		`quoted<br>`,
 		`<hr style=`,
 		`<img src="https://araldo.example/v1/media/media_1/content?signature=s" alt="Library alt" width="300" style="display:block;width:100%;max-width:300px;`,
-		`<a href="https://otium.example/try#2" style="display:inline-block;padding:12px 24px;`,
+		`<a href="https://openb00ks.example/try#2" style="display:inline-block;padding:12px 24px;`,
 		`color:#ffffff;text-decoration:none;border-radius:6px;">Try it</a>`,
-		`See <a href="https://otium.example/blog#3" style="color:#1d4ed8;text-decoration:underline;">https://otium.example/blog</a>.`,
-		`You signed up at otium.example.<br>`,
-		`Otium &amp; Co · 1 Main St, Springfield<br>`,
+		`See <a href="https://openb00ks.example/blog#3" style="color:#1d4ed8;text-decoration:underline;">https://openb00ks.example/blog</a>.`,
+		`You signed up at openb00ks.example.<br>`,
+		`Open B00KS &amp; Co · 1 Main St, Springfield<br>`,
 		`<a href="{{ unsubscribe }}" style="color:#6b7280;text-decoration:underline;">Unsubscribe</a>`,
 	} {
 		if !strings.Contains(r.HTML, want) {
@@ -62,13 +62,13 @@ func TestRenderBlocks(t *testing.T) {
 	for _, want := range []string{
 		"What shipped\n============",
 		"Hello builders, and welcome.\nSecond line with code.",
-		"- one docs (https://otium.example/docs#1)\n- two continued",
+		"- one docs (https://openb00ks.example/docs#1)\n- two continued",
 		"1. first\n2. second",
 		"> quoted\n> more",
 		"[Library alt]",
-		"Try it: https://otium.example/try#2",
-		"See https://otium.example/blog#3.",
-		"Otium & Co, 1 Main St, Springfield\nUnsubscribe: {{ unsubscribe }}",
+		"Try it: https://openb00ks.example/try#2",
+		"See https://openb00ks.example/blog#3.",
+		"Open B00KS & Co, 1 Main St, Springfield\nUnsubscribe: {{ unsubscribe }}",
 	} {
 		if !strings.Contains(r.Text, want) {
 			t.Errorf("text lacks %q:\n%s", want, r.Text)
@@ -128,7 +128,7 @@ func TestRenderTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(r.HTML, `<img src="https://cdn.example/logo.png" alt="Otium &amp; Co" height="40"`) ||
+	if !strings.Contains(r.HTML, `<img src="https://cdn.example/logo.png" alt="Open B00KS &amp; Co" height="40"`) ||
 		!strings.Contains(r.HTML, "color:#111827;text-decoration:none") {
 		t.Fatalf("theme not applied:\n%s", r.HTML)
 	}

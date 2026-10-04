@@ -79,7 +79,7 @@ func (f *fakeX) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"error":"invalid_request","error_description":"Value passed for the token was invalid."}`))
 		}
 	case "/2/users/me":
-		_, _ = w.Write([]byte(`{"data":{"id":"42","name":"AR15.build","username":"ar15build"}}`))
+		_, _ = w.Write([]byte(`{"data":{"id":"42","name":"Araldo","username":"araldodev"}}`))
 	case "/2/media/upload":
 		file, hdr, err := r.FormFile("media")
 		if err != nil || r.FormValue("media_category") != "tweet_image" {
@@ -124,7 +124,7 @@ func TestVerifyAndThread(t *testing.T) {
 	t.Parallel()
 	f, a, creds := setup(t)
 	acct, err := a.Verify(t.Context(), creds)
-	if err != nil || acct.Handle != "@ar15build" || acct.ExternalID != "42" || acct.URL != "https://x.com/ar15build" {
+	if err != nil || acct.Handle != "@araldodev" || acct.ExternalID != "42" || acct.URL != "https://x.com/araldodev" {
 		t.Fatalf("Verify = %+v, %v", acct, err)
 	}
 	p := platform.Payload{Parts: []string{"New build", "Details"}, Media: []platform.Media{
@@ -217,7 +217,7 @@ func TestSignInAndRefresh(t *testing.T) {
 		t.Fatalf("Exchange = %+v, %v", conns, err)
 	}
 	c := conns[0]
-	if c.Account.Handle != "@ar15build" || c.Credentials["access_token"] != "bearer1" || c.Credentials["refresh_token"] != "r1" ||
+	if c.Account.Handle != "@araldodev" || c.Credentials["access_token"] != "bearer1" || c.Credentials["refresh_token"] != "r1" ||
 		c.ExpiresAt == nil || !c.ExpiresAt.Equal(now.Add(2*time.Hour)) {
 		t.Fatalf("connection %+v", c)
 	}
@@ -316,7 +316,7 @@ func TestPublishVideo(t *testing.T) {
 		var slept []time.Duration
 		a.Sleep = func(_ context.Context, d time.Duration) error { slept = append(slept, d); return nil }
 		data := make([]byte, chunkSize+10)
-		v := platform.Media{Type: "video/mp4", Alt: "Range day"}.WithData(data)
+		v := platform.Media{Type: "video/mp4", Alt: "Launch day"}.WithData(data)
 		_, err := a.Publish(t.Context(), platform.Credentials{"access_token": "bearer"},
 			platform.Payload{Parts: []string{"watch"}, Media: []platform.Media{v}}, nil)
 		srv.Close()

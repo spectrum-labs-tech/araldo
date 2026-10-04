@@ -43,11 +43,11 @@ func TestAdsPage(t *testing.T) {
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		return d.send(r)
 	}
-	if rec := connect("Otium EU"); rec.Code != http.StatusSeeOther {
+	if rec := connect("Open B00KS EU"); rec.Code != http.StatusSeeOther {
 		t.Fatalf("connect: %d\n%s", rec.Code, rec.Body)
 	}
 	// The same account again shows why, on the page.
-	if rec := connect("Otium EU"); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "already connected") {
+	if rec := connect("Open B00KS EU"); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "already connected") {
 		t.Fatalf("connecting twice: %d\n%s", rec.Code, rec.Body)
 	}
 	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(20 * time.Millisecond) {
@@ -62,7 +62,7 @@ func TestAdsPage(t *testing.T) {
 	if strings.Count(got, `<li class="done">`) != 2 {
 		t.Fatalf("connecting and reading should tick the guide's first two steps:\n%s", got)
 	}
-	if !strings.Contains(got, "Retargeting") || !strings.Contains(got, " EUR</td>") || !strings.Contains(got, "Otium EU") {
+	if !strings.Contains(got, "Retargeting") || !strings.Contains(got, " EUR</td>") || !strings.Contains(got, "Open B00KS EU") {
 		t.Fatalf("the page should show both campaigns in euros:\n%s", got)
 	}
 	if strings.Count(got, `<td class="text-right">—</td>`) != 2 {
@@ -71,7 +71,7 @@ func TestAdsPage(t *testing.T) {
 
 	// Web analytics credit the Launch campaign's tagged links.
 	src, err := d.s.ConnectAnalyticsSource(t.Context(), d.owner, core.AnalyticsSourceInput{BrandID: d.brand.ID, Provider: analytics.Sandbox,
-		Goals: []string{"Signup"}, Fields: map[string]string{"site": "otium.example", "tags": "sandbox/paid/launch/ad-1"}})
+		Goals: []string{"Signup"}, Fields: map[string]string{"site": "openb00ks.example", "tags": "sandbox/paid/launch/ad-1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,11 +99,11 @@ func TestAdsGuideBuildsTaggedLinks(t *testing.T) {
 		}
 		return rec.Body.String()
 	}
-	got := get(url.Values{"tag_url": {"https://getotium.ai/pricing"}, "tag_source": {"reddit"}, "tag_campaign": {"Alpha launch"}})
-	if want := "https://getotium.ai/pricing?utm_campaign=alpha-launch&amp;utm_medium=paid&amp;utm_source=reddit"; !strings.Contains(got, want) {
+	got := get(url.Values{"tag_url": {"https://openb00ks.example/pricing"}, "tag_source": {"reddit"}, "tag_campaign": {"Alpha launch"}})
+	if want := "https://openb00ks.example/pricing?utm_campaign=alpha-launch&amp;utm_medium=paid&amp;utm_source=reddit"; !strings.Contains(got, want) {
 		t.Fatalf("the builder should show %s:\n%s", want, got)
 	}
-	if got := get(url.Values{"tag_url": {"getotium.ai"}, "tag_campaign": {"x"}}); !strings.Contains(got, "full address, starting with https://") {
+	if got := get(url.Values{"tag_url": {"openb00ks.example"}, "tag_campaign": {"x"}}); !strings.Contains(got, "full address, starting with https://") {
 		t.Fatalf("a bad landing page should say why:\n%s", got)
 	}
 	// Pages without a guide keep their single column.

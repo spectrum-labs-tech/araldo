@@ -77,7 +77,7 @@ func TestBrandSlots(t *testing.T) {
 		t.Fatalf("next_slot: %d %v", status, post["publish_at"])
 	}
 	// A new brand can be created with its slots.
-	status, nb := c.json(http.MethodPost, "/v1/brands", map[string]any{"name": "Otium " + uuid.NewString()[:6], "slots": []map[string]string{}})
+	status, nb := c.json(http.MethodPost, "/v1/brands", map[string]any{"name": "Open B00KS " + uuid.NewString()[:6], "slots": []map[string]string{}})
 	if slots, ok := nb["slots"].([]any); status != http.StatusCreated || !ok || len(slots) != 0 {
 		t.Fatalf("create with no slots: %d %v", status, nb)
 	}

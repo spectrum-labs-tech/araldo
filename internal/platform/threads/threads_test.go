@@ -49,7 +49,7 @@ func (f *fakeGraph) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/refresh_access_token" && q.Get("grant_type") == "th_refresh_token":
 		_, _ = w.Write([]byte(`{"access_token":"renewed","expires_in":5184000}`))
 	case r.URL.Path == "/v1.0/me":
-		_, _ = w.Write([]byte(`{"id":"123","username":"otium.app","name":"Otium"}`))
+		_, _ = w.Write([]byte(`{"id":"123","username":"openb00ks","name":"Open B00KS"}`))
 	case r.URL.Path == "/v1.0/123/threads" && r.Method == http.MethodPost:
 		f.containers = append(f.containers, q)
 		_, _ = fmt.Fprintf(w, `{"id":"c%d"}`, len(f.containers))
@@ -67,7 +67,7 @@ func (f *fakeGraph) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		_, _ = fmt.Fprintf(w, `{"status":%q}`, status)
 	case strings.HasPrefix(r.URL.Path, "/v1.0/p") && q.Get("fields") == "permalink":
-		_, _ = fmt.Fprintf(w, `{"permalink":"https://www.threads.net/@otium.app/post/%s"}`, strings.TrimPrefix(r.URL.Path, "/v1.0/"))
+		_, _ = fmt.Fprintf(w, `{"permalink":"https://www.threads.net/@openb00ks/post/%s"}`, strings.TrimPrefix(r.URL.Path, "/v1.0/"))
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`{"error":{"message":"Unsupported get request","code":100}}`))
@@ -101,7 +101,7 @@ func TestConnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := conns[0]
-	if len(conns) != 1 || c.Account.Handle != "@otium.app" || c.Account.ExternalID != "123" || c.Credentials["access_token"] != "long" ||
+	if len(conns) != 1 || c.Account.Handle != "@openb00ks" || c.Account.ExternalID != "123" || c.Credentials["access_token"] != "long" ||
 		c.Credentials["user_id"] != "123" || c.ExpiresAt == nil || !c.ExpiresAt.Equal(a.Now().Add(60*24*time.Hour)) {
 		t.Fatalf("connection %+v", c)
 	}
@@ -124,7 +124,7 @@ func TestPublishThreadWithImages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Permalink != "https://www.threads.net/@otium.app/post/p1" || len(res.Parts) != 2 {
+	if res.Permalink != "https://www.threads.net/@openb00ks/post/p1" || len(res.Parts) != 2 {
 		t.Fatalf("result %+v", res)
 	}
 	first, second := f.containers[0], f.containers[1]
@@ -189,12 +189,12 @@ func TestPublishVideo(t *testing.T) {
 	f.processing = 3
 	v := platform.Media{Type: "video/mp4", URL: "https://araldo.test/v1/media/media_9/content?sig"}
 	res, err := a.Publish(t.Context(), platform.Credentials{"user_id": "123", "access_token": "long"},
-		platform.Payload{Parts: []string{"Range day"}, Media: []platform.Media{v}}, nil)
+		platform.Payload{Parts: []string{"Launch day"}, Media: []platform.Media{v}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := f.containers[0]
-	if c.Get("media_type") != "VIDEO" || c.Get("video_url") != v.URL || c.Get("text") != "Range day" || f.polls["/v1.0/c1"] != 4 ||
+	if c.Get("media_type") != "VIDEO" || c.Get("video_url") != v.URL || c.Get("text") != "Launch day" || f.polls["/v1.0/c1"] != 4 ||
 		len(f.published) != 1 || res.Permalink == "" {
 		t.Fatalf("container %v, polls %v, published %v, result %+v", c, f.polls, f.published, res)
 	}

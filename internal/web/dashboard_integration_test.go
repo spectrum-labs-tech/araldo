@@ -98,7 +98,7 @@ func newDash(t *testing.T, extra ...platform.Adapter) *dash {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := s.CreateBrand(ctx, owner, core.BrandInput{Name: "AR15.build"})
+	b, err := s.CreateBrand(ctx, owner, core.BrandInput{Name: "Araldo"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestCreatorsLinkToTheirPages(t *testing.T) {
 	t.Parallel()
 	d := newDash(t)
 	ctx := t.Context()
-	plain, k, err := d.s.CreateOperatorAPIKey(ctx, d.owner, core.APIKeyInput{Name: "ar15.build staging", Scopes: []string{"posts:read", "posts:write"}})
+	plain, k, err := d.s.CreateOperatorAPIKey(ctx, d.owner, core.APIKeyInput{Name: "araldo.dev staging", Scopes: []string{"posts:read", "posts:write"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestCreatorsLinkToTheirPages(t *testing.T) {
 	keyHref := "/keys/" + id.Format(id.APIKey, k.ID)
 	memberHref := "/org/members/" + id.Format(id.User, *d.owner.UserID)
 
-	if page := get("/posts/" + id.Format(id.Post, byKey.ID)); !strings.Contains(page, `API key <a href="`+keyHref+`">ar15.build staging</a>`) {
+	if page := get("/posts/" + id.Format(id.Post, byKey.ID)); !strings.Contains(page, `API key <a href="`+keyHref+`">araldo.dev staging</a>`) {
 		t.Fatalf("post by a key does not link to it:\n%s", page)
 	}
 	if page := get("/posts/" + id.Format(id.Post, byOwner.ID)); !strings.Contains(page, `by <a href="`+memberHref+`">`) {
@@ -314,7 +314,7 @@ func TestPostsListFiltersAndPages(t *testing.T) {
 	t.Parallel()
 	d := newDash(t)
 	ctx := t.Context()
-	other, err := d.s.CreateBrand(ctx, d.owner, core.BrandInput{Name: "Otium " + uuid.NewString()[:6]})
+	other, err := d.s.CreateBrand(ctx, d.owner, core.BrandInput{Name: "Open B00KS " + uuid.NewString()[:6]})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,7 @@ func TestPostsListFiltersAndPages(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := d.s.CreatePost(ctx, d.owner, core.PostInput{BrandID: other.ID, Content: &model.Content{Body: "Otium launch"}, PublishAt: "next_slot"}); err != nil {
+	if _, err := d.s.CreatePost(ctx, d.owner, core.PostInput{BrandID: other.ID, Content: &model.Content{Body: "Open B00KS launch"}, PublishAt: "next_slot"}); err != nil {
 		t.Fatal(err)
 	}
 	get := func(path string) string {
@@ -356,17 +356,17 @@ func TestPostsListFiltersAndPages(t *testing.T) {
 		t.Fatalf("second page: %d rows, links %v", rows(second), links(second))
 	}
 	back := get(links(second)["prev"])
-	if rows(back) != 25 || !strings.Contains(back, "Otium launch") {
+	if rows(back) != 25 || !strings.Contains(back, "Open B00KS launch") {
 		t.Fatalf("back to the first page: %d rows", rows(back))
 	}
 
 	// Filters live in the URL and survive paging.
 	page := get("/posts?brand=" + other.Slug)
-	if rows(page) != 1 || !strings.Contains(page, "Otium launch") || !strings.Contains(page, `selected>`+other.Name) {
+	if rows(page) != 1 || !strings.Contains(page, "Open B00KS launch") || !strings.Contains(page, `selected>`+other.Name) {
 		t.Fatalf("brand filter: %d rows", rows(page))
 	}
 	page = get("/posts?q=build+0")
-	if rows(page) != 10 || strings.Contains(page, "Otium launch") || !strings.Contains(page, `value="build 0"`) {
+	if rows(page) != 10 || strings.Contains(page, "Open B00KS launch") || !strings.Contains(page, `value="build 0"`) {
 		t.Fatalf("search: %d rows", rows(page))
 	}
 	page = get("/posts?status=scheduled&q=build")

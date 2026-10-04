@@ -8,8 +8,8 @@ landed.
 ```sh
 curl https://araldo.example/v1/posts \
   -H "Authorization: Bearer ald_test_…" \
-  -H "Idempotency-Key: build-8812" \
-  -d '{"brand":"brand_…","template":"featured-build","data":{"name":"Recce","url":"https://ar15.build/b/8812"},"publish_at":"next_slot"}'
+  -H "Idempotency-Key: release-0.5.0" \
+  -d '{"brand":"brand_…","template":"release","data":{"version":"0.5.0","url":"https://araldo.dev/releases/0.5.0"},"publish_at":"next_slot"}'
 ```
 
 **Status: pre-alpha.** It runs, publishes, and is used by Spectrum Labs'

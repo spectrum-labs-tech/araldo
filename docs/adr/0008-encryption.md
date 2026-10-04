@@ -11,8 +11,8 @@ signing secrets, TOTP secrets. The likeliest leaks are a database dump, a
 backup in the wrong bucket, or read access to the database through some
 other bug. Any of those must not hand an attacker working credentials.
 
-ar15.build encrypts tokens with one AES-GCM key from an environment
-variable. That is a good start, but it has no key rotation, no way to
+The usual approach, one AES-GCM key from an environment variable, is a
+good start, but it has no key rotation, no way to
 erase one tenant's secrets, and nothing stops a ciphertext from being copied
 to another row, where it would decrypt without error.
 
@@ -60,7 +60,7 @@ to another row, where it would decrypt without error.
 
 ## Alternatives considered
 
-- **One key for everything** (ar15.build today). No rotation, no per-tenant
+- **One key for everything.** No rotation, no per-tenant
   erasure, no protection against copied ciphertexts.
 - **pgcrypto.** Keys would travel to the database server and could appear
   in its logs and statement statistics.

@@ -6,7 +6,7 @@
 ## Context
 
 Callers need to know what happened to what they scheduled: the permalink of
-a published post (ar15.build shows "shared on X" on a build page), a failure
+a published post (to show "shared on X" beside the thing announced), a failure
 to act on, a channel that needs reconnecting. Polling for this is wasteful
 and slow. Webhooks are only trustworthy if they are never lost, can be
 verified, and can be replayed.

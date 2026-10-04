@@ -127,7 +127,7 @@ func TestDashboardEndToEnd(t *testing.T) {
 
 	// Brand, channel, template, post through the forms.
 	csrf := h.csrf("/brands/new")
-	code, loc, body := h.post("/brands", url.Values{"csrf": {csrf}, "name": {"AR15.build"}, "timezone": {"America/Denver"}, "approval_policy": {"none"}})
+	code, loc, body := h.post("/brands", url.Values{"csrf": {csrf}, "name": {"Araldo"}, "timezone": {"America/Denver"}, "approval_policy": {"none"}})
 	if code != http.StatusSeeOther {
 		t.Fatalf("create brand: %d %s", code, body)
 	}
@@ -139,7 +139,7 @@ func TestDashboardEndToEnd(t *testing.T) {
 	tplForm := url.Values{"csrf": {csrf}, "brand": {brandRef}, "key": {"featured-build"}, "name": {"Featured build"},
 		"body":      {"Featured: {{.name}} {{.url}}"},
 		"variables": {`{"type":"object","required":["name","url"],"properties":{"name":{"type":"string"},"url":{"type":"string"}}}`},
-		"example":   {`{"name":"Recce","url":"https://ar15.build/b/1"}`}}
+		"example":   {`{"name":"Atlas","url":"https://araldo.dev/b/1"}`}}
 	code, loc, body = h.post("/templates", tplForm)
 	if code != http.StatusSeeOther {
 		t.Fatalf("create template: %d %s", code, body)
@@ -147,12 +147,12 @@ func TestDashboardEndToEnd(t *testing.T) {
 	tplPath := strings.Split(loc, "?")[0]
 	// Live preview.
 	code, _, body = h.post("/preview", tplForm)
-	if code != http.StatusOK || !strings.Contains(body, "Featured: Recce https://ar15.build/b/1") {
+	if code != http.StatusOK || !strings.Contains(body, "Featured: Atlas https://araldo.dev/b/1") {
 		t.Fatalf("preview: %d %s", code, body)
 	}
 	tplID := strings.TrimPrefix(tplPath, "/templates/")
 	code, loc, body = h.post("/posts", url.Values{"csrf": {csrf}, "mode": {"template"}, "template": {tplID},
-		"data": {`{"name":"Recce","url":"https://ar15.build/b/1"}`}, "publish": {"now"}, "action": {"create"}})
+		"data": {`{"name":"Atlas","url":"https://araldo.dev/b/1"}`}, "publish": {"now"}, "action": {"create"}})
 	if code != http.StatusSeeOther {
 		t.Fatalf("create post: %d %s", code, body)
 	}
@@ -206,7 +206,7 @@ func TestDashboardEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code, body := h.get(link.Path); code != http.StatusOK || !strings.Contains(body, "Recce") {
+	if code, body := h.get(link.Path); code != http.StatusOK || !strings.Contains(body, "Atlas") {
 		t.Errorf("sandbox page %s: %d", link.Path, code)
 	}
 

@@ -52,7 +52,7 @@ func (f *fakeGoogle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case r.URL.Path == "/youtube/v3/channels":
-		_, _ = w.Write([]byte(`{"items":[{"id":"UC1","snippet":{"title":"AR15.build","customUrl":"@ar15build"}}]}`))
+		_, _ = w.Write([]byte(`{"items":[{"id":"UC1","snippet":{"title":"Araldo","customUrl":"@araldodev"}}]}`))
 	case r.URL.Path == "/upload/youtube/v3/videos" && r.Method == http.MethodPost:
 		if f.quota {
 			w.WriteHeader(http.StatusForbidden)
@@ -99,7 +99,7 @@ func TestSignIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := conns[0]
-	if len(conns) != 1 || c.Account.ExternalID != "UC1" || c.Account.Handle != "@ar15build" || c.Credentials["channel_id"] != "UC1" ||
+	if len(conns) != 1 || c.Account.ExternalID != "UC1" || c.Account.Handle != "@araldodev" || c.Credentials["channel_id"] != "UC1" ||
 		c.Credentials["refresh_token"] != "rt" || c.ExpiresAt == nil {
 		t.Fatalf("connections %+v", conns)
 	}
@@ -123,14 +123,14 @@ func TestPublishUploadsResumably(t *testing.T) {
 	f, a := setup(t)
 	v := platform.Media{Type: "video/mp4", Size: 9}.WithData([]byte("mp4 bytes"))
 	res, err := a.Publish(t.Context(), platform.Credentials{"access_token": "at", "channel_id": "UC1", "privacy": "unlisted"},
-		platform.Payload{Parts: []string{"Building a <light> rifle\nParts list and range notes."}, Media: []platform.Media{v}}, nil)
+		platform.Payload{Parts: []string{"Building a <light> lamp\nParts list and wiring notes."}, Media: []platform.Media{v}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	snip, _ := f.meta["snippet"].(map[string]any)
 	st, _ := f.meta["status"].(map[string]any)
-	if res.Permalink != "https://www.youtube.com/watch?v=vid1" || snip["title"] != "Building a ‹light› rifle" ||
-		snip["description"] != "Parts list and range notes." || st["privacyStatus"] != "unlisted" ||
+	if res.Permalink != "https://www.youtube.com/watch?v=vid1" || snip["title"] != "Building a ‹light› lamp" ||
+		snip["description"] != "Parts list and wiring notes." || st["privacyStatus"] != "unlisted" ||
 		f.headers.Get("X-Upload-Content-Length") != "9" || f.uploaded != "video/mp4:9:mp4 bytes" {
 		t.Fatalf("result %+v, meta %v, uploaded %q", res, f.meta, f.uploaded)
 	}
@@ -162,7 +162,7 @@ func TestSplit(t *testing.T) {
 	}{
 		{"Title\nBody", "", "Title", "Body"},
 		{"Only a title", "", "Only a title", ""},
-		{"", "Range day", "Range day", ""},
+		{"", "Launch day", "Launch day", ""},
 		{"", "", "Video", ""},
 		{long + "\nBody", "", strings.Repeat("x", 99) + "…", long + "\nBody"},
 	}

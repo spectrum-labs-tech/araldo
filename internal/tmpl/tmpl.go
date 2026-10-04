@@ -383,7 +383,7 @@ func list(v any) []string {
 
 func join(sep string, v any) string { return strings.Join(list(v), sep) }
 
-// hashtag turns a phrase into one tag: "AR-15 builds" → "#AR15Builds".
+// hashtag turns a phrase into one tag: "Wi-Fi 6 routers" → "#WiFi6Routers".
 func hashtag(v any) string {
 	var sb strings.Builder
 	upperNext := false

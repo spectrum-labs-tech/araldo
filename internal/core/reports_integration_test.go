@@ -56,7 +56,7 @@ func TestBrandReport(t *testing.T) {
 
 	// A newsletter, sent.
 	setTheme(t, w)
-	connectSandboxMail(t, w, "news@ar15.build", nil)
+	connectSandboxMail(t, w, "news@araldo.dev", nil)
 	is, err := w.s.CreateIssue(ctx, w.owner, core.IssueInput{BrandID: w.brand.ID, Subject: "The monthly", Body: "Hello"})
 	if err != nil {
 		t.Fatal(err)

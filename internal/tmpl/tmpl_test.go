@@ -28,7 +28,7 @@ func featured(t *testing.T) *Compiled {
 	t.Helper()
 	c, err := Compile(Source{
 		Variables: json.RawMessage(buildSchema),
-		Examples:  []json.RawMessage{json.RawMessage(`{"name":"Recce","url":"https://ar15.build/b/1","parts":12,"tags":["AR-15","range day"]}`)},
+		Examples:  []json.RawMessage{json.RawMessage(`{"name":"Atlas","url":"https://araldo.dev/b/1","parts":12,"tags":["Wi-Fi 6","launch day"]}`)},
 		Body:      `Featured build: {{.name}} ({{.parts}} {{plural .parts "part" "parts"}}) {{.url}} {{hashtags .tags}}`,
 		Overrides: map[platform.Provider]string{platform.LinkedIn: `This week's featured build is {{.name}}. {{.url}}`},
 		Fit:       map[platform.Provider]platform.Fit{platform.X: platform.FitTruncate},
@@ -47,12 +47,12 @@ func TestRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Featured build: Recce (12 parts) https://ar15.build/b/1 #AR15 #rangeDay"
+	want := "Featured build: Atlas (12 parts) https://araldo.dev/b/1 #WiFi6 #launchDay"
 	if got != want {
 		t.Fatalf("Render = %q\nwant     %q", got, want)
 	}
 	li, err := c.Render(platform.LinkedIn, data, nil)
-	if err != nil || !strings.HasPrefix(li, "This week's featured build is Recce.") {
+	if err != nil || !strings.HasPrefix(li, "This week's featured build is Atlas.") {
 		t.Fatalf("override = %q, %v", li, err)
 	}
 	if c.FitFor(platform.X) != platform.FitTruncate || c.FitFor(platform.Bluesky) != platform.FitError {
@@ -164,7 +164,7 @@ func TestHelpers(t *testing.T) {
 		{`{{truncate 50 .s}}`, `{"s":"short"}`, "short"},
 		{`{{words 2 .s}}`, `{"s":"one two three"}`, "one two…"},
 		{`{{join ", " .l}}`, `{"l":["a","b"]}`, "a, b"},
-		{`{{hashtag .s}}`, `{"s":"AR-15 build"}`, "#AR15Build"},
+		{`{{hashtag .s}}`, `{"s":"Wi-Fi 6 router"}`, "#WiFi6Router"},
 		{`{{default "n/a" .s}}`, `{"s":""}`, "n/a"},
 		{`{{title .s}}`, `{"s":"hello world"}`, "Hello World"},
 		{`{{upper .s}}`, `{"s":"x"}`, "X"},
@@ -193,11 +193,11 @@ func TestOptionalFields(t *testing.T) {
 	tests := []struct {
 		name, body, data, want, code string
 	}{
-		{"guarded optional, absent", "{{.name}}{{if .tagline}}: {{.tagline}}{{end}}", `{"name":"Recce"}`, "Recce", ""},
-		{"guarded optional, present", "{{.name}}{{if .tagline}}: {{.tagline}}{{end}}", `{"name":"Recce","tagline":"light"}`, "Recce: light", ""},
-		{"with on a nested optional", "{{.name}}{{with .price}}{{with .sale}} now {{.}}{{end}}{{end}}", `{"name":"Recce","price":{"amount":"$900"}}`, "Recce", ""},
-		{"unguarded optional, absent", "{{.name}} {{.tagline}}", `{"name":"Recce"}`, "", "variable_unguarded"},
-		{"undeclared field", "{{.name}} {{.color}}", `{"name":"Recce"}`, "", "variable_missing"},
+		{"guarded optional, absent", "{{.name}}{{if .tagline}}: {{.tagline}}{{end}}", `{"name":"Atlas"}`, "Atlas", ""},
+		{"guarded optional, present", "{{.name}}{{if .tagline}}: {{.tagline}}{{end}}", `{"name":"Atlas","tagline":"light"}`, "Atlas: light", ""},
+		{"with on a nested optional", "{{.name}}{{with .price}}{{with .sale}} now {{.}}{{end}}{{end}}", `{"name":"Atlas","price":{"amount":"$900"}}`, "Atlas", ""},
+		{"unguarded optional, absent", "{{.name}} {{.tagline}}", `{"name":"Atlas"}`, "", "variable_unguarded"},
+		{"undeclared field", "{{.name}} {{.color}}", `{"name":"Atlas"}`, "", "variable_missing"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

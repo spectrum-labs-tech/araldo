@@ -10,7 +10,7 @@ even if the worker is restarted in the middle. Almost no social API accepts
 an idempotency key: if a request times out after sending, the post may or
 may not exist, and simply retrying can publish it twice, publicly.
 
-ar15.build polls a job table every 15 minutes and retries up to five times.
+Polling a job table every few minutes is the common shape, and too coarse.
 We want lease-based queues instead: a worker claims a row for a while,
 and a crashed worker's claim simply expires.
 
@@ -72,7 +72,7 @@ and a crashed worker's claim simply expires.
 - **River or Temporal.** A second copy of the state (job row and target
   row) to keep consistent, and a dependency the existing lease pattern makes
   unnecessary.
-- **Polling every few minutes** (ar15.build). Too coarse for "publish at
+- **Polling every few minutes.** Too coarse for "publish at
   9:00".
 
 ## Consequences

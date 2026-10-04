@@ -93,7 +93,7 @@ func newClient(t *testing.T, opts ...func(*core.Config)) *client {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := s.CreateBrand(ctx, owner, core.BrandInput{Name: "AR15.build"})
+	b, err := s.CreateBrand(ctx, owner, core.BrandInput{Name: "Araldo"})
 	if err != nil {
 		t.Fatal(err)
 	}

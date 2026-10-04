@@ -141,14 +141,14 @@ func TestExchangeListsPages(t *testing.T) {
 		case "/oauth/access_token":
 			_, _ = w.Write([]byte(`{"access_token":"user"}`))
 		case "/me/accounts":
-			_, _ = w.Write([]byte(`{"data":[{"id":"p1","name":"Otium","access_token":"pt1"},{"id":"p2","name":"VCDS","access_token":"pt2"}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":"p1","name":"Open B00KS","access_token":"pt1"},{"id":"p2","name":"Araldo","access_token":"pt2"}]}`))
 		}
 	}))
 	defer srv.Close()
 	a := New(srv.Client())
 	a.Meta.Graph = srv.URL
 	conns, err := a.Exchange(t.Context(), platform.App{ClientID: "id", ClientSecret: "s"}, "https://araldo.test/cb", "code", "")
-	if err != nil || len(conns) != 2 || conns[1].Account.DisplayName != "VCDS" || conns[1].Credentials["access_token"] != "pt2" || conns[0].ExpiresAt != nil {
+	if err != nil || len(conns) != 2 || conns[1].Account.DisplayName != "Araldo" || conns[1].Credentials["access_token"] != "pt2" || conns[0].ExpiresAt != nil {
 		t.Fatalf("Exchange = %+v, %v", conns, err)
 	}
 }
@@ -158,7 +158,7 @@ func TestPublishVideo(t *testing.T) {
 	f, a, c := setup(t)
 	a.Meta.VideoGraph = a.Meta.Graph
 	v := platform.Media{Type: "video/mp4"}.WithData([]byte("mp4 bytes"))
-	res, err := a.Publish(t.Context(), c, platform.Payload{Parts: []string{"Range day"}, Media: []platform.Media{v}}, nil)
+	res, err := a.Publish(t.Context(), c, platform.Payload{Parts: []string{"Launch day"}, Media: []platform.Media{v}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestPublishVideo(t *testing.T) {
 		t.Fatalf("result %+v", res)
 	}
 	got := f.videos[0]
-	if got["description"] != "Range day" || got["access_token"] != "pt" || got["file"] != "video1.mp4:mp4 bytes" || got["length"] == "-1" {
+	if got["description"] != "Launch day" || got["access_token"] != "pt" || got["file"] != "video1.mp4:mp4 bytes" || got["length"] == "-1" {
 		t.Fatalf("upload %v", got)
 	}
 }

@@ -30,12 +30,12 @@ func TestTagLink(t *testing.T) {
 		name, url, source, campaign, content string
 		want, problem                        string
 	}{
-		{"a plain page", "https://getotium.ai/learn/openai-batch-api-migration", "reddit", "Alpha launch!", "LocalLLaMA ad 1",
-			"https://getotium.ai/learn/openai-batch-api-migration?utm_campaign=alpha-launch&utm_content=localllama-ad-1&utm_medium=paid&utm_source=reddit", ""},
-		{"keeps the page's own query and replaces old tags", "https://getotium.ai/pricing?plan=batch&utm_source=old&utm_content=x", "Reddit", "spring", "",
-			"https://getotium.ai/pricing?plan=batch&utm_campaign=spring&utm_medium=paid&utm_source=reddit", ""},
+		{"a plain page", "https://openb00ks.example/learn/openai-batch-api-migration", "reddit", "Alpha launch!", "LocalLLaMA ad 1",
+			"https://openb00ks.example/learn/openai-batch-api-migration?utm_campaign=alpha-launch&utm_content=localllama-ad-1&utm_medium=paid&utm_source=reddit", ""},
+		{"keeps the page's own query and replaces old tags", "https://openb00ks.example/pricing?plan=batch&utm_source=old&utm_content=x", "Reddit", "spring", "",
+			"https://openb00ks.example/pricing?plan=batch&utm_campaign=spring&utm_medium=paid&utm_source=reddit", ""},
 		{"no source", "https://example.com/", "", "c1", "", "https://example.com/?utm_campaign=c1&utm_medium=paid&utm_source=ads", ""},
-		{"not an address", "getotium.ai/pricing", "reddit", "c1", "", "", "Give the landing page's full address, starting with https://."},
+		{"not an address", "openb00ks.example/pricing", "reddit", "c1", "", "", "Give the landing page's full address, starting with https://."},
 		{"another scheme", "javascript:alert(1)", "reddit", "c1", "", "", "Give the landing page's full address, starting with https://."},
 		{"no campaign", "https://example.com/", "reddit", " !! ", "", "", "Name the campaign."},
 	}

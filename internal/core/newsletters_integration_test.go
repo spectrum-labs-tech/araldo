@@ -24,7 +24,7 @@ import (
 func connectSandboxMail(t *testing.T, w *world, from string, fields map[string]string) *model.MailAccount {
 	t.Helper()
 	ma, err := w.s.ConnectMailAccount(t.Context(), w.owner, core.MailAccountInput{BrandID: w.brand.ID, Provider: email.Sandbox,
-		FromName: "AR15.build", FromEmail: from, DefaultAudiences: []string{"list-1"}, Fields: fields})
+		FromName: "Araldo", FromEmail: from, DefaultAudiences: []string{"list-1"}, Fields: fields})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func connectSandboxMail(t *testing.T, w *world, from string, fields map[string]s
 func setTheme(t *testing.T, w *world) {
 	t.Helper()
 	if _, err := w.s.SetEmailTheme(t.Context(), w.owner, w.brand.ID, core.EmailThemeInput{Accent: "#1d4ed8",
-		PostalAddress: "1 Main St\nDenver, CO", Footer: "You signed up at ar15.build."}); err != nil {
+		PostalAddress: "1 Main St\nDenver, CO", Footer: "You signed up at araldo.dev."}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -56,24 +56,24 @@ func TestNewsletterIsHandedOffAndRead(t *testing.T) {
 	w := newWorld(t)
 	ctx := t.Context()
 	if _, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
-		UTMDomains: []string{"ar15.build"}}); err != nil {
+		UTMDomains: []string{"araldo.dev"}}); err != nil {
 		t.Fatal(err)
 	}
-	ma := connectSandboxMail(t, w, "News@AR15.build", nil)
-	if ma.FromEmail != "news@ar15.build" || ma.DefaultAudiences[0] != "list-1" {
+	ma := connectSandboxMail(t, w, "News@ARALDO.dev", nil)
+	if ma.FromEmail != "news@araldo.dev" || ma.DefaultAudiences[0] != "list-1" {
 		t.Fatalf("account %+v", ma)
 	}
 	logo, err := w.s.CreateMedia(ctx, w.owner, core.MediaInput{BrandID: w.brand.ID, Data: pngOf(t, 200, 80), Filename: "logo.png", Alt: "Logo"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	hero, err := w.s.CreateMedia(ctx, w.owner, core.MediaInput{BrandID: w.brand.ID, Data: pngOf(t, 1200, 600), Filename: "hero.png", Alt: "A rifle"})
+	hero, err := w.s.CreateMedia(ctx, w.owner, core.MediaInput{BrandID: w.brand.ID, Data: pngOf(t, 1200, 600), Filename: "hero.png", Alt: "A lamp"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	body := "# Builds of the week\n\n![](" + id.Format(id.Media, hero.ID) + ")\n\nSee [the Recce](https://ar15.build/b/1) and https://elsewhere.example.\n\n" +
-		"[Start a build](https://ar15.build/new){.button}"
+	body := "# Builds of the week\n\n![](" + id.Format(id.Media, hero.ID) + ")\n\nSee [the Atlas](https://araldo.dev/b/1) and https://elsewhere.example.\n\n" +
+		"[Start a build](https://araldo.dev/new){.button}"
 	is, err := w.s.CreateIssue(ctx, w.owner, core.IssueInput{BrandID: w.brand.ID, Subject: "Builds of the week", PreviewText: "Three rifles", Body: body})
 	if err != nil {
 		t.Fatal(err)
@@ -89,8 +89,8 @@ func TestNewsletterIsHandedOffAndRead(t *testing.T) {
 	}
 	nl := id.Format(id.Issue, is.ID)
 	for _, want := range []string{
-		"https://ar15.build/b/1?utm_campaign=" + nl + "&amp;utm_content=link-1&amp;utm_medium=email&amp;utm_source=sandbox",
-		"https://ar15.build/new?utm_campaign=" + nl + "&amp;utm_content=link-3&amp;utm_medium=email&amp;utm_source=sandbox",
+		"https://araldo.dev/b/1?utm_campaign=" + nl + "&amp;utm_content=link-1&amp;utm_medium=email&amp;utm_source=sandbox",
+		"https://araldo.dev/new?utm_campaign=" + nl + "&amp;utm_content=link-3&amp;utm_medium=email&amp;utm_source=sandbox",
 		`href="https://elsewhere.example"`,
 		"/v1/media/" + id.Format(id.Media, hero.ID) + "/content?signature=",
 	} {
@@ -163,7 +163,7 @@ func TestNewsletterIsHandedOffAndRead(t *testing.T) {
 	// The brand's analytics credit the issue's links to it by name.
 	w.s.Now = time.Now
 	src, err := w.s.ConnectAnalyticsSource(ctx, w.owner, core.AnalyticsSourceInput{BrandID: w.brand.ID, Provider: analytics.Sandbox,
-		Goals: []string{"Signup"}, Fields: map[string]string{"site": "ar15.build", "tags": "sandbox/email/" + nl + "/link-1"}})
+		Goals: []string{"Signup"}, Fields: map[string]string{"site": "araldo.dev", "tags": "sandbox/email/" + nl + "/link-1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestNewsletterApprovalMovesAndStops(t *testing.T) {
 	w := newWorld(t)
 	ctx := t.Context()
 	setTheme(t, w)
-	connectSandboxMail(t, w, "news@ar15.build", nil)
+	connectSandboxMail(t, w, "news@araldo.dev", nil)
 	if _, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
 		ApprovalPolicy: model.ApprovalEditorsAndKey}); err != nil {
 		t.Fatal(err)
@@ -280,7 +280,7 @@ func TestNewsletterHandoffRecoversAnUnknownCreate(t *testing.T) {
 	w := newWorld(t)
 	ctx := t.Context()
 	setTheme(t, w)
-	connectSandboxMail(t, w, "news@ar15.build", map[string]string{"simulate": "uncertain"})
+	connectSandboxMail(t, w, "news@araldo.dev", map[string]string{"simulate": "uncertain"})
 	is, err := w.s.CreateIssue(ctx, w.owner, core.IssueInput{BrandID: w.brand.ID, Subject: "Hi", Body: "Hello"})
 	if err != nil {
 		t.Fatal(err)
@@ -313,7 +313,7 @@ func TestNewsletterStoppedAtTheProvider(t *testing.T) {
 	w := newWorld(t)
 	ctx := t.Context()
 	setTheme(t, w)
-	connectSandboxMail(t, w, "news@ar15.build", map[string]string{"simulate": "stopped"})
+	connectSandboxMail(t, w, "news@araldo.dev", map[string]string{"simulate": "stopped"})
 	is, err := w.s.CreateIssue(ctx, w.owner, core.IssueInput{BrandID: w.brand.ID, Subject: "Hi", Body: "Hello"})
 	if err != nil {
 		t.Fatal(err)
@@ -345,35 +345,35 @@ func TestNewsletterRules(t *testing.T) {
 	live := w.owner
 	live.Livemode = true
 	if _, err := w.s.ConnectMailAccount(ctx, live, core.MailAccountInput{BrandID: w.brand.ID, Provider: email.Sandbox,
-		FromName: "A", FromEmail: "a@ar15.build"}); kind(err) != apperr.KindInvalid {
+		FromName: "A", FromEmail: "a@araldo.dev"}); kind(err) != apperr.KindInvalid {
 		t.Fatalf("a sandbox account in live mode: %v", err)
 	}
 	if _, err := w.s.ConnectMailAccount(ctx, w.owner, core.MailAccountInput{BrandID: w.brand.ID, Provider: "brevo",
-		FromName: "A", FromEmail: "a@ar15.build"}); kind(err) != apperr.KindInvalid {
+		FromName: "A", FromEmail: "a@araldo.dev"}); kind(err) != apperr.KindInvalid {
 		t.Fatalf("a real provider in test mode: %v", err)
 	}
 	for _, in := range []core.MailAccountInput{
-		{FromName: "", FromEmail: "a@ar15.build"},
-		{FromName: "A", FromEmail: "A <a@ar15.build>"},
-		{FromName: "A", FromEmail: "a@ar15.build", ReplyTo: "nope"},
-		{FromName: "A", FromEmail: "a@ar15.build", DefaultAudiences: []string{"list-404"}},
+		{FromName: "", FromEmail: "a@araldo.dev"},
+		{FromName: "A", FromEmail: "A <a@araldo.dev>"},
+		{FromName: "A", FromEmail: "a@araldo.dev", ReplyTo: "nope"},
+		{FromName: "A", FromEmail: "a@araldo.dev", DefaultAudiences: []string{"list-404"}},
 	} {
 		in.BrandID, in.Provider = w.brand.ID, email.Sandbox
 		if _, err := w.s.ConnectMailAccount(ctx, w.owner, in); kind(err) != apperr.KindInvalid {
 			t.Errorf("connecting %+v: %v", in, err)
 		}
 	}
-	ma := connectSandboxMail(t, w, "news@ar15.build", nil)
+	ma := connectSandboxMail(t, w, "news@araldo.dev", nil)
 	if _, err := w.s.ConnectMailAccount(ctx, w.owner, core.MailAccountInput{BrandID: w.brand.ID, Provider: email.Sandbox,
-		FromName: "Again", FromEmail: "news@ar15.build"}); kind(err) != apperr.KindConflict {
+		FromName: "Again", FromEmail: "news@araldo.dev"}); kind(err) != apperr.KindConflict {
 		t.Fatalf("the same sender twice: %v", err)
 	}
 	if aud, err := w.s.MailAudiences(ctx, w.owner, ma.ID); err != nil || len(aud) != len(email.SandboxAudiences) {
 		t.Fatalf("audiences: %v, %v", aud, err)
 	}
-	ma, err := w.s.UpdateMailAccount(ctx, w.owner, ma.ID, core.MailAccountUpdate{FromName: "AR15.build news", FromEmail: "news@ar15.build",
-		ReplyTo: "hello@ar15.build", DefaultAudiences: []string{"list-1", "segment-1"}})
-	if err != nil || len(ma.DefaultAudiences) != 2 || ma.ReplyTo != "hello@ar15.build" {
+	ma, err := w.s.UpdateMailAccount(ctx, w.owner, ma.ID, core.MailAccountUpdate{FromName: "Araldo news", FromEmail: "news@araldo.dev",
+		ReplyTo: "hello@araldo.dev", DefaultAudiences: []string{"list-1", "segment-1"}})
+	if err != nil || len(ma.DefaultAudiences) != 2 || ma.ReplyTo != "hello@araldo.dev" {
 		t.Fatalf("updated %+v, %v", ma, err)
 	}
 
@@ -405,7 +405,7 @@ func TestNewsletterRules(t *testing.T) {
 	test := func(to ...string) error {
 		return w.s.SendTestIssue(ctx, w.owner, is.ID, core.TestIssueInput{MailAccountID: ma.ID, To: to})
 	}
-	if err := test("me@ar15.build", " me@ar15.build "); err != nil {
+	if err := test("me@araldo.dev", " me@araldo.dev "); err != nil {
 		t.Fatal(err)
 	}
 	if err := test(); kind(err) != apperr.KindInvalid {

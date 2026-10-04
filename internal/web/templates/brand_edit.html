@@ -4,7 +4,7 @@
 <h1>{{if $f.Brand}}{{$f.Brand.Name}}{{else}}New brand{{end}}</h1>
 <form method="post" action="{{if $f.Brand}}/brands/{{brandID $f.Brand.ID}}{{else}}/brands{{end}}" class="flex max-w-xl flex-col gap-4">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  <label>Name <input name="name" value="{{$f.Name}}" required maxlength="100" placeholder="AR15.build"></label>
+  <label>Name <input name="name" value="{{$f.Name}}" required maxlength="100" placeholder="Open B00KS"></label>
   <label>Slug <input name="slug" value="{{$f.Slug}}" pattern="[a-z0-9][a-z0-9\-]*" placeholder="made from the name"> <span class="text-sm font-normal text-muted">API callers can use it instead of the ID.</span></label>
   <label>Time zone <span class="text-sm font-normal text-muted">slots and dates in posts use it</span>
     <select name="timezone" required>

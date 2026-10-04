@@ -32,15 +32,15 @@ func TestAnalyticsAttributesSignupsToPosts(t *testing.T) {
 	pid := id.Format(id.Post, p.ID)
 	tags := fmt.Sprintf("bluesky/social/release/%s, reddit/paid/alpha-launch/localllama-1", pid)
 	src, err := w.s.ConnectAnalyticsSource(ctx, w.owner, core.AnalyticsSourceInput{BrandID: w.brand.ID, Provider: analytics.Sandbox,
-		Goals: []string{" Waitlist Signup ", "Waitlist Signup", "Docs"}, Fields: map[string]string{"site": "otium.example", "tags": tags}})
+		Goals: []string{" Waitlist Signup ", "Waitlist Signup", "Docs"}, Fields: map[string]string{"site": "openb00ks.example", "tags": tags}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(src.Goals) != 2 || src.Site != "otium.example" {
+	if len(src.Goals) != 2 || src.Site != "openb00ks.example" {
 		t.Fatalf("source %+v: goals are trimmed and deduplicated", src)
 	}
 	if _, err := w.s.ConnectAnalyticsSource(ctx, w.owner, core.AnalyticsSourceInput{BrandID: w.brand.ID, Provider: analytics.Sandbox,
-		Fields: map[string]string{"site": "otium.example"}}); kind(err) != apperr.KindConflict {
+		Fields: map[string]string{"site": "openb00ks.example"}}); kind(err) != apperr.KindConflict {
 		t.Fatalf("the same site twice: %v", err)
 	}
 	waitFor(t, "the source to be read", func() {
@@ -143,9 +143,9 @@ func TestAdCampaignsGetSignups(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
-	ac := connectSandboxAds(t, w, w.owner, "Otium", nil)
+	ac := connectSandboxAds(t, w, w.owner, "Open B00KS", nil)
 	src, err := w.s.ConnectAnalyticsSource(ctx, w.owner, core.AnalyticsSourceInput{BrandID: w.brand.ID, Provider: analytics.Sandbox,
-		Goals: []string{"Waitlist Signup"}, Fields: map[string]string{"site": "otium.example", "tags": "sandbox/paid/launch/ad-1, sandbox/social/retargeting/x"}})
+		Goals: []string{"Waitlist Signup"}, Fields: map[string]string{"site": "openb00ks.example", "tags": "sandbox/paid/launch/ad-1, sandbox/social/retargeting/x"}})
 	if err != nil {
 		t.Fatal(err)
 	}

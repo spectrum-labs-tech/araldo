@@ -60,7 +60,7 @@ func TestAgentWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := s.CreateBrand(ctx, owner, core.BrandInput{Name: "Otium " + uuid.NewString()[:6]})
+	b, err := s.CreateBrand(ctx, owner, core.BrandInput{Name: "Open B00KS " + uuid.NewString()[:6]})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestAgentWorkflow(t *testing.T) {
 	apiSrv := httptest.NewServer(api.New(s, log))
 	t.Cleanup(apiSrv.Close)
 
-	long := strings.Repeat("Otium helps you rest. ", 20) // 440 graphemes: too long for Bluesky
+	long := strings.Repeat("Open B00KS helps you rest. ", 20) // 440 graphemes: too long for Bluesky
 	lines := []string{
 		`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`,
 		call(1, "list_brands", `{}`),

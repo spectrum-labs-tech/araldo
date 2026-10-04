@@ -22,12 +22,12 @@ import (
 func TestCommentary(t *testing.T) {
 	t.Parallel()
 	tests := map[string]string{
-		"Plain text":                       "Plain text",
-		"Launch #Otium today #rest2026":    `Launch {hashtag|\#|Otium} today {hashtag|\#|rest2026}`,
-		"#first word":                      `{hashtag|\#|first} word`,
-		"(new) [beta] a_b *bold* @someone": `\(new\) \[beta\] a\_b \*bold\* \@someone`,
-		"issue#12 isn't a tag":             `issue\#12 isn't a tag`,
-		`back\slash | pipe <tag> ~tilde`:   `back\\slash \| pipe \<tag\> \~tilde`,
+		"Plain text":                        "Plain text",
+		"Launch #OpenB00KS today #rest2026": `Launch {hashtag|\#|OpenB00KS} today {hashtag|\#|rest2026}`,
+		"#first word":                       `{hashtag|\#|first} word`,
+		"(new) [beta] a_b *bold* @someone":  `\(new\) \[beta\] a\_b \*bold\* \@someone`,
+		"issue#12 isn't a tag":              `issue\#12 isn't a tag`,
+		`back\slash | pipe <tag> ~tilde`:    `back\\slash \| pipe \<tag\> \~tilde`,
 	}
 	for in, want := range tests {
 		if got := Commentary(in); got != want {

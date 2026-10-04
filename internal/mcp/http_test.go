@@ -22,7 +22,7 @@ func (f *brandsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.keys = append(f.keys, r.Header.Get("Authorization"))
 	f.mu.Unlock()
 	if r.URL.Path == "/v1/brands" {
-		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"brand_1","slug":"ar15"}]}`))
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"brand_1","slug":"araldo"}]}`))
 		return
 	}
 	w.WriteHeader(http.StatusNotFound)

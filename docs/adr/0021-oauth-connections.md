@@ -58,8 +58,8 @@ URL: they fetch the file themselves.
 
 ## Alternatives considered
 
-- **Install-wide apps only**, from environment variables (ar15.build's
-  way). One app per install, no self-service, and every org shares one
+- **Install-wide apps only**, from environment variables. One app per
+  install, no self-service, and every org shares one
   app's quota and standing.
 - **Public media without signatures** (unguessable IDs alone). A leaked ID
   would serve the file forever; signed links expire.

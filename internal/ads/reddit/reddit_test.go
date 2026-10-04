@@ -40,20 +40,20 @@ func (f *fakeReddit) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/me/businesses":
 		_, _ = w.Write([]byte(`{"data":[{"id":"biz1","name":"Spectrum Labs"}],"pagination":{"next_url":null}}`))
 	case r.URL.Path == "/api/businesses/biz1/ad_accounts" && page == "":
-		_, _ = w.Write([]byte(`{"data":[{"id":"t2_otium","name":"Otium","currency":"USD","time_zone_id":"America/Los_Angeles"}],` +
+		_, _ = w.Write([]byte(`{"data":[{"id":"t2_openb00ks","name":"Open B00KS","currency":"USD","time_zone_id":"America/Los_Angeles"}],` +
 			`"pagination":{"next_url":"` + f.srv.URL + `/api/businesses/biz1/ad_accounts?page=2"}}`))
 	case r.URL.Path == "/api/businesses/biz1/ad_accounts":
-		_, _ = w.Write([]byte(`{"data":[{"id":"t2_vcds","name":"VCDS","currency":"EUR","time_zone_id":"Europe/Berlin"}],"pagination":{}}`))
-	case r.URL.Path == "/api/ad_accounts/t2_otium":
-		_, _ = w.Write([]byte(`{"data":{"id":"t2_otium","name":"Otium","currency":"usd","time_zone_id":"America/Los_Angeles"}}`))
-	case r.URL.Path == "/api/ad_accounts/t2_otium/campaigns":
+		_, _ = w.Write([]byte(`{"data":[{"id":"t2_araldo","name":"Araldo","currency":"EUR","time_zone_id":"Europe/Berlin"}],"pagination":{}}`))
+	case r.URL.Path == "/api/ad_accounts/t2_openb00ks":
+		_, _ = w.Write([]byte(`{"data":{"id":"t2_openb00ks","name":"Open B00KS","currency":"usd","time_zone_id":"America/Los_Angeles"}}`))
+	case r.URL.Path == "/api/ad_accounts/t2_openb00ks/campaigns":
 		_, _ = w.Write([]byte(`{"data":[{"id":"c1","name":"r/LocalLLaMA launch"}],"pagination":{"next_url":null}}`))
-	case r.URL.Path == "/api/ad_accounts/t2_otium/reports" && r.Method == http.MethodPost:
+	case r.URL.Path == "/api/ad_accounts/t2_openb00ks/reports" && r.Method == http.MethodPost:
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.reports = append(f.reports, body)
 		if page == "" {
-			next := f.srv.URL + "/api/ad_accounts/t2_otium/reports?page=2"
+			next := f.srv.URL + "/api/ad_accounts/t2_openb00ks/reports?page=2"
 			if f.evil {
 				next = "https://evil.example/steal"
 			}
@@ -108,8 +108,8 @@ func TestSignIn(t *testing.T) {
 	if err != nil || len(conns) != 2 {
 		t.Fatalf("Exchange = %+v, %v (both pages of accounts)", conns, err)
 	}
-	if c := conns[0]; c.Account.ExternalID != "t2_otium" || c.Account.DisplayName != "Otium" || c.Credentials["refresh_token"] != "refresh" ||
-		c.Credentials["account_id"] != "t2_otium" {
+	if c := conns[0]; c.Account.ExternalID != "t2_openb00ks" || c.Account.DisplayName != "Open B00KS" || c.Credentials["refresh_token"] != "refresh" ||
+		c.Credentials["account_id"] != "t2_openb00ks" {
 		t.Fatalf("connection %+v", c)
 	}
 	if _, err := n.Exchange(t.Context(), platform.App{ClientID: "id", ClientSecret: "wrong"}, "x", "c", ""); err == nil {
@@ -120,9 +120,9 @@ func TestSignIn(t *testing.T) {
 func TestVerifyAndReport(t *testing.T) {
 	t.Parallel()
 	f, n := setup(t)
-	creds := platform.Credentials{"refresh_token": "refresh", "account_id": "t2_otium"}
+	creds := platform.Credentials{"refresh_token": "refresh", "account_id": "t2_openb00ks"}
 	acct, err := n.Verify(t.Context(), app, creds)
-	if err != nil || acct.Currency != "USD" || acct.Timezone != "America/Los_Angeles" || acct.Name != "Otium" {
+	if err != nil || acct.Currency != "USD" || acct.Timezone != "America/Los_Angeles" || acct.Name != "Open B00KS" {
 		t.Fatalf("Verify = %+v, %v", acct, err)
 	}
 	from, to := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
@@ -144,7 +144,7 @@ func TestVerifyAndReport(t *testing.T) {
 		t.Fatalf("report request %v: the whole last day, in the account's zone", data)
 	}
 
-	if _, err := n.Report(t.Context(), app, platform.Credentials{"refresh_token": "spent", "account_id": "t2_otium"}, from, to); platform.KindOf(err) != platform.AuthRevoked {
+	if _, err := n.Report(t.Context(), app, platform.Credentials{"refresh_token": "spent", "account_id": "t2_openb00ks"}, from, to); platform.KindOf(err) != platform.AuthRevoked {
 		t.Fatalf("a refused refresh token: %v", err)
 	}
 	f.evil = true

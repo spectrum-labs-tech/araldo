@@ -12,9 +12,9 @@ import (
 func TestSandboxIsStable(t *testing.T) {
 	t.Parallel()
 	s := SandboxAds{}
-	creds := platform.Credentials{"name": "Otium", "currency": "usd"}
+	creds := platform.Credentials{"name": "Open B00KS", "currency": "usd"}
 	acct, err := s.Verify(t.Context(), platform.App{}, creds)
-	if err != nil || acct.Currency != "USD" || acct.Name != "Otium" || acct.ExternalID == "" {
+	if err != nil || acct.Currency != "USD" || acct.Name != "Open B00KS" || acct.ExternalID == "" {
 		t.Fatalf("Verify = %+v, %v", acct, err)
 	}
 	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
@@ -32,7 +32,7 @@ func TestSandboxIsStable(t *testing.T) {
 			t.Fatalf("implausible result %+v", r)
 		}
 	}
-	other, _ := s.Report(t.Context(), platform.App{}, platform.Credentials{"name": "VCDS"}, day, day)
+	other, _ := s.Report(t.Context(), platform.App{}, platform.Credentials{"name": "Araldo"}, day, day)
 	if other[0].Spend == first[0].Spend && other[1].Spend == first[1].Spend {
 		t.Fatal("different accounts should report different numbers")
 	}

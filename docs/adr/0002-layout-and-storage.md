@@ -7,7 +7,7 @@
 
 Araldo must be easy to self-host ("one binary and a Postgres") and easy for
 contributors to find their way around. The author's other Go services
-(open-b00ks, otium) settled on conventions worth keeping: an
+(open-b00ks among them) settled on conventions worth keeping: an
 `internal/` tree, hand-written SQL, golang-migrate, model and storage kept
 apart, and a Taskfile for every command.
 

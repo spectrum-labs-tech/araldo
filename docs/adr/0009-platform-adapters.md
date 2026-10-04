@@ -13,9 +13,9 @@ review (Meta, TikTok, LinkedIn). Quotas and enforcement often apply to the
 developer app as a whole, so every account connected through one app
 shares its limits and its standing.
 
-ar15.build's `pkg/social` has the right core (one adapter interface, a
-registry) but reads credentials from environment variables, so there is
-exactly one developer app per platform per install.
+The usual core is right (one adapter interface, a registry), but reading
+credentials from environment variables means exactly one developer app per
+platform per install.
 
 ## Decision
 
@@ -69,8 +69,7 @@ exactly one developer app per platform per install.
    1. `sandbox` (test mode, [ADR 0006](0006-test-mode-and-api-keys.md));
    2. `bluesky`, `mastodon`, `discord` (webhook), `telegram` (bot): no
       approval needed;
-   3. `x`, `facebook` pages, `instagram`, `threads`: ported from
-      ar15.build;
+   3. `x`, `facebook` pages, `instagram`, `threads`;
    4. `linkedin`, `youtube`, `tiktok`, `pinterest`, `reddit`.
 8. **Media** lives in S3-compatible storage (local disk in development).
    Version 1 validates media against the rules and rejects what does not
@@ -78,7 +77,7 @@ exactly one developer app per platform per install.
 
 ## Alternatives considered
 
-- **Environment variables per platform** (ar15.build). One app per
+- **Environment variables per platform.** One app per
   install, no self-service, and a restart for every change.
 - **A generic "HTTP recipe" adapter** configured in YAML. Platforms differ
   in too many ways (uploads, threads, refresh) for configuration to stay

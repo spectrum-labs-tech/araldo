@@ -181,7 +181,7 @@ paths:
                 logo: { type: string, nullable: true, description: "A media ID of the brand's, or null for the brand's name." }
                 accent: { type: string, example: "#1d4ed8", description: "#rrggbb, or empty for the default." }
                 postal_address: { type: string, maxLength: 300, example: "1 Main St\nDenver, CO 80202" }
-                footer: { type: string, maxLength: 300, example: You signed up at ar15.build. }
+                footer: { type: string, maxLength: 300, example: You signed up at araldo.dev. }
       responses:
         "200":
           description: The brand.
@@ -496,7 +496,7 @@ paths:
               required: [brand, url]
               properties:
                 brand: { type: string, description: Brand ID or slug. }
-                url: { type: string, example: https://ar15.build/images/builds/8812.jpg }
+                url: { type: string, example: https://araldo.dev/images/release-0.5.0.png }
                 alt: { type: string, maxLength: 1000 }
       responses:
         "201":
@@ -1239,8 +1239,8 @@ paths:
               properties:
                 brand: { type: string }
                 provider: { type: string, example: brevo }
-                from_name: { type: string, example: AR15.build }
-                from_email: { type: string, example: news@news.ar15.build }
+                from_name: { type: string, example: Araldo }
+                from_email: { type: string, example: news@news.araldo.dev }
                 reply_to: { type: string }
                 default_audiences:
                   type: array
@@ -2041,7 +2041,7 @@ components:
         utm_domains:
           type: array
           maxItems: 20
-          items: { type: string, example: ar15.build }
+          items: { type: string, example: araldo.dev }
           description: |
             Sites whose links get UTM parameters, so web analytics can tell
             which post and network a visit came from. A link to one of these

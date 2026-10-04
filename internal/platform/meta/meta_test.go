@@ -49,8 +49,8 @@ func TestLogin(t *testing.T) {
 		case r.URL.Path == "/"+Version+"/oauth/access_token" && q.Get("grant_type") == "fb_exchange_token" && q.Get("fb_exchange_token") == "short":
 			_, _ = w.Write([]byte(`{"access_token":"long","expires_in":5183944}`))
 		case r.URL.Path == "/"+Version+"/me/accounts" && q.Get("access_token") == "long":
-			_, _ = w.Write([]byte(`{"data":[{"id":"p1","name":"Otium","access_token":"pt1","instagram_business_account":{"id":"ig1","username":"otium.app"}},` +
-				`{"id":"p2","name":"VCDS","access_token":"pt2"}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":"p1","name":"Open B00KS","access_token":"pt1","instagram_business_account":{"id":"ig1","username":"openb00ks"}},` +
+				`{"id":"p2","name":"Araldo","access_token":"pt2"}]}`))
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"error":{"message":"bad","code":100}}`))
@@ -69,7 +69,7 @@ func TestLogin(t *testing.T) {
 		t.Fatalf("UserToken = %q, %v", tok, err)
 	}
 	pages, err := c.Pages(t.Context(), tok)
-	if err != nil || len(pages) != 2 || pages[0].Instagram == nil || pages[0].Instagram.Username != "otium.app" || pages[1].Instagram != nil {
+	if err != nil || len(pages) != 2 || pages[0].Instagram == nil || pages[0].Instagram.Username != "openb00ks" || pages[1].Instagram != nil {
 		t.Fatalf("Pages = %+v, %v", pages, err)
 	}
 	if _, err := c.UserToken(t.Context(), app, "x", "wrong"); platform.KindOf(err) != platform.Rejected {

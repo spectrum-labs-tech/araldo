@@ -73,11 +73,11 @@ func TestPublishPhotoAndCarousel(t *testing.T) {
 	f, a, creds := setup(t)
 	f.processing = 2
 	photo := platform.Media{Type: "image/jpeg", Alt: "The build", URL: "https://araldo.test/v1/media/media_1/content?sig"}
-	res, err := a.Publish(t.Context(), creds, platform.Payload{Parts: []string{"New build #ar15"}, Media: []platform.Media{photo}}, nil)
+	res, err := a.Publish(t.Context(), creds, platform.Payload{Parts: []string{"New build #launch"}, Media: []platform.Media{photo}}, nil)
 	if err != nil || res.Permalink != "https://www.instagram.com/p/m1/" {
 		t.Fatalf("photo: %+v, %v", res, err)
 	}
-	if c := f.containers[0]; c["image_url"] != photo.URL || c["caption"] != "New build #ar15" || c["alt_text"] != "The build" || f.polls != 3 {
+	if c := f.containers[0]; c["image_url"] != photo.URL || c["caption"] != "New build #launch" || c["alt_text"] != "The build" || f.polls != 3 {
 		t.Fatalf("container %v after %d polls", c, f.polls)
 	}
 
@@ -114,7 +114,7 @@ func TestExchangeListsLinkedAccounts(t *testing.T) {
 		case "/oauth/access_token":
 			_, _ = w.Write([]byte(`{"access_token":"user"}`))
 		case "/me/accounts":
-			_, _ = w.Write([]byte(`{"data":[{"id":"p1","name":"Otium","access_token":"pt1","instagram_business_account":{"id":"ig1","username":"otium.app","name":"Otium"}},` +
+			_, _ = w.Write([]byte(`{"data":[{"id":"p1","name":"Open B00KS","access_token":"pt1","instagram_business_account":{"id":"ig1","username":"openb00ks","name":"Open B00KS"}},` +
 				`{"id":"p2","name":"No Instagram","access_token":"pt2"}]}`))
 		}
 	}))
@@ -122,7 +122,7 @@ func TestExchangeListsLinkedAccounts(t *testing.T) {
 	a := New(srv.Client())
 	a.Meta.Graph = srv.URL
 	conns, err := a.Exchange(t.Context(), platform.App{ClientID: "id", ClientSecret: "s"}, "https://araldo.test/cb", "code", "")
-	if err != nil || len(conns) != 1 || conns[0].Account.Handle != "@otium.app" || conns[0].Credentials["ig_user_id"] != "ig1" ||
+	if err != nil || len(conns) != 1 || conns[0].Account.Handle != "@openb00ks" || conns[0].Credentials["ig_user_id"] != "ig1" ||
 		conns[0].Credentials["access_token"] != "pt1" {
 		t.Fatalf("Exchange = %+v, %v (only Pages with an Instagram account)", conns, err)
 	}
@@ -142,12 +142,12 @@ func TestPublishReel(t *testing.T) {
 	f, a, creds := setup(t)
 	f.processing = 4
 	v := platform.Media{Type: "video/mp4", URL: "https://araldo.test/v1/media/media_9/content?sig"}
-	res, err := a.Publish(t.Context(), creds, platform.Payload{Parts: []string{"Range day"}, Media: []platform.Media{v}}, nil)
+	res, err := a.Publish(t.Context(), creds, platform.Payload{Parts: []string{"Launch day"}, Media: []platform.Media{v}}, nil)
 	if err != nil || res.Permalink != "https://www.instagram.com/p/m1/" {
 		t.Fatalf("reel: %+v, %v", res, err)
 	}
 	c := f.containers[0]
-	if c["media_type"] != "REELS" || c["video_url"] != v.URL || c["share_to_feed"] != "true" || c["caption"] != "Range day" ||
+	if c["media_type"] != "REELS" || c["video_url"] != v.URL || c["share_to_feed"] != "true" || c["caption"] != "Launch day" ||
 		c["image_url"] != "" || f.polls != 5 || f.published[0] != "c1" {
 		t.Fatalf("container %v after %d polls, published %v", c, f.polls, f.published)
 	}

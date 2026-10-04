@@ -60,7 +60,7 @@
     <label>Brand
       <select name="brand">{{range $d.Brands}}<option value="{{brandID .ID}}" {{if eq $d.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
     </label>
-    <label>Sender name <input name="from_name" value="{{index $d.Values "from_name"}}" required maxlength="100" placeholder="AR15.build"></label>
+    <label>Sender name <input name="from_name" value="{{index $d.Values "from_name"}}" required maxlength="100" placeholder="Open B00KS"></label>
     <label>Sender address <input name="from_email" type="email" value="{{index $d.Values "from_email"}}" required placeholder="news@news.example.com">
       <span class="text-sm font-normal text-muted">One {{$d.Provider.Name}} will send as: a verified sender, or any address on a domain authenticated there.</span></label>
     <label>Reply-to <span class="text-sm font-normal text-muted">(optional)</span> <input name="reply_to" type="email" value="{{index $d.Values "reply_to"}}" placeholder="hello@example.com"></label>

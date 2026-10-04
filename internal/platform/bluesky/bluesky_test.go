@@ -159,15 +159,15 @@ func TestTID(t *testing.T) {
 
 func TestRichText(t *testing.T) {
 	t.Parallel()
-	long := "https://ar15.build/brands/10/bear-creek-arsenal?utm_source=bluesky&utm_medium=social"
+	long := "https://araldo.dev/brands/10/blue-widget-co?utm_source=bluesky&utm_medium=social"
 	text, fs := RichText("héllo https://x.dev/a. " + long + " #tag")
-	if want := "héllo x.dev/a. ar15.build/brands/10/be... #tag"; text != want {
+	if want := "héllo x.dev/a. araldo.dev/brands/10/bl... #tag"; text != want {
 		t.Fatalf("text = %q, want %q", text, want)
 	}
 	if len(fs) != 3 {
 		t.Fatalf("facets %+v", fs)
 	}
-	for i, want := range []struct{ covers, uri string }{{"x.dev/a", "https://x.dev/a"}, {"ar15.build/brands/10/be...", long}} {
+	for i, want := range []struct{ covers, uri string }{{"x.dev/a", "https://x.dev/a"}, {"araldo.dev/brands/10/bl...", long}} {
 		f := fs[i]
 		if got := text[f.Index.ByteStart:f.Index.ByteEnd]; got != want.covers || f.Features[0].URI != want.uri {
 			t.Errorf("link facet %d covers %q opening %q, want %q opening %q", i, got, f.Features[0].URI, want.covers, want.uri)
@@ -184,7 +184,7 @@ func TestPublishImages(t *testing.T) {
 	f, a, creds := setup(t)
 	when := time.Unix(1_700_000_000, 0)
 	media := []platform.Media{
-		platform.Media{Type: "image/png", Width: 1200, Height: 800, Alt: "a rifle on a bench"}.WithData([]byte("png-1")),
+		platform.Media{Type: "image/png", Width: 1200, Height: 800, Alt: "a lamp on a desk"}.WithData([]byte("png-1")),
 		platform.Media{Type: "image/jpeg", Width: 10, Height: 10}.WithData([]byte("jpg-2")),
 	}
 	p := platform.Payload{Key: "ptgt_img", KeyTime: when, Parts: []string{"look", "and more"}, Media: media}
@@ -202,7 +202,7 @@ func TestPublishImages(t *testing.T) {
 	first, _ := imgs[0].(map[string]any)
 	blob, _ := first["image"].(map[string]any)
 	ratio, _ := first["aspectRatio"].(map[string]any)
-	if first["alt"] != "a rifle on a bench" || blob["mimeType"] != "image/png" || ratio["width"] != float64(1200) || ratio["height"] != float64(800) {
+	if first["alt"] != "a lamp on a desk" || blob["mimeType"] != "image/png" || ratio["width"] != float64(1200) || ratio["height"] != float64(800) {
 		t.Fatalf("first image = %v", first)
 	}
 	if _, ok := f.records[TID(when, "ptgt_img", 1)]["embed"]; ok {
@@ -352,7 +352,7 @@ func TestPublishVideo(t *testing.T) {
 			a := New(srv.Client())
 			a.Video = srv.URL
 			a.Sleep = func(context.Context, time.Duration) error { return nil }
-			v := platform.Media{Type: "video/mp4", Alt: "Range day", Width: 1080, Height: 1920}.WithData([]byte("mp4 bytes"))
+			v := platform.Media{Type: "video/mp4", Alt: "Launch day", Width: 1080, Height: 1920}.WithData([]byte("mp4 bytes"))
 			_, err := a.Publish(t.Context(), platform.Credentials{"identifier": "araldo.test", "app_password": "app-pass", "service": srv.URL},
 				platform.Payload{Key: "ptgt_v", KeyTime: time.Unix(1700000000, 0), Parts: []string{"watch"}, Media: []platform.Media{v}}, nil)
 			if tt.fail {
@@ -370,7 +370,7 @@ func TestPublishVideo(t *testing.T) {
 			}
 			embed, _ := f.record["embed"].(map[string]any)
 			ratio, _ := embed["aspectRatio"].(map[string]any)
-			if embed["$type"] != "app.bsky.embed.video" || embed["alt"] != "Range day" || ratio["width"].(float64) != 1080 ||
+			if embed["$type"] != "app.bsky.embed.video" || embed["alt"] != "Launch day" || ratio["width"].(float64) != 1080 ||
 				embed["video"].(map[string]any)["ref"].(map[string]any)["$link"] != "bafkvideo" {
 				t.Fatalf("embed %v", embed)
 			}

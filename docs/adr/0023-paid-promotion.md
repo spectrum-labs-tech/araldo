@@ -30,8 +30,8 @@ cannot be fixed in advance, and they do not all work the same way:
 - **Ads spend money.** A bug in posting publishes a bad post; a bug in ads
   spends someone's budget. Every rule about money below exists to bound
   that.
-- **Every network reviews ads** and can reject them (firearms and their
-  parts, for example, cannot be advertised on most), so a promotion can
+- **Every network reviews ads** and can reject them (whole product
+  categories cannot be advertised on most), so a promotion can
   fail after Araldo has done everything right.
 - **Measurement pixels conflict with privacy.** Ad networks optimize best
   with their tracking pixel on the advertiser's site, but a pixel means

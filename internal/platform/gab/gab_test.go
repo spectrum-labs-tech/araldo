@@ -38,8 +38,8 @@ func (s *stub) server(t *testing.T) *httptest.Server {
 		}
 		switch {
 		case r.URL.Path == "/api/v1/accounts/verify_credentials":
-			_, _ = w.Write([]byte(`{"id":"7","acct":"ar15build","username":"ar15build",
-				"display_name":"AR15.Build","url":"https://gab.com/ar15build"}`))
+			_, _ = w.Write([]byte(`{"id":"7","acct":"araldodev","username":"araldodev",
+				"display_name":"Araldo","url":"https://gab.com/araldodev"}`))
 		case r.URL.Path == "/api/v1/media":
 			_, contentType, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 			if err != nil {
@@ -71,7 +71,7 @@ func (s *stub) server(t *testing.T) *httptest.Server {
 			s.statusID++
 			id := s.statusID
 			s.mu.Unlock()
-			_, _ = w.Write([]byte(`{"id":"` + string(rune('0'+id)) + `","url":"https://gab.com/ar15build/posts/` + string(rune('0'+id)) + `"}`))
+			_, _ = w.Write([]byte(`{"id":"` + string(rune('0'+id)) + `","url":"https://gab.com/araldodev/posts/` + string(rune('0'+id)) + `"}`))
 		case strings.HasPrefix(r.URL.Path, "/api/v1/statuses/"):
 			switch strings.TrimPrefix(r.URL.Path, "/api/v1/statuses/") {
 			case "1":
@@ -104,10 +104,10 @@ func TestVerify(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Gab has one domain, so the handle carries no server part.
-	if acct.ExternalID != "7" || acct.Handle != "@ar15build" || acct.DisplayName != "AR15.Build" {
+	if acct.ExternalID != "7" || acct.Handle != "@araldodev" || acct.DisplayName != "Araldo" {
 		t.Errorf("Verify = %+v", acct)
 	}
-	if acct.URL != "https://gab.com/ar15build" {
+	if acct.URL != "https://gab.com/araldodev" {
 		t.Errorf("profile URL = %q", acct.URL)
 	}
 }
@@ -167,7 +167,7 @@ func TestPublishThread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Permalink != "https://gab.com/ar15build/posts/1" {
+	if res.Permalink != "https://gab.com/araldodev/posts/1" {
 		t.Errorf("permalink = %q, want the first part's", res.Permalink)
 	}
 	if len(res.Parts) != 2 || res.Parts[0].ID != "1" || res.Parts[1].ID != "2" {
@@ -202,7 +202,7 @@ func TestPublishResumesAfterPostedParts(t *testing.T) {
 	res, err := a.Publish(t.Context(), creds, platform.Payload{
 		Key:    "ptgt_9",
 		Parts:  []string{"first", "second"},
-		Posted: []platform.RemoteRef{{ID: "99", URL: "https://gab.com/ar15build/posts/99"}},
+		Posted: []platform.RemoteRef{{ID: "99", URL: "https://gab.com/araldodev/posts/99"}},
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -216,7 +216,7 @@ func TestPublishResumesAfterPostedParts(t *testing.T) {
 	if len(res.Parts) != 2 || res.Parts[0].ID != "99" {
 		t.Errorf("parts = %+v, want the posted part kept", res.Parts)
 	}
-	if res.Permalink != "https://gab.com/ar15build/posts/99" {
+	if res.Permalink != "https://gab.com/araldodev/posts/99" {
 		t.Errorf("permalink = %q, want the first part's", res.Permalink)
 	}
 	if s.keys[0] != "ptgt_9-1" {
@@ -230,15 +230,15 @@ func TestPublishUploadsMediaOnTheFirstPartOnly(t *testing.T) {
 	a, creds := newAdapter(t, s)
 
 	media := []platform.Media{
-		platform.Media{Type: "image/png", Alt: "a receiver"}.WithData([]byte("png-one")),
-		platform.Media{Type: "image/jpeg", Alt: "a handguard"}.WithData([]byte("jpeg-two")),
+		platform.Media{Type: "image/png", Alt: "a base"}.WithData([]byte("png-one")),
+		platform.Media{Type: "image/jpeg", Alt: "a shade"}.WithData([]byte("jpeg-two")),
 	}
 	if _, err := a.Publish(t.Context(), creds, platform.Payload{
 		Key: "ptgt_9", Parts: []string{"first", "second"}, Media: media,
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(s.uploads) != 2 || s.uploads[0] != "a receiver" || s.uploads[1] != "a handguard" {
+	if len(s.uploads) != 2 || s.uploads[0] != "a base" || s.uploads[1] != "a shade" {
 		t.Errorf("uploads = %q, want both images with their alt text", s.uploads)
 	}
 	// Rails reads repeated media_ids[] as an array, in order.
@@ -335,7 +335,7 @@ func TestRulesAndFields(t *testing.T) {
 		t.Fatalf("rules = %+v; Gab allows 3000 characters", r)
 	}
 	// A Mastodon fork counts every URL as 23, however long.
-	long := "see https://ar15.build/brands/7/aero-precision?utm_source=gab&utm_medium=social"
+	long := "see https://araldo.dev/brands/7/red-widget-co?utm_source=gab&utm_medium=social"
 	if n := r.Length(long); n != len("see ")+23 {
 		t.Errorf("length = %d, want %d: a URL counts as 23", n, len("see ")+23)
 	}

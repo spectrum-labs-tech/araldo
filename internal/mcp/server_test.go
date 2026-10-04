@@ -159,19 +159,19 @@ func TestToolsList(t *testing.T) {
 func TestToolsCallTheAPI(t *testing.T) {
 	t.Parallel()
 	out, f, _ := session(t,
-		call(1, "preview_post", `{"brand":"ar15","body":"New build","fit":"thread","overrides":{"x":"Short"},"media":["media_1"]}`),
-		call(2, "create_post", `{"brand":"ar15","template":"release","data":{"version":"1.0"},"publish_at":"next_slot"}`),
-		call(3, "create_post", `{"brand":"ar15","body":"again","idempotency_key":"mine"}`),
-		call(4, "list_posts", `{"brand":"ar15","status":"failed","limit":5}`),
-		call(5, "get_template", `{"template":"release","brand":"ar15"}`),
+		call(1, "preview_post", `{"brand":"araldo","body":"New build","fit":"thread","overrides":{"x":"Short"},"media":["media_1"]}`),
+		call(2, "create_post", `{"brand":"araldo","template":"release","data":{"version":"1.0"},"publish_at":"next_slot"}`),
+		call(3, "create_post", `{"brand":"araldo","body":"again","idempotency_key":"mine"}`),
+		call(4, "list_posts", `{"brand":"araldo","status":"failed","limit":5}`),
+		call(5, "get_template", `{"template":"release","brand":"araldo"}`),
 		call(6, "engagement_summary", `{"group_by":"channel","days":7}`),
 		call(7, "cancel_post", `{"post":"post_1"}`),
 		call(8, "reschedule_post", `{"post":"post_1","swap_with":"post_2"}`),
 		call(9, "ads_summary", `{"group_by":"day","days":7}`),
 		call(10, "analytics_summary", `{"group_by":"post","days":14}`),
-		call(11, "brand_report", `{"brand":"ar15","month":"2026-09"}`),
-		call(12, "draft_newsletter", `{"brand":"ar15","subject":"October","body":"# Hi"}`),
-		call(13, "preview_newsletter", `{"brand":"ar15","subject":"October","preview_text":"What shipped","body":"# Hi"}`),
+		call(11, "brand_report", `{"brand":"araldo","month":"2026-09"}`),
+		call(12, "draft_newsletter", `{"brand":"araldo","subject":"October","body":"# Hi"}`),
+		call(13, "preview_newsletter", `{"brand":"araldo","subject":"October","preview_text":"What shipped","body":"# Hi"}`),
 		call(14, "list_newsletters", `{"status":"sent"}`),
 	)
 	for i := 1; i <= 14; i++ {
@@ -224,10 +224,10 @@ func TestToolsCallTheAPI(t *testing.T) {
 	if q := byPath["GET /v1/analytics/summary"].Query; !strings.Contains(q, "group_by=post") || !strings.Contains(q, "since=") {
 		t.Fatalf("analytics_summary query %q", q)
 	}
-	if q := byPath["GET /v1/reports"].Query; q != "brand=ar15&month=2026-09" {
+	if q := byPath["GET /v1/reports"].Query; q != "brand=araldo&month=2026-09" {
 		t.Fatalf("brand_report query %q", q)
 	}
-	if d := byPath["POST /v1/newsletters"]; d.Body["subject"] != "October" || d.Body["brand"] != "ar15" || d.IdemKey == "" {
+	if d := byPath["POST /v1/newsletters"]; d.Body["subject"] != "October" || d.Body["brand"] != "araldo" || d.IdemKey == "" {
 		t.Fatalf("draft_newsletter %+v", d)
 	}
 	if p := byPath["POST /v1/newsletters/preview"]; p.Body["preview_text"] != "What shipped" || p.IdemKey != "" {

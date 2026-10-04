@@ -19,7 +19,7 @@ func TestAdsOverTheAPI(t *testing.T) {
 		t.Fatalf("ad networks: %d %v", status, nets)
 	}
 
-	body := map[string]any{"brand": c.brand, "network": "sandbox", "fields": map[string]string{"name": "Otium"}}
+	body := map[string]any{"brand": c.brand, "network": "sandbox", "fields": map[string]string{"name": "Open B00KS"}}
 	if status, got := c.json(http.MethodPost, "/v1/ad_accounts", body); status != http.StatusForbidden || got["code"] != "scope_missing" {
 		t.Fatalf("a full-access key connecting: %d %v", status, got)
 	}

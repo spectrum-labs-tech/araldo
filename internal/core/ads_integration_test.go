@@ -32,12 +32,12 @@ func TestAdAccountsAreReadAndSummarized(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
-	ac := connectSandboxAds(t, w, w.owner, "Otium", nil)
+	ac := connectSandboxAds(t, w, w.owner, "Open B00KS", nil)
 	if ac.Currency != "USD" || ac.Status != model.AdAccountActive || ac.ReadAt != nil {
 		t.Fatalf("connected %+v", ac)
 	}
 	if _, err := w.s.ConnectAdAccount(ctx, w.owner, core.AdAccountInput{BrandID: w.brand.ID, Network: ads.Sandbox,
-		Fields: map[string]string{"name": "Otium"}}); kind(err) != apperr.KindConflict {
+		Fields: map[string]string{"name": "Open B00KS"}}); kind(err) != apperr.KindConflict {
 		t.Fatalf("connecting the same account twice: %v", err)
 	}
 
@@ -83,7 +83,7 @@ func TestAdAccountsAreReadAndSummarized(t *testing.T) {
 		total += r.Spend
 	}
 	byAccount := sum(store.AdsByAccount, 30)
-	if len(byAccount.Rows) != 1 || byAccount.Rows[0].Spend != total || byAccount.Rows[0].Label != "Otium" {
+	if len(byAccount.Rows) != 1 || byAccount.Rows[0].Spend != total || byAccount.Rows[0].Label != "Open B00KS" {
 		t.Fatalf("by account %+v, want spend %d", byAccount.Rows, total)
 	}
 	if week := sum(store.AdsByAccount, 7); week.Rows[0].Spend >= total {

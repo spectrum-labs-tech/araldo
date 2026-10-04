@@ -65,7 +65,7 @@ func (f *fakeTikTok) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Path {
 	case "/v2/user/info/":
-		ok(`{"user":{"open_id":"o1","display_name":"AR15.build","username":"ar15build"}}`)
+		ok(`{"user":{"open_id":"o1","display_name":"Araldo","username":"araldodev"}}`)
 	case "/v2/post/publish/creator_info/query/":
 		b, _ := json.Marshal(map[string]any{"privacy_level_options": f.privacy, "max_video_post_duration_sec": f.maxSecs})
 		ok(string(b))
@@ -118,12 +118,12 @@ func TestSignIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := conns[0]
-	if c.Account.ExternalID != "o1" || c.Account.Handle != "@ar15build" || c.Credentials["username"] != "ar15build" ||
+	if c.Account.ExternalID != "o1" || c.Account.Handle != "@araldodev" || c.Credentials["username"] != "araldodev" ||
 		c.Credentials["refresh_token"] != "rt" || !c.ExpiresAt.Equal(a.Now().Add(24*time.Hour)) {
 		t.Fatalf("connection %+v", c)
 	}
 	fresh, _, err := a.Refresh(t.Context(), app, c.Credentials)
-	if err != nil || fresh["access_token"] != "at2" || fresh["refresh_token"] != "rt2" || fresh["username"] != "ar15build" {
+	if err != nil || fresh["access_token"] != "at2" || fresh["refresh_token"] != "rt2" || fresh["username"] != "araldodev" {
 		t.Fatalf("refresh %v, %v", fresh, err)
 	}
 	if _, _, err := a.Refresh(t.Context(), app, platform.Credentials{"refresh_token": "old"}); platform.KindOf(err) != platform.AuthRevoked {
@@ -140,17 +140,17 @@ func TestPublishUploadsInParts(t *testing.T) {
 	a.ChunkSize = 4
 	data := strings.Repeat("v", 10)
 	v := platform.Media{Type: "video/mp4", Size: 10, Duration: 30 * time.Second}.WithData([]byte(data))
-	creds := platform.Credentials{"access_token": "at", "username": "ar15build"}
-	res, err := a.Publish(t.Context(), creds, platform.Payload{Parts: []string{"Range day #ar15"}, Media: []platform.Media{v}}, nil)
+	creds := platform.Credentials{"access_token": "at", "username": "araldodev"}
+	res, err := a.Publish(t.Context(), creds, platform.Payload{Parts: []string{"Launch day #launch"}, Media: []platform.Media{v}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	post, _ := f.init["post_info"].(map[string]any)
 	src, _ := f.init["source_info"].(map[string]any)
 	// The video is smaller than TikTok's 5 MB minimum part: one part.
-	if post["title"] != "Range day #ar15" || post["privacy_level"] != "PUBLIC_TO_EVERYONE" || src["source"] != "FILE_UPLOAD" ||
+	if post["title"] != "Launch day #launch" || post["privacy_level"] != "PUBLIC_TO_EVERYONE" || src["source"] != "FILE_UPLOAD" ||
 		src["total_chunk_count"].(float64) != 1 || strings.Join(f.ranges, ",") != "bytes 0-9/10" ||
-		res.Permalink != "https://www.tiktok.com/@ar15build/video/7300000000000000001" || f.polls != 3 {
+		res.Permalink != "https://www.tiktok.com/@araldodev/video/7300000000000000001" || f.polls != 3 {
 		t.Fatalf("init %v, ranges %v, result %+v, polls %d", f.init, f.ranges, res, f.polls)
 	}
 }

@@ -12,6 +12,10 @@ the order it is being built in (update its status with the work).
   deployments, deploy repos, infrastructure repos, hostnames or secrets
   paths. Deployments pull published images and charts; nothing here
   triggers or names them.
+- **Never name the operator's other products**, or describe how they work,
+  in code, tests, examples or docs; most are closed source. Examples use
+  Araldo itself (`araldo.dev`) or open-b00ks (open source;
+  `openb00ks.example` for its URLs), and `.example` domains otherwise.
 
 - **Layering** ([ADR 0002](docs/adr/0002-layout-and-storage.md)):
   - `internal/model` has no storage or transport concerns.

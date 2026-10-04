@@ -30,7 +30,7 @@ set the bar most developers now expect.
    `whdel` (delivery), `key`, `req`.
 4. **Objects** carry `id`, `object` (`"post"`), `created_at`, `livemode`,
    and `metadata`: up to 50 string key–value pairs the caller owns (for
-   example ar15.build's build ID), returned everywhere and filterable in
+   example the caller's own release ID), returned everywhere and filterable in
    lists.
 5. **Idempotency.** Every `POST` accepts an `Idempotency-Key` header. For 24
    hours Araldo stores the key per API key and mode with a fingerprint of

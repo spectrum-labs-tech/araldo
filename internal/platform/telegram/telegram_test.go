@@ -116,24 +116,24 @@ func TestPublishPhotos(t *testing.T) {
 		}
 		sort.Strings(c.files)
 		calls = append(calls, c)
-		msg := `{"message_id":7,"chat":{"id":-100,"username":"ar15build"}}`
+		msg := `{"message_id":7,"chat":{"id":-100,"username":"araldodev"}}`
 		if c.method == "sendMediaGroup" {
-			msg = `[` + msg + `,{"message_id":8,"chat":{"id":-100,"username":"ar15build"}}]`
+			msg = `[` + msg + `,{"message_id":8,"chat":{"id":-100,"username":"araldodev"}}]`
 		}
 		_, _ = w.Write([]byte(`{"ok":true,"result":` + msg + `}`))
 	}))
 	defer srv.Close()
 	a := New(srv.Client())
 	a.API = srv.URL
-	creds := platform.Credentials{"bot_token": "123:abc", "chat_id": "@ar15build"}
+	creds := platform.Credentials{"bot_token": "123:abc", "chat_id": "@araldodev"}
 	png := platform.Media{Type: "image/png"}.WithData([]byte("png"))
 	jpg := platform.Media{Type: "image/jpeg"}.WithData([]byte("jpg"))
 
 	res, err := a.Publish(t.Context(), creds, platform.Payload{Parts: []string{"one photo"}, Media: []platform.Media{png}}, nil)
-	if err != nil || res.Permalink != "https://t.me/ar15build/7" {
+	if err != nil || res.Permalink != "https://t.me/araldodev/7" {
 		t.Fatalf("Publish = %+v, %v", res, err)
 	}
-	if c := calls[0]; c.method != "sendPhoto" || c.fields["caption"] != "one photo" || c.fields["chat_id"] != "@ar15build" ||
+	if c := calls[0]; c.method != "sendPhoto" || c.fields["caption"] != "one photo" || c.fields["chat_id"] != "@araldodev" ||
 		strings.Join(c.files, ",") != "photo:image1.png:png" {
 		t.Fatalf("one photo: %+v", c)
 	}
@@ -179,15 +179,15 @@ func TestPublishVideo(t *testing.T) {
 		f, _ := hs.Open()
 		data, _ := io.ReadAll(f)
 		file = hs.Filename + ":" + hs.Header.Get("Content-Type") + ":" + string(data)
-		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":9,"chat":{"id":-100,"username":"ar15build"}}}`))
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":9,"chat":{"id":-100,"username":"araldodev"}}}`))
 	}))
 	defer srv.Close()
 	a := New(srv.Client())
 	a.API = srv.URL
 	v := platform.Media{Type: "video/mp4", Width: 1080, Height: 1920, Duration: 12400 * time.Millisecond}.WithData([]byte("mp4 bytes"))
-	res, err := a.Publish(t.Context(), platform.Credentials{"bot_token": "123:abc", "chat_id": "@ar15build"},
+	res, err := a.Publish(t.Context(), platform.Credentials{"bot_token": "123:abc", "chat_id": "@araldodev"},
 		platform.Payload{Parts: []string{"watch this"}, Media: []platform.Media{v}}, nil)
-	if err != nil || res.Permalink != "https://t.me/ar15build/9" {
+	if err != nil || res.Permalink != "https://t.me/araldodev/9" {
 		t.Fatalf("Publish = %+v, %v", res, err)
 	}
 	if fields["caption"] != "watch this" || fields["width"] != "1080" || fields["height"] != "1920" || fields["duration"] != "12" ||

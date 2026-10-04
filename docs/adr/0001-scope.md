@@ -17,10 +17,9 @@ What exists:
 - **Postiz** is open source (AGPL) with many platforms, but it is a Node app
   that needs Temporal and Elasticsearch to self-host, and its public API is a
   subset of the internal one (no rescheduling with an API key, for example).
-- **ar15.build's in-app publisher** (`pkg/social`) proved the shape we want:
-  an adapter per platform, one variant per platform, a job table with
-  retries. It is single-tenant, configured through environment variables, and
-  its post text is hard-coded in Go.
+- **Publishing built into each product** works, with an adapter per
+  platform and a job table with retries, but every product rebuilds it: one
+  tenant, credentials in environment variables, post text hard-coded.
 
 ## Decision
 
@@ -55,8 +54,8 @@ What exists:
 - **Adopt Postiz.** Fastest to a working scheduler, but its public API is
   second-class, the self-hosted stack is heavy, and its direction (AI agents
   inside the product) is not ours.
-- **Keep extending ar15.build's publisher.** Every other project would copy
-  it again, as has already happened with the background scheduler.
+- **Keep publishing inside each product.** Every product would build and
+  maintain the same adapters again.
 - **Generate content inside Araldo.** It would need each product's domain
   knowledge and tools, which the product already has.
 
@@ -64,8 +63,7 @@ What exists:
 
 - The API is the product: its conventions ([ADR 0005](0005-api-conventions.md))
   get the care most projects give their UI.
-- ar15.build becomes the first tenant; its generator calls Araldo instead of
-  publishing directly.
+- Products stop publishing directly; they call Araldo.
 - Without built-in AI, Araldo is useful only to callers that can produce
   content. The template engine ([ADR 0010](0010-templates.md)) covers
   callers without AI.

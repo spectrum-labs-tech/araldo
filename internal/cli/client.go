@@ -13,8 +13,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
+
+	"golang.org/x/term"
 
 	"github.com/spectrum-labs-tech/araldo/internal/apiclient"
 	"github.com/spectrum-labs-tech/araldo/internal/buildinfo"
@@ -87,7 +91,7 @@ func runAuth(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		var withToken, insecure bool
 		if err := flags("auth login", stderr, args[1:], func(fs *flag.FlagSet) {
 			hostFlag(fs)
-			fs.BoolVar(&withToken, "with-token", false, "read a token or an API key from standard input")
+			fs.BoolVar(&withToken, "with-token", false, "read an API key from standard input instead of opening the browser")
 			fs.BoolVar(&insecure, "insecure-storage", false, "keep the token in hosts.yaml instead of the system keychain")
 		}); err != nil {
 			return err
@@ -140,17 +144,17 @@ func authLogin(ctx context.Context, hostname string, withToken, insecure bool, s
 	if err != nil {
 		return usageErr("%v", err)
 	}
-	if !withToken {
-		// The device sign-in (ADR 0028, step 2) is not built yet.
-		return usageErr("signing in through the browser is not available yet; pipe an API key in instead:\n  araldo auth login --hostname %s --with-token < key.txt", name)
-	}
-	line, err := bufio.NewReader(stdin).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
+	var token string
+	if withToken {
+		line, err := bufio.NewReader(stdin).ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
+		}
+		if token = strings.TrimSpace(line); token == "" {
+			return usageErr("no token on standard input")
+		}
+	} else if token, err = keyFromBrowser(base, stderr); err != nil {
 		return err
-	}
-	token := strings.TrimSpace(line)
-	if token == "" {
-		return usageErr("no token on standard input")
 	}
 	m, err := whoami(ctx, apiclient.New(base, token, "araldo-cli/"+buildinfo.Version))
 	if err != nil {
@@ -220,6 +224,58 @@ func authStatus(ctx context.Context, hostname string, stdout io.Writer) error {
 		return errors.New("some credentials do not work")
 	}
 	return nil
+}
+
+// keyFromBrowser opens the dashboard's API key page, which says the CLI is
+// waiting and suggests a name, and reads the key the user pastes back
+// (ADR 0028). Without a browser (over SSH, say) the user opens the URL.
+func keyFromBrowser(base string, stderr io.Writer) (string, error) {
+	device, _ := os.Hostname()
+	page := base + "/keys?cli=" + url.QueryEscape(device)
+	_, _ = fmt.Fprintf(stderr, "! Create an API key in Araldo, then paste it here.\n")
+	if err := openBrowser(page); err != nil {
+		_, _ = fmt.Fprintf(stderr, "  Open this page in a browser: %s\n", page)
+	} else {
+		_, _ = fmt.Fprintf(stderr, "  Opened %s in your browser.\n", page)
+	}
+	_, _ = fmt.Fprint(stderr, "? Paste your API key: ")
+	key, err := readSecret()
+	_, _ = fmt.Fprintln(stderr)
+	if err != nil {
+		return "", err
+	}
+	if key = strings.TrimSpace(key); key == "" {
+		return "", usageErr("no key pasted")
+	}
+	return key, nil
+}
+
+// readSecret reads a line without echoing it when standard input is a
+// terminal.
+func readSecret() (string, error) {
+	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) { //nolint:gosec // G115: a file descriptor fits in an int
+		b, err := term.ReadPassword(int(f.Fd())) //nolint:gosec // G115: as above
+		return string(b), err
+	}
+	line, err := bufio.NewReader(stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	return line, nil
+}
+
+// openBrowser opens url in the user's browser; tests replace it.
+var openBrowser = func(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url) //nolint:gosec // G204: the dashboard URL for the server the user named
+	case "darwin":
+		cmd = exec.Command("open", url) //nolint:gosec // G204: the dashboard URL for the server the user named
+	default:
+		cmd = exec.Command("xdg-open", url) //nolint:gosec // G204: the dashboard URL for the server the user named
+	}
+	return cmd.Start()
 }
 
 // stringsFlag collects a repeatable flag.

@@ -381,3 +381,32 @@ func TestPostsListFiltersAndPages(t *testing.T) {
 		t.Fatal("an empty filter does not say so")
 	}
 }
+
+// The key page, opened by `araldo auth login` (ADR 0028), says the CLI is
+// waiting, suggests a name, and after creating the key says where to paste
+// it.
+func TestKeysPageForTheCLI(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	rec := d.send(httptest.NewRequest(http.MethodGet, "/keys?cli="+url.QueryEscape("chris-laptop"), nil))
+	page := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(page, "Connect the araldo CLI") ||
+		!strings.Contains(page, `value="araldo CLI on chris-laptop"`) || !strings.Contains(page, `name="cli" value="chris-laptop"`) {
+		t.Fatalf("keys page for the CLI: %d\n%s", rec.Code, page)
+	}
+	form := url.Values{"csrf": {d.login.Session.CSRFToken}, "name": {"araldo CLI on chris-laptop"}, "access": {"full"},
+		"expires": {"never"}, "cli": {"chris-laptop"}}
+	r := httptest.NewRequest(http.MethodPost, "/keys", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = d.send(r)
+	page = rec.Body.String()
+	m := regexp.MustCompile(`id="new-key" class="copy-box">(ald_test_[^<]+)<`).FindStringSubmatch(page)
+	if rec.Code != http.StatusOK || m == nil || !strings.Contains(page, "Paste it into the terminal on chris-laptop") {
+		t.Fatalf("created for the CLI: %d\n%s", rec.Code, page)
+	}
+	// Without the parameter, the page is as it was.
+	rec = d.send(httptest.NewRequest(http.MethodGet, "/keys", nil))
+	if strings.Contains(rec.Body.String(), "Connect the araldo CLI") {
+		t.Fatal("the plain keys page talks about the CLI")
+	}
+}

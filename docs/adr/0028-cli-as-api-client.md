@@ -42,7 +42,15 @@ developers already know, so where this ADR does not say otherwise, do what `gh` 
    - The process commands stay top level: `server`, `worker`, `all`, `migrate` (the chart's
      migration Job runs `araldo migrate`), `mcp` and `version`.
 2. **`araldo auth`, as `gh auth`:**
-   - `araldo auth login [--hostname h] [--with-token]`: the OAuth 2.0 device authorization grant
+   - **First, the simplest sign-in that works:** `araldo auth login --hostname h` opens the
+     dashboard's API key page in the browser (or prints its address, over SSH) with `?cli=<this
+     computer>`, so the page says the CLI is waiting and suggests "araldo CLI on <computer>" as the
+     key's name. The member creates the key there, as any key, with the dashboard's sign-in,
+     two-factor and sudo mode, copies it, and pastes it at the CLI's prompt, which does not echo.
+     This is `gh`'s "paste a token" path with the page opened for you: no new endpoints. The
+     credential is an API key, so commands that only members may run (`members`, `org`) wait for
+     the device flow below, built when the CLI needs them.
+   - **Later,** `araldo auth login` without a pasted key: the OAuth 2.0 device authorization grant
      (RFC 8628). The CLI asks `POST /v1/auth/device` for a device code and a short user code
      (`ABCD-EFGH`), prints `! First copy your one-time code: ABCD-EFGH`, offers to open the
      dashboard's `/device` page in the browser, and polls `POST /v1/auth/device/token` at the
@@ -92,9 +100,9 @@ developers already know, so where this ADR does not say otherwise, do what `gh` 
    request and prints the response, as `gh api` does.
 7. **Order of work:**
    1. The client foundation: hosts and credentials, `araldo api`, table/JSON output, and
-      `channels list` as a client command (`GET /v1/channels` already takes keys, so it works with
-      `araldo auth login --with-token` before the device flow exists).
-   2. The device flow, user tokens, the `/device` page and the Devices list.
+      `channels list` as a client command; `auth login` through the dashboard's key page. Done.
+   2. The device flow, user tokens, the `/device` page and the Devices list, when member-only
+      commands come to the CLI.
    3. `/v1/members` and `/v1/org`; `members` and `org` become client commands; `--as` is removed.
    4. Server administration moves under `araldo admin`, audited as the operator.
 

@@ -1,8 +1,16 @@
 {{define "content"}}
 <h1>API keys <span class="pill {{if .Livemode}}bad{{else}}warn{{end}}">{{if .Livemode}}live{{else}}test{{end}}</span></h1>
+{{if and .Data.CLI (not .Data.NewKey)}}
+<section class="card" role="status">
+  <h2>Connect the araldo CLI</h2>
+  <p><code>araldo auth login</code> on <strong>{{.Data.CLI}}</strong> is waiting for a key. Create one below, then copy it and paste it into the terminal.</p>
+  <p class="text-sm text-muted">The key works in {{if .Livemode}}live{{else}}test{{end}} mode; switch modes at the top of the page first if you need the other. Limit it to a brand if the CLI only needs one.</p>
+</section>
+{{end}}
 {{if .Data.NewKey}}
 <section class="card secret" role="alert">
   <h2>Copy your new key now</h2>
+  {{if .Data.CLI}}<p class="mb-2"><strong>Paste it into the terminal on {{.Data.CLI}}, where <code>araldo auth login</code> is waiting.</strong></p>{{end}}
   <p class="mb-2">This is the only time <strong>{{.Data.NewName}}</strong> is shown in full. Araldo keeps only a hash.{{if .Data.Rolled}} The old secret keeps working for 24 hours, so deploy this one before then.{{end}}</p>
   <div class="flex flex-wrap items-center gap-2"><code id="new-key" class="copy-box">{{.Data.NewKey}}</code> <button type="button" data-copy="new-key">Copy</button></div>
   <p class="mt-3 text-sm">Try it:</p>
@@ -44,7 +52,8 @@
   {{$radio := "flex-row items-center gap-1.5 font-normal"}}
   <form method="post" action="/keys" class="flex max-w-xl flex-col gap-4">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <label>Name <input name="name" required maxlength="100" placeholder="araldo.dev production"></label>
+    {{if .Data.CLI}}<input type="hidden" name="cli" value="{{.Data.CLI}}">{{end}}
+    <label>Name <input name="name" required maxlength="100" placeholder="araldo.dev production"{{if .Data.CLI}} value="araldo CLI on {{.Data.CLI}}"{{end}}></label>
     <fieldset class="flex flex-wrap gap-5"><legend>Access</legend>
       <label class="{{$radio}}"><input type="radio" name="access" value="full" checked data-toggle="access"> Full</label>
       <label class="{{$radio}}"><input type="radio" name="access" value="restricted" data-toggle="access"> Restricted</label>

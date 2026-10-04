@@ -4,8 +4,10 @@ package web
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 
@@ -30,6 +32,25 @@ type keysData struct {
 	// Rolled says NewKey replaced a key whose old secret still works.
 	Rolled  bool
 	BaseURL string
+	// CLI names the computer `araldo auth login` opened this page from
+	// (ADR 0028): the page says so and suggests a name for the key.
+	CLI string
+}
+
+// cliDevice reads the computer `araldo auth login` named, as sent in the
+// cli parameter: printable, and short enough for a key name.
+func cliDevice(c *reqCtx) string {
+	v := c.r.FormValue("cli")
+	out := make([]rune, 0, len(v))
+	for _, r := range v {
+		if unicode.IsPrint(r) {
+			out = append(out, r)
+		}
+		if len(out) == 60 {
+			break
+		}
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func (s *Server) keysData(c *reqCtx) (*keysData, error) {
@@ -37,7 +58,7 @@ func (s *Server) keysData(c *reqCtx) (*keysData, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &keysData{Scopes: core.KeyScopes, Admin: core.AdminScopes, BaseURL: baseURL(c)}
+	d := &keysData{Scopes: core.KeyScopes, Admin: core.AdminScopes, BaseURL: baseURL(c), CLI: cliDevice(c)}
 	for _, k := range keys {
 		if k.Livemode == c.actor.Livemode {
 			d.Keys = append(d.Keys, k)
@@ -99,7 +120,11 @@ func (s *Server) createKey(c *reqCtx) error {
 	plain, k, err := s.svc.CreateAPIKey(c.ctx(), c.actor, c.session, in)
 	if err != nil {
 		if apperr.As(err).Code == "reauthentication_required" {
-			return redirect(c, "/confirm?next=/keys", "Confirm your password to create a key.")
+			next := "/keys"
+			if d.CLI != "" {
+				next += "?cli=" + url.QueryEscape(d.CLI)
+			}
+			return redirect(c, "/confirm?next="+url.QueryEscape(next), "Confirm your password to create a key.")
 		}
 		return s.formErr(c, "keys", "developers", "API keys", d, err)
 	}

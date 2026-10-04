@@ -5,9 +5,12 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"strings"
 	"testing"
 )
@@ -152,8 +155,36 @@ func TestAuthLoginStatusLogout(t *testing.T) {
 	if code, _, _ = runCLI(t, "", "channels", "list"); code == ExitOK {
 		t.Fatal("channels list worked after logging out")
 	}
-	if code, _, errOut = runCLI(t, "", "auth", "login"); code != ExitUsage || !strings.Contains(errOut, "--with-token") {
-		t.Fatalf("login without a token: exit %d %q", code, errOut)
+}
+
+// Without --with-token, login opens the dashboard's key page, naming this
+// computer, and reads the key pasted back.
+func TestAuthLoginThroughTheBrowser(t *testing.T) {
+	srv, _ := fakeAraldo(t)
+	cliEnv(t, srv, false)
+	var opened string
+	old := openBrowser
+	openBrowser = func(u string) error { opened = u; return nil }
+	defer func() { openBrowser = old }()
+
+	code, out, errOut := runCLI(t, testToken+"\n", "auth", "login", "--insecure-storage")
+	if code != ExitOK || !strings.Contains(out, "Logged in to") {
+		t.Fatalf("login: exit %d %q %q", code, out, errOut)
+	}
+	host, _ := os.Hostname()
+	if want := srv.URL + "/keys?cli=" + url.QueryEscape(host); opened != want {
+		t.Fatalf("opened %q, want %q", opened, want)
+	}
+	if !strings.Contains(errOut, "Paste your API key") || strings.Contains(errOut, testToken) {
+		t.Fatalf("prompt: %q", errOut)
+	}
+	// Without a browser, it prints the page to open instead.
+	openBrowser = func(string) error { return errors.New("no browser") }
+	if _, _, errOut = runCLI(t, testToken+"\n", "auth", "login", "--insecure-storage"); !strings.Contains(errOut, "Open this page in a browser: "+srv.URL+"/keys?cli=") {
+		t.Fatalf("without a browser: %q", errOut)
+	}
+	if code, _, errOut = runCLI(t, "\n", "auth", "login", "--insecure-storage"); code != ExitUsage {
+		t.Fatalf("nothing pasted: exit %d %q", code, errOut)
 	}
 }
 

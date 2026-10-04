@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spectrum-labs-tech/araldo/internal/keyring"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
@@ -108,5 +109,52 @@ func TestSplitList(t *testing.T) {
 		if got := splitList(tt.in); !slices.Equal(got, tt.want) {
 			t.Errorf("splitList(%q) = %q, want %q", tt.in, got, tt.want)
 		}
+	}
+}
+
+func TestPrintKeyUsage(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		use     []keyring.KeyUse
+		want    []string
+		wantErr bool
+	}{
+		"moved to Transit": {
+			use: []keyring.KeyUse{
+				{ID: "transit:transit/araldo", Configured: true, Primary: true, DataKeys: 4},
+				{ID: "k1", Configured: true},
+			},
+			want: []string{"transit:transit/araldo", "primary", "k1", "can be removed"},
+		},
+		"rewrap pending": {
+			use: []keyring.KeyUse{
+				{ID: "transit:transit/araldo", Configured: true, Primary: true, DataKeys: 1},
+				{ID: "k1", Configured: true, DataKeys: 3},
+			},
+			want: []string{"still in use: run araldo keys rotate"},
+		},
+		"a key removed too early": {
+			use: []keyring.KeyUse{
+				{ID: "transit:transit/araldo", Configured: true, Primary: true, DataKeys: 1},
+				{ID: "k1", DataKeys: 3},
+			},
+			want:    []string{"NOT CONFIGURED"},
+			wantErr: true,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			err := printKeyUsage(&out, tt.use)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("printKeyUsage error = %v, want error %v", err, tt.wantErr)
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(out.String(), w) {
+					t.Errorf("output lacks %q:\n%s", w, out.String())
+				}
+			}
+		})
 	}
 }

@@ -79,7 +79,11 @@ func service(t *testing.T, opts ...option) *core.Service {
 	for _, o := range opts {
 		o(&cfg, &adapters)
 	}
-	return core.New(st, keyring.New(mk, st), platform.NewRegistry(adapters...), slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	kr, krErr := keyring.Open(t.Context(), mk, st)
+	if krErr != nil {
+		t.Fatal(krErr)
+	}
+	return core.New(st, kr, platform.NewRegistry(adapters...), slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
 }
 
 type world struct {

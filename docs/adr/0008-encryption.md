@@ -21,8 +21,11 @@ to another row, where it would decrypt without error.
 1. **Key hierarchy (envelope encryption):**
    - **Master keys** (key-encryption keys) come from outside the database:
      `ARALDO_MASTER_KEYS` (a list of `id:base64` 256-bit keys; the first is
-     primary), a file, or a KMS provider behind an interface (OpenBao/Vault
-     Transit first, cloud KMS later).
+     primary), a file, or a key service behind the same interface
+     (OpenBao/Vault Transit now, cloud KMS later). A Transit key never
+     leaves the service: Araldo sends it data keys to wrap and unwrap, and
+     binds each to its scope and version by prefixing a hash of them, which
+     unwrapping checks, since Transit has no associated data.
    - **Each org has a data key** (256-bit, random), stored in the database
      wrapped by the primary master key, together with that key's ID.
    - Secrets are encrypted with the org's data key using AES-256-GCM.
@@ -49,11 +52,17 @@ to another row, where it would decrypt without error.
    - An old master key can be removed once nothing references its ID.
 5. **Crypto-shredding.** Deleting an org deletes its data key, so the org's
    secrets are unreadable even in old backups.
-6. **Master keys are never written to the database, backups, logs or
+6. **Signing keys are stored, not derived from a master key.** Keys for
+   signing (media links) come from one data key in a reserved scope,
+   wrapped like any other, so changing master keys never invalidates a
+   link already sent, such as a newsletter's images. On first start it is
+   seeded with the value earlier versions derived from the primary local
+   key, so their links stay valid too.
+7. **Master keys are never written to the database, backups, logs or
    telemetry.** Losing them means every connected channel must reconnect,
    but posts, templates and history survive. `araldo keys export` prints
    them for offline escrow, and the operations guide says so prominently.
-7. **Implementation** uses only the standard library (`crypto/aes`,
+8. **Implementation** uses only the standard library (`crypto/aes`,
    `crypto/cipher`, `crypto/rand`) in `internal/keyring`. Decrypted data
    keys are cached in memory briefly. Nothing is invented: this is standard
    AEAD plus key wrapping.

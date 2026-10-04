@@ -3,11 +3,13 @@
 // Package keyring encrypts the secrets Araldo stores (ADR 0008): OAuth
 // tokens, app passwords, webhook signing secrets, TOTP secrets.
 //
-// Master keys come from outside the database. Each scope (an org, or the
-// install itself for secrets that belong to no org) has data keys, stored
-// wrapped by a master key. Secrets are sealed with AES-256-GCM under the
-// scope's current data key, with associated data naming the table, column
-// and row they belong to, so a ciphertext copied elsewhere fails to open.
+// Master keys live outside the database: as local keys from the
+// environment, or in a key service (Transit) that never hands them out.
+// Each scope (an org, or the install itself for secrets that belong to no
+// org) has data keys, stored wrapped by a master key. Secrets are sealed
+// with AES-256-GCM under the scope's current data key, with associated data
+// naming the table, column and row they belong to, so a ciphertext copied
+// elsewhere fails to open.
 package keyring
 
 import (
@@ -21,6 +23,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 
@@ -29,6 +33,11 @@ import (
 
 // Install is the scope of secrets that belong to no org.
 var Install = uuid.Nil
+
+// Signing is the scope holding the root of keys made by Derive. Its one
+// data key is wrapped like any other, so changing master keys never
+// changes it, and links signed long ago stay valid.
+var Signing = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 
 // Errors.
 var (
@@ -71,21 +80,67 @@ type Store interface {
 	RewrapDataKey(ctx context.Context, k WrappedKey) error
 }
 
-// MasterKeys are the key-encryption keys. The first is primary: new data
-// keys are wrapped with it.
-type MasterKeys struct {
-	primary string
-	keys    map[string]cipher.AEAD
-	order   []string
-	// derive is the root for Derive, from the primary key; the raw key
-	// itself is not kept.
-	derive []byte
+// KEK is a key-encryption key: a master key that wraps data keys. aad
+// names the data key, and unwrapping under a different aad must fail.
+type KEK interface {
+	// ID is recorded next to every data key the KEK wraps.
+	ID() string
+	Wrap(ctx context.Context, plaintext, aad []byte) ([]byte, error)
+	Unwrap(ctx context.Context, wrapped, aad []byte) ([]byte, error)
 }
 
-// ParseMasterKeys reads "id:base64key[,id:base64key...]" (standard or URL
-// base64 of 32 bytes). The first key is primary.
+// localKEK is a master key held in memory, from the environment.
+type localKEK struct {
+	id   string
+	aead cipher.AEAD
+}
+
+func (k localKEK) ID() string { return k.id }
+
+func (k localKEK) Wrap(_ context.Context, plaintext, aad []byte) ([]byte, error) {
+	return seal(k.aead, plaintext, aad)
+}
+
+func (k localKEK) Unwrap(_ context.Context, wrapped, aad []byte) ([]byte, error) {
+	return open(k.aead, wrapped, aad)
+}
+
+// MasterKeys are the key-encryption keys. The first is primary: new data
+// keys are wrapped with it; the others only unwrap what they wrapped
+// before.
+type MasterKeys struct {
+	primary string
+	keys    map[string]KEK
+	order   []string
+	// legacy is the signing root earlier versions derived from the first
+	// local key, used once to seed the stored one so old links keep
+	// working. Nil without a local key.
+	legacy []byte
+}
+
+// NewMasterKeys returns master keys, the first primary.
+func NewMasterKeys(keks ...KEK) (*MasterKeys, error) {
+	m := &MasterKeys{keys: map[string]KEK{}}
+	for _, k := range keks {
+		kid := k.ID()
+		if _, dup := m.keys[kid]; dup {
+			return nil, fmt.Errorf("keyring: master key %q given twice", kid)
+		}
+		m.keys[kid] = k
+		m.order = append(m.order, kid)
+	}
+	if len(m.order) == 0 {
+		return nil, errors.New("keyring: no master key configured")
+	}
+	m.primary = m.order[0]
+	return m, nil
+}
+
+// ParseMasterKeys reads local keys, "id:base64key[,id:base64key...]"
+// (standard or URL base64 of 32 bytes). The first key is primary.
 func ParseMasterKeys(s string) (*MasterKeys, error) {
-	m := &MasterKeys{keys: map[string]cipher.AEAD{}}
+	var keks []KEK
+	var legacy []byte
 	for part := range strings.SplitSeq(s, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
@@ -95,9 +150,6 @@ func ParseMasterKeys(s string) (*MasterKeys, error) {
 		if !ok || kid == "" {
 			return nil, errors.New("keyring: master key must be id:base64")
 		}
-		if _, dup := m.keys[kid]; dup {
-			return nil, fmt.Errorf("keyring: master key %q given twice", kid)
-		}
 		raw, err := decodeKey(enc)
 		if err != nil {
 			return nil, fmt.Errorf("keyring: master key %q: %w", kid, err)
@@ -106,17 +158,33 @@ func ParseMasterKeys(s string) (*MasterKeys, error) {
 		if err != nil {
 			return nil, err
 		}
-		m.keys[kid] = aead
-		m.order = append(m.order, kid)
-		if m.primary == "" {
-			m.primary = kid
-			m.derive = hmacSHA256(raw, "araldo:v1:derive")
+		keks = append(keks, localKEK{id: kid, aead: aead})
+		if legacy == nil {
+			legacy = hmacSHA256(raw, "araldo:v1:derive")
 		}
 	}
-	if m.primary == "" {
-		return nil, errors.New("keyring: no master key configured")
+	m, err := NewMasterKeys(keks...)
+	if err != nil {
+		return nil, err
 	}
+	m.legacy = legacy
 	return m, nil
+}
+
+// Prepend returns these master keys with k first, as the new primary.
+// Moving to a key service is Prepend, then RewrapAll, then dropping the
+// local keys.
+func (m *MasterKeys) Prepend(k KEK) (*MasterKeys, error) {
+	keks := []KEK{k}
+	for _, kid := range m.order {
+		keks = append(keks, m.keys[kid])
+	}
+	out, err := NewMasterKeys(keks...)
+	if err != nil {
+		return nil, err
+	}
+	out.legacy = m.legacy
+	return out, nil
 }
 
 // GenerateMasterKey returns a new "id:base64" master key entry.
@@ -158,23 +226,22 @@ func wrapAAD(scope uuid.UUID, version int) []byte {
 	return fmt.Appendf(nil, "araldo:v1:data-key:%s:%d", scope, version)
 }
 
-func (m *MasterKeys) wrap(scope uuid.UUID, version int, dek []byte) (WrappedKey, error) {
-	aead := m.keys[m.primary]
-	sealed, err := seal(aead, dek, wrapAAD(scope, version))
+func (m *MasterKeys) wrap(ctx context.Context, scope uuid.UUID, version int, dek []byte) (WrappedKey, error) {
+	sealed, err := m.keys[m.primary].Wrap(ctx, dek, wrapAAD(scope, version))
 	if err != nil {
-		return WrappedKey{}, err
+		return WrappedKey{}, fmt.Errorf("keyring: wrap with master key %q: %w", m.primary, err)
 	}
 	return WrappedKey{Scope: scope, Version: version, KEKID: m.primary, Wrapped: sealed}, nil
 }
 
-func (m *MasterKeys) unwrap(k WrappedKey) ([]byte, error) {
-	aead, ok := m.keys[k.KEKID]
+func (m *MasterKeys) unwrap(ctx context.Context, k WrappedKey) ([]byte, error) {
+	kek, ok := m.keys[k.KEKID]
 	if !ok {
 		return nil, fmt.Errorf("%w: master key %q is not configured", ErrNoKey, k.KEKID)
 	}
-	dek, err := open(aead, k.Wrapped, wrapAAD(k.Scope, k.Version))
+	dek, err := kek.Unwrap(ctx, k.Wrapped, wrapAAD(k.Scope, k.Version))
 	if err != nil {
-		return nil, fmt.Errorf("%w: data key %s v%d under master key %q", ErrDecrypt, k.Scope, k.Version, k.KEKID)
+		return nil, fmt.Errorf("%w: data key %s v%d under master key %q: %w", ErrDecrypt, k.Scope, k.Version, k.KEKID, err)
 	}
 	return dek, nil
 }
@@ -200,6 +267,8 @@ type Keyring struct {
 	master *MasterKeys
 	store  Store
 	cache  *keyCache
+	// signing is the root of Derive, loaded by Open.
+	signing []byte
 }
 
 // keyCache holds unwrapped data keys, shared by a keyring and the copies
@@ -214,9 +283,46 @@ type cacheKey struct {
 	version int
 }
 
-// New returns a keyring using master keys m and data keys in st.
-func New(m *MasterKeys, st Store) *Keyring {
-	return &Keyring{master: m, store: st, cache: &keyCache{aead: map[cacheKey]cipher.AEAD{}}}
+// Open returns a keyring using master keys m and data keys in st. It loads
+// the signing root, creating it on first use, so the master keys must be
+// reachable: a key service that is down fails Open.
+func Open(ctx context.Context, m *MasterKeys, st Store) (*Keyring, error) {
+	k := &Keyring{master: m, store: st, cache: &keyCache{aead: map[cacheKey]cipher.AEAD{}}}
+	root, err := k.signingRoot(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("keyring: signing key: %w", err)
+	}
+	k.signing = root
+	return k, nil
+}
+
+// signingRoot reads the Signing scope's data key, creating it when there
+// is none: from the first local master key as earlier versions derived it,
+// so links they signed stay valid, or at random.
+func (k *Keyring) signingRoot(ctx context.Context) ([]byte, error) {
+	wk, err := k.store.DataKey(ctx, Signing, 1)
+	if errors.Is(err, ErrNoKey) {
+		root := k.master.legacy
+		if root == nil {
+			root = make([]byte, keySize)
+			if _, err := rand.Read(root); err != nil {
+				return nil, err
+			}
+		}
+		wk, err = k.master.wrap(ctx, Signing, 1, root)
+		if err != nil {
+			return nil, err
+		}
+		err = k.store.InsertDataKey(ctx, wk)
+		if errors.Is(err, ErrConflict) {
+			// Another process created it first; use theirs.
+			wk, err = k.store.DataKey(ctx, Signing, 1)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return k.master.unwrap(ctx, wk)
 }
 
 // With returns this keyring reading and writing data keys through st,
@@ -224,7 +330,7 @@ func New(m *MasterKeys, st Store) *Keyring {
 // keyring's own store would wait for another pooled connection while the
 // transaction holds one, and enough of those at once exhaust the pool.
 func (k *Keyring) With(st Store) *Keyring {
-	return &Keyring{master: k.master, store: st, cache: k.cache}
+	return &Keyring{master: k.master, store: st, cache: k.cache, signing: k.signing}
 }
 
 // AAD names the place a secret is stored: its table, column and row.
@@ -266,11 +372,11 @@ func (k *Keyring) Decrypt(ctx context.Context, scope uuid.UUID, aad string, ciph
 	return plain, nil
 }
 
-// Derive returns a 32-byte key for one purpose (label), from the primary
-// master key: for signing, not for encrypting stored data. It changes when
-// the primary key does.
+// Derive returns a 32-byte key for one purpose (label): for signing, not
+// for encrypting stored data. It comes from the stored signing root, so it
+// survives master key changes.
 func (k *Keyring) Derive(label string) []byte {
-	return hmacSHA256(k.master.derive, label)
+	return hmacSHA256(k.signing, label)
 }
 
 func hmacSHA256(key []byte, label string) []byte {
@@ -298,7 +404,7 @@ func (k *Keyring) current(ctx context.Context, scope uuid.UUID) (int, cipher.AEA
 	if err != nil {
 		return 0, nil, err
 	}
-	aead, err := k.load(wk)
+	aead, err := k.load(ctx, wk)
 	return wk.Version, aead, err
 }
 
@@ -322,7 +428,7 @@ func (k *Keyring) create(ctx context.Context, scope uuid.UUID, version int) (Wra
 	if _, err := rand.Read(dek); err != nil {
 		return WrappedKey{}, err
 	}
-	wk, err := k.master.wrap(scope, version, dek)
+	wk, err := k.master.wrap(ctx, scope, version, dek)
 	if err != nil {
 		return WrappedKey{}, err
 	}
@@ -345,10 +451,10 @@ func (k *Keyring) version(ctx context.Context, scope uuid.UUID, version int) (ci
 	if err != nil {
 		return nil, err
 	}
-	return k.load(wk)
+	return k.load(ctx, wk)
 }
 
-func (k *Keyring) load(wk WrappedKey) (cipher.AEAD, error) {
+func (k *Keyring) load(ctx context.Context, wk WrappedKey) (cipher.AEAD, error) {
 	ck := cacheKey{wk.Scope, wk.Version}
 	k.cache.mu.Lock()
 	if aead, ok := k.cache.aead[ck]; ok {
@@ -356,7 +462,7 @@ func (k *Keyring) load(wk WrappedKey) (cipher.AEAD, error) {
 		return aead, nil
 	}
 	k.cache.mu.Unlock()
-	dek, err := k.master.unwrap(wk)
+	dek, err := k.master.unwrap(ctx, wk)
 	if err != nil {
 		return nil, err
 	}
@@ -383,11 +489,11 @@ func (k *Keyring) RewrapAll(ctx context.Context) (int, error) {
 		if wk.KEKID == k.master.primary {
 			continue
 		}
-		dek, err := k.master.unwrap(wk)
+		dek, err := k.master.unwrap(ctx, wk)
 		if err != nil {
 			return n, err
 		}
-		re, err := k.master.wrap(wk.Scope, wk.Version, dek)
+		re, err := k.master.wrap(ctx, wk.Scope, wk.Version, dek)
 		if err != nil {
 			return n, err
 		}
@@ -397,4 +503,37 @@ func (k *Keyring) RewrapAll(ctx context.Context) (int, error) {
 		n++
 	}
 	return n, nil
+}
+
+// KeyUse is how many stored data keys one master key wraps.
+type KeyUse struct {
+	ID string
+	// Configured is false for a master key that wraps data keys but is not
+	// configured: those keys cannot be read.
+	Configured bool
+	Primary    bool
+	DataKeys   int
+}
+
+// Usage reports every configured master key, primary first, and any
+// unconfigured one still recorded on a data key. A configured key other
+// than the primary that wraps nothing can be removed.
+func (k *Keyring) Usage(ctx context.Context) ([]KeyUse, error) {
+	keys, err := k.store.DataKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string]int{}
+	for _, wk := range keys {
+		counts[wk.KEKID]++
+	}
+	var out []KeyUse
+	for _, kid := range k.master.order {
+		out = append(out, KeyUse{ID: kid, Configured: true, Primary: kid == k.master.primary, DataKeys: counts[kid]})
+		delete(counts, kid)
+	}
+	for _, kid := range slices.Sorted(maps.Keys(counts)) {
+		out = append(out, KeyUse{ID: kid, DataKeys: counts[kid]})
+	}
+	return out, nil
 }

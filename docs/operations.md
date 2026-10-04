@@ -7,7 +7,11 @@ Everything comes from environment variables.
 | Variable | Required | Meaning |
 |---|---|---|
 | `ARALDO_DATABASE_URL` | yes | Postgres URL (`DATABASE_URL` also works). The role must own the schema: Araldo runs its own migrations. |
-| `ARALDO_MASTER_KEYS` | yes | `id:base64key[,id:base64key…]`, primary first ([ADR 0008](adr/0008-encryption.md)). Or `ARALDO_MASTER_KEYS_FILE`. |
+| `ARALDO_MASTER_KEYS` | this or Transit | Local master keys, `id:base64key[,id:base64key…]`, primary first ([ADR 0008](adr/0008-encryption.md)). Or `ARALDO_MASTER_KEYS_FILE`. |
+| `ARALDO_TRANSIT_ADDR`, `ARALDO_TRANSIT_KEY` | this or local keys | A master key in an OpenBao or Vault Transit engine (see Keys). With local keys too, Transit is primary. |
+| `ARALDO_TRANSIT_TOKEN` | with Transit | A token that can encrypt and decrypt with the key. Or `ARALDO_TRANSIT_TOKEN_FILE`, or log in with a role instead. |
+| `ARALDO_TRANSIT_ROLE` | with Transit | Log in through the Kubernetes or JWT auth method as this role, with the pod's ServiceAccount token (`ARALDO_TRANSIT_JWT_FILE`; default the standard path). `ARALDO_TRANSIT_AUTH_PATH` is the method's mount, default `kubernetes`. |
+| `ARALDO_TRANSIT_MOUNT` | | The Transit engine's mount, default `transit`. |
 | `ARALDO_BASE_URL` | yes | The public URL, e.g. `https://araldo.example.com`. |
 | `ARALDO_LISTEN` | | HTTP address, default `:8080`. |
 | `ARALDO_AUTO_MIGRATE` | | Migrate at startup, default `true`. The Helm chart sets it to `false` and migrates in a hook instead (see Kubernetes). |
@@ -40,7 +44,35 @@ two-factor authentication under **Your account**.
   connected channels must be reconnected (posts and history survive).
 - Rotate: generate a new key, put it first in `ARALDO_MASTER_KEYS` (keep the
   old one after it), restart, run `araldo keys rotate`, then remove the old
-  key.
+  key once `araldo keys status` says it wraps nothing.
+- `araldo keys status` lists each master key and how many data keys it
+  wraps, and fails if any are wrapped by a key that is not configured.
+- Signed media links survive both: they are signed with a key stored like a
+  data key, not with the master key itself.
+
+### Master keys in Transit
+
+A local master key sits in the environment, so anyone who can read the
+pods' environment or Secrets can read it. A key in an OpenBao or Vault
+Transit engine never leaves it: Araldo asks Transit to wrap and unwrap data
+keys, and caches the unwrapped data keys in memory. Araldo cannot start
+while Transit is unreachable (it needs Transit to read its signing key);
+running pods keep working on cached keys.
+
+Transit needs a key (`aes256-gcm96`, the default type) and a token or role
+whose policy allows `update` on `<mount>/encrypt/<key>` and
+`<mount>/decrypt/<key>`, nothing else. In Kubernetes, bind the role to the
+pods' own ServiceAccount (the chart's `serviceAccount.create`) and to an
+audience (`transit.audience`), so no other workload's token works.
+
+To move an install from a local key to Transit:
+
+1. Configure Transit and keep `ARALDO_MASTER_KEYS`: Transit becomes primary,
+   and the local key still unwraps what it wrapped.
+2. Run `araldo keys rotate` to rewrap every data key under Transit.
+3. Check `araldo keys status`: the local key should wrap nothing.
+4. Remove `ARALDO_MASTER_KEYS`, and keep the old key in offline escrow for
+   database backups taken before step 2.
 
 ## Users
 
@@ -528,7 +560,9 @@ The chart is in `deploy/helm/araldo` and published to
 `oci://ghcr.io/spectrum-labs-tech/charts/araldo`: `0.0.0-main` follows the
 main branch (its appVersion pins the exact image), and `X.Y.Z` follows
 release tags. It needs `existingSecret` (a Secret with `ARALDO_DATABASE_URL`
-and `ARALDO_MASTER_KEYS`) and `config.baseURL`.
+and `ARALDO_MASTER_KEYS`, unless `transit` holds the master key) and
+`config.baseURL`. With `transit.enabled` and a `transit.role`, each pod gets
+a projected ServiceAccount token for the role's audience and logs in with it.
 
 **Migrations run before the rollout.** A `pre-install`/`pre-upgrade` hook Job
 runs `araldo migrate`; only when it succeeds does Helm update the Deployments.

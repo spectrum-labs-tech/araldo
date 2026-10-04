@@ -90,13 +90,14 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 		}
 	}
 	a := &App{Cfg: cfg, Log: log, Store: st, meters: noop.NewMeterProvider()}
-	if cfg.MasterKeys != "" {
-		mk, err := keyring.ParseMasterKeys(cfg.MasterKeys)
-		if err != nil {
+	if mk, err := masterKeys(cfg); err != nil {
+		st.Close()
+		return nil, err
+	} else if mk != nil {
+		if a.Keys, err = keyring.Open(ctx, mk, st); err != nil {
 			st.Close()
 			return nil, err
 		}
-		a.Keys = keyring.New(mk, st)
 	}
 	client := netguard.Client(cfg.AllowPrivateNetworks, 60*time.Second)
 	reg := platform.NewRegistry(
@@ -132,6 +133,33 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 
 // Close releases the database pool.
 func (a *App) Close() { a.Store.Close() }
+
+// masterKeys builds the configured master keys: the Transit key first,
+// then local keys. Nil when none are configured.
+func masterKeys(cfg config.Config) (*keyring.MasterKeys, error) {
+	var local *keyring.MasterKeys
+	if cfg.MasterKeys != "" {
+		var err error
+		if local, err = keyring.ParseMasterKeys(cfg.MasterKeys); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.Transit.Addr == "" {
+		return local, nil
+	}
+	t := cfg.Transit
+	transit, err := keyring.NewTransit(keyring.TransitConfig{
+		Addr: t.Addr, Mount: t.Mount, Key: t.Key, Token: t.Token,
+		Role: t.Role, AuthPath: t.AuthPath, JWTFile: t.JWTFile,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if local == nil {
+		return keyring.NewMasterKeys(transit)
+	}
+	return local.Prepend(transit)
+}
 
 // StartTelemetry starts metric export as the OTEL_* variables configure it
 // (ADR 0014) and instruments the use cases. The worker started afterwards

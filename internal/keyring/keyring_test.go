@@ -33,7 +33,11 @@ func newKeyring(t *testing.T, spec string, st Store) *Keyring {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(m, st)
+	k, err := Open(t.Context(), m, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
 }
 
 func TestRoundTrip(t *testing.T) {
@@ -111,12 +115,15 @@ func TestRotationKeepsOldSecretsReadable(t *testing.T) {
 
 	// A new primary master key: rewrap everything, then drop k1.
 	n, err := newKeyring(t, k2+","+k1, st).RewrapAll(t.Context())
-	if err != nil || n != 2 {
-		t.Fatalf("RewrapAll = %d, %v; want 2 keys", n, err)
+	if err != nil || n != 3 {
+		t.Fatalf("RewrapAll = %d, %v; want 3 keys (two versions and the signing key)", n, err)
 	}
-	unrelated := newKeyring(t, masterKeys(t, "k3"), st)
-	if _, err := unrelated.Decrypt(t.Context(), org, "a", old); !errors.Is(err, ErrNoKey) {
-		t.Fatalf("Decrypt with an unknown master key = %v, want ErrNoKey", err)
+	m3, err := ParseMasterKeys(masterKeys(t, "k3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(t.Context(), m3, st); !errors.Is(err, ErrNoKey) {
+		t.Fatalf("Open with an unknown master key = %v, want ErrNoKey", err)
 	}
 	onlyK2 := newKeyring(t, k2, st)
 	for want, ct := range map[string][]byte{"before": old, "after": newer} {
@@ -174,15 +181,28 @@ func TestDerive(t *testing.T) {
 	t.Parallel()
 	spec := masterKeys(t, "a", "b")
 	first, second, _ := strings.Cut(spec, ",")
-	a := newKeyring(t, first, nil)
+	st := NewMemStore()
+	a := newKeyring(t, first, st)
 	if got := a.Derive("media-urls"); len(got) != 32 || bytes.Equal(got, a.Derive("other")) {
 		t.Fatalf("Derive: %x (labels must give different keys)", got)
 	}
-	// The primary key alone decides; a new primary gives new keys.
-	if !bytes.Equal(a.Derive("media-urls"), newKeyring(t, first+","+second, nil).Derive("media-urls")) {
-		t.Fatal("Derive depends on more than the primary key")
+	// Earlier versions derived from the primary key's raw bytes; the stored
+	// root starts from the same value, so links they signed stay valid.
+	_, enc, _ := strings.Cut(first, ":")
+	raw, err := decodeKey(enc)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if bytes.Equal(a.Derive("media-urls"), newKeyring(t, second+","+first, nil).Derive("media-urls")) {
-		t.Fatal("a new primary key should give new derived keys")
+	if want := hmacSHA256(hmacSHA256(raw, "araldo:v1:derive"), "media-urls"); !bytes.Equal(a.Derive("media-urls"), want) {
+		t.Fatal("Derive differs from the earlier derivation")
+	}
+	// A new primary master key leaves the stored root, and so every derived
+	// key, unchanged.
+	if !bytes.Equal(a.Derive("media-urls"), newKeyring(t, second+","+first, st).Derive("media-urls")) {
+		t.Fatal("a new primary master key changed Derive")
+	}
+	// Seeded from the same local key, another store starts from the same root.
+	if !bytes.Equal(a.Derive("media-urls"), newKeyring(t, first, NewMemStore()).Derive("media-urls")) {
+		t.Fatal("the same local key should seed the same root")
 	}
 }

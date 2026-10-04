@@ -17,9 +17,13 @@ import (
 type Config struct {
 	// DatabaseURL is a Postgres URL (ARALDO_DATABASE_URL, or DATABASE_URL).
 	DatabaseURL string
-	// MasterKeys are "id:base64key,..." (ARALDO_MASTER_KEYS), or read from
-	// ARALDO_MASTER_KEYS_FILE (ADR 0008).
+	// MasterKeys are local master keys, "id:base64key,..."
+	// (ARALDO_MASTER_KEYS), or read from ARALDO_MASTER_KEYS_FILE (ADR 0008).
 	MasterKeys string
+	// Transit is a master key held by a Transit engine (OpenBao or Vault).
+	// When set it is the primary master key, and local keys only unwrap
+	// what they wrapped before.
+	Transit Transit
 	// BaseURL is the public URL (ARALDO_BASE_URL).
 	BaseURL string
 	// Listen is the HTTP address (ARALDO_LISTEN, default :8080).
@@ -46,6 +50,19 @@ type Config struct {
 	MaxVideoBytes int64
 }
 
+// Transit reaches a Transit key (ARALDO_TRANSIT_*). Addr and Key turn it
+// on; it authenticates with Token, or logs in as Role with the pod's
+// ServiceAccount token.
+type Transit struct {
+	Addr     string // ARALDO_TRANSIT_ADDR, e.g. http://openbao:8200
+	Mount    string // ARALDO_TRANSIT_MOUNT (default transit)
+	Key      string // ARALDO_TRANSIT_KEY, the key's name
+	Token    string // ARALDO_TRANSIT_TOKEN, or read from ARALDO_TRANSIT_TOKEN_FILE
+	Role     string // ARALDO_TRANSIT_ROLE, for Kubernetes (or JWT) auth
+	AuthPath string // ARALDO_TRANSIT_AUTH_PATH (default kubernetes)
+	JWTFile  string // ARALDO_TRANSIT_JWT_FILE (default the ServiceAccount token)
+}
+
 // S3 is an S3-compatible bucket (ARALDO_S3_*).
 type S3 struct {
 	Endpoint        string // ARALDO_S3_ENDPOINT, e.g. https://<account>.r2.cloudflarestorage.com
@@ -60,8 +77,17 @@ type S3 struct {
 // worker); one-off commands that touch no secrets can skip them.
 func Load(needKeys bool) (Config, error) {
 	c := Config{
-		DatabaseURL:    first(os.Getenv("ARALDO_DATABASE_URL"), os.Getenv("DATABASE_URL")),
-		MasterKeys:     os.Getenv("ARALDO_MASTER_KEYS"),
+		DatabaseURL: first(os.Getenv("ARALDO_DATABASE_URL"), os.Getenv("DATABASE_URL")),
+		MasterKeys:  os.Getenv("ARALDO_MASTER_KEYS"),
+		Transit: Transit{
+			Addr:     os.Getenv("ARALDO_TRANSIT_ADDR"),
+			Mount:    os.Getenv("ARALDO_TRANSIT_MOUNT"),
+			Key:      os.Getenv("ARALDO_TRANSIT_KEY"),
+			Token:    os.Getenv("ARALDO_TRANSIT_TOKEN"),
+			Role:     os.Getenv("ARALDO_TRANSIT_ROLE"),
+			AuthPath: os.Getenv("ARALDO_TRANSIT_AUTH_PATH"),
+			JWTFile:  os.Getenv("ARALDO_TRANSIT_JWT_FILE"),
+		},
 		BaseURL:        strings.TrimRight(first(os.Getenv("ARALDO_BASE_URL"), "http://localhost:8080"), "/"),
 		Listen:         first(os.Getenv("ARALDO_LISTEN"), ":8080"),
 		ClientIPHeader: os.Getenv("ARALDO_CLIENT_IP_HEADER"),
@@ -102,11 +128,26 @@ func Load(needKeys bool) (Config, error) {
 		}
 		c.MasterKeys = strings.TrimSpace(string(b))
 	}
+	if f := os.Getenv("ARALDO_TRANSIT_TOKEN_FILE"); f != "" && c.Transit.Token == "" {
+		b, err := os.ReadFile(f) //nolint:gosec // G304: the operator chooses this path
+		if err != nil {
+			errs = append(errs, fmt.Errorf("ARALDO_TRANSIT_TOKEN_FILE: %w", err))
+		}
+		c.Transit.Token = strings.TrimSpace(string(b))
+	}
+	if t := c.Transit; t.Addr != "" || t.Key != "" {
+		if t.Addr == "" || t.Key == "" {
+			errs = append(errs, errors.New("ARALDO_TRANSIT_ADDR and ARALDO_TRANSIT_KEY go together"))
+		}
+		if t.Token == "" && t.Role == "" {
+			errs = append(errs, errors.New("Transit needs ARALDO_TRANSIT_TOKEN (or _FILE) or ARALDO_TRANSIT_ROLE"))
+		}
+	}
 	if c.DatabaseURL == "" {
 		errs = append(errs, errors.New("ARALDO_DATABASE_URL is required"))
 	}
-	if needKeys && c.MasterKeys == "" {
-		errs = append(errs, errors.New("ARALDO_MASTER_KEYS is required (generate one with: araldo keys generate)"))
+	if needKeys && c.MasterKeys == "" && c.Transit.Addr == "" {
+		errs = append(errs, errors.New("ARALDO_MASTER_KEYS or ARALDO_TRANSIT_ADDR is required (generate a local key with: araldo keys generate)"))
 	}
 	if u, err := url.Parse(c.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
 		errs = append(errs, fmt.Errorf("ARALDO_BASE_URL %q is not an absolute URL", c.BaseURL))

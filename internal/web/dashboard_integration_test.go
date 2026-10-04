@@ -80,7 +80,11 @@ func newDash(t *testing.T, extra ...platform.Adapter) *dash {
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	adapters := append([]platform.Adapter{sandbox.New("https://araldo.test")}, extra...)
-	s := core.New(st, keyring.New(mk, st), platform.NewRegistry(adapters...), log, core.Config{BaseURL: "https://araldo.test"})
+	kr, krErr := keyring.Open(t.Context(), mk, st)
+	if krErr != nil {
+		t.Fatal(krErr)
+	}
+	s := core.New(st, kr, platform.NewRegistry(adapters...), log, core.Config{BaseURL: "https://araldo.test"})
 	email := fmt.Sprintf("web-%s@example.com", uuid.NewString()[:8])
 	u, err := s.CreateUser(ctx, email, "Owner", "correct horse battery")
 	if err != nil {

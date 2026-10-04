@@ -65,3 +65,50 @@ func TestLoadS3(t *testing.T) {
 		t.Fatalf("with S3: %+v, %v", c.S3, err)
 	}
 }
+
+func TestLoadTransit(t *testing.T) {
+	t.Setenv("ARALDO_DATABASE_URL", "postgres://x")
+	t.Setenv("ARALDO_BASE_URL", "https://araldo.example")
+	t.Setenv("ARALDO_MASTER_KEYS", "")
+	t.Setenv("ARALDO_MASTER_KEYS_FILE", "")
+	tests := map[string]struct {
+		env  map[string]string
+		want string // a substring of the error; empty for success
+	}{
+		"a token": {
+			env: map[string]string{"ARALDO_TRANSIT_ADDR": "http://bao:8200", "ARALDO_TRANSIT_KEY": "araldo", "ARALDO_TRANSIT_TOKEN": "t"},
+		},
+		"a role": {
+			env: map[string]string{"ARALDO_TRANSIT_ADDR": "http://bao:8200", "ARALDO_TRANSIT_KEY": "araldo", "ARALDO_TRANSIT_ROLE": "araldo"},
+		},
+		"no key name": {
+			env:  map[string]string{"ARALDO_TRANSIT_ADDR": "http://bao:8200", "ARALDO_TRANSIT_ROLE": "araldo"},
+			want: "ARALDO_TRANSIT_KEY",
+		},
+		"no way to log in": {
+			env:  map[string]string{"ARALDO_TRANSIT_ADDR": "http://bao:8200", "ARALDO_TRANSIT_KEY": "araldo"},
+			want: "ARALDO_TRANSIT_ROLE",
+		},
+		"neither master keys nor Transit": {
+			env:  map[string]string{},
+			want: "ARALDO_TRANSIT_ADDR",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			for _, k := range []string{"ARALDO_TRANSIT_ADDR", "ARALDO_TRANSIT_KEY", "ARALDO_TRANSIT_TOKEN", "ARALDO_TRANSIT_TOKEN_FILE", "ARALDO_TRANSIT_ROLE"} {
+				t.Setenv(k, tt.env[k])
+			}
+			c, err := Load(true)
+			if tt.want == "" {
+				if err != nil || c.Transit.Addr == "" {
+					t.Fatalf("Load = %+v, %v", c.Transit, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Load error %v, want one mentioning %s", err, tt.want)
+			}
+		})
+	}
+}

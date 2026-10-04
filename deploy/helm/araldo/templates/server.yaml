@@ -20,6 +20,7 @@ spec:
       annotations: {{ toYaml . | nindent 8 }}
       {{- end }}
     spec:
+      serviceAccountName: {{ include "araldo.serviceAccountName" . }}
       {{- include "araldo.podSecurity" . | nindent 6 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets: {{ toYaml . | nindent 8 }}
@@ -34,6 +35,7 @@ spec:
             {{- include "araldo.metricsPort" . | nindent 12 }}
           env:
             {{- include "araldo.metricsEnv" . | nindent 12 }}
+            {{- include "araldo.transitEnv" . | nindent 12 }}
             {{- include "araldo.env" . | nindent 12 }}
           envFrom:
             - secretRef: { name: {{ $secret }} }
@@ -49,7 +51,13 @@ spec:
             periodSeconds: 3
             failureThreshold: 60
           resources: {{ toYaml .Values.server.resources | nindent 12 }}
+          {{- with include "araldo.transitMount" . }}
+          volumeMounts: {{ . | nindent 12 }}
+          {{- end }}
           {{- include "araldo.containerSecurity" . | nindent 10 }}
+      {{- with include "araldo.transitVolume" . }}
+      volumes: {{ . | nindent 8 }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector: {{ toYaml . | nindent 8 }}
       {{- end }}

@@ -277,7 +277,7 @@ func runUsers(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 
 func runKeys(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return usageErr("keys generate | rotate")
+		return usageErr("keys generate | rotate | status")
 	}
 	switch args[0] {
 	case "generate":
@@ -306,10 +306,51 @@ func runKeys(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		if err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(stdout, "Rewrapped %d data keys under the primary master key. Keys no longer listed can be retired.\n", n)
+		_, _ = fmt.Fprintf(stdout, "Rewrapped %d data keys under the primary master key. Run araldo keys status to see which master keys can be retired.\n", n)
 		return nil
+	case "status":
+		if err := flags("keys status", stderr, args[1:], func(*flag.FlagSet) {}); err != nil {
+			return err
+		}
+		a, err := open(ctx, true)
+		if err != nil {
+			return err
+		}
+		defer a.Close()
+		use, err := a.Keys.Usage(ctx)
+		if err != nil {
+			return err
+		}
+		return printKeyUsage(stdout, use)
 	}
 	return usageErr("unknown keys command %q", args[0])
+}
+
+// printKeyUsage shows each master key, what it wraps, and what to do
+// about it.
+func printKeyUsage(w io.Writer, use []keyring.KeyUse) error {
+	missing := false
+	for _, u := range use {
+		var note string
+		switch {
+		case !u.Configured:
+			note = "NOT CONFIGURED: these data keys cannot be read until it is added back"
+			missing = true
+		case u.Primary:
+			note = "primary"
+		case u.DataKeys == 0:
+			note = "wraps nothing: can be removed"
+		default:
+			note = "still in use: run araldo keys rotate"
+		}
+		if _, err := fmt.Fprintf(w, "%-40s %5d data keys  %s\n", u.ID, u.DataKeys, note); err != nil {
+			return err
+		}
+	}
+	if missing {
+		return errors.New("some data keys are wrapped by a master key that is not configured")
+	}
+	return nil
 }
 
 func runAPIKeys(ctx context.Context, args []string, stdout, stderr io.Writer) error {

@@ -1,5 +1,6 @@
 # Araldo Helm values. Secrets never go here: point existingSecret at a
-# Secret holding ARALDO_DATABASE_URL and ARALDO_MASTER_KEYS (ADR 0008).
+# Secret holding ARALDO_DATABASE_URL and ARALDO_MASTER_KEYS, or use transit
+# for the master key (ADR 0008).
 
 image:
   repository: ghcr.io/spectrum-labs-tech/araldo
@@ -11,8 +12,9 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# Required: a Secret with ARALDO_DATABASE_URL and ARALDO_MASTER_KEYS (and
-# any other ARALDO_* secrets). Its keys become environment variables.
+# Required: a Secret with ARALDO_DATABASE_URL and ARALDO_MASTER_KEYS (unless
+# transit holds the master key), and any other ARALDO_* secrets. Its keys
+# become environment variables.
 existingSecret: ""
 
 config:
@@ -23,6 +25,31 @@ config:
   clientIPHeader: ""
   # Let webhooks and adapters reach private networks (self-hosters only).
   allowPrivateNetworks: false
+
+# Keep the master key in OpenBao or Vault Transit rather than in existingSecret (ADR 0008; see
+# docs/operations.md, "Master keys in Transit"). Transit wraps and unwraps data keys; the master key
+# never leaves it. With a role, the pods log in with a projected ServiceAccount token (Kubernetes or
+# JWT auth); without one, put ARALDO_TRANSIT_TOKEN in existingSecret.
+transit:
+  enabled: false
+  # The server, e.g. http://openbao.openbao.svc:8200.
+  addr: ""
+  # The Transit key's name, and the engine's mount.
+  key: ""
+  mount: transit
+  # The auth role the pods log in as, and the auth method's mount.
+  role: ""
+  authPath: kubernetes
+  # The audience the projected token is minted for: the role's bound audience.
+  audience: openbao
+  tokenExpirationSeconds: 3600
+
+# The pods' ServiceAccount. Create one when a Transit role is bound to it, so no other workload in
+# the namespace shares its identity.
+serviceAccount:
+  create: false
+  # Defaults to the release's full name when created, else the namespace's default account.
+  name: ""
 
 # Database migrations.
 migrations:

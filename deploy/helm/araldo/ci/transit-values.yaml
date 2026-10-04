@@ -1,0 +1,12 @@
+# The master key in OpenBao Transit, logged in to with a projected ServiceAccount token.
+existingSecret: araldo-secrets
+config:
+  baseURL: https://araldo.example.com
+serviceAccount:
+  create: true
+transit:
+  enabled: true
+  addr: http://openbao.openbao.svc:8200
+  key: araldo-master
+  role: araldo
+  authPath: kubernetes

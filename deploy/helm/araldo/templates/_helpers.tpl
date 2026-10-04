@@ -90,3 +90,56 @@ securityContext:
   readOnlyRootFilesystem: true
   capabilities: { drop: [ALL] }
 {{- end -}}
+
+{{- define "araldo.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create -}}
+{{- default (include "araldo.fullname" .) .Values.serviceAccount.name -}}
+{{- else -}}
+{{- default "default" .Values.serviceAccount.name -}}
+{{- end -}}
+{{- end -}}
+
+{{/* Transit settings for the long-running roles; before araldo.env so extraEnv can override them. */}}
+{{- define "araldo.transitEnv" -}}
+{{- with .Values.transit }}
+{{- if .enabled }}
+- name: ARALDO_TRANSIT_ADDR
+  value: {{ required "transit.addr is required" .addr | quote }}
+- name: ARALDO_TRANSIT_KEY
+  value: {{ required "transit.key is required" .key | quote }}
+- name: ARALDO_TRANSIT_MOUNT
+  value: {{ .mount | quote }}
+{{- if .role }}
+- name: ARALDO_TRANSIT_ROLE
+  value: {{ .role | quote }}
+- name: ARALDO_TRANSIT_AUTH_PATH
+  value: {{ .authPath | quote }}
+- name: ARALDO_TRANSIT_JWT_FILE
+  value: /var/run/secrets/araldo/transit/token
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{- define "araldo.transitLogin" -}}
+{{- and .Values.transit.enabled .Values.transit.role -}}
+{{- end -}}
+
+{{/* The projected token Transit login reads, minted for the role's audience. */}}
+{{- define "araldo.transitVolume" -}}
+{{- if include "araldo.transitLogin" . }}
+- name: transit-token
+  projected:
+    sources:
+      - serviceAccountToken:
+          path: token
+          audience: {{ .Values.transit.audience | quote }}
+          expirationSeconds: {{ .Values.transit.tokenExpirationSeconds }}
+{{- end }}
+{{- end -}}
+
+{{- define "araldo.transitMount" -}}
+{{- if include "araldo.transitLogin" . }}
+- { name: transit-token, mountPath: /var/run/secrets/araldo/transit, readOnly: true }
+{{- end }}
+{{- end -}}

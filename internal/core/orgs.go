@@ -124,6 +124,53 @@ func (s *Service) UpdateOrg(ctx context.Context, a Actor, ss *model.Session, nam
 	})
 }
 
+// DeleteOrg deletes the org and everything in it (ADR 0008): brands,
+// channels, posts and their history, templates, media (files in object
+// storage too), keys, webhooks and invitations, and its data key, so its
+// stored credentials can never be decrypted again (crypto-shredding).
+// People stay: accounts are global. Owners only, in sudo mode, typing the
+// org's name; the audit log keeps the record.
+func (s *Service) DeleteOrg(ctx context.Context, a Actor, ss *model.Session, confirmName string) error {
+	if err := a.require(PermOrgWrite); err != nil {
+		return err
+	}
+	if err := s.requireSudoFor(a, ss); err != nil {
+		return err
+	}
+	o, err := s.store.Org(ctx, a.OrgID)
+	if err != nil {
+		return notFound(err, "org")
+	}
+	if strings.TrimSpace(confirmName) != o.Name {
+		return apperr.Invalid("confirm_mismatch", "confirm", "Type the org's name, %s, exactly, to delete it.", o.Name)
+	}
+	objects, err := s.store.OrgObjectKeys(ctx, o.ID)
+	if err != nil {
+		return err
+	}
+	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := s.audit(ctx, tx, a, "org.delete", id.Format(id.Org, o.ID), map[string]any{"name": o.Name}); err != nil {
+			return err
+		}
+		if err := tx.DeleteDataKeys(ctx, o.ID); err != nil {
+			return err
+		}
+		return tx.DeleteOrg(ctx, o.ID)
+	})
+	if err != nil {
+		return err
+	}
+	s.keys.Forget(o.ID)
+	if s.blobs != nil {
+		for _, k := range objects {
+			if err := s.blobs.Delete(context.WithoutCancel(ctx), k); err != nil {
+				s.log.WarnContext(ctx, "deleting a deleted org's media file failed", "org", id.Format(id.Org, o.ID), "key", k, "err", err)
+			}
+		}
+	}
+	return nil
+}
+
 // Members lists an org's members.
 func (s *Service) Members(ctx context.Context, a Actor) ([]model.Membership, error) {
 	if a.IsKey() {

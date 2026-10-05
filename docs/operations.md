@@ -384,7 +384,16 @@ araldo admin members remove --org "Spectrum Labs" --email them@example.com
 araldo admin org update     --org "Spectrum Labs" --name "Spectrum Labs" --require-mfa true
 ```
 
-The rules still hold: an org keeps at least one owner. The old names
+The rules still hold: an org keeps at least one owner.
+
+**Deleting an org** removes it and everything in it, for good: brands,
+channels, posts and their history, templates, media (files in a bucket
+too), API keys, webhooks and invitations, and its data key, so its stored
+credentials stay unreadable even in old database backups
+([ADR 0008](adr/0008-encryption.md)). Members keep their accounts, and the
+audit log keeps the record. An owner does it at the bottom of the org's
+page, confirming their password and typing its name; the operator, with
+`araldo admin org delete --org NAME --confirm NAME`. The old names
 (`araldo members`, `araldo org`, and the other commands now under `admin`)
 still work for now, and say where they went; `--as` is no longer needed.
 

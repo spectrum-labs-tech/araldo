@@ -276,6 +276,9 @@
   .card.attention {
     @apply border-warn bg-warn-bg;
   }
+  .card.danger-zone {
+    @apply border-bad;
+  }
   .card.secret {
     @apply border-2 border-accent;
   }

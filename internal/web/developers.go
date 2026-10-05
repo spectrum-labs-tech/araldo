@@ -441,6 +441,21 @@ func (s *Server) saveOrg(c *reqCtx) error {
 	return redirect(c, "/org", "Saved.")
 }
 
+func (s *Server) deleteOrg(c *reqCtx) error {
+	name := c.org.Name
+	if err := s.svc.DeleteOrg(c.ctx(), c.actor, c.session, c.r.PostFormValue("confirm")); err != nil {
+		if apperr.As(err).Code == "reauthentication_required" {
+			return redirect(c, "/confirm?next=/org", "Confirm your password to delete the org.")
+		}
+		d, derr := s.orgData(c)
+		if derr != nil {
+			return derr
+		}
+		return s.formErr(c, "org", "org", "Organization", d, err)
+	}
+	return redirect(c, "/", name+" was deleted.")
+}
+
 func (s *Server) changeMember(c *reqCtx) error {
 	uid, err := uuid.Parse(c.r.PathValue("id"))
 	if err != nil {

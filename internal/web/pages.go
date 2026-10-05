@@ -113,6 +113,7 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /org", s.app("org", s.orgPage))
 	s.mux.HandleFunc("POST /org", s.app("org", s.saveOrg))
+	s.mux.HandleFunc("POST /org/delete", s.app("org", s.deleteOrg))
 	s.mux.HandleFunc("POST /org/invitations", s.app("org", s.inviteMember))
 	s.mux.HandleFunc("POST /org/invitations/{id}/revoke", s.app("org", s.revokeInvitation))
 	s.mux.HandleFunc("GET /org/members/{id}", s.app("org", s.memberDetail))

@@ -13,7 +13,7 @@ open a pull request.
 | [0005](0005-api-conventions.md) | A contract-first API with Stripe-style conventions | accepted; built, except SDKs and the dashboard's request log; amended by ADR 0019 and ADR 0028 |
 | [0006](0006-test-mode-and-api-keys.md) | Every org has a test mode that can never post publicly | accepted; built; key rolling amended by ADR 0019 |
 | [0007](0007-authentication-and-mfa.md) | Passwords, passkeys and TOTP built in; MFA can be required per org | accepted; passwords, TOTP, recovery codes and required MFA built; passkeys, email flows and the breached-password check not yet |
-| [0008](0008-encryption.md) | Secrets are envelope-encrypted per org; the master keys never touch the database | accepted; built, except `keys rotate-org`, `keys export` and deleting an org |
+| [0008](0008-encryption.md) | Secrets are envelope-encrypted per org; the master keys never touch the database | accepted; built (deleting an org crypto-shreds it), except `keys rotate-org` and `keys export` |
 | [0009](0009-platform-adapters.md) | Platforms are adapters; developer app credentials live in the database | accepted; built for every platform but Reddit; install-wide apps and Mastodon app registration not yet (ADR 0021) |
 | [0010](0010-templates.md) | Templates are versioned Go text/templates with a JSON Schema and per-platform bodies | accepted; built, except the per-version `media` field and warnings on save |
 | [0011](0011-publishing.md) | Publishing is an outbox with leases, and it never double-posts silently | accepted; built, except `Finder` reconciliation and editing a queued target; slots changed by ADR 0022 |

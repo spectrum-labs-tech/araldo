@@ -46,8 +46,20 @@ func (s *Store) UpdateOrg(ctx context.Context, o *model.Org) error {
 	return s.execOne(ctx, `UPDATE orgs SET name = $2, require_mfa = $3, updated_at = now() WHERE id = $1`, o.ID, o.Name, o.RequireMFA)
 }
 
+// DeleteOrg deletes an org and, through its foreign keys, everything in
+// it. The audit log, which has none, keeps its record.
 func (s *Store) DeleteOrg(ctx context.Context, id uuid.UUID) error {
 	return s.execOne(ctx, `DELETE FROM orgs WHERE id = $1`, id)
+}
+
+// OrgObjectKeys are the keys of an org's media files in object storage,
+// which deleting its rows leaves behind.
+func (s *Store) OrgObjectKeys(ctx context.Context, orgID uuid.UUID) ([]string, error) {
+	rows, err := s.q.Query(ctx, `SELECT storage_key FROM media WHERE org_id = $1 AND storage = 's3' AND storage_key <> ''`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 func (s *Store) AddMember(ctx context.Context, m *model.Membership) error {

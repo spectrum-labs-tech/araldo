@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/linkedin"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/threads"
 
@@ -574,6 +575,40 @@ func TestDisabledWebhookOnTheOverview(t *testing.T) {
 	}
 	for _, issue := range a11yIssues(page, true) {
 		t.Errorf("/ with a stopped webhook: %s", issue)
+	}
+}
+
+// TestDeleteTheOrg deletes an org from its page: the name typed wrong is
+// refused, typed right it goes, and its owner, in no other org, is asked
+// to make one.
+func TestDeleteTheOrg(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	o, err := d.s.Org(t.Context(), d.owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(confirm string) *httptest.ResponseRecorder {
+		form := url.Values{"csrf": {d.login.Session.CSRFToken}, "confirm": {confirm}}
+		r := httptest.NewRequest(http.MethodPost, "/org/delete", strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return d.send(r)
+	}
+	if page := d.send(httptest.NewRequest(http.MethodGet, "/org", nil)).Body.String(); !strings.Contains(page, "Delete this org") {
+		t.Fatal("the owner sees no way to delete the org")
+	}
+	if rec := post("wrong"); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "exactly") {
+		t.Fatalf("a wrong name: %d", rec.Code)
+	}
+	rec := post(o.Name)
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.Contains(loc, "was+deleted") {
+		t.Fatalf("deleting: %d %q", rec.Code, loc)
+	}
+	if _, err := d.s.Org(t.Context(), d.owner); apperr.As(err).Kind != apperr.KindNotFound {
+		t.Fatalf("the org after deleting: %v", err)
+	}
+	if loc := d.send(httptest.NewRequest(http.MethodGet, "/", nil)).Header().Get("Location"); !strings.HasPrefix(loc, "/onboarding") {
+		t.Fatalf("the owner, in no org now, goes to %q", loc)
 	}
 }
 

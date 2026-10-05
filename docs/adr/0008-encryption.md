@@ -1,6 +1,6 @@
 # ADR 0008: Secrets are envelope-encrypted per org; the master keys never touch the database
 
-- Status: accepted; built, except `keys rotate-org`, `keys export` and deleting an org
+- Status: accepted; built (deleting an org crypto-shreds it), except `keys rotate-org` and `keys export`
 - Date: 2026-09-28
 
 ## Context

@@ -122,8 +122,11 @@ func runAdminMembers(ctx context.Context, args []string, stdout, stderr io.Write
 }
 
 func runAdminOrg(ctx context.Context, args []string, _, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "delete" {
+		return runAdminOrgDelete(ctx, args[1:], stderr)
+	}
 	if len(args) == 0 || args[0] != "update" {
-		return usageErr("org update [--org ORG] [--name NAME] [--require-mfa true|false]")
+		return usageErr("org update [--org ORG] [--name NAME] [--require-mfa true|false] | delete --org ORG --confirm NAME")
 	}
 	var as, org, name, requireMFA string
 	if err := flags("org update", stderr, args[1:], func(fs *flag.FlagSet) {
@@ -156,5 +159,30 @@ func runAdminOrg(ctx context.Context, args []string, _, stderr io.Writer) error 
 		return err
 	}
 	_, _ = fmt.Fprintf(stderr, "Updated %s (two-factor required: %v).\n", newName, mfa)
+	return nil
+}
+
+// runAdminOrgDelete deletes an org as the operator, who must name it twice:
+// with --org, and its exact name with --confirm.
+func runAdminOrgDelete(ctx context.Context, args []string, stderr io.Writer) error {
+	var org, confirm string
+	if err := flags("org delete", stderr, args, func(fs *flag.FlagSet) {
+		fs.StringVar(&org, "org", "", "the org to delete, by ID or name (required)")
+		fs.StringVar(&confirm, "confirm", "", "the org's exact name, to confirm (required)")
+	}); err != nil {
+		return err
+	}
+	if org == "" || confirm == "" {
+		return usageErr("--org and --confirm (the org's exact name) are required")
+	}
+	a, actor, o, err := adminActor(ctx, org, "", false, "araldo admin org delete", stderr)
+	if err != nil {
+		return err
+	}
+	defer a.Close()
+	if err := a.Svc.DeleteOrg(ctx, actor, nil, confirm); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(stderr, "Deleted %s and everything in it.\n", o.Name)
 	return nil
 }

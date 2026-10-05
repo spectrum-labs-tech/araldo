@@ -76,4 +76,16 @@
   {{end}}
 </section>
 {{end}}
+
+{{if $d.IsOwner}}
+<section class="card danger-zone">
+  <h2>Delete this org</h2>
+  <p class="mb-3">This deletes {{$d.Org.Name}} and everything in it, for good: its brands, channels, posts and their history, templates, media, API keys, webhooks and invitations. Its stored credentials become unreadable even in old database backups. Members keep their accounts.</p>
+  <form method="post" action="/org/delete" class="flex flex-col gap-4">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Type the org's name, <strong>{{$d.Org.Name}}</strong>, to confirm <input name="confirm" autocomplete="off" required></label>
+    <div><button class="btn-danger">Delete {{$d.Org.Name}}</button></div>
+  </form>
+</section>
+{{end}}
 {{end}}

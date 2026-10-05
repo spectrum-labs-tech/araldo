@@ -99,6 +99,20 @@ func TestMembersAndOrg(t *testing.T) {
 	if withUser != 0 || !strings.Contains(strings.Join(commands, ";"), "araldo admin members add") {
 		t.Fatalf("member changes audited with a member %d times; commands %v", withUser, commands)
 	}
+
+	// The operator deletes the org, naming it twice.
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(t.Context(), []string{"admin", "org", "delete", "--org", org, "--confirm", "not it"}, &stdout, &stderr); code == ExitOK {
+		t.Fatal("deleted with the wrong name")
+	}
+	if _, errOut = run("admin", "org", "delete", "--org", org, "--confirm", org); !strings.Contains(errOut, "Deleted "+org) {
+		t.Fatalf("delete: %q", errOut)
+	}
+	stderr.Reset()
+	if code := Run(t.Context(), []string{"admin", "members", "list", "--org", org}, &stdout, &stderr); code == ExitOK {
+		t.Fatal("the deleted org is still there")
+	}
 }
 
 // hasRow reports whether a listing has a row for email with role.

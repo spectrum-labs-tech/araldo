@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
@@ -81,9 +82,12 @@ func (s *Store) EventsSince(ctx context.Context, orgID uuid.UUID, livemode bool,
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Event, error) { return scanEvent(r) })
 }
 
-// PruneEvents deletes events (and their deliveries) older than before.
-func (s *Store) PruneEvents(ctx context.Context, before time.Time) (int, error) {
-	tag, err := s.q.Exec(ctx, `DELETE FROM events WHERE id IN (SELECT id FROM events WHERE created_at < $1 LIMIT 5000)`, before)
+// PruneEvents deletes up to limit events (and their deliveries) older than
+// before, oldest first. Event IDs are time-ordered, so the primary key
+// finds them without scanning the table.
+func (s *Store) PruneEvents(ctx context.Context, before time.Time, limit int) (int, error) {
+	tag, err := s.q.Exec(ctx, `DELETE FROM events WHERE id IN (SELECT id FROM events WHERE id < $1 ORDER BY id LIMIT $2)`,
+		id.Before(before), limit)
 	return int(tag.RowsAffected()), err
 }
 

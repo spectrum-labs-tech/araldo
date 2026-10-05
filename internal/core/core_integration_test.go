@@ -728,6 +728,38 @@ func TestReadyThroughADatabaseOutage(t *testing.T) {
 	}
 }
 
+// TestPruneEvents checks that events past retention go, in as many
+// batches as it takes, and newer ones stay.
+func TestPruneEvents(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	st := open(t)
+	var old []uuid.UUID
+	for i := range 3 {
+		u := id.Before(time.Now().Add(-core.EventRetention - time.Duration(i+1)*time.Hour))
+		copy(u[10:], uuid.New().NodeID()) // unique, and still that old
+		old = append(old, u)
+		if err := st.CreateEvent(ctx, &model.Event{ID: u, OrgID: w.org.ID, Type: "post.created", Data: []byte(`{}`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "recent"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.s.PruneEvents(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var gone, kept int
+	if err := st.Pool().QueryRow(ctx, `SELECT count(*) FILTER (WHERE id = ANY($2)), count(*) FILTER (WHERE NOT id = ANY($2))
+		FROM events WHERE org_id = $1`, w.org.ID, old).Scan(&gone, &kept); err != nil {
+		t.Fatal(err)
+	}
+	if gone != 0 || kept == 0 {
+		t.Fatalf("after pruning: %d old events left, %d recent kept", gone, kept)
+	}
+}
+
 func TestOperatorAPIKeys(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

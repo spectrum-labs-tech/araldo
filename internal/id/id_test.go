@@ -3,8 +3,10 @@
 package id
 
 import (
+	"bytes"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -84,4 +86,32 @@ func FuzzRoundTrip(f *testing.F) {
 			t.Fatalf("round trip of %x = %s, %v", b, back, err)
 		}
 	})
+}
+
+// TestBefore checks that Before(t) sorts after every ID made before t and
+// before every ID made after it, so pruning by ID finds exactly the old rows.
+func TestBefore(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	made := New()
+	for _, tt := range []struct {
+		name string
+		at   time.Time
+		less bool // whether made sorts below Before(at)
+	}{
+		{"a second later", now.Add(time.Second), true},
+		{"a second earlier", now.Add(-time.Second), false},
+		{"a day earlier", now.Add(-24 * time.Hour), false},
+	} {
+		b := Before(tt.at)
+		if b.Version() != 7 || b.Variant() != uuid.RFC4122 {
+			t.Fatalf("Before(%s) = %s: not a version 7 UUID", tt.name, b)
+		}
+		if got := bytes.Compare(made[:], b[:]) < 0; got != tt.less {
+			t.Errorf("an ID made now sorts below Before(%s): %t, want %t", tt.name, got, tt.less)
+		}
+	}
+	if a, b := Before(now), Before(now.Add(time.Millisecond)); bytes.Compare(a[:], b[:]) >= 0 {
+		t.Error("Before is not ordered by time")
+	}
 }

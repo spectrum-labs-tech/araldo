@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -60,6 +61,19 @@ var decoding = func() (d [256]byte) {
 // New returns a new time-ordered UUID (version 7).
 func New() uuid.UUID {
 	return uuid.Must(uuid.NewV7())
+}
+
+// Before returns the smallest version 7 UUID made at t: every ID New made
+// before t sorts below it, so a primary key index finds rows older than t.
+func Before(t time.Time) uuid.UUID {
+	var u uuid.UUID
+	ms := uint64(t.UnixMilli()) //nolint:gosec // G115: times after 1970
+	for i := range 6 {
+		u[i] = byte(ms >> (40 - 8*i))
+	}
+	u[6] = 0x70 // version 7
+	u[8] = 0x80 // RFC 9562 variant
+	return u
 }
 
 // Make returns a new ID with prefix p.

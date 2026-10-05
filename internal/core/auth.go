@@ -256,7 +256,7 @@ func (s *Service) checkSecondFactor(ctx context.Context, userID uuid.UUID, code 
 			}
 			return err
 		}
-		secret, err := s.keys.Decrypt(ctx, keyring.Install, totpAAD(u.ID), u.TOTPSecret)
+		secret, err := s.keys.With(tx).Decrypt(ctx, keyring.Install, totpAAD(u.ID), u.TOTPSecret) // through tx: see keyring.With
 		if err != nil {
 			return err
 		}
@@ -379,7 +379,7 @@ func (s *Service) ConfirmTOTP(ctx context.Context, ss *model.Session, code strin
 		if u.MFAEnabled() || len(u.TOTPSecret) == 0 {
 			return apperr.Conflict("mfa_not_pending", "Start two-factor setup again.")
 		}
-		secret, err := s.keys.Decrypt(ctx, keyring.Install, totpAAD(u.ID), u.TOTPSecret)
+		secret, err := s.keys.With(tx).Decrypt(ctx, keyring.Install, totpAAD(u.ID), u.TOTPSecret) // through tx: see keyring.With
 		if err != nil {
 			return err
 		}

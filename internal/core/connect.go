@@ -421,7 +421,8 @@ func (s *Service) connectAll(ctx context.Context, a Actor, st *model.OAuthState,
 			if err != nil {
 				return err
 			}
-			if ch.Credentials, err = s.keys.Encrypt(ctx, a.OrgID, credentialsAAD(ch.ID), raw); err != nil {
+			// Through tx: see keyring.With.
+			if ch.Credentials, err = s.keys.With(tx).Encrypt(ctx, a.OrgID, credentialsAAD(ch.ID), raw); err != nil {
 				return err
 			}
 			action, event := "channel.connect", "channel.connected"

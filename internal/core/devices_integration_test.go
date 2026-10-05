@@ -26,8 +26,7 @@ func TestDeviceSignIn(t *testing.T) {
 	code := func(err error) string { return apperr.As(err).Code }
 
 	start, err := w.s.StartDevice(ctx, "araldo CLI on laptop", true, "203.0.113.7")
-	if err != nil || authn.NormalizeUserCode(start.UserCode) != start.UserCode || start.Interval != 5 ||
-		start.VerificationURIComplete != start.VerificationURI+"?code="+start.UserCode {
+	if err != nil || authn.NormalizeUserCode(start.UserCode) != start.UserCode || start.Interval != 5 || start.VerificationURI != "https://araldo.test/device" {
 		t.Fatalf("StartDevice: %+v, %v", start, err)
 	}
 	now := time.Now()

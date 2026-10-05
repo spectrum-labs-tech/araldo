@@ -56,7 +56,9 @@ which `gh` has no counterpart of, the model is the Stripe CLI.
    - **Later,** `araldo auth login` without a pasted key: the OAuth 2.0 device authorization grant
      (RFC 8628). The CLI asks `POST /v1/auth/device` for a device code and a short user code
      (`ABCD-EFGH`), prints `! First copy your one-time code: ABCD-EFGH`, offers to open the
-     dashboard's `/device` page in the browser, and polls `POST /v1/auth/device/token` at the
+     dashboard's `/device` page in the browser (never with the code in the link: typing it is
+     what proves the request is the person's own, RFC 8628 §5.4, so the API offers no
+     `verification_uri_complete`), and polls `POST /v1/auth/device/token` at the
      interval given until the code is approved, denied or expires (15 minutes). `--with-token` reads
      a token or an API key from stdin instead, for scripts and CI.
    - **A test key and a live key per server, as the Stripe CLI keeps them.** A key belongs to one

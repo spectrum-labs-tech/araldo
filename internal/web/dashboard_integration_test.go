@@ -480,8 +480,8 @@ func TestInviteSomeone(t *testing.T) {
 }
 
 // TestApproveADevice drives the dashboard's side of the CLI's sign-in: the
-// person opens the code's page, sees what is asking, approves it, and
-// later signs the device out from their account.
+// password first, then the code typed (never taken from a link), then one
+// click to approve; later the device is signed out from the account.
 func TestApproveADevice(t *testing.T) {
 	t.Parallel()
 	d := newDash(t)
@@ -497,25 +497,35 @@ func TestApproveADevice(t *testing.T) {
 		return d.send(r)
 	}
 
-	// Typing the code shows what asks before anything is approved.
-	rec := post("/device", url.Values{"code": {strings.ToLower(start.UserCode)}})
-	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/device?code=") {
-		t.Fatalf("entering the code: %d %q", rec.Code, loc)
+	// Outside the password window, the password comes first, then back here.
+	d.s.Now = func() time.Time { return time.Now().Add(time.Hour) }
+	rec := d.send(httptest.NewRequest(http.MethodGet, "/device", nil))
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/confirm?next=/device&") {
+		t.Fatalf("outside the window: %d %q", rec.Code, loc)
 	}
-	for _, path := range []string{"/device", "/device?code=" + start.UserCode} {
-		rec = d.send(httptest.NewRequest(http.MethodGet, path, nil))
-		if rec.Code != http.StatusOK {
-			t.Fatalf("GET %s: %d", path, rec.Code)
-		}
-		for _, issue := range a11yIssues(rec.Body.String(), true) {
-			t.Errorf("%s: %s", path, issue)
-		}
+	d.s.Now = time.Now
+
+	// A link with the code in it shows the form to type it, not Approve.
+	rec = d.send(httptest.NewRequest(http.MethodGet, "/device?code="+start.UserCode, nil))
+	page := rec.Body.String()
+	if rec.Code != http.StatusOK || strings.Contains(page, `value="approve"`) || !strings.Contains(page, `name="code"`) || strings.Contains(page, start.UserCode) {
+		t.Fatalf("a link with the code: %d\n%s", rec.Code, page)
 	}
-	if page := rec.Body.String(); !strings.Contains(page, "araldo CLI on laptop") || !strings.Contains(page, "203.0.113.7") ||
-		!strings.Contains(page, "<strong>live</strong>") {
-		t.Fatalf("what asks:\n%s", page)
+	for _, issue := range a11yIssues(page, true) {
+		t.Errorf("/device: %s", issue)
 	}
-	if rec = d.send(httptest.NewRequest(http.MethodGet, "/device?code=ZZZZ-ZZZZ", nil)); rec.Code == http.StatusOK && !strings.Contains(rec.Body.String(), "No sign-in is waiting") {
+
+	// Typing the code (in any case) shows what asks, to approve in one click.
+	rec = post("/device", url.Values{"code": {strings.ToLower(start.UserCode)}})
+	page = rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(page, `value="approve"`) || !strings.Contains(page, "araldo CLI on laptop") ||
+		!strings.Contains(page, "203.0.113.7") || !strings.Contains(page, "<strong>live</strong>") {
+		t.Fatalf("the typed code: %d\n%s", rec.Code, page)
+	}
+	for _, issue := range a11yIssues(page, true) {
+		t.Errorf("/device, approving: %s", issue)
+	}
+	if rec = post("/device", url.Values{"code": {"ZZZZ-ZZZZ"}}); rec.Code == http.StatusOK || !strings.Contains(rec.Body.String(), "No sign-in is waiting") {
 		t.Fatalf("an unknown code: %d", rec.Code)
 	}
 
@@ -526,7 +536,7 @@ func TestApproveADevice(t *testing.T) {
 	if _, _, err := d.s.PollDevice(ctx, start.DeviceCode); err != nil {
 		t.Fatalf("the CLI's token after approval: %v", err)
 	}
-	page := d.send(httptest.NewRequest(http.MethodGet, "/account", nil)).Body.String()
+	page = d.send(httptest.NewRequest(http.MethodGet, "/account", nil)).Body.String()
 	m := regexp.MustCompile(`action="/account/devices/(utok_[^/]+)/revoke"`).FindStringSubmatch(page)
 	if m == nil || !strings.Contains(page, "araldo CLI on laptop") {
 		t.Fatalf("the account's devices:\n%s", page)

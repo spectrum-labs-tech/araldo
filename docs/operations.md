@@ -261,10 +261,11 @@ araldo api -X POST posts --input post.json   # ...and otherwise make it a POST, 
 
 - **Signing in is a device code**, as with `gh`: `auth login` prints a
   one-time code like `BDFG-HJKL` and opens the dashboard's **Sign in a
-  device** page (or prints its address, over SSH). Approve it there, signed
-  in and after confirming your password; the page shows the computer's
-  name, the mode and where the request came from, so approve only a code
-  you just saw in your own terminal. The CLI then gets a **token that acts
+  device** page (or prints its address, over SSH). There, confirm your
+  password, type the code, and approve: the page shows the computer's name,
+  the mode and where the request came from. The code is always typed,
+  never carried in a link, so only a code you just saw in your own terminal
+  can be approved. The CLI then gets a **token that acts
   as you**: your role in each of your orgs, read at the time, so a change
   takes effect at once. Sign devices out under **Your account → Devices**
   or with `auth logout`. A token lasts until then, or a year unused; an

@@ -20,10 +20,10 @@
 </section>
 {{else}}
 <section class="card">
-  <p class="mb-3"><code>araldo auth login</code> printed a code like <code>BDFG-HJKL</code>. Enter it to see what is asking to sign in.</p>
+  <p class="mb-3"><code>araldo auth login</code> printed a code like <code>BDFG-HJKL</code> in your terminal. Type it here to see what is asking to sign in. Never enter a code someone sent you.</p>
   <form method="post" action="/device" class="flex flex-col gap-4">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <label>Code <input name="code" value="{{$d.Code}}" autocomplete="off" autocapitalize="characters" spellcheck="false" required maxlength="20"></label>
+    <label>Code <input name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" required maxlength="20" autofocus></label>
     <div><button class="btn-primary">Continue</button></div>
   </form>
 </section>

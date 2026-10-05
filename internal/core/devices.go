@@ -32,14 +32,16 @@ const (
 	UserTokenIdle = 365 * 24 * time.Hour
 )
 
-// DeviceStart is what the CLI gets to start a sign-in (RFC 8628 §3.2).
+// DeviceStart is what the CLI gets to start a sign-in (RFC 8628 §3.2). It
+// has no verification_uri_complete, the RFC's optional link with the code
+// in it: the person always types the code, which is what proves the
+// request is their own (RFC 8628 §5.4), so a link cannot be sent to them.
 type DeviceStart struct {
-	DeviceCode              string `json:"device_code"`
-	UserCode                string `json:"user_code"`
-	VerificationURI         string `json:"verification_uri"`
-	VerificationURIComplete string `json:"verification_uri_complete"`
-	ExpiresIn               int    `json:"expires_in"`
-	Interval                int    `json:"interval"`
+	DeviceCode      string `json:"device_code"`
+	UserCode        string `json:"user_code"`
+	VerificationURI string `json:"verification_uri"`
+	ExpiresIn       int    `json:"expires_in"`
+	Interval        int    `json:"interval"`
 }
 
 // StartDevice begins a device sign-in for a token in live mode or test mode.
@@ -64,8 +66,7 @@ func (s *Service) StartDevice(ctx context.Context, deviceName string, livemode b
 	if err != nil {
 		return nil, err
 	}
-	uri := s.cfg.BaseURL + "/device"
-	return &DeviceStart{DeviceCode: code, UserCode: d.UserCode, VerificationURI: uri, VerificationURIComplete: uri + "?code=" + d.UserCode,
+	return &DeviceStart{DeviceCode: code, UserCode: d.UserCode, VerificationURI: s.cfg.BaseURL + "/device",
 		ExpiresIn: int(DeviceCodeTTL / time.Second), Interval: devicePollInterval}, nil
 }
 

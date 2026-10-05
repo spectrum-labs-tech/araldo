@@ -1658,8 +1658,7 @@ paths:
                 properties:
                   device_code: { type: string, description: Secret; poll with it. }
                   user_code: { type: string, example: BDFG-HJKL }
-                  verification_uri: { type: string }
-                  verification_uri_complete: { type: string }
+                  verification_uri: { type: string, description: "Where the person types the code. There is no verification_uri_complete: the code is always typed (RFC 8628 §5.4)." }
                   expires_in: { type: integer, description: Seconds. }
                   interval: { type: integer, description: Seconds between polls. }
         default: { $ref: "#/components/responses/Error" }

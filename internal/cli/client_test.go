@@ -39,7 +39,7 @@ func fakeAraldo(t *testing.T) (*httptest.Server, *map[string]any) {
 		case "POST /v1/auth/device":
 			_ = json.NewDecoder(r.Body).Decode(&lastBody)
 			_, _ = io.WriteString(w, `{"device_code":"dc","user_code":"BDFG-HJKL","verification_uri":"`+"http://"+r.Host+`/device",`+
-				`"verification_uri_complete":"`+"http://"+r.Host+`/device?code=BDFG-HJKL","expires_in":900,"interval":1}`)
+				`"expires_in":900,"interval":1}`)
 			return
 		case "POST /v1/auth/device/token":
 			if polls++; polls == 1 {
@@ -288,7 +288,8 @@ func TestAuthLoginWithADeviceCode(t *testing.T) {
 	if code != ExitOK || !strings.Contains(out, "Logged in to") || !strings.Contains(out, "you@example.com (owner of Spectrum Labs), test token ald_user_…test") {
 		t.Fatalf("login: exit %d %q %q", code, out, errOut)
 	}
-	if !strings.Contains(errOut, "First copy your one-time code: BDFG-HJKL") || opened != srv.URL+"/device?code=BDFG-HJKL" {
+	// The page to type the code into, never a link with the code in it.
+	if !strings.Contains(errOut, "First copy your one-time code: BDFG-HJKL") || opened != srv.URL+"/device" || !strings.Contains(errOut, "enter the code") {
 		t.Fatalf("the code and page: opened %q, %q", opened, errOut)
 	}
 	host, _ := os.Hostname()

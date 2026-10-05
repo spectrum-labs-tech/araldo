@@ -262,21 +262,20 @@ func deviceSignIn(ctx context.Context, base string, live bool, stderr io.Writer)
 		return "", fmt.Errorf("starting the sign-in: %w", err)
 	}
 	var start struct {
-		DeviceCode              string `json:"device_code"`
-		UserCode                string `json:"user_code"`
-		VerificationURI         string `json:"verification_uri"`
-		VerificationURIComplete string `json:"verification_uri_complete"`
-		ExpiresIn               int    `json:"expires_in"`
-		Interval                int    `json:"interval"`
+		DeviceCode      string `json:"device_code"`
+		UserCode        string `json:"user_code"`
+		VerificationURI string `json:"verification_uri"`
+		ExpiresIn       int    `json:"expires_in"`
+		Interval        int    `json:"interval"`
 	}
 	if err := json.Unmarshal(raw, &start); err != nil || start.DeviceCode == "" {
 		return "", fmt.Errorf("starting the sign-in: unexpected answer %s", raw)
 	}
 	_, _ = fmt.Fprintf(stderr, "! First copy your one-time code: %s\n", start.UserCode)
-	if err := openBrowser(start.VerificationURIComplete); err != nil {
+	if err := openBrowser(start.VerificationURI); err != nil {
 		_, _ = fmt.Fprintf(stderr, "  Open this page in a browser and enter it: %s\n", start.VerificationURI)
 	} else {
-		_, _ = fmt.Fprintf(stderr, "  Opened %s in your browser; approve the code there.\n", start.VerificationURI)
+		_, _ = fmt.Fprintf(stderr, "  Opened %s in your browser: enter the code there.\n", start.VerificationURI)
 	}
 	interval := time.Duration(max(start.Interval, 1)) * time.Second
 	deadline := time.Now().Add(time.Duration(start.ExpiresIn) * time.Second)

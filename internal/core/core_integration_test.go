@@ -416,7 +416,8 @@ func TestApprovalFlow(t *testing.T) {
 		t.Fatalf("editor approving: %v", err)
 	}
 	// Nor can a full-access key (which holds brands:write) lift the policy
-	// to post unreviewed; changing the rest of the brand is still its.
+	// to post unreviewed; tightening it, or changing the rest of the
+	// brand, is still its.
 	plain, _, err := w.s.CreateAPIKey(ctx, w.owner, w.session, core.APIKeyInput{Name: "ci"})
 	if err != nil {
 		t.Fatal(err)
@@ -432,6 +433,14 @@ func TestApprovalFlow(t *testing.T) {
 	if _, err := w.s.UpdateBrand(ctx, key, w.brand.ID, core.BrandInput{Name: w.brand.Name + " renamed", Timezone: w.brand.Timezone,
 		ApprovalPolicy: model.ApprovalEditorsAndKey}); err != nil {
 		t.Fatalf("a key renaming the brand: %v", err)
+	}
+	if _, err := w.s.UpdateBrand(ctx, key, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
+		ApprovalPolicy: model.ApprovalAll}); err != nil {
+		t.Fatalf("a key asking for more review: %v", err)
+	}
+	if _, err := w.s.UpdateBrand(ctx, key, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
+		ApprovalPolicy: model.ApprovalEditorsAndKey}); kind(err) != apperr.KindForbidden {
+		t.Fatalf("a key easing it again: %v", err)
 	}
 	if _, err := w.s.ReviewPost(ctx, w.owner, p.ID, true, "ship it"); err != nil {
 		t.Fatal(err)

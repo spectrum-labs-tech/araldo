@@ -450,11 +450,11 @@ func (s *Service) UpdateBrand(ctx context.Context, a Actor, brandID uuid.UUID, i
 	if err := in.check(); err != nil {
 		return nil, err
 	}
-	// Whose posts need review is for those who review them: an editor or
-	// a key could otherwise lift the policy, post, and restore it
-	// (ADR 0004).
-	if in.ApprovalPolicy != b.ApprovalPolicy && !a.Can(PermPostsApprove) {
-		return nil, apperr.Forbidden("Only admins and owners, or keys with posts:approve, can change which posts need approval.")
+	// Exempting posts from review is for those who review them: a key
+	// could otherwise lift the policy, post, and restore it (ADR 0004).
+	// Asking for more review is anyone's.
+	if in.ApprovalPolicy.Strictness() < b.ApprovalPolicy.Strictness() && !a.Can(PermPostsApprove) {
+		return nil, apperr.Forbidden("Only admins and owners, or keys with posts:approve, can make fewer posts need approval.")
 	}
 	b.Name, b.Slug, b.Timezone, b.ApprovalPolicy, b.UTMDomains = in.Name, in.Slug, in.Timezone, in.ApprovalPolicy, in.UTMDomains
 	err = s.store.InTx(ctx, func(tx *store.Store) error {

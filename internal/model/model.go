@@ -172,6 +172,17 @@ const (
 	ApprovalAll           ApprovalPolicy = "required_for_all"
 )
 
+// Strictness orders policies by how many posts they hold for review.
+func (p ApprovalPolicy) Strictness() int {
+	switch p {
+	case ApprovalEditorsAndKey:
+		return 1
+	case ApprovalAll:
+		return 2
+	}
+	return 0
+}
+
 // Valid reports whether p is known.
 func (p ApprovalPolicy) Valid() bool {
 	return p == ApprovalNone || p == ApprovalEditorsAndKey || p == ApprovalAll

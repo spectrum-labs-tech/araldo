@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS channels_mode_key;

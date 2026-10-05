@@ -21,8 +21,10 @@ approve a developer app. A mistake here is public and embarrassing.
      members. A template built against test mode works unchanged in live
      mode.
 2. **Test mode can only use sandbox channels, and live mode can never use
-   them.** The store refuses a target whose channel mode differs from the
-   post's. A sandbox channel for a platform applies that platform's real
+   them.** The database refuses a target whose mode differs from its post's
+   or its channel's, and a newsletter delivery whose mode differs from its
+   mail account's (composite foreign keys on `livemode`), so this holds even
+   where code forgets to check. A sandbox channel for a platform applies that platform's real
    rules ([ADR 0009](0009-platform-adapters.md)) and records the post
    instead of sending it, returning a fake remote ID and permalink.
 3. **Failures can be simulated** in test mode with

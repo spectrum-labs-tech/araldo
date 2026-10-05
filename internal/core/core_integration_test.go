@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/analytics"
@@ -633,6 +634,24 @@ func TestKeysNeverOutliveTheirMaker(t *testing.T) {
 	}
 	if byMember.ExpiresAt == nil || !byMember.ExpiresAt.After(expires) {
 		t.Fatalf("rolled by a member, it expires at %v (want after %v)", byMember.ExpiresAt, expires)
+	}
+}
+
+// TestTheDatabaseKeepsModesApart checks that the schema itself refuses a
+// target in another mode than its post and channel, so a test post can
+// never reach a live channel even if code forgets to check (ADR 0006).
+func TestTheDatabaseKeepsModesApart(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	p, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "test mode only"}})
+	if err != nil || len(p.Targets) != 1 {
+		t.Fatalf("post: %+v, %v", p, err)
+	}
+	_, err = open(t).Pool().Exec(ctx, `UPDATE post_targets SET livemode = true WHERE id = $1`, p.Targets[0].ID)
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
+		t.Fatalf("making a test target live: %v (want a foreign key violation)", err)
 	}
 }
 

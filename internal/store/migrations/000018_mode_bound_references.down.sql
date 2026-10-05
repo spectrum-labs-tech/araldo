@@ -1,0 +1,3 @@
+ALTER TABLE post_targets DROP CONSTRAINT IF EXISTS post_targets_post_mode_fkey;
+ALTER TABLE post_targets DROP CONSTRAINT IF EXISTS post_targets_channel_mode_fkey;
+ALTER TABLE newsletter_deliveries DROP CONSTRAINT IF EXISTS newsletter_deliveries_mail_account_mode_fkey;

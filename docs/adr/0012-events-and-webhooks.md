@@ -1,6 +1,6 @@
 # ADR 0012: Events are written in the same transaction; webhooks are signed and retried
 
-- Status: accepted; built, except notice of a disabled endpoint
+- Status: accepted; built (a disabled endpoint is an event and a notice on the overview), except emailing its admins: Araldo sends no email of its own yet
 - Date: 2026-09-28
 
 ## Context

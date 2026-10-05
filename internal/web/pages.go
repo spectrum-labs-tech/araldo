@@ -174,6 +174,8 @@ type homeData struct {
 	Keys     int
 	Queue    store.QueueStats
 	Steps    []step
+	// Disabled are webhook endpoints turned off after failing for days.
+	Disabled []*model.WebhookEndpoint
 }
 
 type step struct {
@@ -206,6 +208,17 @@ func (s *Server) home(c *reqCtx) error {
 	}
 	if d.Queue, err = s.svc.QueueStats(c.ctx(), c.actor); err != nil {
 		return err
+	}
+	if c.actor.Can(core.PermWebhooksRead) {
+		eps, err := s.svc.Endpoints(c.ctx(), c.actor)
+		if err != nil {
+			return err
+		}
+		for _, e := range eps {
+			if e.Status == "disabled" && e.DisabledReason != "" {
+				d.Disabled = append(d.Disabled, e)
+			}
+		}
 	}
 	mode := "test"
 	if c.actor.Livemode {

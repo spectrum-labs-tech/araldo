@@ -47,6 +47,7 @@ var EventTypes = []string{
 	"channel.connected", "channel.needs_reauth", "template.version_created", "post.rescheduled",
 	"newsletter.created", "newsletter.updated", "newsletter.approval_requested", "newsletter.approved", "newsletter.rejected",
 	"newsletter.scheduled", "newsletter.rescheduled", "newsletter.unscheduled", "newsletter.canceled", "newsletter.sent", "newsletter.failed",
+	"webhook_endpoint.disabled",
 }
 
 func secretAAD(endpointID uuid.UUID) string {
@@ -438,8 +439,24 @@ func webhookRetryDelay(attempts int) time.Duration {
 
 // DisableFailingEndpoints turns off endpoints that failed every delivery
 // for the whole retry window.
+//
+// Each one is recorded as a webhook_endpoint.disabled event, in the same
+// transaction, which the org's other endpoints receive, and the dashboard
+// shows it on the overview until it is fixed and enabled again.
 func (s *Service) DisableFailingEndpoints(ctx context.Context) (int, error) {
-	disabled, err := s.store.DisableFailingEndpoints(ctx, s.Now().Add(-deliveryWindow))
+	var disabled []*model.WebhookEndpoint
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		var err error
+		if disabled, err = tx.DisableFailingEndpoints(ctx, s.Now().Add(-deliveryWindow)); err != nil {
+			return err
+		}
+		for _, w := range disabled {
+			if err := s.emit(ctx, tx, w.OrgID, w.Livemode, "", "webhook_endpoint.disabled", ViewEndpoint(w)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	for _, w := range disabled {
 		s.log.WarnContext(ctx, "webhook endpoint disabled after 3 days of failures", "endpoint", id.Format(id.WebhookEndpoint, w.ID))
 	}

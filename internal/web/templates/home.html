@@ -4,6 +4,14 @@
   <a class="btn btn-primary" href="/posts/new">New post</a>
 </div>
 
+{{with .Data.Disabled}}
+<section class="card attention" role="status">
+  <h2>Webhooks stopped</h2>
+  <p class="mb-2">Araldo turned these endpoints off after every delivery to them failed for 3 days. Fix the receiver, then enable it again; deliveries missed meanwhile can be resent from its log.</p>
+  <ul class="list-disc pl-5">{{range .}}<li><a href="/webhooks/{{endpointID .ID}}"><code>{{.URL}}</code></a></li>{{end}}</ul>
+</section>
+{{end}}
+
 {{$open := false}}{{range .Data.Steps}}{{if not .Done}}{{$open = true}}{{end}}{{end}}
 {{if $open}}
 <section class="card">

@@ -3061,6 +3061,7 @@ components:
         - newsletter.canceled
         - newsletter.sent
         - newsletter.failed
+        - webhook_endpoint.disabled
 
     Event:
       type: object

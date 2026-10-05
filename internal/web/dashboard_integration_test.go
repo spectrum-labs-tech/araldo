@@ -552,6 +552,31 @@ func TestApproveADevice(t *testing.T) {
 	}
 }
 
+// TestDisabledWebhookOnTheOverview checks that an endpoint Araldo turned off
+// is shown on the overview, linking to it, until it is enabled again.
+func TestDisabledWebhookOnTheOverview(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	ep, _, err := d.s.CreateEndpoint(ctx, d.owner, core.EndpointInput{URL: "https://stopped.example/hooks", EventTypes: []string{"post.created"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page := d.send(httptest.NewRequest(http.MethodGet, "/", nil)).Body.String(); strings.Contains(page, "Webhooks stopped") {
+		t.Fatal("a working endpoint is shown as stopped")
+	}
+	if _, err := d.st.Pool().Exec(ctx, `UPDATE webhook_endpoints SET status = 'disabled', disabled_reason = 'Every delivery failed for 3 days.' WHERE id = $1`, ep.ID); err != nil {
+		t.Fatal(err)
+	}
+	page := d.send(httptest.NewRequest(http.MethodGet, "/", nil)).Body.String()
+	if !strings.Contains(page, "Webhooks stopped") || !strings.Contains(page, "/webhooks/"+id.Format(id.WebhookEndpoint, ep.ID)) {
+		t.Fatalf("the overview:\n%s", page)
+	}
+	for _, issue := range a11yIssues(page, true) {
+		t.Errorf("/ with a stopped webhook: %s", issue)
+	}
+}
+
 func TestConnectTheCLI(t *testing.T) {
 	t.Parallel()
 	d := newDash(t)

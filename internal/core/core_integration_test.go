@@ -1017,6 +1017,34 @@ func TestRollingAWebhookSecretOverlaps(t *testing.T) {
 	}
 }
 
+// TestFailingEndpointIsDisabled checks that an endpoint every delivery to
+// which failed for 3 days is disabled, with a webhook_endpoint.disabled
+// event in the same change.
+func TestFailingEndpointIsDisabled(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	ep, _, err := w.s.CreateEndpoint(ctx, w.owner, core.EndpointInput{URL: "https://receiver.example/hooks", EventTypes: []string{"post.created"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := open(t).Pool().Exec(ctx, `UPDATE webhook_endpoints SET failing_since = now() - interval '4 days' WHERE id = $1`, ep.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Other tests' workers may run the task too; either way it is done.
+	if _, err := w.s.DisableFailingEndpoints(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, err := w.s.Endpoint(ctx, w.owner, ep.ID)
+	if err != nil || got.Status != "disabled" || got.DisabledReason == "" {
+		t.Fatalf("the endpoint: %+v, %v", got, err)
+	}
+	evs, _, err := w.s.Events(ctx, w.owner, "webhook_endpoint.disabled", store.Page{})
+	if err != nil || len(evs) != 1 || !strings.Contains(string(evs[0].Data), id.Format(id.WebhookEndpoint, ep.ID)) {
+		t.Fatalf("the event: %v, %v", evs, err)
+	}
+}
+
 func TestTemplateApprovalOverride(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

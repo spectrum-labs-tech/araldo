@@ -17,7 +17,7 @@ open a pull request.
 | [0009](0009-platform-adapters.md) | Platforms are adapters; developer app credentials live in the database | accepted; built for every platform but Reddit; install-wide apps and Mastodon app registration not yet (ADR 0021) |
 | [0010](0010-templates.md) | Templates are versioned Go text/templates with a JSON Schema and per-platform bodies | accepted; built, except the per-version `media` field and warnings on save |
 | [0011](0011-publishing.md) | Publishing is an outbox with leases, and it never double-posts silently | accepted; built, except `Finder` reconciliation and editing a queued target; slots changed by ADR 0022 |
-| [0012](0012-events-and-webhooks.md) | Events are written in the same transaction; webhooks are signed and retried | accepted; built, except notice of a disabled endpoint |
+| [0012](0012-events-and-webhooks.md) | Events are written in the same transaction; webhooks are signed and retried | accepted; built, except emailing admins about a disabled endpoint (Araldo sends no email yet) |
 | [0013](0013-backups.md) | Built-in encrypted backups that the server itself cannot read | withdrawn: backups are the operator's |
 | [0014](0014-telemetry.md) | OpenTelemetry and slog, with no secrets or unpublished content | accepted; slog and metrics built; traces, logs through OpenTelemetry and publish lateness not yet |
 | [0015](0015-dashboard.md) | A server-rendered dashboard embedded in the binary | accepted; built, except the calendar and the request log |

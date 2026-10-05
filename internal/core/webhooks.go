@@ -78,7 +78,7 @@ func (in *EndpointInput) check(livemode bool) error {
 	}
 	for _, t := range in.EventTypes {
 		if t != "*" && !slices.Contains(EventTypes, t) {
-			ps.Add("event_type_invalid", "enabled_events", "Unknown event type %q.", t)
+			ps.Add("event_type_invalid", "enabled_events", "Unknown event type %q: the types are the EventType enum in /v1/openapi.yaml, or \"*\" for all.", t)
 		}
 	}
 	if len(in.Description) > 500 {

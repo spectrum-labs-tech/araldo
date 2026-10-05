@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -221,8 +222,15 @@ func notFound(err error, what string) error {
 	return err
 }
 
-// emit records an event in the current transaction (ADR 0012).
+// emit records an event in the current transaction (ADR 0012). Its type
+// must be in EventTypes, the list endpoints subscribe from: one emitted and
+// not listed could never be subscribed to, so it fails here, in the first
+// test that reaches it, rather than going quietly undelivered.
+// (TestEventTypesMatchContract keeps the list and the contract in step.)
 func (s *Service) emit(ctx context.Context, tx *store.Store, orgID uuid.UUID, livemode bool, requestID, typ string, object any) error {
+	if !slices.Contains(EventTypes, typ) {
+		return fmt.Errorf("core: emitting event %q, which is not in core.EventTypes: add it there and to the EventType enum in api/openapi.yaml", typ)
+	}
 	data, err := json.Marshal(map[string]any{"object": object})
 	if err != nil {
 		return err

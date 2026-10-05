@@ -35,7 +35,7 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) error {
 			continue
 		}
 		if !slices.Contains(core.EventTypes, t) {
-			return badRequest("parameter_invalid", "types", "Unknown event type %q.", t)
+			return badRequest("parameter_invalid", "types", "Unknown event type %q: the types are the EventType enum in /v1/openapi.yaml.", t)
 		}
 		types = append(types, t)
 	}

@@ -44,7 +44,11 @@ the order it is being built in (update its status with the work).
   uncertain attempt on a non-idempotent platform; it goes to
   `needs_attention`.
 - **Events** are written with `s.emit` in the same transaction as the
-  change, using the `core.View*` shapes the API returns.
+  change, using the `core.View*` shapes the API returns. A new event type
+  goes in `core.EventTypes` (what endpoints subscribe from) and the
+  `EventType` enum in `api/openapi.yaml`, or it cannot be subscribed to:
+  `emit` refuses an unlisted type, and `TestEmittedEventsAreListed` and
+  `TestEventTypesMatchContract` keep the three in step.
 - **Platforms** ([ADR 0009](docs/adr/0009-platform-adapters.md)): one package
   per adapter under `internal/platform/`, classified errors (`platform.Error`),
   tests against `httptest` servers only. Every limit in `rules.go` cites

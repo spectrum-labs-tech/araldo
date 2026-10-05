@@ -1,7 +1,18 @@
 # ADR 0013: Built-in encrypted backups that the server itself cannot read
 
-- Status: accepted; not built
+- Status: withdrawn 2026-10-05: backups are the operator's (see below); not built
 - Date: 2026-09-28
+
+## Withdrawn
+
+Araldo will not build its own backups. Backing up a Postgres database, and
+a bucket if media is in one, is what an operator's platform already does
+(managed snapshots, pgBackRest or WAL-G, a streaming replica), with better
+recovery points than a nightly dump, and most deployments already have
+it. A built-in backup would have meant a second image with `pg_dump`, two
+new dependencies and offline identities to manage, for a job better done
+around Araldo than inside it. `docs/operations.md` ("Backups") says what to
+back up and how to restore; what follows is the decision as it stood.
 
 ## Context
 

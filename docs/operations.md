@@ -563,6 +563,29 @@ always has the latest figures; sections a key may not see (ads need
 out. Print the page, or save it as a PDF from the browser, to keep or send
 a copy.
 
+## Backups
+
+Araldo has no backup command: back it up the way you back up any Postgres
+application ([ADR 0013](adr/0013-backups.md) explains why).
+
+- **The database** holds everything: orgs, channels, templates, posts and
+  their history, and media stored in Postgres (the default). Use your
+  platform's snapshots, a streaming replica, or continuous archiving
+  (pgBackRest, WAL-G); `pg_dump --format=custom --no-owner` works for a
+  small install.
+- **The bucket**, if media is in S3-compatible storage: turn on versioning,
+  or back it up separately.
+- **The master keys**, which are not in the database
+  ([ADR 0008](adr/0008-encryption.md)): keep them, or the Transit key,
+  apart from the database backups and offline. Without them a restored
+  database's stored credentials cannot be read, and every channel must be
+  connected again.
+
+To restore, load the database into an empty Postgres, point
+`ARALDO_DATABASE_URL` at it with the same master keys, and run `araldo
+migrate` (or let the server migrate at startup). `araldo admin keys status`
+then shows whether every data key can be unwrapped.
+
 ## Health
 
 Araldo degrades rather than stops when something it depends on is missing

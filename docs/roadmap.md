@@ -90,7 +90,7 @@ Principles every feature keeps:
 | 9 | LinkedIn company pages (its Community Management API); engagement from X and LinkedIn | ADR 0018, 0021 | Planned |
 | 10 | Developer tooling: the CLI as an API client with `araldo login` (device sign-in), `araldo listen` (webhooks to localhost), SDKs generated from the contract, a request log in the dashboard | ADR 0005, 0028 | CLI client built: device sign-in (`araldo auth login`) with user tokens that act as the person, a test and a live credential per server (`--live`, as the Stripe CLI), `--org`, `members`, `org`, `channels list`, `araldo api` and `GET /v1/me`; server administration under `araldo admin`, audited as the operator. `araldo listen`, SDKs and a request log next |
 | 11 | AI drafting in the dashboard with the organization's own model key | ADR 0001 | Planned |
-| 12 | Built-in backups, and the rest of OpenTelemetry (traces, logs, publish lateness) | ADR 0013, 0014 | Planned |
+| 12 | The rest of OpenTelemetry (traces, logs, publish lateness) | ADR 0014 | Planned (built-in backups, ADR 0013, were withdrawn: they are the operator's) |
 | 13 | Passkeys (WebAuthn) and OIDC single sign-on | ADR 0007 | Planned |
 | 14 | Hosted plan: a separate install with sign-up, billing and developer apps shared by every organization, at araldo.dev (the project's site and docs, `app.araldo.dev` for the dashboard, `api.araldo.dev` for the API) | ADR 0021 | Planned, after 1 to 7 |
 

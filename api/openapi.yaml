@@ -1708,6 +1708,149 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/org:
+    get:
+      summary: The org
+      description: The org the request acts in. A user token only, never an API key.
+      tags: [Members]
+      responses:
+        "200":
+          description: The org.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Org" } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Update the org
+      description: |
+        Owners only. No longer requiring two-factor authentication needs a
+        recent password confirmation, so it is done in the dashboard.
+      tags: [Members]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+                require_mfa: { type: boolean }
+      responses:
+        "200":
+          description: The org.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Org" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/members:
+    get:
+      summary: List members
+      description: Everyone in the org, with their roles. A user token only.
+      tags: [Members]
+      responses:
+        "200":
+          description: Members.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Member" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/members/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Get a member
+      description: By the person's user ID. A user token only.
+      tags: [Members]
+      responses:
+        "200":
+          description: The member.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Member" } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Change a member's role
+      description: |
+        Admins and owners. Making or unmaking an owner needs a recent password
+        confirmation, so it is done in the dashboard. An org keeps an owner.
+      tags: [Members]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [owner, admin, editor, viewer] }
+      responses:
+        "200":
+          description: The member.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Member" } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Remove a member
+      description: Admins and owners; removing an owner is done in the dashboard.
+      tags: [Members]
+      responses:
+        "200":
+          description: Removed.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/invitations:
+    get:
+      summary: List open invitations
+      description: Admins and owners. A user token only.
+      tags: [Members]
+      responses:
+        "200":
+          description: Invitations not yet accepted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Invitation" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Invite someone
+      description: |
+        Makes a one-time link, valid for a week, for the person to join the
+        org with the role: they open it, then sign in or create their
+        account. The link is in this response only. Inviting says nothing
+        about whether the email has an account. Inviting an owner is done in
+        the dashboard.
+      tags: [Members]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email: { type: string, format: email }
+                role: { type: string, enum: [owner, admin, editor, viewer] }
+      responses:
+        "201":
+          description: The invitation, with its link.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Invitation" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/invitations/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    delete:
+      summary: Withdraw an invitation
+      tags: [Members]
+      responses:
+        "200":
+          description: Withdrawn; its link no longer works.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/api_keys:
     get:
       summary: List API keys
@@ -2492,6 +2635,37 @@ components:
             name: { type: string }
         user_token: { $ref: "#/components/schemas/UserToken" }
         role: { type: string, enum: [owner, admin, editor, viewer], description: "The person's role in the org, for a user token." }
+
+    Org:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [org] }
+        name: { type: string }
+        require_mfa: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    Member:
+      type: object
+      properties:
+        id: { type: string, description: The person's user ID. }
+        object: { type: string, enum: [member] }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [owner, admin, editor, viewer] }
+        mfa: { type: boolean, description: Whether they use two-factor authentication. }
+        joined_at: { type: string, format: date-time }
+
+    Invitation:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [invitation] }
+        email: { type: string }
+        role: { type: string, enum: [owner, admin, editor, viewer] }
+        expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        url: { type: string, description: The link to share; only in the response that made it. }
 
     UserToken:
       type: object

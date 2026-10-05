@@ -482,3 +482,52 @@ func ParseID(p id.Prefix, s string, what string) (uuid.UUID, error) {
 	}
 	return u, nil
 }
+
+// OrgView is an org's settings.
+type OrgView struct {
+	ID         string    `json:"id"`
+	Object     string    `json:"object"`
+	Name       string    `json:"name"`
+	RequireMFA bool      `json:"require_mfa"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// ViewOrg renders an org.
+func ViewOrg(o *model.Org) OrgView {
+	return OrgView{ID: id.Format(id.Org, o.ID), Object: "org", Name: o.Name, RequireMFA: o.RequireMFA, CreatedAt: o.CreatedAt.UTC()}
+}
+
+// MemberView is a person's membership of the org.
+type MemberView struct {
+	ID       string     `json:"id"` // the person's user ID
+	Object   string     `json:"object"`
+	Email    string     `json:"email"`
+	Name     string     `json:"name,omitempty"`
+	Role     model.Role `json:"role"`
+	MFA      bool       `json:"mfa"`
+	JoinedAt time.Time  `json:"joined_at"`
+}
+
+// ViewMember renders a membership.
+func ViewMember(m *model.Membership) MemberView {
+	return MemberView{ID: id.Format(id.User, m.UserID), Object: "member", Email: m.UserEmail, Name: m.UserName, Role: m.Role, MFA: m.UserMFA,
+		JoinedAt: m.CreatedAt.UTC()}
+}
+
+// InvitationView is an open invitation. URL is only ever set when it is
+// made: the link is not kept.
+type InvitationView struct {
+	ID        string     `json:"id"`
+	Object    string     `json:"object"`
+	Email     string     `json:"email"`
+	Role      model.Role `json:"role"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	CreatedAt time.Time  `json:"created_at"`
+	URL       string     `json:"url,omitempty"`
+}
+
+// ViewInvitation renders an invitation.
+func ViewInvitation(inv *model.Invitation) InvitationView {
+	return InvitationView{ID: id.Format(id.Invitation, inv.ID), Object: "invitation", Email: inv.Email, Role: inv.Role,
+		ExpiresAt: inv.ExpiresAt.UTC(), CreatedAt: inv.CreatedAt.UTC()}
+}

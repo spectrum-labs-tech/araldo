@@ -30,6 +30,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
 	"github.com/spectrum-labs-tech/araldo/internal/media"
+	"github.com/spectrum-labs-tech/araldo/internal/netguard"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/sandbox"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
@@ -74,7 +75,7 @@ func newClient(t *testing.T, opts ...func(*core.Config)) *client {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cfg := core.Config{BaseURL: "https://araldo.test", AllowPrivateWebhooks: true}
+	cfg := core.Config{BaseURL: "https://araldo.test", PrivateWebhooks: netguard.Policy{All: true}}
 	for _, o := range opts {
 		o(&cfg)
 	}

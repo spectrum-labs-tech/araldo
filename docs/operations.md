@@ -16,7 +16,8 @@ Everything comes from environment variables.
 | `ARALDO_LISTEN` | | HTTP address, default `:8080`. |
 | `ARALDO_AUTO_MIGRATE` | | Migrate at startup, default `true`. The Helm chart sets it to `false` and migrates in a hook instead (see Kubernetes). |
 | `ARALDO_CLIENT_IP_HEADER` | | Trusted proxy header with the client IP (e.g. `CF-Connecting-IP`), for sign-in rate limits. |
-| `ARALDO_ALLOW_PRIVATE_NETWORKS` | | Let webhooks and adapters reach private addresses. Off by default. |
+| `ARALDO_ALLOW_PRIVATE_NETWORKS` | | Non-public addresses platform adapters may reach, such as a Mastodon on your LAN: `true` (every one but link-local, where cloud metadata answers) or a list like `192.168.1.20,10.8.0.0/16`. Off by default. |
+| `ARALDO_ALLOW_PRIVATE_WEBHOOKS` | | The same for webhook deliveries and media fetched by URL. Every org chooses those URLs, so with other tenants, list only the hosts they need. Off by default. |
 | `ARALDO_INSECURE_COOKIES` | | Plain-HTTP development only. |
 | `ARALDO_LOG_LEVEL` | | `debug`, `info` (default), `warn`, `error`. |
 | `ARALDO_S3_BUCKET` | | Store new media in this S3-compatible bucket instead of Postgres (see Media). |

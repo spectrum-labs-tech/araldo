@@ -11,6 +11,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/spectrum-labs-tech/araldo/internal/netguard"
 )
 
 // Config is every setting.
@@ -34,9 +36,14 @@ type Config struct {
 	// InsecureCookies drops the Secure flag, for plain-HTTP development
 	// (ARALDO_INSECURE_COOKIES).
 	InsecureCookies bool
-	// AllowPrivateNetworks lets webhooks and platform adapters reach
-	// private addresses (ARALDO_ALLOW_PRIVATE_NETWORKS).
-	AllowPrivateNetworks bool
+	// PrivateNetworks are the non-public addresses platform adapters may
+	// reach, such as a self-hosted Mastodon (ARALDO_ALLOW_PRIVATE_NETWORKS:
+	// true, or a list of networks).
+	PrivateNetworks netguard.Policy
+	// PrivateWebhooks are the non-public addresses webhook deliveries and
+	// media fetched by URL may reach (ARALDO_ALLOW_PRIVATE_WEBHOOKS). They
+	// are kept apart because every org chooses those URLs.
+	PrivateWebhooks netguard.Policy
 	// ClientIPHeader is a trusted proxy header with the client IP
 	// (ARALDO_CLIENT_IP_HEADER, for example CF-Connecting-IP).
 	ClientIPHeader string
@@ -110,8 +117,11 @@ func Load() (Config, error) {
 	if c.InsecureCookies, err = boolEnv("ARALDO_INSECURE_COOKIES", false); err != nil {
 		errs = append(errs, err)
 	}
-	if c.AllowPrivateNetworks, err = boolEnv("ARALDO_ALLOW_PRIVATE_NETWORKS", false); err != nil {
-		errs = append(errs, err)
+	if c.PrivateNetworks, err = netguard.ParsePolicy(os.Getenv("ARALDO_ALLOW_PRIVATE_NETWORKS")); err != nil {
+		errs = append(errs, fmt.Errorf("ARALDO_ALLOW_PRIVATE_NETWORKS: %w", err))
+	}
+	if c.PrivateWebhooks, err = netguard.ParsePolicy(os.Getenv("ARALDO_ALLOW_PRIVATE_WEBHOOKS")); err != nil {
+		errs = append(errs, fmt.Errorf("ARALDO_ALLOW_PRIVATE_WEBHOOKS: %w", err))
 	}
 	c.MaxVideoBytes = 1 << 30
 	if v := os.Getenv("ARALDO_MAX_VIDEO_BYTES"); v != "" {

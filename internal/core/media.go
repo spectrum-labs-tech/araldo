@@ -51,7 +51,7 @@ type Blobs interface {
 
 // mediaClient fetches media by URL: refusing private addresses unless
 // allowed, and following up to five redirects, each checked again.
-func mediaClient(allowPrivate bool, base *http.Client) *http.Client {
+func mediaClient(base *http.Client) *http.Client {
 	c := *base
 	// Each fetch bounds itself with its context: an image briefly, a video
 	// for as long as it takes to arrive.

@@ -35,9 +35,9 @@ type Config struct {
 	// BaseURL is the server's public URL (sandbox permalinks, links in
 	// events).
 	BaseURL string
-	// AllowPrivateWebhooks lets webhook deliveries, and media fetched by
-	// URL, reach private networks (for self-hosters, ADR 0012).
-	AllowPrivateWebhooks bool
+	// PrivateWebhooks are the non-public addresses webhook deliveries, and
+	// media fetched by URL, may reach (for self-hosters, ADR 0012).
+	PrivateWebhooks netguard.Policy
 	// Blobs, when set, stores new media files; otherwise they go in
 	// Postgres (ADR 0017).
 	Blobs Blobs
@@ -85,8 +85,8 @@ func New(st *store.Store, keys *keyring.Keyring, platforms *platform.Registry, l
 		adNetworks: ads.NewRegistry(append([]ads.Reporter{ads.SandboxAds{}}, cfg.AdNetworks...)...),
 		analytics:  analytics.NewRegistry(append([]analytics.Source{analytics.SandboxSource{}}, cfg.AnalyticsSources...)...),
 		mailers:    email.NewRegistry(append([]email.Mailer{email.SandboxMailer{}}, cfg.Mailers...)...),
-		HTTP:       netguard.Client(cfg.AllowPrivateWebhooks, deliveryTimeout),
-		MediaHTTP:  mediaClient(cfg.AllowPrivateWebhooks, netguard.Client(cfg.AllowPrivateWebhooks, mediaFetchTimeout)),
+		HTTP:       netguard.Client(cfg.PrivateWebhooks, deliveryTimeout),
+		MediaHTTP:  mediaClient(netguard.Client(cfg.PrivateWebhooks, mediaFetchTimeout)),
 		blobs:      cfg.Blobs, metrics: noopMetrics()}
 }
 

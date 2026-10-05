@@ -26,6 +26,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/netguard"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
@@ -45,7 +46,7 @@ func newHarness(t *testing.T) *harness {
 		t.Skip("ARALDO_TEST_DSN not set")
 	}
 	cfg := config.Config{DatabaseURL: dsn, MasterKeys: "test:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", BaseURL: "http://araldo.test",
-		AutoMigrate: true, InsecureCookies: true, AllowPrivateNetworks: true}
+		AutoMigrate: true, InsecureCookies: true, PrivateNetworks: netguard.Policy{All: true}, PrivateWebhooks: netguard.Policy{All: true}}
 	a, err := app.Open(t.Context(), cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)

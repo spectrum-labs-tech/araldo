@@ -114,7 +114,7 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 			a.migrate = true
 		}
 	}
-	client := netguard.Client(cfg.AllowPrivateNetworks, 60*time.Second)
+	client := netguard.Client(cfg.PrivateNetworks, 60*time.Second)
 	reg := platform.NewRegistry(
 		sandbox.New(cfg.BaseURL),
 		bluesky.New(client),
@@ -131,7 +131,7 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 		facebook.New(client),
 		instagram.New(client),
 	)
-	ccfg := core.Config{BaseURL: cfg.BaseURL, AllowPrivateWebhooks: cfg.AllowPrivateNetworks, MaxVideoBytes: cfg.MaxVideoBytes,
+	ccfg := core.Config{BaseURL: cfg.BaseURL, PrivateWebhooks: cfg.PrivateWebhooks, MaxVideoBytes: cfg.MaxVideoBytes,
 		AdNetworks: []ads.Reporter{reddit.New(client)}, AnalyticsSources: []analytics.Source{plausible.New(client), ga4.New(client)},
 		Mailers: []email.Mailer{brevo.New(client)}}
 	if s := cfg.S3; s.Bucket != "" {

@@ -3,6 +3,7 @@
 package config
 
 import (
+	"net"
 	"strings"
 	"testing"
 )
@@ -106,5 +107,27 @@ func TestLoadTransit(t *testing.T) {
 				t.Fatalf("Load error %v, want one mentioning %s", err, tt.want)
 			}
 		})
+	}
+}
+
+// TestLoadPrivateNetworks checks that platforms and webhooks get their own
+// private-network settings, so letting adapters reach a LAN Mastodon does
+// not let every org's webhooks reach the LAN too.
+func TestLoadPrivateNetworks(t *testing.T) {
+	t.Setenv("ARALDO_DATABASE_URL", "postgres://x")
+	t.Setenv("ARALDO_BASE_URL", "https://araldo.example")
+	t.Setenv("ARALDO_ALLOW_PRIVATE_NETWORKS", "192.168.1.20")
+	t.Setenv("ARALDO_ALLOW_PRIVATE_WEBHOOKS", "")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lan := net.ParseIP("192.168.1.20")
+	if !c.PrivateNetworks.Allows(lan) || c.PrivateWebhooks.Allows(lan) {
+		t.Fatalf("platforms %+v, webhooks %+v", c.PrivateNetworks, c.PrivateWebhooks)
+	}
+	t.Setenv("ARALDO_ALLOW_PRIVATE_WEBHOOKS", "the lan")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "ARALDO_ALLOW_PRIVATE_WEBHOOKS") {
+		t.Fatalf("a bad setting: %v", err)
 	}
 }

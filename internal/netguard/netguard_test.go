@@ -42,7 +42,7 @@ func TestClientRefusesPrivateAddresses(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	defer srv.Close()
 
-	guarded := Client(false, 2*time.Second)
+	guarded := Client(Policy{}, 2*time.Second)
 	resp, err := guarded.Get(srv.URL) //nolint:noctx // test
 	if err == nil {
 		_ = resp.Body.Close()
@@ -52,12 +52,50 @@ func TestClientRefusesPrivateAddresses(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 
-	open := Client(true, 2*time.Second)
+	open := Client(Policy{All: true}, 2*time.Second)
 	resp, err = open.Get(srv.URL) //nolint:noctx // test
 	if err != nil {
 		t.Fatalf("allowPrivate client: %v", err)
 	}
 	_ = resp.Body.Close()
+}
+
+func TestPolicy(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		setting string
+		allowed map[string]bool
+	}{
+		{"", map[string]bool{"8.8.8.8": true, "127.0.0.1": false, "192.168.1.20": false}},
+		{"false", map[string]bool{"8.8.8.8": true, "10.0.0.1": false}},
+		{"true", map[string]bool{
+			"8.8.8.8": true, "127.0.0.1": true, "192.168.1.20": true, "fd00::1": true,
+			"169.254.169.254": false, // cloud metadata stays out of reach
+			"fe80::1":         false,
+		}},
+		{"192.168.1.20, 10.8.0.0/16", map[string]bool{
+			"8.8.8.8": true, "192.168.1.20": true, "10.8.3.4": true,
+			"192.168.1.21": false, "10.9.0.1": false, "127.0.0.1": false, "169.254.169.254": false,
+		}},
+		{"169.254.169.254", map[string]bool{"169.254.169.254": true, "169.254.169.253": false}},
+		{"fd00::/8", map[string]bool{"fd00::1": true, "::1": false}},
+	}
+	for _, tt := range tests {
+		p, err := ParsePolicy(tt.setting)
+		if err != nil {
+			t.Fatalf("ParsePolicy(%q): %v", tt.setting, err)
+		}
+		for addr, want := range tt.allowed {
+			if got := p.Allows(net.ParseIP(addr)); got != want {
+				t.Errorf("%q allows %s = %t, want %t", tt.setting, addr, got, want)
+			}
+		}
+	}
+	for _, bad := range []string{"yes please", "10.0.0.0/33", "192.168.1.20,nope"} {
+		if _, err := ParsePolicy(bad); err == nil {
+			t.Errorf("ParsePolicy(%q) accepted it", bad)
+		}
+	}
 }
 
 func TestClientDoesNotFollowRedirects(t *testing.T) {
@@ -66,7 +104,7 @@ func TestClientDoesNotFollowRedirects(t *testing.T) {
 		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data", http.StatusFound)
 	}))
 	defer srv.Close()
-	resp, err := Client(true, 2*time.Second).Get(srv.URL) //nolint:noctx // test
+	resp, err := Client(Policy{All: true}, 2*time.Second).Get(srv.URL) //nolint:noctx // test
 	if err != nil {
 		t.Fatal(err)
 	}

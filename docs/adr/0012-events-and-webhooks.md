@@ -44,7 +44,11 @@ verified, and can be replayed.
 6. **No server-side request forgery.** Deliveries refuse loopback, private
    and link-local addresses, checked when connecting (so DNS rebinding
    cannot get around it). A self-hoster can allow private addresses with
-   `ARALDO_WEBHOOK_ALLOW_PRIVATE=true`.
+   `ARALDO_ALLOW_PRIVATE_WEBHOOKS`, either all but link-local (`true`) or
+   only the networks listed. It is apart from
+   `ARALDO_ALLOW_PRIVATE_NETWORKS`, which platform adapters use, since every
+   org chooses its webhook and media URLs: reaching a LAN Mastodon must not
+   open the LAN to every org's webhooks.
 7. **`araldo listen`** (like `stripe listen`) streams the org's events over an
    authenticated server-sent events endpoint (`GET /v1/events/stream`) and
    forwards each one, signed, to a local URL. It works in test mode by

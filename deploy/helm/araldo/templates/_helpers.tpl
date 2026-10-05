@@ -38,6 +38,8 @@ app.kubernetes.io/component: {{ .component }}
   value: {{ not .Values.migrations.job | quote }}
 - name: ARALDO_ALLOW_PRIVATE_NETWORKS
   value: {{ .Values.config.allowPrivateNetworks | quote }}
+- name: ARALDO_ALLOW_PRIVATE_WEBHOOKS
+  value: {{ .Values.config.allowPrivateWebhooks | quote }}
 {{- with .Values.config.clientIPHeader }}
 - name: ARALDO_CLIENT_IP_HEADER
   value: {{ . | quote }}

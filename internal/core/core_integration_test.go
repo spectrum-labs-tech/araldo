@@ -31,6 +31,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/netguard"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/sandbox"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
@@ -76,7 +77,7 @@ func service(t *testing.T, opts ...option) *core.Service {
 		t.Fatal(err)
 	}
 	adapters := []platform.Adapter{sandbox.New("https://araldo.test")}
-	cfg := core.Config{BaseURL: "https://araldo.test", AllowPrivateWebhooks: true}
+	cfg := core.Config{BaseURL: "https://araldo.test", PrivateWebhooks: netguard.Policy{All: true}}
 	for _, o := range opts {
 		o(&cfg, &adapters)
 	}

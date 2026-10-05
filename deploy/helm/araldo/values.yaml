@@ -23,8 +23,12 @@ config:
   logLevel: info
   # A trusted proxy header with the client IP, e.g. CF-Connecting-IP.
   clientIPHeader: ""
-  # Let webhooks and adapters reach private networks (self-hosters only).
+  # Non-public addresses platform adapters may reach, e.g. a Mastodon on your LAN: false, true
+  # (every one but link-local), or a comma-separated list such as "192.168.1.20,10.8.0.0/16".
   allowPrivateNetworks: false
+  # The same for webhook deliveries and media fetched by URL. Every org chooses those URLs, so
+  # name only the hosts webhooks need, if any.
+  allowPrivateWebhooks: false
 
 # Keep the master key in OpenBao or Vault Transit rather than in existingSecret (ADR 0008; see
 # docs/operations.md, "Master keys in Transit"). Transit wraps and unwraps data keys; the master key

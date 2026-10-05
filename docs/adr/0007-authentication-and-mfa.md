@@ -40,7 +40,10 @@ out of the box; single sign-on is an addition, not a requirement.
 5. **Forms** use a per-session CSRF token as well as `SameSite=Lax`.
 6. **Brute force and enumeration:**
    - sign-in is rate limited per account and per IP, backing off without
-     permanent lockout;
+     permanent lockout. A wrong password, second-factor code or sudo
+     confirmation all count against the account, and a right password does
+     not reset the count until the second factor is given too, so a phished
+     password cannot buy unlimited guesses at the code;
    - sign-in, sign-up and password reset give the same response whether or
      not the email exists.
 7. **Email flows** (verification, password reset with a one-hour

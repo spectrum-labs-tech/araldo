@@ -107,10 +107,9 @@ func (s *Service) Login(ctx context.Context, email, password, userAgent, ip stri
 	if err != nil {
 		return nil, err
 	}
-	if u.LockedUntil != nil && now.Before(*u.LockedUntil) {
+	if err := locked(u, now); err != nil {
 		authn.SpendPasswordTime(password)
-		return nil, &apperr.Error{Kind: apperr.KindRateLimited, Code: "account_locked",
-			Message: "Too many failed sign-ins. Try again after " + u.LockedUntil.UTC().Format("15:04 MST") + "."}
+		return nil, err
 	}
 	ok, rehash := false, false
 	if u.PasswordHash != "" {
@@ -122,18 +121,15 @@ func (s *Service) Login(ctx context.Context, email, password, userAgent, ip stri
 		authn.SpendPasswordTime(password)
 	}
 	if !ok {
-		var lock *time.Time
-		if u.FailedLogins+1 >= lockAfterFailures {
-			d := min(time.Minute<<min(u.FailedLogins+1-lockAfterFailures, 6), time.Hour)
-			lock = ptr(now.Add(d))
-		}
-		if err := s.store.RecordLoginFailure(ctx, u.ID, lock); err != nil {
+		if err := s.recordFailure(ctx, u, now); err != nil {
 			return nil, err
 		}
 		return nil, ErrBadCredentials
 	}
-	if u.FailedLogins > 0 || u.LockedUntil != nil {
-		if err := s.store.ResetLoginFailures(ctx, u.ID); err != nil {
+	// With a second factor, the count is reset only once that is given too,
+	// so retrying the password cannot buy fresh guesses at the code.
+	if !u.MFAEnabled() {
+		if err := s.resetFailures(ctx, u); err != nil {
 			return nil, err
 		}
 	}
@@ -143,6 +139,33 @@ func (s *Service) Login(ctx context.Context, email, password, userAgent, ip stri
 		}
 	}
 	return s.startSession(ctx, u, userAgent, ip, now)
+}
+
+// locked refuses a user whose account is locked after failed attempts.
+func locked(u *model.User, now time.Time) error {
+	if u.LockedUntil == nil || !now.Before(*u.LockedUntil) {
+		return nil
+	}
+	return &apperr.Error{Kind: apperr.KindRateLimited, Code: "account_locked",
+		Message: "Too many failed sign-ins. Try again after " + u.LockedUntil.UTC().Format("15:04 MST") + "."}
+}
+
+// recordFailure counts a wrong password or code against the account (ADR
+// 0007), locking it for longer after each failure past lockAfterFailures.
+func (s *Service) recordFailure(ctx context.Context, u *model.User, now time.Time) error {
+	var lock *time.Time
+	if u.FailedLogins+1 >= lockAfterFailures {
+		d := min(time.Minute<<min(u.FailedLogins+1-lockAfterFailures, 6), time.Hour)
+		lock = ptr(now.Add(d))
+	}
+	return s.store.RecordLoginFailure(ctx, u.ID, lock)
+}
+
+func (s *Service) resetFailures(ctx context.Context, u *model.User) error {
+	if u.FailedLogins == 0 && u.LockedUntil == nil {
+		return nil
+	}
+	return s.store.ResetLoginFailures(ctx, u.ID)
 }
 
 func (s *Service) startSession(ctx context.Context, u *model.User, userAgent, ip string, now time.Time) (*LoginResult, error) {
@@ -206,15 +229,23 @@ func (s *Service) VerifySecondFactor(ctx context.Context, ss *model.Session, cod
 	return s.store.ActivateSession(ctx, ss.ID, s.Now().Add(SudoWindow))
 }
 
+// checkSecondFactor checks a TOTP or recovery code. A wrong one counts
+// against the account like a wrong password, and a locked account is
+// refused, so codes cannot be guessed (ADR 0007); a right one resets the
+// count.
 func (s *Service) checkSecondFactor(ctx context.Context, userID uuid.UUID, code string) error {
 	bad := &apperr.Error{Kind: apperr.KindUnauthorized, Code: "bad_code", Message: "That code is not valid."}
-	return s.store.InTx(ctx, func(tx *store.Store) error {
-		u, err := tx.UserForUpdate(ctx, userID)
-		if err != nil {
+	var u *model.User
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		var err error
+		if u, err = tx.UserForUpdate(ctx, userID); err != nil {
 			return err
 		}
 		if !u.MFAEnabled() {
 			return nil
+		}
+		if err := locked(u, s.Now()); err != nil {
+			return err
 		}
 		clean := strings.TrimSpace(code)
 		if len(authn.NormalizeRecoveryCode(clean)) == 16 {
@@ -240,6 +271,16 @@ func (s *Service) checkSecondFactor(ctx context.Context, userID uuid.UUID, code 
 		}
 		return nil
 	})
+	switch {
+	case err == bad: //nolint:errorlint // bad is this call's own value
+		if ferr := s.recordFailure(ctx, u, s.Now()); ferr != nil {
+			return ferr
+		}
+		return bad
+	case err != nil:
+		return err
+	}
+	return s.resetFailures(ctx, u)
 }
 
 func totpAAD(userID uuid.UUID) string { return keyring.AAD("users", "totp_secret", userID) }
@@ -251,14 +292,26 @@ func (s *Service) Reauthenticate(ctx context.Context, ss *model.Session, passwor
 	if err != nil {
 		return err
 	}
+	now := s.Now()
+	if err := locked(u, now); err != nil {
+		authn.SpendPasswordTime(password)
+		return err
+	}
 	ok, _, err := authn.VerifyPassword(password, u.PasswordHash)
 	if err != nil || !ok {
+		// Counted like a sign-in, so a stolen session cannot guess the
+		// password here to reach sudo mode.
+		if err := s.recordFailure(ctx, u, now); err != nil {
+			return err
+		}
 		return &apperr.Error{Kind: apperr.KindUnauthorized, Code: "bad_password", Message: "Password is incorrect."}
 	}
 	if u.MFAEnabled() {
 		if err := s.checkSecondFactor(ctx, u.ID, code); err != nil {
 			return err
 		}
+	} else if err := s.resetFailures(ctx, u); err != nil {
+		return err
 	}
 	return s.store.SetSessionSudo(ctx, ss.ID, s.Now().Add(SudoWindow))
 }

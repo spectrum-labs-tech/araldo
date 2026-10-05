@@ -585,6 +585,54 @@ func TestLoginAndTOTP(t *testing.T) {
 	}
 }
 
+// TestWrongCodesLockTheAccount checks that wrong second-factor codes and
+// wrong passwords given to confirm sudo mode count toward the lockout, so
+// neither can be guessed by signing in again and again (ADR 0007).
+func TestWrongCodesLockTheAccount(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	isLocked := func(err error) bool {
+		var ae *apperr.Error
+		return errors.As(err, &ae) && ae.Code == "account_locked"
+	}
+
+	w := newWorld(t)
+	secretText, _, err := w.s.BeginTOTP(ctx, w.session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := decodeB32(t, secretText)
+	if _, err := w.s.ConfirmTOTP(ctx, w.session, authn.TOTPCode(secret, authn.TOTPStep(time.Now()))); err != nil {
+		t.Fatal(err)
+	}
+	// Each sign-in gives the right password; only the code is wrong.
+	for i := range 10 {
+		login, err := w.s.Login(ctx, w.user.Email, "correct horse battery", "", "")
+		if err != nil {
+			t.Fatalf("sign-in %d: %v", i+1, err)
+		}
+		if err := w.s.VerifySecondFactor(ctx, login.Session, "nope"); kind(err) != apperr.KindUnauthorized {
+			t.Fatalf("wrong code %d: %v", i+1, err)
+		}
+	}
+	if _, err := w.s.Login(ctx, w.user.Email, "correct horse battery", "", ""); !isLocked(err) {
+		t.Fatalf("sign-in after 10 wrong codes: %v (want account_locked)", err)
+	}
+
+	w2 := newWorld(t)
+	for i := range 10 {
+		if err := w2.s.Reauthenticate(ctx, w2.session, "wrong password!!", ""); kind(err) != apperr.KindUnauthorized {
+			t.Fatalf("wrong password %d: %v", i+1, err)
+		}
+	}
+	if err := w2.s.Reauthenticate(ctx, w2.session, "correct horse battery", ""); !isLocked(err) {
+		t.Fatalf("confirming after 10 wrong passwords: %v (want account_locked)", err)
+	}
+	if _, err := w2.s.Login(ctx, w2.user.Email, "correct horse battery", "", ""); !isLocked(err) {
+		t.Fatalf("sign-in after 10 wrong passwords to confirm: %v (want account_locked)", err)
+	}
+}
+
 func decodeB32(t *testing.T, s string) []byte {
 	t.Helper()
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"

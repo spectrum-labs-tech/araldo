@@ -207,7 +207,7 @@ func (s *Server) app(nav string, fn pageFunc) http.HandlerFunc {
 			return
 		}
 		// An org that requires MFA shows nothing until the member enrolls.
-		if c.org.RequireMFA && !c.user.MFAEnabled() && nav != "account" {
+		if c.org.RequireMFA && !c.user.SecondFactor() && nav != "account" {
 			http.Redirect(w, r, "/account?mfa_required=1", http.StatusSeeOther)
 			return
 		}

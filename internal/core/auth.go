@@ -129,7 +129,7 @@ func (s *Service) Login(ctx context.Context, email, password, userAgent, ip stri
 	}
 	// With a second factor, the count is reset only once that is given too,
 	// so retrying the password cannot buy fresh guesses at the code.
-	if !u.MFAEnabled() {
+	if !u.SecondFactor() {
 		if err := s.resetFailures(ctx, u); err != nil {
 			return nil, err
 		}
@@ -139,7 +139,7 @@ func (s *Service) Login(ctx context.Context, email, password, userAgent, ip stri
 			_ = s.store.SetPassword(ctx, u.ID, h)
 		}
 	}
-	return s.startSession(ctx, u, userAgent, ip, now)
+	return s.startSession(ctx, u, userAgent, ip, now, false)
 }
 
 // locked refuses a user whose account is locked after failed attempts.
@@ -169,14 +169,16 @@ func (s *Service) resetFailures(ctx context.Context, u *model.User) error {
 	return s.store.ResetLoginFailures(ctx, u.ID)
 }
 
-func (s *Service) startSession(ctx context.Context, u *model.User, userAgent, ip string, now time.Time) (*LoginResult, error) {
+// startSession signs u in. A user with a second factor waits for it,
+// unless verified (a passkey, which verifies the person, signed them in).
+func (s *Service) startSession(ctx context.Context, u *model.User, userAgent, ip string, now time.Time, verified bool) (*LoginResult, error) {
 	token, hash := authn.NewToken()
 	csrf, _ := authn.NewToken()
 	ss := &model.Session{
 		ID: id.New(), UserID: u.ID, CSRFToken: csrf, State: model.SessionActive,
 		UserAgent: truncate(userAgent, 300), IP: truncate(ip, 64), ExpiresAt: now.Add(SessionIdle), SudoUntil: ptr(now.Add(SudoWindow)),
 	}
-	if u.MFAEnabled() {
+	if u.SecondFactor() && !verified {
 		ss.State, ss.ExpiresAt, ss.SudoUntil = model.SessionPendingMFA, now.Add(PendingMFAWindow), nil
 	}
 	// Start in the user's first org, in test mode.
@@ -243,7 +245,7 @@ func (s *Service) checkSecondFactor(ctx context.Context, userID uuid.UUID, code 
 			return err
 		}
 		if !u.MFAEnabled() {
-			return nil
+			return bad // no authenticator app: a passkey is the only second factor
 		}
 		if err := locked(u, s.Now()); err != nil {
 			return err
@@ -307,12 +309,19 @@ func (s *Service) Reauthenticate(ctx context.Context, ss *model.Session, passwor
 		}
 		return &apperr.Error{Kind: apperr.KindUnauthorized, Code: "bad_password", Message: "Password is incorrect."}
 	}
-	if u.MFAEnabled() {
+	switch {
+	case u.MFAEnabled():
 		if err := s.checkSecondFactor(ctx, u.ID, code); err != nil {
 			return err
 		}
-	} else if err := s.resetFailures(ctx, u); err != nil {
-		return err
+	case u.HasPasskey:
+		// The password alone is not enough for someone with a passkey and no
+		// authenticator app: they confirm with the passkey.
+		return &apperr.Error{Kind: apperr.KindUnauthorized, Code: "passkey_required", Message: "Confirm with your passkey."}
+	default:
+		if err := s.resetFailures(ctx, u); err != nil {
+			return err
+		}
 	}
 	return s.store.SetSessionSudo(ctx, ss.ID, s.Now().Add(SudoWindow))
 }
@@ -428,17 +437,16 @@ func (s *Service) DisableTOTP(ctx context.Context, ss *model.Session) error {
 	if err := s.requireSudo(ss); err != nil {
 		return err
 	}
-	ms, err := s.store.UserMemberships(ctx, ss.UserID)
+	u, err := s.store.User(ctx, ss.UserID)
 	if err != nil {
 		return err
 	}
-	for _, m := range ms {
-		o, err := s.store.Org(ctx, m.OrgID)
-		if err != nil {
-			return err
-		}
-		if o.RequireMFA {
-			return apperr.Forbidden("%s requires two-factor authentication.", o.Name)
+	if !u.HasPasskey { // a passkey keeps the second factor
+		if org, err := s.orgRequiringMFA(ctx, ss.UserID); err != nil || org != "" {
+			if err != nil {
+				return err
+			}
+			return apperr.Forbidden("%s requires two-factor authentication.", org)
 		}
 	}
 	return s.store.InTx(ctx, func(tx *store.Store) error {

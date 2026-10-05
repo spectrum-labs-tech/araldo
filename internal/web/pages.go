@@ -236,7 +236,7 @@ func (s *Server) home(c *reqCtx) error {
 		{"Connect a " + mode + "-mode channel", "/channels/new", len(d.Channels) > 0},
 		{"Create a " + mode + " API key", "/keys", d.Keys > 0},
 		{"Publish your first post", "/posts/new", len(d.Posts) > 0},
-		{"Turn on two-factor authentication", "/account", c.user.MFAEnabled()},
+		{"Turn on two-factor authentication", "/account", c.user.SecondFactor()},
 	}
 	return s.page(c, "home", "home", "Overview", d)
 }

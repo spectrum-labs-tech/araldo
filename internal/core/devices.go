@@ -221,7 +221,7 @@ func (s *Service) AuthenticateUserToken(ctx context.Context, token, org, request
 		if err != nil {
 			return Actor{}, err
 		}
-		if !u.MFAEnabled() {
+		if !u.SecondFactor() {
 			return Actor{}, apperr.Forbidden("%s requires two-factor authentication: turn it on in the dashboard, under your account.", o.Name)
 		}
 	}

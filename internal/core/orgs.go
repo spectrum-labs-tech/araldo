@@ -103,7 +103,7 @@ func (s *Service) UpdateOrg(ctx context.Context, a Actor, ss *model.Session, nam
 		if err != nil {
 			return err
 		}
-		if !u.MFAEnabled() {
+		if !u.SecondFactor() {
 			return apperr.Invalid("mfa_required_first", "require_mfa", "Turn on two-factor authentication for yourself before requiring it.")
 		}
 	}

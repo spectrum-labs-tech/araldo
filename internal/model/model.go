@@ -55,13 +55,20 @@ type User struct {
 	TOTPSecret    []byte // encrypted (ADR 0008)
 	TOTPLastStep  int64
 	TOTPEnabledAt *time.Time
-	FailedLogins  int
-	LockedUntil   *time.Time
-	CreatedAt     time.Time
+	// HasPasskey is set when the user has a passkey (ADR 0007).
+	HasPasskey   bool
+	FailedLogins int
+	LockedUntil  *time.Time
+	CreatedAt    time.Time
 }
 
 // MFAEnabled reports whether the user has a second factor.
 func (u *User) MFAEnabled() bool { return u.TOTPEnabledAt != nil }
+
+// SecondFactor reports whether the user has a second factor: TOTP, or a
+// passkey, which also signs in alone (ADR 0007). A password sign-in then
+// needs it, and it meets an org's two-factor requirement.
+func (u *User) SecondFactor() bool { return u.MFAEnabled() || u.HasPasskey }
 
 // SessionState is how far sign-in has got.
 type SessionState string
@@ -889,4 +896,13 @@ type ReportShare struct {
 	ExpiresAt time.Time
 	RevokedAt *time.Time
 	CreatedAt time.Time
+}
+
+// Passkey is a user's WebAuthn credential (ADR 0007).
+type Passkey struct {
+	ID         uuid.UUID
+	UserID     uuid.UUID
+	Name       string
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
 }

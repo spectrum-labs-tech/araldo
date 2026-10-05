@@ -68,12 +68,14 @@ func isConflict(err error) bool { return err != nil && errorsIs(err, ErrConflict
 
 // Users.
 
-const userCols = `id, email, name, password_hash, totp_secret, totp_last_step, totp_enabled_at, failed_logins, locked_until, created_at`
+const userCols = `id, email, name, password_hash, totp_secret, totp_last_step, totp_enabled_at, failed_logins, locked_until, created_at,
+	EXISTS (SELECT 1 FROM passkeys WHERE passkeys.user_id = users.id)`
 
 func scanUser(r pgx.Row) (*model.User, error) {
 	var u model.User
 	var pw *string
-	err := r.Scan(&u.ID, &u.Email, &u.Name, &pw, &u.TOTPSecret, &u.TOTPLastStep, &u.TOTPEnabledAt, &u.FailedLogins, &u.LockedUntil, &u.CreatedAt)
+	err := r.Scan(&u.ID, &u.Email, &u.Name, &pw, &u.TOTPSecret, &u.TOTPLastStep, &u.TOTPEnabledAt, &u.FailedLogins, &u.LockedUntil, &u.CreatedAt,
+		&u.HasPasskey)
 	if pw != nil {
 		u.PasswordHash = *pw
 	}

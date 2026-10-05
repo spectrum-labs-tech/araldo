@@ -46,7 +46,7 @@ and a crashed worker's claim simply expires.
       ▲                  │
       └── retryable ─────┤  (rate limit, transient, failed before sending)
                          ├── rejected / auth revoked / expired ──▶ failed
-                         └── timeout after sending, or lease expired ──▶ uncertain
+                         └── timeout or 5xx after sending, or lease expired ──▶ uncertain
    ```
 
    - The worker commits `publishing` and an attempt record *before* it

@@ -209,7 +209,7 @@ func classify(e apiError, resp *http.Response) error {
 		return &platform.Error{Kind: platform.Rejected, Code: e.Code,
 			Msg: "TikTok has not audited this app, so it can post only to a private account: make the account private, or have TikTok audit the app. " + msg}
 	case resp.StatusCode >= 500:
-		return &platform.Error{Kind: platform.Transient, Code: e.Code, Msg: msg}
+		return platform.ServerError(resp, e.Code, msg)
 	}
 	return &platform.Error{Kind: platform.Rejected, Code: e.Code, Msg: msg}
 }

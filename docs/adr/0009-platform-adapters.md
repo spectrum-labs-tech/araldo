@@ -61,7 +61,8 @@ platform per install.
    - `Rejected`: permanent, such as content policy or invalid media;
    - `Transient`: retry with backoff;
    - `Uncertain`: the request may have been received, for example a
-     timeout after sending.
+     timeout after sending, or a 5xx to a write (platforms have saved a
+     post and then answered 500); a 5xx to a read is `Transient`.
 6. **Channel health:** tokens are refreshed before they expire (an `opsched`
    task), and a channel whose refresh fails becomes `needs_reauth` and
    emits `channel.needs_reauth`.

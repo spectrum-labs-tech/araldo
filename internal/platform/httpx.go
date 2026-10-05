@@ -183,6 +183,18 @@ func Multipart(fields [][2]string, files []File) (body []byte, contentType strin
 	return buf.Bytes(), w.FormDataContentType(), nil
 }
 
+// ServerError classifies a 5xx response. A read can be retried (Transient),
+// but a write may have been carried out before the platform failed: X and
+// Meta are known to save a post and answer 500. So a 5xx to any other method
+// is Uncertain, and a non-idempotent platform is not retried (ADR 0011).
+func ServerError(resp *http.Response, code, msg string) *Error {
+	kind := Uncertain
+	if resp.Request != nil && (resp.Request.Method == http.MethodGet || resp.Request.Method == http.MethodHead) {
+		kind = Transient
+	}
+	return &Error{Kind: kind, Code: code, Msg: msg}
+}
+
 // Classify turns an error response into a *Error.
 func Classify(resp *http.Response, body []byte) *Error {
 	msg := fmt.Sprintf("HTTP %d: %s", resp.StatusCode, snippet(body))
@@ -191,11 +203,10 @@ func Classify(resp *http.Response, body []byte) *Error {
 		return &Error{Kind: RateLimited, Code: "rate_limited", Msg: msg, RetryAfter: RetryAfter(resp.Header, time.Now())}
 	case resp.StatusCode == http.StatusUnauthorized:
 		return &Error{Kind: AuthRevoked, Code: "unauthorized", Msg: msg}
-	case resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusGatewayTimeout:
-		// A proxy gave up waiting: the platform may have acted.
-		return &Error{Kind: Uncertain, Code: "gateway", Msg: msg}
 	case resp.StatusCode >= 500:
-		return &Error{Kind: Transient, Code: "server_error", Msg: msg, RetryAfter: RetryAfter(resp.Header, time.Now())}
+		e := ServerError(resp, "server_error", msg)
+		e.RetryAfter = RetryAfter(resp.Header, time.Now())
+		return e
 	default:
 		return &Error{Kind: Rejected, Code: "rejected", Msg: msg}
 	}

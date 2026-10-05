@@ -121,7 +121,7 @@ func (a *Adapter) do(ctx context.Context, u string, body io.Reader, length int64
 		case code == http.StatusForbidden, strings.Contains(r.Description, "chat not found"):
 			return &platform.Error{Kind: platform.AuthRevoked, Code: "forbidden", Msg: "the bot cannot post in this chat: " + r.Description}
 		case code >= 500:
-			return &platform.Error{Kind: platform.Transient, Code: "server_error", Msg: r.Description}
+			return platform.ServerError(resp, "server_error", r.Description)
 		default:
 			return &platform.Error{Kind: platform.Rejected, Code: "rejected", Msg: r.Description}
 		}

@@ -18,20 +18,26 @@ import (
 
 func TestJSONClassifiesResponses(t *testing.T) {
 	t.Parallel()
+	// A 5xx to a write may have been carried out (the platform saved the
+	// post, then failed), so only a read's is safe to retry.
 	tests := []struct {
+		method string
 		status int
 		header map[string]string
 		want   Kind
 		retry  time.Duration
 	}{
-		{429, map[string]string{"Retry-After": "7"}, RateLimited, 7 * time.Second},
-		{401, nil, AuthRevoked, 0},
-		{400, nil, Rejected, 0},
-		{422, nil, Rejected, 0},
-		{500, nil, Transient, 0},
-		{503, map[string]string{"Retry-After": "3"}, Transient, 3 * time.Second},
-		{502, nil, Uncertain, 0},
-		{504, nil, Uncertain, 0},
+		{http.MethodPost, 429, map[string]string{"Retry-After": "7"}, RateLimited, 7 * time.Second},
+		{http.MethodPost, 401, nil, AuthRevoked, 0},
+		{http.MethodPost, 400, nil, Rejected, 0},
+		{http.MethodPost, 422, nil, Rejected, 0},
+		{http.MethodPost, 500, nil, Uncertain, 0},
+		{http.MethodPost, 503, map[string]string{"Retry-After": "3"}, Uncertain, 3 * time.Second},
+		{http.MethodPost, 502, nil, Uncertain, 0},
+		{http.MethodPut, 504, nil, Uncertain, 0},
+		{http.MethodGet, 500, nil, Transient, 0},
+		{http.MethodGet, 503, map[string]string{"Retry-After": "3"}, Transient, 3 * time.Second},
+		{http.MethodGet, 502, nil, Transient, 0},
 	}
 	for _, tt := range tests {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -41,11 +47,15 @@ func TestJSONClassifiesResponses(t *testing.T) {
 			w.WriteHeader(tt.status)
 			_, _ = w.Write([]byte(`{"error":"nope"}`))
 		}))
-		err := JSON(t.Context(), srv.Client(), http.MethodPost, srv.URL, nil, map[string]string{"a": "b"}, nil)
+		var in any
+		if tt.method != http.MethodGet {
+			in = map[string]string{"a": "b"}
+		}
+		err := JSON(t.Context(), srv.Client(), tt.method, srv.URL, nil, in, nil)
 		srv.Close()
 		var pe *Error
 		if !errors.As(err, &pe) || pe.Kind != tt.want || pe.RetryAfter != tt.retry {
-			t.Errorf("HTTP %d: err = %v, want kind %s retry %s", tt.status, err, tt.want, tt.retry)
+			t.Errorf("%s HTTP %d: err = %v, want kind %s retry %s", tt.method, tt.status, err, tt.want, tt.retry)
 		}
 	}
 }

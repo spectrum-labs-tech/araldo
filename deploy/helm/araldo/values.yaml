@@ -70,6 +70,10 @@ migrations:
 # Extra environment variables for both roles.
 extraEnv: []
 
+# Evict a role's pods one at a time during node drains, for each role with more than one replica.
+podDisruptionBudget:
+  enabled: true
+
 server:
   replicas: 1
   resources:

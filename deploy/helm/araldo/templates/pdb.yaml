@@ -1,0 +1,25 @@
+{{- /*
+A PodDisruptionBudget per role with more than one replica, so a node drain
+or cluster upgrade evicts its pods one at a time. With one replica there is
+none: a budget would block the drain instead of protecting anything.
+*/ -}}
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- range $role := list "server" "worker" }}
+{{- $v := index $.Values $role }}
+{{- if and (or (eq $role "server") $v.enabled) (gt (int $v.replicas) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "araldo.fullname" $ }}-{{ $role }}
+  labels:
+    {{- include "araldo.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $role }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "araldo.selector" (dict "root" $ "component" $role) | nindent 6 }}
+{{- end }}
+{{- end }}
+{{- end }}

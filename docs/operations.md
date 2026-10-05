@@ -625,6 +625,11 @@ and `ARALDO_MASTER_KEYS`, unless `transit` holds the master key) and
 `config.baseURL`. With `transit.enabled` and a `transit.role`, each pod gets
 a projected ServiceAccount token for the role's audience and logs in with it.
 
+**Node drains evict pods one at a time** for each role with more than one
+replica (a PodDisruptionBudget, `podDisruptionBudget.enabled`). With one
+replica there is no budget, since it would block the drain: run two servers
+if a drain must not interrupt the API.
+
 **Migrations run before the rollout.** A `pre-install`/`pre-upgrade` hook Job
 runs `araldo migrate`; only when it succeeds does Helm update the Deployments.
 If it fails, the upgrade stops, the running pods keep serving the previous

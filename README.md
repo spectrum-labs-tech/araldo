@@ -30,7 +30,14 @@ own products, but the API may still change.
 - **Test mode** with sandbox channels that follow each platform's rules and
   can simulate failures, so you can integrate before any platform approves
   anything.
-- **Signed webhooks** with retries and a delivery log.
+- **Images and video**, checked against each platform's limits and
+  resized for platforms that need it.
+- **Signed webhooks** with retries and a delivery log, and `araldo listen`
+  to stream events to your machine while you develop.
+- **Results**: engagement read back from the platforms, ad spend from ad
+  networks, signups from Plausible or GA4, and a monthly report per brand.
+- **Newsletters** handed to your email provider (Brevo first), with
+  approval and results, beside the posts.
 - **AI assistants** can use it: `araldo mcp` is an MCP server, so Claude
   and other assistants can list your brands, draft a post, check it against
   every platform, schedule it and see how it did, within what an API key
@@ -38,8 +45,11 @@ own products, but the API may still change.
 - **Multi-tenant**: orgs, brands, members with roles, optional approvals,
   MFA, scoped API keys, an audit log. Secrets are envelope-encrypted per
   org.
+- **Hostable for others**: developer apps the server provides to every
+  org, and an operator API with per-org limits and status, so your own
+  service can run sign-up and billing.
 
-Platforms today: Bluesky, Mastodon, Gab, X, LinkedIn (a member's own feed),
+Platforms today: Bluesky, Mastodon, Gab, X, LinkedIn (members and Pages),
 Threads, Facebook Pages, Instagram, Pinterest boards, YouTube and TikTok
 (signing in through your developer app), Discord (webhooks) and Telegram
 (bots), plus the sandbox
@@ -75,5 +85,6 @@ task db:up && task test:integration
 
 Copyright © 2026 Spectrum Labs LLC.
 
-The server is [AGPL-3.0-or-later](LICENSE). The API contract and client
-SDKs are [Apache-2.0](LICENSE-APACHE) ([ADR 0003](docs/adr/0003-license.md)).
+The server is [AGPL-3.0-or-later](LICENSE). The API contract is
+[Apache-2.0](LICENSE-APACHE), as client SDKs will be when they are
+published ([ADR 0003](docs/adr/0003-license.md)).

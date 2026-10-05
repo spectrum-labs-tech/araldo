@@ -18,11 +18,14 @@ posts on every platform your users read. This page is the map; the
   `araldo server` serves the API (`/v1`) and the dashboard; `araldo worker`
   publishes, delivers webhooks and runs housekeeping. `araldo all` runs
   both in one process.
-- **Postgres is the only dependency.** The publishing queue and webhook
-  queue are rows claimed with `FOR UPDATE SKIP LOCKED` and leases; periodic
-  tasks use lease rows too, so any number of workers can run. Images are
-  stored there too, unless S3-compatible storage is configured
-  ([ADR 0017](adr/0017-media.md)).
+- **Postgres is the only required dependency.** The publishing queue and
+  webhook queue are rows claimed with `FOR UPDATE SKIP LOCKED` and leases;
+  periodic tasks use lease rows too, so any number of workers can run.
+  Images are stored there too, unless S3-compatible storage is configured
+  ([ADR 0017](adr/0017-media.md)); video needs it
+  ([ADR 0027](adr/0027-video-and-resizing.md)). Stored credentials need
+  master keys, local or in a Transit engine ([ADR 0008](adr/0008-encryption.md)).
+  Without either, what needs them fails and the rest works.
 
 ## The life of a post
 
@@ -56,11 +59,16 @@ posts on every platform your users read. This page is the map; the
 | Channel | A connected account on a platform, under a brand. Test mode has sandbox channels only. |
 | Template | Versioned text with a JSON Schema for its data and per-platform bodies. |
 | Post | Something to publish, to one or more channels. |
-| Media | An uploaded image a post attaches; checked against each channel's platform. |
+| Media | An image or video a post attaches; checked against each channel's platform. |
 | Engagement | A published target's likes, reposts, replies and quotes, read on a schedule ([ADR 0018](adr/0018-engagement.md)). |
 | Target | One channel's copy of a post: the unit of publishing work. |
 | Event | A record of something that happened, kept 30 days, delivered to webhooks. |
 | Mode | Test or live. Decided by the API key (or the dashboard switch). |
+| Ad account | An account on an ad network whose spend and results are read, under a brand ([ADR 0023](adr/0023-paid-promotion.md)). |
+| Analytics source | A site's web analytics (Plausible, GA4) whose signups are read, under a brand ([ADR 0025](adr/0025-web-analytics.md)). |
+| Issue | A newsletter, handed to a brand's mail accounts' providers to send ([ADR 0024](adr/0024-newsletters.md)). |
+| Report | A brand's month beside the one before, across everything above ([ADR 0026](adr/0026-reports.md)). |
+| Operator | Whoever runs the server: `araldo admin` and the operator API, outside any org ([ADR 0028](adr/0028-cli-as-api-client.md), [ADR 0031](adr/0031-operator-api.md)). |
 
 ## Code layout
 

@@ -59,6 +59,12 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: parse database URL: %w", err)
 	}
+	if cfg.ConnConfig.ConnectTimeout == 0 {
+		// A database that drops packets fails a connection in seconds,
+		// not the operating system's minutes (connect_timeout in the URL
+		// overrides it).
+		cfg.ConnConfig.ConnectTimeout = 10 * time.Second
+	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("store: connect: %w", err)

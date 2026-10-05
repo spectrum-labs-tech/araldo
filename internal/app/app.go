@@ -74,6 +74,9 @@ type App struct {
 	started sync.Once
 }
 
+// MigrateWait is how long Open waits for a startup migration.
+var MigrateWait = 30 * time.Second
+
 var registerUnavailable sync.Once
 
 // Logger returns the JSON logger at level.
@@ -109,8 +112,20 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 		DB: store.NewHealthMonitor(st, log, 0)}
 	a.KeyHealth = keyring.NewHealthMonitor(a.Keys, log, 0)
 	if cfg.AutoMigrate {
-		if err := st.Migrate(ctx); err != nil {
-			log.WarnContext(ctx, "migration failed; retrying in the background, not ready until it succeeds", "err", err)
+		// Waited for a while, so a command finds the schema current; a
+		// long migration (an index built concurrently while another
+		// replica holds the lock) goes on in the background instead of
+		// holding up startup, and readiness waits for it.
+		done := make(chan error, 1)
+		go func() { done <- st.Migrate(ctx) }()
+		select {
+		case err := <-done:
+			if err != nil {
+				log.WarnContext(ctx, "migration failed; retrying in the background, not ready until it succeeds", "err", err)
+				a.migrate = true
+			}
+		case <-time.After(MigrateWait):
+			log.WarnContext(ctx, "migration still running; starting anyway, not ready until it finishes")
 			a.migrate = true
 		}
 	}

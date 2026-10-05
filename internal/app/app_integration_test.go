@@ -5,6 +5,7 @@
 package app_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +21,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/spectrum-labs-tech/araldo/internal/app"
 	"github.com/spectrum-labs-tech/araldo/internal/config"
@@ -325,5 +328,47 @@ func TestAPIEndToEnd(t *testing.T) {
 	}
 	if code, _, b := call("GET", "/v1/events?limit=5", "", ""); code != 200 || b["object"] != "list" {
 		t.Fatalf("events: %d %v", code, b)
+	}
+}
+
+// TestOpenDoesNotWaitLongForAMigration checks startup goes on while
+// another process holds the migration lock (a long index build in a
+// rolling deploy), instead of blocking until it is free. It holds the
+// shared lock and shortens MigrateWait, so it does not run in parallel.
+func TestOpenDoesNotWaitLongForAMigration(t *testing.T) {
+	dsn := os.Getenv("ARALDO_TEST_DSN")
+	if dsn == "" {
+		t.Skip("ARALDO_TEST_DSN not set")
+	}
+	old := app.MigrateWait
+	app.MigrateWait = 300 * time.Millisecond
+	t.Cleanup(func() { app.MigrateWait = old })
+	pc, err := pgxpool.ParseConfig(dsn) // the test URL carries pool settings
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder, err := pgx.ConnectConfig(t.Context(), pc.ConnConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holder.Close(context.Background()) }()
+	if _, err := holder.Exec(t.Context(), `SELECT pg_advisory_lock($1)`, int64(0x61726c646f6d67)); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	start := time.Now()
+	a, err := app.Open(ctx, config.Config{DatabaseURL: dsn, MasterKeys: "test:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+		BaseURL: "http://araldo.test", AutoMigrate: true}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if waited := time.Since(start); waited > 5*time.Second {
+		t.Fatalf("Open waited %s for a migration lock held elsewhere", waited)
+	}
+	cancel() // the background migration gives up the wait for the lock
+	if _, err := holder.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, int64(0x61726c646f6d67)); err != nil {
+		t.Fatal(err)
 	}
 }

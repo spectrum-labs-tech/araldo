@@ -694,6 +694,40 @@ func TestAbandonedIdempotencyKey(t *testing.T) {
 	}
 }
 
+// TestReadyThroughADatabaseOutage checks that a server that found its
+// schema current stays ready when the database goes away, so the load
+// balancer keeps sending requests that get Araldo's own 503, and that one
+// that never saw the database is not ready.
+func TestReadyThroughADatabaseOutage(t *testing.T) {
+	t.Parallel()
+	open(t) // migrates the shared database
+	ctx := t.Context()
+	mk, err := keyring.ParseMasterKeys(testMasterKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newService := func() (*core.Service, *store.Store) {
+		st, err := store.Open(ctx, os.Getenv("ARALDO_TEST_DSN"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return core.New(st, keyring.New(mk, st), platform.NewRegistry(), slog.New(slog.NewTextHandler(io.Discard, nil)), core.Config{}), st
+	}
+	seen, st := newService()
+	if err := seen.Ready(ctx); err != nil {
+		t.Fatalf("with the database: %v", err)
+	}
+	st.Close() // the database is gone
+	if err := seen.Ready(ctx); err != nil {
+		t.Fatalf("a ready server, without the database: %v", err)
+	}
+	fresh, st2 := newService()
+	st2.Close()
+	if err := fresh.Ready(ctx); err == nil {
+		t.Fatal("a server that never reached the database is ready")
+	}
+}
+
 func TestOperatorAPIKeys(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

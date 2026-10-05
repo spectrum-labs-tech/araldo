@@ -166,17 +166,28 @@ func (s *Service) Attempts(ctx context.Context, a Actor, targetID uuid.UUID) ([]
 	return s.store.Attempts(ctx, a.OrgID, targetID)
 }
 
-// Ready reports whether the database is reachable and the schema current.
+// Ready reports whether this server can take traffic: the schema is
+// current. Once it has been, a database that cannot be reached does not
+// make it unready: every pod shares the database, so they would all leave
+// the load balancer at once and callers would get its bare error instead
+// of Araldo's 503 and Retry-After (degrade, don't collapse).
 func (s *Service) Ready(ctx context.Context) error {
 	v, dirty, err := s.store.SchemaState(ctx)
 	if err != nil {
+		if s.schemaSeen.Load() {
+			return nil
+		}
 		return err
 	}
 	latest, err := store.LatestVersion()
 	if err != nil {
 		return err
 	}
-	return schemaReady(v, dirty, latest)
+	if err := schemaReady(v, dirty, latest); err != nil {
+		return err
+	}
+	s.schemaSeen.Store(true)
+	return nil
 }
 
 // schemaReady reports whether a binary whose newest migration is latest

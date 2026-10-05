@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -77,6 +78,8 @@ type Service struct {
 	mailers *email.Registry
 	// metrics records nothing until Instrument.
 	metrics *metrics
+	// schemaSeen is set once Ready has found the schema current.
+	schemaSeen atomic.Bool
 }
 
 // New returns the application.

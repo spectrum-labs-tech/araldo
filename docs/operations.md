@@ -535,8 +535,11 @@ or down, and recovers on its own:
 - **The database is down** (at startup or later): Araldo starts anyway and
   checks Postgres every few seconds. Meanwhile the API answers
   `database_unavailable` (503, `Retry-After`) and the dashboard a short
-  503 page, `/readyz` fails, the worker waits, and a startup migration is
-  retried until it succeeds. A malformed `ARALDO_DATABASE_URL` still stops
+  503 page, the worker waits, and a startup migration is retried until it
+  succeeds. `/readyz` fails only for a server that has not yet found its
+  schema current; one that has stays ready, since every pod shares the
+  database and taking them all out of the load balancer would replace
+  Araldo's 503 with the balancer's own error. A malformed `ARALDO_DATABASE_URL` still stops
   it: that needs fixing, not waiting out.
 - **The master keys are unavailable** (none configured, or their Transit
   service down): everything that needs no stored credential works.
@@ -546,7 +549,8 @@ or down, and recovers on its own:
   stops Araldo.
 
 - `GET /healthz`: the process is up.
-- `GET /readyz`: the database answers and the schema is current.
+- `GET /readyz`: the schema is current (checked against the database; once
+  it has been, a database outage does not make the server unready).
 - The dashboard's **Organization → Background tasks** shows every periodic
   task, its last success and failures.
 

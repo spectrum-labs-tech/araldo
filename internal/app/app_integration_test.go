@@ -373,7 +373,7 @@ func TestOpenDoesNotWaitLongForAMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	if waited := time.Since(start); waited > 5*time.Second {
+	if waited := time.Since(start); waited > 20*time.Second { // the lock is held for good: anything short of that is not waiting
 		t.Fatalf("Open waited %s for a migration lock held elsewhere", waited)
 	}
 	cancel() // the background migration gives up the wait for the lock

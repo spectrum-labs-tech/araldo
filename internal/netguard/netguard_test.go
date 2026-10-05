@@ -138,15 +138,17 @@ func TestUploadClient(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		if r.URL.Path == "/hang" {
-			time.Sleep(time.Second)
+			time.Sleep(3 * time.Second)
 		}
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer srv.Close()
-	c := UploadClient(Policy{All: true}, 200*time.Millisecond)
+	// Margins wide enough for a loaded machine: an answer within a second
+	// of the body, an upload taking two, a server silent for three.
+	c := UploadClient(Policy{All: true}, time.Second)
 
-	// About 400ms to send, twice the wait: fine, the wait starts once sent.
-	resp, err := c.Post(srv.URL+"/upload", "video/mp4", &slowReader{left: 40, pause: 40 * time.Millisecond})
+	// About 2s to send, twice the wait: fine, the wait starts once sent.
+	resp, err := c.Post(srv.URL+"/upload", "video/mp4", &slowReader{left: 40, pause: 200 * time.Millisecond})
 	if err != nil {
 		t.Fatalf("a slow upload: %v", err)
 	}

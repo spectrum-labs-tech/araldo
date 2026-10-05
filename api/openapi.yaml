@@ -57,6 +57,10 @@ tags:
   - name: Events
   - name: Webhooks
   - name: API keys
+  - name: Sign-in
+    description: How the araldo CLI signs a person in (device sign-in and user tokens).
+  - name: Members
+    description: The org's members and settings. A person's user token only; never an API key.
   - name: Audit
   - name: Platforms
   - name: MCP
@@ -1624,6 +1628,86 @@ paths:
               schema: { $ref: "#/components/schemas/Me" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/auth/device:
+    post:
+      summary: Start a device sign-in
+      description: |
+        The first step of the OAuth 2.0 device authorization grant (RFC 8628)
+        the `araldo` CLI signs in with (ADR 0028). Show the person the
+        `user_code` and `verification_uri`; they approve it in the dashboard,
+        signed in, while you poll `POST /v1/auth/device/token` every
+        `interval` seconds. Needs no credential.
+      security: []
+      tags: [Sign-in]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_name: { type: string, maxLength: 100, description: "Shown to the person approving, for example araldo CLI on laptop." }
+                livemode: { type: boolean, description: A live token (default a test one). }
+      responses:
+        "200":
+          description: The codes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_code: { type: string, description: Secret; poll with it. }
+                  user_code: { type: string, example: BDFG-HJKL }
+                  verification_uri: { type: string }
+                  verification_uri_complete: { type: string }
+                  expires_in: { type: integer, description: Seconds. }
+                  interval: { type: integer, description: Seconds between polls. }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/auth/device/token:
+    post:
+      summary: Poll a device sign-in for its token
+      description: |
+        Until the person decides, a 400 problem whose `code` is
+        `authorization_pending`, or `slow_down` (wait five seconds longer from
+        now on); then `access_denied`, `expired_token`, or the token, once.
+        Needs no credential.
+      security: []
+      tags: [Sign-in]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_code]
+              properties:
+                device_code: { type: string }
+      responses:
+        "200":
+          description: The token, shown only this once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object: { type: string, enum: [user_token] }
+                  access_token: { type: string, example: ald_user_… }
+                  token_type: { type: string, enum: [bearer] }
+                  user_token: { $ref: "#/components/schemas/UserToken" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/auth/token:
+    delete:
+      summary: Revoke the calling user token
+      description: Signs this device out (`araldo auth logout`). Only a user token can; revoke API keys in the dashboard.
+      tags: [Sign-in]
+      responses:
+        "200":
+          description: The token is revoked.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/api_keys:
     get:
       summary: List API keys
@@ -1881,7 +1965,12 @@ components:
     apiKey:
       type: http
       scheme: bearer
-      description: "An API key: ald_test_… or ald_live_…"
+      description: |
+        An API key (ald_test_… or ald_live_…), or a person's user token from
+        the CLI's device sign-in (ald_user_…, ADR 0028). A user token acts
+        as the person in the org the `Araldo-Org` header names (an ID or
+        name; not needed for someone in one org), with their current role,
+        in the token's mode. Idempotency-Key applies to API keys.
 
   parameters:
     ID:
@@ -2394,6 +2483,26 @@ components:
             id: { type: string }
             name: { type: string }
         api_key: { $ref: "#/components/schemas/APIKey" }
+        user:
+          type: object
+          description: The person, for a user token.
+          properties:
+            id: { type: string }
+            email: { type: string }
+            name: { type: string }
+        user_token: { $ref: "#/components/schemas/UserToken" }
+        role: { type: string, enum: [owner, admin, editor, viewer], description: "The person's role in the org, for a user token." }
+
+    UserToken:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [user_token] }
+        name: { type: string, description: The device it was issued to. }
+        hint: { type: string }
+        livemode: { type: boolean }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time }
 
     AuditEvent:
       type: object

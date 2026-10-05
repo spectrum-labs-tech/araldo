@@ -739,6 +739,35 @@ type MeView struct {
 	Livemode bool        `json:"livemode"`
 	Org      MeOrgView   `json:"org"`
 	APIKey   *APIKeyView `json:"api_key,omitempty"`
+	// User and UserToken are set for a person signed in with a user token.
+	User      *MeUserView    `json:"user,omitempty"`
+	UserToken *UserTokenView `json:"user_token,omitempty"`
+	// Role is the person's role in the org.
+	Role model.Role `json:"role,omitempty"`
+}
+
+// MeUserView is the person a user token acts as.
+type MeUserView struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name,omitempty"`
+}
+
+// UserTokenView is a user token, never its secret but once, when issued.
+type UserTokenView struct {
+	ID         string     `json:"id"`
+	Object     string     `json:"object"`
+	Name       string     `json:"name"`
+	Hint       string     `json:"hint"`
+	Livemode   bool       `json:"livemode"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+// ViewUserToken renders a user token.
+func ViewUserToken(t *model.UserToken) UserTokenView {
+	return UserTokenView{ID: id.Format(id.UserToken, t.ID), Object: "user_token", Name: t.Name, Hint: t.Hint, Livemode: t.Livemode,
+		CreatedAt: t.CreatedAt.UTC(), LastUsedAt: utc(t.LastUsedAt)}
 }
 
 // MeOrgView is the org a credential acts in.
@@ -762,6 +791,24 @@ func (s *Service) Me(ctx context.Context, a Actor) (MeView, error) {
 		}
 		kv := ViewAPIKey(k)
 		v.APIKey = &kv
+	}
+	if a.TokenID != nil && a.UserID != nil {
+		u, err := s.store.User(ctx, *a.UserID)
+		if err != nil {
+			return MeView{}, err
+		}
+		v.User = &MeUserView{ID: id.Format(id.User, u.ID), Email: u.Email, Name: u.Name}
+		v.Role = a.Role
+		ts, err := s.store.UserTokens(ctx, u.ID)
+		if err != nil {
+			return MeView{}, err
+		}
+		for _, t := range ts {
+			if t.ID == *a.TokenID {
+				tv := ViewUserToken(t)
+				v.UserToken = &tv
+			}
+		}
 	}
 	return v, nil
 }

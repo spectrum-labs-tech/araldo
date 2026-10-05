@@ -479,7 +479,8 @@ func (s *Service) ChangePassword(ctx context.Context, ss *model.Session, current
 }
 
 // ResetPassword sets a user's password (operator CLI; ADR 0007) and signs
-// them out everywhere.
+// them out everywhere, the CLI included: it is how a taken-over account is
+// recovered.
 func (s *Service) ResetPassword(ctx context.Context, email, password string) error {
 	u, err := s.UserByEmail(ctx, email)
 	if err != nil {
@@ -497,6 +498,9 @@ func (s *Service) ResetPassword(ctx context.Context, email, password string) err
 			return err
 		}
 		if err := tx.ResetLoginFailures(ctx, u.ID); err != nil {
+			return err
+		}
+		if err := tx.RevokeAllUserTokens(ctx, u.ID, s.Now()); err != nil {
 			return err
 		}
 		return tx.DeleteOtherSessions(ctx, u.ID, uuid.Nil)

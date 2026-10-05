@@ -167,6 +167,8 @@ type accountData struct {
 	RecoveryCodes []string
 	RecoveryLeft  int
 	Sessions      []*model.Session
+	// Devices are signed in with the CLI; the list shows when there are any.
+	Devices []core.UserTokenView
 }
 
 func (s *Server) accountPage(c *reqCtx) error {
@@ -176,6 +178,9 @@ func (s *Server) accountPage(c *reqCtx) error {
 		return err
 	}
 	d.RecoveryLeft = n
+	if d.Devices, err = s.accountDevices(c); err != nil {
+		return err
+	}
 	return s.page(c, "account", "account", "Your account", d)
 }
 

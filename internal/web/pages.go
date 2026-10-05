@@ -121,6 +121,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /org/tasks", s.app("org", s.tasks))
 
 	s.mux.HandleFunc("GET /account", s.app("account", s.accountPage))
+	s.mux.HandleFunc("GET /device", s.app("account", s.devicePage))
+	s.mux.HandleFunc("POST /device", s.app("account", s.deviceSubmit))
+	s.mux.HandleFunc("POST /account/devices/{id}/revoke", s.app("account", s.revokeDevice))
 	s.mux.HandleFunc("POST /account/mfa/begin", s.app("account", s.accountMFABegin))
 	s.mux.HandleFunc("POST /account/mfa/confirm", s.app("account", s.accountMFAConfirm))
 	s.mux.HandleFunc("POST /account/mfa/disable", s.app("account", s.accountMFADisable))

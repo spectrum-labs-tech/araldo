@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
+	"github.com/spectrum-labs-tech/araldo/internal/authn"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 )
@@ -136,7 +137,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	limit, remaining, reset, allowed := h.limiter.take(a.KeyID.String(), time.Now())
+	limit, remaining, reset, allowed := h.limiter.take(rateKey(a), time.Now())
 	w.Header().Set("RateLimit-Limit", strconv.Itoa(limit))
 	w.Header().Set("RateLimit-Remaining", strconv.Itoa(remaining))
 	w.Header().Set("RateLimit-Reset", strconv.Itoa(reset))
@@ -189,7 +190,20 @@ func (h *Handler) authenticate(r *http.Request) (core.Actor, error) {
 		return core.Actor{}, &apperr.Error{Kind: apperr.KindUnauthorized, Code: "api_key_missing",
 			Message: "Send your API key as a bearer token: Authorization: Bearer ald_test_…"}
 	}
-	return h.svc.AuthenticateKey(r.Context(), strings.TrimSpace(token), RequestID(r.Context()))
+	token = strings.TrimSpace(token)
+	if strings.HasPrefix(token, authn.UserTokenPrefix) {
+		// A person, through the CLI (ADR 0028): the org is the request's.
+		return h.svc.AuthenticateUserToken(r.Context(), token, r.Header.Get("Araldo-Org"), RequestID(r.Context()))
+	}
+	return h.svc.AuthenticateKey(r.Context(), token, RequestID(r.Context()))
+}
+
+// rateKey is the credential a request is counted against.
+func rateKey(a core.Actor) string {
+	if a.TokenID != nil {
+		return "user_token:" + a.TokenID.String()
+	}
+	return a.KeyID.String()
 }
 
 // idempotent runs a POST at most once per Idempotency-Key (ADR 0005).

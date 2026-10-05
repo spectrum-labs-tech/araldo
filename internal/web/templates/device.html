@@ -1,0 +1,31 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Sign in a device</h1>
+{{with $d.Device}}
+<section class="card">
+  <h2>Approve {{.DeviceName}}?</h2>
+  <dl class="facts">
+    <dt>Device</dt><dd>{{.DeviceName}}</dd>
+    <dt>Mode</dt><dd>{{if .Livemode}}<strong>live</strong>: it can post to real accounts{{else}}test: it reaches only sandbox channels{{end}}</dd>
+    <dt>From</dt><dd><code>{{.ClientIP}}</code></dd>
+    <dt>Asked</dt><dd>{{fmtTime .CreatedAt}}</dd>
+  </dl>
+  <p class="my-3">It will act as you, <strong>{{$.User.Email}}</strong>, in each of your orgs, with your role there, until you sign it out here. Approve only a code you just saw in your own terminal: someone who sends you a code is asking for your account.</p>
+  <form method="post" action="/device" class="flex flex-wrap items-center gap-2">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="code" value="{{.UserCode}}">
+    <button class="btn-primary" name="action" value="approve">Approve</button>
+    <button class="btn-danger" name="action" value="deny">Deny</button>
+  </form>
+</section>
+{{else}}
+<section class="card">
+  <p class="mb-3"><code>araldo auth login</code> printed a code like <code>BDFG-HJKL</code>. Enter it to see what is asking to sign in.</p>
+  <form method="post" action="/device" class="flex flex-col gap-4">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Code <input name="code" value="{{$d.Code}}" autocomplete="off" autocapitalize="characters" spellcheck="false" required maxlength="20"></label>
+    <div><button class="btn-primary">Continue</button></div>
+  </form>
+</section>
+{{end}}
+{{end}}

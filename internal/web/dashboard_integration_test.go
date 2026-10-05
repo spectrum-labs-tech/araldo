@@ -479,6 +479,69 @@ func TestInviteSomeone(t *testing.T) {
 	}
 }
 
+// TestApproveADevice drives the dashboard's side of the CLI's sign-in: the
+// person opens the code's page, sees what is asking, approves it, and
+// later signs the device out from their account.
+func TestApproveADevice(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	start, err := d.s.StartDevice(ctx, "araldo CLI on laptop", true, "203.0.113.7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(path string, form url.Values) *httptest.ResponseRecorder {
+		form.Set("csrf", d.login.Session.CSRFToken)
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return d.send(r)
+	}
+
+	// Typing the code shows what asks before anything is approved.
+	rec := post("/device", url.Values{"code": {strings.ToLower(start.UserCode)}})
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/device?code=") {
+		t.Fatalf("entering the code: %d %q", rec.Code, loc)
+	}
+	for _, path := range []string{"/device", "/device?code=" + start.UserCode} {
+		rec = d.send(httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: %d", path, rec.Code)
+		}
+		for _, issue := range a11yIssues(rec.Body.String(), true) {
+			t.Errorf("%s: %s", path, issue)
+		}
+	}
+	if page := rec.Body.String(); !strings.Contains(page, "araldo CLI on laptop") || !strings.Contains(page, "203.0.113.7") ||
+		!strings.Contains(page, "<strong>live</strong>") {
+		t.Fatalf("what asks:\n%s", page)
+	}
+	if rec = d.send(httptest.NewRequest(http.MethodGet, "/device?code=ZZZZ-ZZZZ", nil)); rec.Code == http.StatusOK && !strings.Contains(rec.Body.String(), "No sign-in is waiting") {
+		t.Fatalf("an unknown code: %d", rec.Code)
+	}
+
+	rec = post("/device", url.Values{"code": {start.UserCode}, "action": {"approve"}})
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.Contains(loc, "is+signed+in") {
+		t.Fatalf("approving: %d %q", rec.Code, loc)
+	}
+	if _, _, err := d.s.PollDevice(ctx, start.DeviceCode); err != nil {
+		t.Fatalf("the CLI's token after approval: %v", err)
+	}
+	page := d.send(httptest.NewRequest(http.MethodGet, "/account", nil)).Body.String()
+	m := regexp.MustCompile(`action="/account/devices/(utok_[^/]+)/revoke"`).FindStringSubmatch(page)
+	if m == nil || !strings.Contains(page, "araldo CLI on laptop") {
+		t.Fatalf("the account's devices:\n%s", page)
+	}
+	for _, issue := range a11yIssues(page, true) {
+		t.Errorf("/account with a device: %s", issue)
+	}
+	if rec = post("/account/devices/"+m[1]+"/revoke", url.Values{}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("signing the device out: %d", rec.Code)
+	}
+	if page = d.send(httptest.NewRequest(http.MethodGet, "/account", nil)).Body.String(); strings.Contains(page, "araldo CLI on laptop") {
+		t.Fatal("a signed-out device is still listed")
+	}
+}
+
 func TestConnectTheCLI(t *testing.T) {
 	t.Parallel()
 	d := newDash(t)

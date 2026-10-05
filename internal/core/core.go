@@ -155,9 +155,11 @@ var roleMin = map[Permission]model.Role{
 type Actor struct {
 	OrgID    uuid.UUID
 	Livemode bool
-	// Member (dashboard).
+	// Member (dashboard, or a user token).
 	UserID *uuid.UUID
 	Role   model.Role
+	// TokenID is the user token a member acts through, from the CLI.
+	TokenID *uuid.UUID
 	// API key.
 	KeyID   *uuid.UUID
 	Scopes  []string // empty: full access
@@ -237,6 +239,13 @@ func (s *Service) audit(ctx context.Context, tx *store.Store, a Actor, action, t
 	}
 	e := &model.AuditEvent{ID: id.New(), OrgID: orgp, ActorUser: a.UserID, ActorKey: a.KeyID, Action: action, Target: target,
 		RequestID: a.RequestID, Detail: detail}
+	if a.TokenID != nil {
+		// Through the CLI: which token, so its changes are told apart.
+		e.Detail = map[string]any{"user_token": id.Format(id.UserToken, *a.TokenID)}
+		for k, v := range detail {
+			e.Detail[k] = v
+		}
+	}
 	if a.Operator {
 		// The operator, not a member: what they ran is the record.
 		e.ActorUser, e.ActorKey = nil, nil

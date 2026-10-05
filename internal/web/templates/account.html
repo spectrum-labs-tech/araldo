@@ -39,6 +39,28 @@
   {{end}}
 </section>
 
+{{if .Data.Devices}}
+<section class="card">
+  <h2>Devices</h2>
+  <p class="mb-3 text-muted">Computers signed in with <code>araldo auth login</code>. Each acts as you, in the mode shown, until you sign it out.</p>
+  <table>
+    <thead><tr><th>Device</th><th>Mode</th><th>Signed in</th><th>Last used</th><th></th></tr></thead>
+    <tbody>
+    {{range .Data.Devices}}
+    <tr>
+      <td>{{.Name}} <code class="text-muted">{{.Hint}}</code></td>
+      <td>{{if .Livemode}}live{{else}}test{{end}}</td>
+      <td>{{fmtTime .CreatedAt}}</td>
+      <td>{{with .LastUsedAt}}{{fmtTime .}}{{else}}never{{end}}</td>
+      <td><form method="post" action="/account/devices/{{.ID}}/revoke" data-confirm="Sign out {{.Name}}?">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger" aria-label="Sign out {{.Name}}">Sign out</button></form></td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
+
 <section class="card">
   <h2>Password</h2>
   <form method="post" action="/account/password" class="flex max-w-xl flex-col gap-4">

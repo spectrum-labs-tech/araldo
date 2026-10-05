@@ -695,6 +695,36 @@ type Invitation struct {
 	CreatedAt  time.Time
 }
 
+// UserToken is a person's own credential for the CLI (ADR 0028), in one
+// mode, for whichever of their orgs a request names.
+type UserToken struct {
+	ID         uuid.UUID
+	UserID     uuid.UUID
+	Livemode   bool
+	Name       string // the device it was issued to
+	Hint       string
+	CreatedIP  string
+	LastUsedAt *time.Time
+	RevokedAt  *time.Time
+	CreatedAt  time.Time
+}
+
+// DeviceAuthorization is one device sign-in (RFC 8628): a CLI waiting for
+// a person to approve its user code in the dashboard.
+type DeviceAuthorization struct {
+	ID           uuid.UUID
+	UserCode     string
+	DeviceName   string
+	Livemode     bool
+	ClientIP     string
+	Status       string // pending, approved, denied or issued
+	UserID       *uuid.UUID
+	PollInterval int // seconds
+	LastPolledAt *time.Time
+	ExpiresAt    time.Time
+	CreatedAt    time.Time
+}
+
 // WebhookEndpoint receives events.
 type WebhookEndpoint struct {
 	ID          uuid.UUID

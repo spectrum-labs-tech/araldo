@@ -15,13 +15,12 @@ import (
 
 // scratchStore opens a new, empty database of its own, since these tests
 // break the schema on purpose and the shared one serves the other tests.
-func scratchStore(t *testing.T) *Store {
+func scratchStore(ctx context.Context, t *testing.T) *Store {
 	t.Helper()
 	dsn := os.Getenv("ARALDO_TEST_DSN")
 	if dsn == "" {
 		t.Skip("ARALDO_TEST_DSN not set (task db:up && task test:integration)")
 	}
-	ctx := t.Context()
 	admin, err := Open(ctx, dsn)
 	if err != nil {
 		t.Fatal(err)
@@ -42,11 +41,13 @@ func scratchStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The test's context has ended by cleanup time.
+	cleanupCtx := context.WithoutCancel(ctx)
 	t.Cleanup(func() {
 		st.Close()
 		// A scratch database, not rows: dropping it leaves the shared one alone.
-		if a, err := Open(context.Background(), dsn); err == nil {
-			_, _ = a.pool.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
+		if a, err := Open(cleanupCtx, dsn); err == nil {
+			_, _ = a.pool.Exec(cleanupCtx, "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
 			a.Close()
 		}
 	})
@@ -75,7 +76,7 @@ func TestMigrateRetriesAFailedMigration(t *testing.T) {
 
 	t.Run("a migration in one transaction", func(t *testing.T) {
 		t.Parallel()
-		st := scratchStore(t)
+		st := scratchStore(ctx, t)
 		m, err := st.migrator()
 		if err != nil {
 			t.Fatal(err)
@@ -94,7 +95,7 @@ func TestMigrateRetriesAFailedMigration(t *testing.T) {
 
 	t.Run("an index built concurrently", func(t *testing.T) {
 		t.Parallel()
-		st := scratchStore(t)
+		st := scratchStore(ctx, t)
 		m, err := st.migrator()
 		if err != nil {
 			t.Fatal(err)

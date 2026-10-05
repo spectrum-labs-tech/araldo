@@ -683,13 +683,13 @@ type Event struct {
 
 // WebhookEndpoint receives events.
 type WebhookEndpoint struct {
-	ID             uuid.UUID
-	OrgID          uuid.UUID
-	Livemode       bool
-	URL            string
-	Description    string
-	EventTypes     []string
-	Secret         []byte // encrypted
+	ID          uuid.UUID
+	OrgID       uuid.UUID
+	Livemode    bool
+	URL         string
+	Description string
+	EventTypes  []string
+	Secret      []byte // encrypted
 	// PreviousSecret (encrypted) signs deliveries beside Secret until
 	// PreviousSecretUntil, after the secret is rolled.
 	PreviousSecret      []byte

@@ -223,16 +223,7 @@ func (h *Handler) idempotent(w http.ResponseWriter, r *http.Request, a core.Acto
 		r.Body = readCloser{bytes.NewReader(body)}
 	}
 	finished := false
-	defer func() {
-		if !finished {
-			// The handler panicked: release the key, as for an error, so a
-			// retry is not refused for a day. The panic goes on to the
-			// server's recovery.
-			if err := h.svc.FinishIdempotent(r.Context(), a, key, http.StatusInternalServerError, nil); err != nil {
-				h.log.ErrorContext(r.Context(), "releasing idempotency key", "err", err)
-			}
-		}
-	}()
+	defer h.releaseIfPanicked(r.Context(), a, key, &finished)
 	h.mux.ServeHTTP(rec, r)
 	finished = true
 	if err := h.svc.FinishIdempotent(r.Context(), a, key, rec.status, rec.buf.Bytes()); err != nil {
@@ -258,6 +249,18 @@ type recorder struct {
 	http.ResponseWriter
 	status int
 	buf    bytes.Buffer
+}
+
+// releaseIfPanicked releases key when the handler panicked (finished is
+// still false), as for an error, so a retry is not refused for a day. The
+// panic goes on to the server's recovery.
+func (h *Handler) releaseIfPanicked(ctx context.Context, a core.Actor, key string, finished *bool) {
+	if *finished {
+		return
+	}
+	if err := h.svc.FinishIdempotent(ctx, a, key, http.StatusInternalServerError, nil); err != nil {
+		h.log.ErrorContext(ctx, "releasing idempotency key", "err", err)
+	}
 }
 
 // Unwrap lets http.ResponseController reach the connection (an upload

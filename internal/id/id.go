@@ -8,6 +8,7 @@
 package id
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
@@ -67,12 +68,11 @@ func New() uuid.UUID {
 // before t sorts below it, so a primary key index finds rows older than t.
 func Before(t time.Time) uuid.UUID {
 	var u uuid.UUID
-	ms := uint64(t.UnixMilli()) //nolint:gosec // G115: times after 1970
-	for i := range 6 {
-		u[i] = byte(ms >> (40 - 8*i))
-	}
-	u[6] = 0x70 // version 7
-	u[8] = 0x80 // RFC 9562 variant
+	var ms [8]byte
+	binary.BigEndian.PutUint64(ms[:], uint64(t.UnixMilli())) //nolint:gosec // G115: times after 1970
+	copy(u[:6], ms[2:])                                      // a 48-bit millisecond timestamp
+	u[6] = 0x70                                              // version 7
+	u[8] = 0x80                                              // RFC 9562 variant
 	return u
 }
 

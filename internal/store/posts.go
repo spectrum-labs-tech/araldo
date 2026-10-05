@@ -484,6 +484,14 @@ func (s *Store) MarkTargetPublished(ctx context.Context, orgID, id uuid.UUID, pe
 }
 
 // StartAttempt and FinishAttempt keep the attempt history.
+// AttemptStarted reports whether a target's attempt was put on record,
+// which happens before the platform is called (ADR 0011).
+func (s *Store) AttemptStarted(ctx context.Context, targetID uuid.UUID, attempt int) (bool, error) {
+	var started bool
+	err := s.q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM publish_attempts WHERE target_id = $1 AND attempt = $2)`, targetID, attempt).Scan(&started)
+	return started, err
+}
+
 func (s *Store) StartAttempt(ctx context.Context, a *model.Attempt) error {
 	_, err := s.q.Exec(ctx, `INSERT INTO publish_attempts (id, org_id, target_id, attempt, started_at) VALUES ($1, $2, $3, $4, $5)`,
 		a.ID, a.OrgID, a.TargetID, a.Attempt, a.StartedAt)

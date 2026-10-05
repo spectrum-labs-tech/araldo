@@ -1308,3 +1308,47 @@ func TestPublisherSlotsAreIndependent(t *testing.T) {
 	}
 	wait(quick.ID, model.TargetPublished)
 }
+
+// TestLostLeasesBeforeTheCall checks a target whose worker vanished before
+// putting its attempt on record goes back in the queue (the platform was
+// never called), while one that vanished after needs a person (ADR 0011).
+func TestLostLeasesBeforeTheCall(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	pool := open(t).Pool()
+	lose := func(started bool) uuid.UUID {
+		t.Helper()
+		p, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "lost"},
+			PublishAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tg := p.Targets[0]
+		// As a claim, then a worker gone with its lease run out.
+		if _, err := pool.Exec(ctx, `UPDATE post_targets SET status = 'publishing', lease_owner = 'gone', lease_until = now() - interval '1 minute',
+			attempts = attempts + 1 WHERE id = $1`, tg.ID); err != nil {
+			t.Fatal(err)
+		}
+		if started {
+			if _, err := pool.Exec(ctx, `INSERT INTO publish_attempts (id, org_id, target_id, attempt, started_at) VALUES ($1, $2, $3, $4, now())`,
+				uuid.New(), w.org.ID, tg.ID, tg.Attempts+1); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return p.ID
+	}
+	before, after := lose(false), lose(true)
+	if _, err := w.s.ReclaimLostTargets(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for postID, want := range map[uuid.UUID]model.TargetStatus{before: model.TargetQueued, after: model.TargetNeedsAttention} {
+		p, err := w.s.Post(ctx, w.owner, postID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := p.Targets[0].Status; got != want {
+			t.Errorf("post %s: %s, want %s (%s)", postID, got, want, p.Targets[0].ErrorMessage)
+		}
+	}
+}

@@ -172,13 +172,14 @@ func (s *Service) publishTarget(ctx context.Context, owner string, ct store.Clai
 	t := ct.Target
 	started := s.Now()
 	attempt := &model.Attempt{ID: id.New(), OrgID: t.OrgID, TargetID: t.ID, Attempt: t.Attempts, StartedAt: started}
-	// The attempt is on record before the platform is called, so a crash
-	// leaves evidence (ADR 0011).
-	if err := s.store.StartAttempt(ctx, attempt); err != nil {
-		return err
-	}
 	ch, err := s.store.Channel(ctx, t.OrgID, t.ChannelID)
 	if err != nil {
+		return err // no attempt on record: the lost lease is requeued
+	}
+	// The attempt is on record before the platform is called, so a crash
+	// leaves evidence (ADR 0011), and its absence proves the platform was
+	// never called.
+	if err := s.store.StartAttempt(ctx, attempt); err != nil {
 		return err
 	}
 	adapter, ok := s.platforms.Get(ch.Provider)
@@ -354,6 +355,12 @@ func (s *Service) ReclaimLostTargets(ctx context.Context) (int, error) {
 			"post_target.needs_attention"
 		if a, ok := s.platforms.Get(t.Provider); ok && a.Idempotent() {
 			status, msg, event = model.TargetQueued, "The worker stopped while publishing; retrying safely.", ""
+		} else if started, err := s.store.AttemptStarted(ctx, t.ID, t.Attempts); err != nil {
+			return n, err
+		} else if !started {
+			// It stopped before the attempt was on record, so before the
+			// platform was called: nothing can have been published.
+			status, msg, event = model.TargetQueued, "The worker stopped before publishing; retrying.", ""
 		}
 		err := s.store.InTx(ctx, func(tx *store.Store) error {
 			if err := tx.ReclaimTarget(ctx, t.ID, now, status, code, msg); err != nil {

@@ -22,6 +22,8 @@ import (
 type loginData struct {
 	Email string
 	Next  string
+	// Code and Passkey are the second factors the person signing in has.
+	Code, Passkey bool
 }
 
 func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
@@ -81,10 +83,18 @@ func (s *Server) pendingSession(w http.ResponseWriter, r *http.Request) (*model.
 }
 
 func (s *Server) mfaPage(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.pendingSession(w, r); !ok {
+	ss, ok := s.pendingSession(w, r)
+	if !ok {
 		return
 	}
-	s.render(w, http.StatusOK, "login_mfa", s.view(nil, "", "Two-factor authentication", loginData{Next: r.URL.Query().Get("next")}))
+	u, err := s.svc.User(r.Context(), ss.UserID)
+	if err != nil {
+		s.log.ErrorContext(r.Context(), "loading the user signing in", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	s.render(w, http.StatusOK, "login_mfa", s.view(nil, "", "Two-factor authentication",
+		loginData{Next: r.URL.Query().Get("next"), Code: u.MFAEnabled(), Passkey: u.HasPasskey}))
 }
 
 func (s *Server) mfaSubmit(w http.ResponseWriter, r *http.Request) {
@@ -93,13 +103,13 @@ func (s *Server) mfaSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.login.allow("mfa:"+ss.ID.String(), time.Now()) {
-		v := s.view(nil, "", "Two-factor authentication", loginData{})
+		v := s.view(nil, "", "Two-factor authentication", loginData{Code: true})
 		v.Error = "Too many attempts. Sign in again."
 		s.render(w, http.StatusTooManyRequests, "login_mfa", v)
 		return
 	}
 	if err := s.svc.VerifySecondFactor(r.Context(), ss, r.PostFormValue("code")); err != nil {
-		v := s.view(nil, "", "Two-factor authentication", loginData{Next: r.PostFormValue("next")})
+		v := s.view(nil, "", "Two-factor authentication", loginData{Next: r.PostFormValue("next"), Code: true})
 		v.Error = apperr.As(err).Message
 		s.render(w, http.StatusUnauthorized, "login_mfa", v)
 		return
@@ -169,6 +179,15 @@ type accountData struct {
 	Sessions      []*model.Session
 	// Devices are signed in with the CLI; the list shows when there are any.
 	Devices []core.UserTokenView
+	// Passkeys are the user's (ADR 0007).
+	Passkeys []*model.Passkey
+}
+
+// account fills what every rendering of the account page shows.
+func (s *Server) account(c *reqCtx, d accountData) (accountData, error) {
+	var err error
+	d.Passkeys, err = s.svc.Passkeys(c.ctx(), c.user.ID)
+	return d, err
 }
 
 func (s *Server) accountPage(c *reqCtx) error {
@@ -179,6 +198,9 @@ func (s *Server) accountPage(c *reqCtx) error {
 	}
 	d.RecoveryLeft = n
 	if d.Devices, err = s.accountDevices(c); err != nil {
+		return err
+	}
+	if d, err = s.account(c, d); err != nil {
 		return err
 	}
 	return s.page(c, "account", "account", "Your account", d)

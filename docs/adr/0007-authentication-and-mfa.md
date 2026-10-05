@@ -1,6 +1,6 @@
 # ADR 0007: Passwords, passkeys and TOTP built in; MFA can be required per org
 
-- Status: accepted; passwords, TOTP, recovery codes and required MFA built; passkeys, email flows and the breached-password check not yet
+- Status: accepted; passwords, TOTP, recovery codes, required MFA and passkeys built; email flows and the breached-password check not yet
 - Date: 2026-09-28
 
 ## Context
@@ -19,7 +19,13 @@ out of the box; single sign-on is an addition, not a requirement.
      optional breached-password check uses the Have I Been Pwned range API
      (k-anonymity); it is off by default so air-gapped installs work.
    - **Passkeys (WebAuthn)**, via `go-webauthn/webauthn`. A passkey can be
-     the only sign-in method and counts as multi-factor.
+     the only sign-in method and counts as multi-factor: user verification
+     (the device's fingerprint, face or PIN) is required. After a password
+     it is a second factor, and it confirms a session for sudo mode on its
+     own; someone with a passkey and no authenticator app cannot confirm
+     with the password alone. The relying party is the host of
+     `ARALDO_BASE_URL`, so changing that host leaves passkeys unusable.
+     Ceremonies are kept on the server, single use, for five minutes.
 2. **Second factors:**
    - **TOTP** (RFC 6238, 6 digits, 30 seconds, one step of clock drift).
      The secret is encrypted ([ADR 0008](0008-encryption.md)), and the last

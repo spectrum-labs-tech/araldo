@@ -6,6 +6,10 @@
   <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
   <button class="btn-primary">Sign in</button>
 </form>
+<div data-passkey-area hidden class="mt-4 flex flex-col gap-2">
+  <button type="button" data-passkey="login" data-next="{{.Data.Next}}">Sign in with a passkey</button>
+  <p class="text-sm" data-passkey-error role="alert"></p>
+</div>
 {{with .SignupURL}}<p class="mt-4 text-sm">New here? <a href="{{.}}">Create an account</a></p>{{end}}
 <p class="mt-4 text-sm text-muted">Forgot your password? Ask your org's owner, or an operator can run <code>araldo admin users reset-password</code>.</p>
 {{end}}

@@ -83,6 +83,11 @@ To move an install from a local key to Transit:
 
 - `araldo admin users create --email …` and `araldo admin users reset-password --email …`
   print a generated password (or read one with `--password-stdin`).
+- **Passkeys**: anyone can add one under **Your account → Passkeys** and
+  then sign in with it alone; it counts as two-factor authentication, for
+  orgs that require it too ([ADR 0007](adr/0007-authentication-and-mfa.md)).
+  Passkeys belong to the host of `ARALDO_BASE_URL`: moving the dashboard to
+  another host means adding them again.
 
 ## Request log
 

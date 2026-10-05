@@ -1,10 +1,20 @@
 {{define "content"}}
 <h1>Two-factor authentication</h1>
+{{if .Data.Passkey}}
+<div data-passkey-area hidden class="mb-4 flex flex-col gap-2">
+  <button type="button" class="btn-primary" data-passkey="mfa" data-next="{{.Data.Next}}">Use your passkey</button>
+  <p class="text-sm" data-passkey-error role="alert"></p>
+</div>
+{{end}}
+{{if .Data.Code}}
 <p class="mb-4">Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>
 <form method="post" action="/login/mfa" class="flex flex-col gap-4">
   <input type="hidden" name="next" value="{{.Data.Next}}">
-  <label>Code <input name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus maxlength="24"></label>
-  <button class="btn-primary">Verify</button>
+  <label>Code <input name="code" inputmode="numeric" autocomplete="one-time-code" required {{if not .Data.Passkey}}autofocus{{end}} maxlength="24"></label>
+  <button {{if not .Data.Passkey}}class="btn-primary"{{end}}>Verify</button>
 </form>
+{{else}}
+<noscript><p>Using a passkey needs JavaScript.</p></noscript>
+{{end}}
 <p class="mt-4 text-sm"><a href="/login">Start over</a></p>
 {{end}}

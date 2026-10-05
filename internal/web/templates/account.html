@@ -19,7 +19,7 @@
     <p class="mb-3"><span class="pill good">on</span> Authenticator app. {{$d.RecoveryLeft}} recovery codes left.</p>
     <div class="flex flex-wrap items-center gap-2">
       <form method="post" action="/account/recovery-codes"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>New recovery codes</button></form>
-      {{if not .RequireMFA}}<form method="post" action="/account/mfa/disable" data-confirm="Turn off two-factor authentication?"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="btn-danger">Turn off</button></form>{{end}}
+      {{if or (not .RequireMFA) .User.HasPasskey}}<form method="post" action="/account/mfa/disable" data-confirm="Turn off two-factor authentication?"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="btn-danger">Turn off</button></form>{{end}}
     </div>
   {{else if $d.Enrolling}}
     <ol class="list-decimal space-y-3 pl-5">
@@ -38,6 +38,29 @@
     <form method="post" action="/account/mfa/begin"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="btn-primary">Set up</button></form>
   {{end}}
 </section>
+
+{{if not (or $d.Enrolling $d.RecoveryCodes)}}
+<section class="card">
+  <h2>Passkeys</h2>
+  <p class="mb-3 text-muted">Sign in with your fingerprint, face or device PIN instead of a password. A passkey counts as two-factor authentication.</p>
+  {{if $d.Passkeys}}
+  <table class="mb-3">
+    <thead><tr><th>Name</th><th>Added</th><th>Last used</th><th></th></tr></thead>
+    <tbody>{{range $d.Passkeys}}<tr><td>{{.Name}}</td><td>{{fmtTime .CreatedAt}}</td><td>{{with .LastUsedAt}}{{ago .}}{{else}}never{{end}}</td>
+      <td><form method="post" action="/account/passkeys/{{.ID}}/delete" data-confirm="Remove the passkey {{.Name}}? It will no longer sign you in.">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger" aria-label="Remove {{.Name}}">Remove</button></form></td></tr>{{end}}</tbody>
+  </table>
+  {{end}}
+  <div data-passkey-area hidden>
+    <div class="flex flex-wrap items-end gap-2">
+      <label>Name <input id="passkey-name" maxlength="100" placeholder="My laptop"></label>
+      <button type="button" class="btn-primary" data-passkey="register" data-csrf="{{.CSRF}}" data-name="#passkey-name">Add a passkey</button>
+    </div>
+    <p class="mt-2 text-sm" data-passkey-error role="alert"></p>
+  </div>
+  <noscript><p class="text-sm">Adding a passkey needs JavaScript.</p></noscript>
+</section>
+{{end}}
 
 {{if .Data.Devices}}
 <section class="card">

@@ -42,7 +42,7 @@ tasks:
     cmd: go run ./cmd/araldo admin bootstrap {{.CLI_ARGS}}
 
   check:
-    desc: Everything CI checks that runs without Docker (fmt, vet, lint, tests, tidy, SPDX headers)
+    desc: Everything CI checks that runs without Docker (fmt, vet, lint, tests, tidy, SPDX headers, compiled web assets)
     cmds:
       - test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - task: vet
@@ -50,6 +50,9 @@ tasks:
       - task: test
       - go mod tidy -diff
       - task: spdx
+      # As CI does, once the Node tooling is installed (task web:deps): it
+      # needs the network the first time, and check never does.
+      - '[ ! -d node_modules ] && echo "skipping web:check: run task web:deps once" || task web:check'
 
   vet:
     desc: Run go vet
@@ -112,6 +115,14 @@ tasks:
     desc: Bundle the template editor (internal/web/scripts) into internal/web/static/editor.js (commit the result)
     deps: [web:deps]
     cmd: npm run js
+
+  web:check:
+    desc: Check the committed app.css and editor.js match their sources, as CI does
+    deps: [web:deps]
+    cmds:
+      - npm run css
+      - npm run js
+      - git diff --exit-code -- internal/web/static/app.css internal/web/static/editor.js
 
   web:icons:
     desc: Regenerate the platform icon sprite (internal/web/templates/_icons.html) from Simple Icons

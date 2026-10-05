@@ -10,8 +10,8 @@ every problem in `errors`, each with its own `code` and `param`.
 - **api_key_invalid** (401): the key is malformed or unknown.
 - **api_key_expired** (401): the key was revoked or has expired.
 - **scope_missing** (403): a restricted key lacks the scope this needs.
-  Administrative scopes (`keys:write`, `posts:approve`, `audit:read`) are
-  held only when a key lists them.
+  Administrative scopes (`keys:write`, `posts:approve`, `audit:read`,
+  `ads:write`) are held only when a key lists them.
 - **forbidden** (403): the caller may not do this.
 - **org_read_only** (403): the install's operator made the org read-only:
   it can read, but not change anything. The dashboard says why.

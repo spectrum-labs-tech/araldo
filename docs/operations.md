@@ -101,15 +101,24 @@ so. Add `--live` for a live key and `--expires 8760h` to expire it.
 
 ### Administration by key
 
-A key with no scopes holds every integration scope. Three administrative
-scopes are held only when listed by name, and only a member (here, or the
-dashboard) can grant them ([ADR 0019](adr/0019-administration-api.md)):
+A key with no scopes holds every integration scope: `posts:read`,
+`posts:write`, `templates:read`, `templates:write`, `channels:read`,
+`channels:write`, `brands:read`, `brands:write`, `events:read`,
+`webhooks:read`, `webhooks:write`, `ads:read`, `newsletters:read` and
+`newsletters:write`. Four administrative scopes are held only when listed
+by name, and only a member (here, or the dashboard) can grant them
+([ADR 0019](adr/0019-administration-api.md)):
 
 | Scope | Lets the key |
 |---|---|
 | `keys:write` | List, create, roll and revoke keys in its mode, with no more access than its own (`/v1/api_keys`). For a Terraform provider or a secrets rotator. |
 | `posts:approve` | Approve or reject posts waiting for review (`/v1/posts/{id}/approve`, `/reject`), never one it created. For approving from Slack or your own tools. |
 | `audit:read` | Read the audit log (`/v1/audit_events`): every change, and every refusal (`access.denied`, outcome `denied`, with the route and the reason; one per credential and route a minute). For exporting to a SIEM. |
+| `ads:write` | Connect and remove ad accounts, and register ad networks' developer apps. |
+
+Making fewer of a brand's posts need approval also needs `posts:approve`.
+A key limited to one brand cannot read events or manage webhook
+endpoints, which span every brand.
 
 ```bash
 araldo admin apikeys create --org "Your org" --name "terraform" \
@@ -357,7 +366,7 @@ person in several orgs).
 | Tool | Does |
 |---|---|
 | `list_platforms`, `list_brands`, `list_channels`, `list_templates`, `get_template` | Read what there is (read-only). |
-| `upload_media_from_url` | Fetch an image for posts to attach. |
+| `upload_media_from_url` | Fetch an image or video for posts to attach. |
 | `preview_post` | Render a post per channel and list every rule it breaks (read-only). |
 | `create_post` | Schedule it (with an idempotency key, so a retry does not post twice). |
 | `list_posts`, `get_post` | Follow up: status, links, errors, engagement (read-only). |
@@ -403,7 +412,8 @@ The endpoint is stateless (no session, no server-initiated messages) and
 refuses requests a browser makes from another site.
 
 The key needs `brands:read`, `channels:read` and `posts:read`/`posts:write`
-(and `templates:read` for templates, `ads:read` for `ads_summary`); a key
+(and `templates:read` for templates, `ads:read` for `ads_summary`,
+`newsletters:read`/`newsletters:write` for the newsletter tools); a key
 with no scopes listed has them all. It does not need, and should not have,
 an administrative scope.
 
@@ -565,10 +575,20 @@ violation at preview.
 
 The `engagement.collect` task reads each published post's likes, reposts,
 replies and quotes 1 hour, 6 hours, 1, 3, 7 and 30 days after publishing
-([ADR 0018](adr/0018-engagement.md)): Bluesky through its public AppView
-(no sign-in), Mastodon and Gab with the channel's token. Gab reports no
-quote count, which stays zero. Discord and Telegram do not report
-engagement. Posts published before an upgrade to a version with
+([ADR 0018](adr/0018-engagement.md)):
+
+| Platform | What is read |
+|---|---|
+| Bluesky | Likes, reposts, replies and quotes, through its public AppView (no sign-in). |
+| Mastodon, Gab | Favourites, boosts, replies and quotes, with the channel's token. Gab reports no quotes. |
+| Threads | Views, likes, replies, reposts and quotes. |
+| Facebook Pages | Reactions, comments and shares. |
+| Instagram | Likes and comments. |
+| YouTube | Views, likes and comments. |
+
+X, LinkedIn (members and Pages), Pinterest and TikTok are not read yet,
+and Discord and Telegram report nothing: their posts show no engagement.
+A count a platform does not report stays zero. Posts published before an upgrade to a version with
 engagement are read once soon after it, then on the schedule. A failed
 reading is retried later and never affects publishing; see the target's
 `engagement.state` and the task on Organization → Background tasks.

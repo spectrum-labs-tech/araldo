@@ -218,13 +218,14 @@ func tools(api *Client) []Tool {
 			},
 		},
 		{
-			Name: "upload_media_from_url", Title: "Add an image",
-			Description: "Fetches a JPEG, PNG, GIF or WebP image (up to 16 MiB) from a public URL and stores it for posts to " +
-				"attach. Returns its media ID. preview_post checks it against each platform's limits.",
+			Name: "upload_media_from_url", Title: "Add an image or video",
+			Description: "Fetches a JPEG, PNG, GIF or WebP image (up to 16 MiB), or an MP4 or QuickTime video (where the server " +
+				"stores media in S3; up to its size limit), from a public URL and stores it for posts to attach. Returns its " +
+				"media ID. preview_post checks it against each platform's limits.",
 			Input: object([]string{"brand", "url"}, map[string]any{
 				"brand": str(brandDesc),
-				"url":   str("The image's public http(s) URL."),
-				"alt":   str("Alt text describing the image, for people who cannot see it (up to 1,000 characters). Please give it."),
+				"url":   str("The image's or video's public http(s) URL."),
+				"alt":   str("Alt text describing it, for people who cannot see it (up to 1,000 characters). Please give it."),
 			}),
 			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
 				body := map[string]any{"brand": argString(args, "brand"), "url": argString(args, "url")}

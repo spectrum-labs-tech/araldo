@@ -34,9 +34,11 @@ out of the box; single sign-on is an addition, not a requirement.
      `SameSite=Lax`), stored as a hash.
    - Sessions expire after 7 days idle or 30 days at most, and can be
      listed and revoked.
-   - **Sudo mode:** sensitive actions (creating API keys, changing MFA,
-     removing owners, deleting an org) require re-authenticating within the
-     last 10 minutes.
+   - **Sudo mode:** sensitive actions (creating or rolling API keys,
+     changing MFA, adding, demoting or removing owners, no longer requiring
+     MFA for the org, deleting an org) require re-authenticating within the
+     last 10 minutes. `core` enforces it, not the pages. The operator acting
+     through the CLI is exempt: they already hold the database and keys.
 5. **Forms** use a per-session CSRF token as well as `SameSite=Lax`.
 6. **Brute force and enumeration:**
    - sign-in is rate limited per account and per IP, backing off without

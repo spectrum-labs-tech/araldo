@@ -419,7 +419,10 @@ func (s *Server) orgData(c *reqCtx) (*orgData, error) {
 }
 
 func (s *Server) saveOrg(c *reqCtx) error {
-	if err := s.svc.UpdateOrg(c.ctx(), c.actor, c.r.PostFormValue("name"), c.r.PostFormValue("require_mfa") == "1"); err != nil {
+	if err := s.svc.UpdateOrg(c.ctx(), c.actor, c.session, c.r.PostFormValue("name"), c.r.PostFormValue("require_mfa") == "1"); err != nil {
+		if apperr.As(err).Code == "reauthentication_required" {
+			return redirect(c, "/confirm?next=/org", "Confirm your password to stop requiring two-factor authentication.")
+		}
 		d, derr := s.orgData(c)
 		if derr != nil {
 			return derr
@@ -435,8 +438,11 @@ func (s *Server) addMember(c *reqCtx) error {
 		return err
 	}
 	pw := c.r.PostFormValue("password")
-	u, err := s.svc.AddMember(c.ctx(), c.actor, c.r.PostFormValue("email"), model.Role(c.r.PostFormValue("role")), pw)
+	u, err := s.svc.AddMember(c.ctx(), c.actor, c.session, c.r.PostFormValue("email"), model.Role(c.r.PostFormValue("role")), pw)
 	if err != nil {
+		if apperr.As(err).Code == "reauthentication_required" {
+			return redirect(c, "/confirm?next=/org", "Confirm your password to add an owner.")
+		}
 		return s.formErr(c, "org", "org", "Organization", d, err)
 	}
 	return redirect(c, "/org", "Added "+u.Email+".")
@@ -452,15 +458,24 @@ func (s *Server) changeMember(c *reqCtx) error {
 		}
 	}
 	if c.r.PostFormValue("action") == "remove" {
-		if err := s.svc.RemoveMember(c.ctx(), c.actor, uid); err != nil {
-			return err
+		if err := s.svc.RemoveMember(c.ctx(), c.actor, c.session, uid); err != nil {
+			return ownerErr(c, err, "remove an owner")
 		}
 		return redirect(c, "/org", "Removed.")
 	}
-	if err := s.svc.SetMemberRole(c.ctx(), c.actor, uid, model.Role(c.r.PostFormValue("role"))); err != nil {
-		return err
+	if err := s.svc.SetMemberRole(c.ctx(), c.actor, c.session, uid, model.Role(c.r.PostFormValue("role"))); err != nil {
+		return ownerErr(c, err, "change an owner")
 	}
 	return redirect(c, "/org", "Role changed.")
+}
+
+// ownerErr sends a member who must re-authenticate to change owners to
+// confirm their password and come back to the org page.
+func ownerErr(c *reqCtx, err error, what string) error {
+	if apperr.As(err).Code == "reauthentication_required" {
+		return redirect(c, "/confirm?next=/org", "Confirm your password to "+what+".")
+	}
+	return err
 }
 
 func (s *Server) audit(c *reqCtx) error {

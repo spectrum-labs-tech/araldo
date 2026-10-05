@@ -49,6 +49,7 @@ func actAs(ctx context.Context, email, org string, live bool) (*app.App, core.Ac
 		a.Close()
 		return nil, core.Actor{}, model.Membership{}, err
 	}
+	actor.Operator = true
 	return a, actor, m, nil
 }
 
@@ -128,7 +129,7 @@ func runMembers(ctx context.Context, args []string, stdout, stderr io.Writer) er
 				}
 			}
 		}
-		if _, err := a.Svc.AddMember(ctx, actor, email, model.Role(role), temp); err != nil {
+		if _, err := a.Svc.AddMember(ctx, actor, nil, email, model.Role(role), temp); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintf(stderr, "Added %s to %s as %s.\n", email, m.OrgName, role)
@@ -143,13 +144,13 @@ func runMembers(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		return err
 	}
 	if cmd == "role" {
-		if err := a.Svc.SetMemberRole(ctx, actor, target.ID, model.Role(role)); err != nil {
+		if err := a.Svc.SetMemberRole(ctx, actor, nil, target.ID, model.Role(role)); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintf(stderr, "%s is now %s in %s.\n", email, role, m.OrgName)
 		return nil
 	}
-	if err := a.Svc.RemoveMember(ctx, actor, target.ID); err != nil {
+	if err := a.Svc.RemoveMember(ctx, actor, nil, target.ID); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(stderr, "Removed %s from %s.\n", email, m.OrgName)
@@ -187,7 +188,7 @@ func runOrg(ctx context.Context, args []string, _, stderr io.Writer) error {
 			return usageErr("--require-mfa is true or false")
 		}
 	}
-	if err := a.Svc.UpdateOrg(ctx, actor, newName, mfa); err != nil {
+	if err := a.Svc.UpdateOrg(ctx, actor, nil, newName, mfa); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(stderr, "Updated %s (two-factor required: %v).\n", newName, mfa)

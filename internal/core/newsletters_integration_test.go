@@ -197,7 +197,7 @@ func TestNewsletterApprovalMovesAndStops(t *testing.T) {
 		ApprovalPolicy: model.ApprovalEditorsAndKey}); err != nil {
 		t.Fatal(err)
 	}
-	editorUser, err := w.s.AddMember(ctx, w.owner, fmt.Sprintf("editor-%s@example.com", uuid.NewString()[:8]), model.RoleEditor, "temporary password 1")
+	editorUser, err := w.s.AddMember(ctx, w.owner, w.session, fmt.Sprintf("editor-%s@example.com", uuid.NewString()[:8]), model.RoleEditor, "temporary password 1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -419,7 +419,7 @@ func TestNewsletterRules(t *testing.T) {
 	}
 
 	// Viewers read; only editors write.
-	viewerUser, err := w.s.AddMember(ctx, w.owner, fmt.Sprintf("viewer-%s@example.com", uuid.NewString()[:8]), model.RoleViewer, "temporary password 1")
+	viewerUser, err := w.s.AddMember(ctx, w.owner, w.session, fmt.Sprintf("viewer-%s@example.com", uuid.NewString()[:8]), model.RoleViewer, "temporary password 1")
 	if err != nil {
 		t.Fatal(err)
 	}

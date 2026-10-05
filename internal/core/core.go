@@ -161,6 +161,10 @@ type Actor struct {
 	BrandID *uuid.UUID
 	// RequestID ties events and audit entries to a request.
 	RequestID string
+	// Operator marks a member acted as by the server's operator through
+	// the CLI, who already holds the database and master keys, so the
+	// dashboard's re-authentication (sudo mode) adds nothing.
+	Operator bool
 }
 
 // IsKey reports whether the actor is an API key.

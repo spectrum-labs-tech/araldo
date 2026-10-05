@@ -390,7 +390,7 @@ func TestApprovalFlow(t *testing.T) {
 		ApprovalPolicy: model.ApprovalEditorsAndKey}); err != nil {
 		t.Fatal(err)
 	}
-	editorUser, err := w.s.AddMember(ctx, w.owner, fmt.Sprintf("editor-%s@example.com", uuid.NewString()[:8]), model.RoleEditor, "temporary password 1")
+	editorUser, err := w.s.AddMember(ctx, w.owner, w.session, fmt.Sprintf("editor-%s@example.com", uuid.NewString()[:8]), model.RoleEditor, "temporary password 1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -516,6 +516,74 @@ func TestAPIKeys(t *testing.T) {
 	stale.SudoUntil = nil
 	if _, _, err := w.s.CreateAPIKey(ctx, w.owner, &stale, core.APIKeyInput{Name: "x"}); kind(err) != apperr.KindForbidden {
 		t.Fatalf("creating a key without sudo: %v", err)
+	}
+}
+
+// TestOwnerChangesNeedSudo checks that changing or removing an owner, and
+// no longer requiring two-factor authentication, need a recent
+// re-authentication, as ADR 0007 says; other member changes do not, and
+// the operator acting through the CLI needs none.
+func TestOwnerChangesNeedSudo(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	needsSudo := func(err error) bool { return apperr.As(err).Code == "reauthentication_required" }
+	stale := *w.session
+	stale.SudoUntil = nil
+
+	other, err := w.s.AddMember(ctx, w.owner, w.session, fmt.Sprintf("owner2-%s@example.com", uuid.NewString()[:8]), model.RoleOwner, "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	editor, err := w.s.AddMember(ctx, w.owner, &stale, fmt.Sprintf("editor-%s@example.com", uuid.NewString()[:8]), model.RoleEditor, "correct horse battery")
+	if err != nil {
+		t.Fatalf("adding an editor needs no sudo: %v", err)
+	}
+	if _, err := w.s.AddMember(ctx, w.owner, &stale, fmt.Sprintf("owner3-%s@example.com", uuid.NewString()[:8]), model.RoleOwner, "correct horse battery"); !needsSudo(err) {
+		t.Fatalf("adding an owner without sudo: %v", err)
+	}
+	if err := w.s.SetMemberRole(ctx, w.owner, &stale, other.ID, model.RoleAdmin); !needsSudo(err) {
+		t.Fatalf("demoting an owner without sudo: %v", err)
+	}
+	if err := w.s.SetMemberRole(ctx, w.owner, &stale, editor.ID, model.RoleOwner); !needsSudo(err) {
+		t.Fatalf("making an owner without sudo: %v", err)
+	}
+	if err := w.s.RemoveMember(ctx, w.owner, &stale, other.ID); !needsSudo(err) {
+		t.Fatalf("removing an owner without sudo: %v", err)
+	}
+	if err := w.s.SetMemberRole(ctx, w.owner, &stale, editor.ID, model.RoleViewer); err != nil {
+		t.Fatalf("changing a viewer's role needs no sudo: %v", err)
+	}
+	operator := w.owner
+	operator.Operator = true
+	if err := w.s.SetMemberRole(ctx, operator, nil, other.ID, model.RoleAdmin); err != nil {
+		t.Fatalf("the operator demoting an owner: %v", err)
+	}
+	if err := w.s.SetMemberRole(ctx, w.owner, w.session, other.ID, model.RoleOwner); err != nil {
+		t.Fatalf("making an owner in sudo mode: %v", err)
+	}
+	if err := w.s.RemoveMember(ctx, w.owner, w.session, other.ID); err != nil {
+		t.Fatalf("removing an owner in sudo mode: %v", err)
+	}
+
+	secretText, _, err := w.s.BeginTOTP(ctx, w.session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.s.ConfirmTOTP(ctx, w.session, authn.TOTPCode(decodeB32(t, secretText), authn.TOTPStep(time.Now()))); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.s.UpdateOrg(ctx, w.owner, &stale, w.org.Name, true); err != nil {
+		t.Fatalf("requiring 2FA needs no sudo: %v", err)
+	}
+	if err := w.s.UpdateOrg(ctx, w.owner, &stale, w.org.Name+" renamed", true); err != nil {
+		t.Fatalf("renaming needs no sudo: %v", err)
+	}
+	if err := w.s.UpdateOrg(ctx, w.owner, &stale, w.org.Name, false); !needsSudo(err) {
+		t.Fatalf("no longer requiring 2FA without sudo: %v", err)
+	}
+	if err := w.s.UpdateOrg(ctx, w.owner, w.session, w.org.Name, false); err != nil {
+		t.Fatalf("no longer requiring 2FA in sudo mode: %v", err)
 	}
 }
 
@@ -754,7 +822,7 @@ func TestTemplateApprovalOverride(t *testing.T) {
 		t.Errorf("required template under an approval-free brand: %s, want pending_approval", p.Status)
 	}
 	// Editors and API keys cannot exempt posts from review.
-	editorUser, err := w.s.AddMember(ctx, w.owner, fmt.Sprintf("ed-%s@example.com", uuid.NewString()[:8]), model.RoleEditor, "temporary password 1")
+	editorUser, err := w.s.AddMember(ctx, w.owner, w.session, fmt.Sprintf("ed-%s@example.com", uuid.NewString()[:8]), model.RoleEditor, "temporary password 1")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -321,8 +321,16 @@ func (s *Service) InSudo(ss *model.Session) bool {
 	return ss.SudoUntil != nil && s.Now().Before(*ss.SudoUntil)
 }
 
+// requireSudoFor is requireSudo for an actor, who may be the operator.
+func (s *Service) requireSudoFor(a Actor, ss *model.Session) error {
+	if a.Operator {
+		return nil
+	}
+	return s.requireSudo(ss)
+}
+
 func (s *Service) requireSudo(ss *model.Session) error {
-	if !s.InSudo(ss) {
+	if ss == nil || !s.InSudo(ss) {
 		return &apperr.Error{Kind: apperr.KindForbidden, Code: "reauthentication_required", Message: "Confirm your password to continue."}
 	}
 	return nil

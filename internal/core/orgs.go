@@ -54,7 +54,10 @@ func (s *Service) UserOrgs(ctx context.Context, userID uuid.UUID) ([]model.Membe
 }
 
 // UpdateOrg changes an org's name and MFA policy.
-func (s *Service) UpdateOrg(ctx context.Context, a Actor, name string, requireMFA bool) error {
+//
+// Turning off required two-factor authentication needs a recent
+// re-authentication (ADR 0007).
+func (s *Service) UpdateOrg(ctx context.Context, a Actor, ss *model.Session, name string, requireMFA bool) error {
 	if err := a.require(PermOrgWrite); err != nil {
 		return err
 	}
@@ -72,6 +75,15 @@ func (s *Service) UpdateOrg(ctx context.Context, a Actor, name string, requireMF
 		}
 	}
 	return s.store.InTx(ctx, func(tx *store.Store) error {
+		o, err := tx.Org(ctx, a.OrgID)
+		if err != nil {
+			return err
+		}
+		if o.RequireMFA && !requireMFA {
+			if err := s.requireSudoFor(a, ss); err != nil {
+				return err
+			}
+		}
 		if err := tx.UpdateOrg(ctx, &model.Org{ID: a.OrgID, Name: name, RequireMFA: requireMFA}); err != nil {
 			return err
 		}
@@ -98,15 +110,21 @@ func (s *Service) Member(ctx context.Context, a Actor, userID uuid.UUID) (*model
 
 // AddMember adds a person to the org. Someone without an account gets one
 // with the given temporary password, to share with them out of band.
-func (s *Service) AddMember(ctx context.Context, a Actor, email string, role model.Role, tempPassword string) (*model.User, error) {
+// Adding an owner needs a recent re-authentication (ADR 0007).
+func (s *Service) AddMember(ctx context.Context, a Actor, ss *model.Session, email string, role model.Role, tempPassword string) (*model.User, error) {
 	if err := a.require(PermMembersWrite); err != nil {
 		return nil, err
 	}
 	if !role.Valid() {
 		return nil, apperr.Invalid("role_invalid", "role", "Role must be owner, admin, editor or viewer.")
 	}
-	if role == model.RoleOwner && !a.Can(PermOrgWrite) {
-		return nil, apperr.Forbidden("Only owners can add owners.")
+	if role == model.RoleOwner {
+		if !a.Can(PermOrgWrite) {
+			return nil, apperr.Forbidden("Only owners can add owners.")
+		}
+		if err := s.requireSudoFor(a, ss); err != nil {
+			return nil, err
+		}
 	}
 	u, err := s.UserByEmail(ctx, email)
 	if errors.Is(err, apperr.ErrNotFound) {
@@ -130,9 +148,10 @@ func (s *Service) AddMember(ctx context.Context, a Actor, email string, role mod
 	return u, err
 }
 
-// SetMemberRole changes a member's role. Owners are managed by owners, and
-// an org always keeps at least one.
-func (s *Service) SetMemberRole(ctx context.Context, a Actor, userID uuid.UUID, role model.Role) error {
+// SetMemberRole changes a member's role. Owners are managed by owners, with
+// a recent re-authentication (ADR 0007), and an org always keeps at least
+// one.
+func (s *Service) SetMemberRole(ctx context.Context, a Actor, ss *model.Session, userID uuid.UUID, role model.Role) error {
 	if err := a.require(PermMembersWrite); err != nil {
 		return err
 	}
@@ -144,8 +163,13 @@ func (s *Service) SetMemberRole(ctx context.Context, a Actor, userID uuid.UUID, 
 		if err != nil {
 			return notFound(err, "member")
 		}
-		if (m.Role == model.RoleOwner || role == model.RoleOwner) && !a.Can(PermOrgWrite) {
-			return apperr.Forbidden("Only owners can change owners.")
+		if m.Role == model.RoleOwner || role == model.RoleOwner {
+			if !a.Can(PermOrgWrite) {
+				return apperr.Forbidden("Only owners can change owners.")
+			}
+			if err := s.requireSudoFor(a, ss); err != nil {
+				return err
+			}
 		}
 		if m.Role == model.RoleOwner && role != model.RoleOwner {
 			if err := s.keepAnOwner(ctx, tx, a.OrgID); err != nil {
@@ -159,8 +183,9 @@ func (s *Service) SetMemberRole(ctx context.Context, a Actor, userID uuid.UUID, 
 	})
 }
 
-// RemoveMember takes a person out of the org.
-func (s *Service) RemoveMember(ctx context.Context, a Actor, userID uuid.UUID) error {
+// RemoveMember takes a person out of the org. Removing an owner needs a
+// recent re-authentication (ADR 0007).
+func (s *Service) RemoveMember(ctx context.Context, a Actor, ss *model.Session, userID uuid.UUID) error {
 	if err := a.require(PermMembersWrite); err != nil {
 		return err
 	}
@@ -172,6 +197,9 @@ func (s *Service) RemoveMember(ctx context.Context, a Actor, userID uuid.UUID) e
 		if m.Role == model.RoleOwner {
 			if !a.Can(PermOrgWrite) {
 				return apperr.Forbidden("Only owners can remove owners.")
+			}
+			if err := s.requireSudoFor(a, ss); err != nil {
+				return err
 			}
 			if err := s.keepAnOwner(ctx, tx, a.OrgID); err != nil {
 				return err

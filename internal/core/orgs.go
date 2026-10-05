@@ -471,6 +471,10 @@ func (s *Service) UpdateBrand(ctx context.Context, a Actor, brandID uuid.UUID, i
 			if b.Slots, err = tx.Slots(ctx, a.OrgID, b.ID); err != nil {
 				return err
 			}
+			// Recorded as SetSlots records it, whichever way it was made.
+			if err := s.audit(ctx, tx, a, "brand.slots", id.Format(id.Brand, b.ID), map[string]any{"count": len(b.Slots)}); err != nil {
+				return err
+			}
 		}
 		return s.audit(ctx, tx, a, "brand.update", id.Format(id.Brand, b.ID), nil)
 	})

@@ -70,23 +70,6 @@ func (s *Service) connector(p platform.Provider) (platform.Connector, bool) {
 	return c, ok
 }
 
-// OAuthProviders lists the providers that connect with OAuth: platforms,
-// then ad networks.
-func (s *Service) OAuthProviders() []platform.Provider {
-	var out []platform.Provider
-	for _, p := range s.platforms.Providers() {
-		if _, ok := s.connector(p); ok {
-			out = append(out, p)
-		}
-	}
-	for _, n := range s.adNetworks.Networks() {
-		if _, ok := s.connector(ads.Provider(n)); ok {
-			out = append(out, ads.Provider(n))
-		}
-	}
-	return out
-}
-
 // ProviderName is a sign-in provider's name for people: "Threads", or
 // "Reddit Ads" for an ad network.
 func (s *Service) ProviderName(p platform.Provider) string {

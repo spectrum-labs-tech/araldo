@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
@@ -1554,5 +1555,30 @@ func TestAccountSecurity(t *testing.T) {
 	}
 	if l := login(next); l.NeedsMFA {
 		t.Fatal("still asked for a code with two-factor authentication off")
+	}
+}
+
+// TestSlotChangesAreAuditedAlike checks changing a brand's slots is
+// recorded the same way through the API's brand update as through the
+// dashboard's slot editor.
+func TestSlotChangesAreAuditedAlike(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	slots := []model.Slot{{Weekday: time.Monday, MinuteOfDay: 9 * 60}, {Weekday: time.Friday, MinuteOfDay: 15 * 60}}
+	if _, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone, Slots: &slots}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.s.SetSlots(ctx, w.owner, w.brand.ID, slots[:1]); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := open(t).Pool().Query(ctx, `SELECT detail->>'count' FROM audit_events WHERE org_id = $1 AND action = 'brand.slots'
+		AND target = $2 ORDER BY id`, w.org.ID, id.Format(id.Brand, w.brand.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil || len(counts) != 2 || counts[0] != "2" || counts[1] != "1" {
+		t.Fatalf("brand.slots entries: %v, %v", counts, err)
 	}
 }

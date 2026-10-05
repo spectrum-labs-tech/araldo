@@ -50,7 +50,12 @@ the order it is being built in (update its status with the work).
   tests against `httptest` servers only. Every limit in `rules.go` cites
   its source.
 - **Migrations**: golang-migrate in `internal/store/migrations`. Never edit a
-  shipped migration.
+  shipped migration. They must work with the release still running and
+  never block writes for long ([ADR 0029](docs/adr/0029-backward-compatible-migrations.md)):
+  `SET LOCAL lock_timeout` first, constraints `NOT VALID` then validated in
+  the next migration, indexes `CONCURRENTLY` alone, and anything that drops
+  or tightens after a `-- contract:` comment. `TestMigrationsAreBackwardCompatible`
+  checks the mechanics.
 - **Styles** ([ADR 0015](docs/adr/0015-dashboard.md)): Tailwind CSS. Edit
   `internal/web/styles/app.css` and templates, run `task web:css`, and commit
   `internal/web/static/app.css` (CI checks it is current). Never edit the

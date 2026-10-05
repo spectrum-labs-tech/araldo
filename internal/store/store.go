@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -83,12 +84,31 @@ func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 // Migrate brings the schema up to date. golang-migrate holds an advisory
 // lock, so several processes starting at once is safe.
+//
+// A migration that failed before (the schema is dirty at its version) is
+// retried: each runs as one transaction, so it left nothing behind, except a
+// CREATE INDEX CONCURRENTLY, which leaves an invalid index that is dropped
+// first (ADR 0029). Migrations from several processes take turns.
 func (s *Store) Migrate(ctx context.Context) error {
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("store: migrate: %w", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrateLock); err != nil {
+		return fmt.Errorf("store: migrate lock: %w", err)
+	}
+	defer func() { _, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, migrateLock) }()
 	m, err := s.migrator()
 	if err != nil {
 		return err
 	}
 	defer func() { _, _ = m.Close() }()
+	if v, dirty, err := m.Version(); err == nil && dirty {
+		if err := s.undoFailedMigration(ctx, m, v); err != nil {
+			return fmt.Errorf("store: migrate: retrying failed migration %d: %w", v, err)
+		}
+	}
 	done := make(chan error, 1)
 	go func() { done <- m.Up() }()
 	select {
@@ -101,6 +121,61 @@ func (s *Store) Migrate(ctx context.Context) error {
 		}
 		return nil
 	}
+}
+
+// migrateLock is the advisory lock Migrate holds, so two processes never
+// retry the same failed migration at once.
+const migrateLock = 0x61726c646f6d67 // "arldomg"
+
+// concurrentIndexRE finds the index a CREATE INDEX CONCURRENTLY builds.
+var concurrentIndexRE = regexp.MustCompile(`(?i)\bINDEX CONCURRENTLY (?:IF NOT EXISTS )?(\w+)`)
+
+// undoFailedMigration readies migration v, which failed, to run again: it
+// drops the invalid index a failed CREATE INDEX CONCURRENTLY leaves, and
+// sets the version back to the one before.
+func (s *Store) undoFailedMigration(ctx context.Context, m *migrate.Migrate, v uint) error {
+	sql, err := migrationSQL(v)
+	if err != nil {
+		return err
+	}
+	if mm := concurrentIndexRE.FindStringSubmatch(sql); mm != nil {
+		var invalid bool
+		err := s.pool.QueryRow(ctx, `SELECT NOT indisvalid FROM pg_index WHERE indexrelid = to_regclass($1)`, mm[1]).Scan(&invalid)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+		case err != nil:
+			return err
+		case invalid:
+			if _, err := s.pool.Exec(ctx, `DROP INDEX CONCURRENTLY IF EXISTS `+pgx.Identifier{mm[1]}.Sanitize()); err != nil {
+				return err
+			}
+		}
+	}
+	return m.Force(previousVersion(v))
+}
+
+// previousVersion is the version before v, or none before the first.
+func previousVersion(v uint) int {
+	if v <= 1 {
+		return -1 // golang-migrate's "no version"
+	}
+	return int(v) - 1
+}
+
+// migrationSQL is migration v's up file.
+func migrationSQL(v uint) (string, error) {
+	entries, err := migrations.ReadDir("migrations")
+	if err != nil {
+		return "", err
+	}
+	prefix := fmt.Sprintf("%06d_", v)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), prefix) && strings.HasSuffix(e.Name(), ".up.sql") {
+			b, err := migrations.ReadFile("migrations/" + e.Name())
+			return string(b), err
+		}
+	}
+	return "", fmt.Errorf("no migration %d", v)
 }
 
 // SchemaVersion reports the applied migration version and whether a

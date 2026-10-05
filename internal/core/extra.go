@@ -170,7 +170,15 @@ func (s *Service) Ready(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if dirty || v < latest {
+	return schemaReady(v, dirty, latest)
+}
+
+// schemaReady reports whether a binary whose newest migration is latest
+// can serve on schema version v. A newer schema is fine, even one whose
+// latest migration failed: migrations work with the release before them
+// (ADR 0029), and this one keeps serving while the deploy is retried.
+func schemaReady(v uint, dirty bool, latest uint) error {
+	if v < latest || v == latest && dirty {
 		return errors.New("database schema is not up to date")
 	}
 	return nil

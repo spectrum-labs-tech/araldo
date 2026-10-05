@@ -625,8 +625,10 @@ runs `araldo migrate`; only when it succeeds does Helm update the Deployments.
 If it fails, the upgrade stops, the running pods keep serving the previous
 version on the previous schema, the release is marked `failed`, and the Job is
 kept so `kubectl logs job/<release>-migrate` shows why. The pods do not
-migrate, and `/readyz` stays unready until the schema is current. Write
-migrations that the previous version can still run against (add before you
-remove), since it keeps serving until the new pods are ready. Rendering the
+migrate, and `/readyz` stays unready until the schema is current. Every
+migration works with the previous version, which keeps serving until the new
+pods are ready, and never blocks writes for long ([ADR 0029](adr/0029-backward-compatible-migrations.md)):
+one that cannot get a lock within 5 seconds fails, and the upgrade can be
+retried. Rendering the
 chart without hooks (`helm template | kubectl apply`)? Set
 `migrations.job=false` and the pods migrate at startup instead.

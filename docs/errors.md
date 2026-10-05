@@ -348,6 +348,8 @@ every problem in `errors`, each with its own `code` and `param`.
 - **sso_required** (409): while it is required, the provider and the last
   verified domain stay.
 - **sso_unavailable**: no org signs in with that email's domain.
+- **sso_session** (403): a session through single sign-on cannot change
+  how the person signs in; sign in with a password or passkey for that.
 - **sso_expired**, **sso_failed**, **sso_email_unverified**,
   **sso_email_missing**, **sso_domain_mismatch**, **sso_provider_unavailable**:
   the sign-in did not complete; start again, or ask the org's

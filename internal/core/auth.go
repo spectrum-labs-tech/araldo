@@ -344,6 +344,21 @@ func (s *Service) requireSudoFor(a Actor, ss *model.Session) error {
 	return s.requireSudo(ss)
 }
 
+// errSSOSession refuses changing how someone signs in from a session that
+// came through an org's single sign-on (ADR 0033): the org's provider
+// vouches for the person in that org, not for their account.
+var errSSOSession = &apperr.Error{Kind: apperr.KindForbidden, Code: "sso_session",
+	Message: "You signed in through your organization's single sign-on. Sign in with your password or passkey to change how you sign in."}
+
+// requireOwnSignIn is requireSudo for changing how the person signs in,
+// which a session through single sign-on cannot do.
+func (s *Service) requireOwnSignIn(ss *model.Session) error {
+	if ss != nil && ss.SSOOrg != nil {
+		return errSSOSession
+	}
+	return s.requireSudo(ss)
+}
+
 func (s *Service) requireSudo(ss *model.Session) error {
 	if ss == nil || !s.InSudo(ss) {
 		return &apperr.Error{Kind: apperr.KindForbidden, Code: "reauthentication_required", Message: "Confirm your password to continue."}
@@ -354,7 +369,7 @@ func (s *Service) requireSudo(ss *model.Session) error {
 // BeginTOTP makes a new, not yet enabled TOTP secret for the user and
 // returns it for the authenticator app.
 func (s *Service) BeginTOTP(ctx context.Context, ss *model.Session) (secretText, uri string, err error) {
-	if err := s.requireSudo(ss); err != nil {
+	if err := s.requireOwnSignIn(ss); err != nil {
 		return "", "", err
 	}
 	u, err := s.store.User(ctx, ss.UserID)
@@ -381,7 +396,7 @@ func (s *Service) BeginTOTP(ctx context.Context, ss *model.Session) (secretText,
 // ConfirmTOTP turns TOTP on once the user proves the app works, and returns
 // fresh recovery codes (shown once).
 func (s *Service) ConfirmTOTP(ctx context.Context, ss *model.Session, code string) ([]string, error) {
-	if err := s.requireSudo(ss); err != nil {
+	if err := s.requireOwnSignIn(ss); err != nil {
 		return nil, err
 	}
 	var codes []string
@@ -415,7 +430,7 @@ func (s *Service) ConfirmTOTP(ctx context.Context, ss *model.Session, code strin
 
 // RegenerateRecoveryCodes replaces the user's recovery codes.
 func (s *Service) RegenerateRecoveryCodes(ctx context.Context, ss *model.Session) ([]string, error) {
-	if err := s.requireSudo(ss); err != nil {
+	if err := s.requireOwnSignIn(ss); err != nil {
 		return nil, err
 	}
 	var codes []string
@@ -439,7 +454,7 @@ func replaceRecoveryCodes(ctx context.Context, tx *store.Store, userID uuid.UUID
 // DisableTOTP turns two-factor authentication off, unless an org the user
 // belongs to requires it.
 func (s *Service) DisableTOTP(ctx context.Context, ss *model.Session) error {
-	if err := s.requireSudo(ss); err != nil {
+	if err := s.requireOwnSignIn(ss); err != nil {
 		return err
 	}
 	u, err := s.store.User(ctx, ss.UserID)
@@ -471,6 +486,9 @@ func (s *Service) RemainingRecoveryCodes(ctx context.Context, userID uuid.UUID) 
 // sessions, and the CLI's user tokens, since a changed password is often
 // a taken-over account being taken back.
 func (s *Service) ChangePassword(ctx context.Context, ss *model.Session, current, next string) error {
+	if ss.SSOOrg != nil {
+		return errSSOSession
+	}
 	u, err := s.store.User(ctx, ss.UserID)
 	if err != nil {
 		return err
@@ -528,6 +546,9 @@ func (s *Service) ResetPassword(ctx context.Context, email, password string) err
 
 // SwitchContext changes the session's org and mode.
 func (s *Service) SwitchContext(ctx context.Context, ss *model.Session, orgID uuid.UUID, livemode bool) error {
+	if ss.SSOOrg != nil && *ss.SSOOrg != orgID {
+		return apperr.NotFound("org") // a session through single sign-on stays in its org
+	}
 	if _, err := s.store.Membership(ctx, orgID, ss.UserID); err != nil {
 		return notFound(err, "org")
 	}

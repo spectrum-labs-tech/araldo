@@ -112,7 +112,7 @@ func (s *Service) takeChallenge(ctx context.Context, token, purpose string) (*uu
 // after a recent password confirmation. It returns the options for the
 // browser (navigator.credentials.create) and the ceremony's token.
 func (s *Service) BeginPasskeyRegistration(ctx context.Context, ss *model.Session) (json.RawMessage, string, error) {
-	if err := s.requireSudo(ss); err != nil {
+	if err := s.requireOwnSignIn(ss); err != nil {
 		return nil, "", err
 	}
 	rp, err := s.relyingParty()
@@ -146,7 +146,7 @@ func (s *Service) BeginPasskeyRegistration(ctx context.Context, ss *model.Sessio
 // FinishPasskeyRegistration checks the browser's new credential and keeps
 // it as a passkey named name.
 func (s *Service) FinishPasskeyRegistration(ctx context.Context, ss *model.Session, token, name string, response []byte) (*model.Passkey, error) {
-	if err := s.requireSudo(ss); err != nil {
+	if err := s.requireOwnSignIn(ss); err != nil {
 		return nil, err
 	}
 	userID, sd, err := s.takeChallenge(ctx, token, ceremonyRegister)
@@ -347,7 +347,7 @@ func (s *Service) Passkeys(ctx context.Context, userID uuid.UUID) ([]*model.Pass
 // recent confirmation; not their last second factor while an org they
 // belong to requires one.
 func (s *Service) DeletePasskey(ctx context.Context, ss *model.Session, passkeyID uuid.UUID) error {
-	if err := s.requireSudo(ss); err != nil {
+	if err := s.requireOwnSignIn(ss); err != nil {
 		return err
 	}
 	u, err := s.store.User(ctx, ss.UserID)

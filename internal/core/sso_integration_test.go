@@ -234,6 +234,43 @@ func TestSSOSignIn(t *testing.T) {
 		t.Fatalf("the role after signing in again: %s", m.Role)
 	}
 
+	// The provider vouches for Ada in this org only: her session through it
+	// stays here, cannot change how she signs in, and a CLI token approved
+	// from it works only here, though she belongs to another org too.
+	elsewhere := newWorld(t)
+	if _, err := elsewhere.s.AddMember(ctx, elsewhere.owner, elsewhere.session, email, model.RoleAdmin, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.s.SwitchContext(ctx, ss, elsewhere.org.ID, false); code(err) != "resource_missing" {
+		t.Fatalf("switching an SSO session to another org: %v", err)
+	}
+	if _, _, err := w.s.BeginPasskeyRegistration(ctx, ss); code(err) != "sso_session" {
+		t.Fatalf("adding a passkey from an SSO session: %v", err)
+	}
+	if _, _, err := w.s.BeginTOTP(ctx, ss); code(err) != "sso_session" {
+		t.Fatalf("setting up an authenticator from an SSO session: %v", err)
+	}
+	if err := w.s.ChangePassword(ctx, ss, "", "a brand new password"); code(err) != "sso_session" {
+		t.Fatalf("setting a password from an SSO session: %v", err)
+	}
+	start, err := w.s.StartDevice(ctx, "laptop", false, "203.0.113.7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.s.DecideDevice(ctx, ss, start.UserCode, true); err != nil {
+		t.Fatal(err)
+	}
+	plain, _, err := w.s.PollDevice(ctx, start.DeviceCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, err := w.s.AuthenticateUserToken(ctx, plain, "", "req_test"); err != nil || a.OrgID != w.org.ID {
+		t.Fatalf("the SSO token with no org named: %+v, %v", a, err)
+	}
+	if _, err := w.s.AuthenticateUserToken(ctx, plain, elsewhere.org.Name, "req_test"); code(err) != "org_unknown" {
+		t.Fatalf("the SSO token in another org: %v", err)
+	}
+
 	// Refusals.
 	for _, tc := range []struct {
 		name   string

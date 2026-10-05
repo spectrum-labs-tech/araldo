@@ -35,8 +35,13 @@ org owner should be able to set this up themselves, without the operator.
    (admin, editor or viewer, never owner), within its member limit. Roles
    are managed in Araldo after that.
 5. **The session needs no Araldo second factor**: the provider is the
-   org's, with its own policy. It starts in the org, and records that it
-   came through that org's single sign-on.
+   org's, with its own policy (it satisfies the org's two-factor
+   requirement too). It records that it came through that org's single
+   sign-on, and **reaches that org only**: the provider vouches for the
+   person there, not for their account, so the session cannot switch to
+   their other orgs or change how they sign in (password, authenticator,
+   passkeys), and a CLI token approved from it works in that org only.
+   Someone who belongs to other orgs signs in to those as before.
 6. **An org can require it.** Then its dashboard is reachable only from a
    session that came through its single sign-on, and CLI tokens work in it
    only when approved from one. An owner turns it on only from such a

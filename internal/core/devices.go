@@ -209,6 +209,9 @@ func (s *Service) AuthenticateUserToken(ctx context.Context, token, org, request
 	if err != nil {
 		return Actor{}, err
 	}
+	if t.SSOOrg != nil {
+		ms = inOrg(ms, *t.SSOOrg) // approved through single sign-on: that org only
+	}
 	m, err := pickMembership(ms, org)
 	if err != nil {
 		return Actor{}, err
@@ -237,6 +240,16 @@ func (s *Service) AuthenticateUserToken(ctx context.Context, token, org, request
 	_ = s.store.TouchUserToken(ctx, t.ID, now)
 	return Actor{OrgID: m.OrgID, Livemode: t.Livemode, UserID: &t.UserID, Role: m.Role, TokenID: &t.ID, RequestID: requestID,
 		OrgStatus: o.Status}, nil
+}
+
+// inOrg keeps the membership in orgID.
+func inOrg(ms []model.Membership, orgID uuid.UUID) []model.Membership {
+	for _, m := range ms {
+		if m.OrgID == orgID {
+			return []model.Membership{m}
+		}
+	}
+	return nil
 }
 
 // pickMembership chooses the membership an org header names: by ID or

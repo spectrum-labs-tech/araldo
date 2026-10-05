@@ -13,6 +13,14 @@
 </section>
 {{end}}
 
+{{if .Session.SSOOrg}}
+<section class="card">
+  <h2>Signing in</h2>
+  <p>You signed in through {{with .Org}}{{.OrgName}}'s{{else}}your organization's{{end}} single sign-on, so this session reaches only that org,
+    and your identity provider decides how you sign in. To change your password, two-factor authentication or passkeys, or to reach your
+    other orgs, sign out and sign in with them instead.</p>
+</section>
+{{else}}
 <section class="card">
   <h2>Two-factor authentication</h2>
   {{if .User.MFAEnabled}}
@@ -61,6 +69,7 @@
   <noscript><p class="text-sm">Adding a passkey needs JavaScript.</p></noscript>
 </section>
 {{end}}
+{{end}}
 
 {{if .Data.Devices}}
 <section class="card">
@@ -84,6 +93,7 @@
 </section>
 {{end}}
 
+{{if not .Session.SSOOrg}}
 <section class="card">
   <h2>Password</h2>
   <p class="mb-3 text-sm text-muted">Changing it signs you out everywhere else, the CLI included.</p>
@@ -95,4 +105,5 @@
     <div><button class="btn-primary">Change password</button></div>
   </form>
 </section>
+{{end}}
 {{end}}

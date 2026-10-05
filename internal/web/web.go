@@ -270,6 +270,9 @@ func (s *Server) signedIn(w http.ResponseWriter, r *http.Request) (*reqCtx, bool
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return nil, false
 	}
+	if ss.SSOOrg != nil { // a session through single sign-on reaches its org only (ADR 0033)
+		c.orgs = slices.DeleteFunc(c.orgs, func(m model.Membership) bool { return m.OrgID != *ss.SSOOrg })
+	}
 	orgID := uuid.Nil
 	if ss.CurrentOrg != nil {
 		orgID = *ss.CurrentOrg

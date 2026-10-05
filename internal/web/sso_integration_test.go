@@ -124,6 +124,10 @@ func TestSSOInTheDashboard(t *testing.T) {
 	if rec := do(http.MethodGet, "/posts", ada, "", nil); rec.Code != http.StatusOK {
 		t.Fatalf("the new member's dashboard: %d", rec.Code)
 	}
+	if body := do(http.MethodGet, "/account", ada, "", nil).Body.String(); !strings.Contains(body, "this session reaches only that org") ||
+		strings.Contains(body, "Change password") || strings.Contains(body, `data-passkey="register"`) {
+		t.Fatalf("the account page of an SSO session offers to change how she signs in:\n%s", body)
+	}
 	u, err := d.s.UserByEmail(ctx, email)
 	if err != nil {
 		t.Fatal(err)

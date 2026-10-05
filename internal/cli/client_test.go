@@ -103,6 +103,24 @@ func fakeAraldo(t *testing.T) (*httptest.Server, *map[string]any) {
 				items = append(items, fmt.Sprintf(`{"id":"post_%d"}`, i))
 			}
 			_, _ = fmt.Fprintf(w, `{"object":"list","data":[%s],"has_more":%t}`, strings.Join(items, ","), start+2 < 5)
+		case "POST /v1/posts/preview":
+			if c, _ := lastBody["content"].(map[string]any); c != nil && strings.Contains(fmt.Sprint(c["body"]), "too long") {
+				_, _ = io.WriteString(w, `{"object":"preview","valid":false,"renditions":[{"provider":"bluesky","parts":["too long…"],`+
+					`"lengths":[310],"limit":300,"violations":[{"code":"too_long","message":"Bluesky posts are at most 300 characters."}]}]}`)
+				return
+			}
+			_, _ = io.WriteString(w, `{"object":"preview","valid":true,"renditions":[{"provider":"bluesky","channel":"chan_1",`+
+				`"parts":["Shipped 1.0"],"lengths":[11],"limit":300,"violations":[]}]}`)
+		case "POST /v1/posts":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{"id":"post_9","object":"post","status":"scheduled","publish_at":null,"slot":true,"targets":[]}`)
+		case "GET /v1/posts/post_9":
+			_, _ = io.WriteString(w, `{"id":"post_9","object":"post","status":"needs_attention","publish_at":"2026-10-05T15:00:00Z",`+
+				`"content":{"body":"Shipped 1.0"},"targets":[`+
+				`{"id":"ptgt_1","channel":"chan_1","channel_name":"araldo.dev","provider":"bluesky","status":"published","permalink":"https://bsky.app/p/1"},`+
+				`{"id":"ptgt_2","channel":"chan_2","provider":"x","status":"needs_attention","error":{"code":"network","message":"timed out"}}]}`)
+		case "POST /v1/posts/post_9/cancel":
+			_, _ = io.WriteString(w, `{"id":"post_9","object":"post","status":"canceled"}`)
 		case "DELETE /v1/auth/token":
 			lastBody = map[string]any{"revoked": auth}
 			_, _ = io.WriteString(w, `{"id":"utok_1","object":"user_token","deleted":true}`)

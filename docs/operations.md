@@ -301,6 +301,11 @@ araldo auth login --hostname araldo.example.com --with-token < key.txt   # an AP
 araldo auth status                      # both modes on each server, and whether they still work
 araldo channels list                    # a table in a terminal; tab-separated when piped
 araldo channels list --live             # the same, in live mode
+araldo posts list --status needs_attention   # posts, newest first
+araldo posts get post_…                  # each channel's copy: status, link, error
+araldo posts preview --brand araldo --body "Shipped 1.0"   # every channel's text and problems; fails if any
+araldo posts create --brand araldo --template release --data '{"version":"1.0"}' --at next_slot
+araldo posts cancel post_…
 araldo members list                     # members, invite, role, remove
 araldo members invite --email them@example.com --role editor   # prints the link to send them
 araldo org view                         # and org update --name
@@ -321,8 +326,8 @@ araldo api -X POST posts --input post.json   # ...and otherwise make it a POST, 
   can be approved. The CLI then gets a **token that acts
   as you**: your role in each of your orgs, read at the time, so a change
   takes effect at once. Sign devices out under **Your account → Devices**
-  or with `auth logout`. A token lasts until then, or a year unused; an
-  operator's password reset revokes them all. Some changes (API keys,
+  or with `auth logout`. A token lasts until then, or a year unused;
+  changing your password, or an operator's reset, revokes them all. Some changes (API keys,
   owners, no longer requiring two-factor) need a password confirmation and
   stay in the dashboard.
 - **In several orgs?** Name one with `--org` (an ID or name), set a default

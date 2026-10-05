@@ -520,7 +520,16 @@ func (s *Service) refreshOne(ctx context.Context, ch *model.Channel, r platform.
 		if err != nil {
 			return err
 		}
-		raw, err := json.Marshal(fresh)
+		// The new tokens replace the old; the rest of what is stored (a Page
+		// or board ID) stays. Settings, kept apart, are not copied in.
+		secrets, err := secretsWith(ctx, keys, locked)
+		if err != nil {
+			return err
+		}
+		for k, v := range fresh {
+			secrets[k] = v
+		}
+		raw, err := json.Marshal(secrets)
 		if err != nil {
 			return err
 		}

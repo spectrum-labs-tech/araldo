@@ -281,21 +281,31 @@ func credentialsWith(ctx context.Context, keys *keyring.Keyring, ch *model.Chann
 	for k, v := range ch.Settings {
 		creds[k] = v
 	}
-	if len(ch.Credentials) == 0 {
-		return creds, nil
-	}
-	raw, err := keys.Decrypt(ctx, ch.OrgID, credentialsAAD(ch.ID), ch.Credentials)
+	secrets, err := secretsWith(ctx, keys, ch)
 	if err != nil {
-		return nil, err
-	}
-	var secrets map[string]string
-	if err := json.Unmarshal(raw, &secrets); err != nil {
 		return nil, err
 	}
 	for k, v := range secrets {
 		creds[k] = v
 	}
 	return creds, nil
+}
+
+// secretsWith is a channel's encrypted credentials alone, without its
+// settings.
+func secretsWith(ctx context.Context, keys *keyring.Keyring, ch *model.Channel) (map[string]string, error) {
+	secrets := map[string]string{}
+	if len(ch.Credentials) == 0 {
+		return secrets, nil
+	}
+	raw, err := keys.Decrypt(ctx, ch.OrgID, credentialsAAD(ch.ID), ch.Credentials)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(raw, &secrets); err != nil {
+		return nil, err
+	}
+	return secrets, nil
 }
 
 // ProviderInfo describes a platform for connect forms.

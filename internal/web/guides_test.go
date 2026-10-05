@@ -35,7 +35,7 @@ func TestAppGuides(t *testing.T) {
 	c := http.DefaultClient
 	needApps := map[platform.Provider]bool{}
 	for _, a := range []platform.Adapter{
-		bluesky.New(c), mastodon.New(c), gab.New(c), discord.New(c), telegram.New(c), x.New(c), linkedin.New(c),
+		bluesky.New(c), mastodon.New(c), gab.New(c), discord.New(c), telegram.New(c), x.New(c), linkedin.New(c), linkedin.NewPages(c),
 		pinterest.New(c), youtube.New(c), tiktok.New(c), threads.New(c), facebook.New(c), instagram.New(c),
 	} {
 		if _, ok := a.(platform.Connector); ok {
@@ -43,7 +43,7 @@ func TestAppGuides(t *testing.T) {
 		}
 	}
 	needApps[ads.Provider(reddit.New(c).Network())] = true
-	if len(needApps) < 9 {
+	if len(needApps) < 10 {
 		t.Fatalf("only %d platforms connect through a developer app; has platform.Connector changed?", len(needApps))
 	}
 	docs, err := os.ReadFile("../../docs/operations.md")

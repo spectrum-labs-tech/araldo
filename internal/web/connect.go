@@ -33,7 +33,8 @@ type appsData struct {
 // developerSites are where each provider's developer apps are registered.
 var developerSites = map[platform.Provider]string{
 	platform.X: "https://developer.x.com", platform.LinkedIn: "https://www.linkedin.com/developers/apps",
-	platform.Threads: "https://developers.facebook.com/apps", platform.Facebook: "https://developers.facebook.com/apps",
+	platform.LinkedInPages: "https://www.linkedin.com/developers/apps",
+	platform.Threads:       "https://developers.facebook.com/apps", platform.Facebook: "https://developers.facebook.com/apps",
 	platform.Instagram: "https://developers.facebook.com/apps", platform.Pinterest: "https://developers.pinterest.com/apps/",
 	platform.YouTube: "https://console.cloud.google.com/apis/credentials", platform.TikTok: "https://developers.tiktok.com/apps/",
 	"reddit_ads": "https://www.reddit.com/prefs/apps",

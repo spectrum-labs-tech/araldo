@@ -57,6 +57,21 @@ var appGuides = map[platform.Provider]appGuide{
 			`Tokens last 60 days. LinkedIn gives refresh tokens only to apps it has approved for them, so otherwise the channel says a week ahead when to sign in again.`,
 		},
 	},
+	platform.LinkedInPages: {
+		Steps: []template.HTML{
+			`Create a <strong>second</strong> app at linkedin.com/developers/apps, for the Page, with <strong>no other products</strong>: LinkedIn grants the Community Management API only to an app that has none. A Page admin <strong>verifies</strong> it (<strong>Settings → Verify</strong>).`,
+			`<strong>Products</strong>: request the <strong>Community Management API</strong> (the Development tier is enough for your own Pages). For your own Pages the use case is <strong>Direct Advertiser</strong>. LinkedIn reviews the request.`,
+			`Once it is granted, <strong>Auth</strong>: add the redirect URI under <strong>Authorized redirect URLs</strong>, and check the scopes include <code>r_organization_admin</code> and <code>w_organization_social</code>.`,
+			`Copy the <strong>Client ID</strong> and <strong>Primary Client Secret</strong> from the Auth tab.`,
+		},
+		ClientID:     `the Pages app's Client ID`,
+		Confidential: `the Pages app's Primary Client Secret`,
+		Notes: []template.HTML{
+			`Signing in offers each Page you administer as a channel; posts appear as the Page.`,
+			`Your personal feed stays on the other app, as LinkedIn.`,
+			`Tokens last 60 days; without a refresh token from LinkedIn, the channel says a week ahead when to sign in again.`,
+		},
+	},
 	platform.Threads: {
 		Steps: []template.HTML{
 			`At developers.facebook.com/apps, create an app with the <strong>Access the Threads API</strong> use case.`,

@@ -40,7 +40,7 @@ Principles every feature keeps:
 - Publishing: slots taken at approval, moving and swapping posts, deadlines,
   rate-limit holds, re-auth detection, never silently double-posting
   ([ADR 0011](adr/0011-publishing.md), [ADR 0022](adr/0022-slots-at-approval.md)).
-- Platforms: Bluesky, Mastodon, Gab, X, LinkedIn and Pinterest (signing in
+- Platforms: Bluesky, Mastodon, Gab, X, LinkedIn (members and Pages) and Pinterest (signing in
   through an org's developer app, or pasted credentials), Threads, Facebook
   Pages and Instagram (signing in), Discord and Telegram, and the sandbox with failure
   simulation ([ADR 0021](adr/0021-oauth-connections.md)).
@@ -87,7 +87,7 @@ Principles every feature keeps:
 | 6 | Pinterest (images) | ADR 0009 | Done: boards as channels, by sign-in or pasted token; engagement reading next |
 | 7 | Video media and resizing images to fit each platform, then YouTube and TikTok | ADR 0027 | Done: images resized per platform; video on Bluesky, X, Mastodon, Gab, LinkedIn, Facebook, Instagram (reels), Threads, Telegram, Discord, YouTube and TikTok |
 | 8 | Ads phase 2: promotions on the first network with real spend, under per-brand caps | ADR 0023 | Decided |
-| 9 | LinkedIn company pages (its Community Management API); engagement from X and LinkedIn | ADR 0018, 0021 | Planned |
+| 9 | LinkedIn company pages (its Community Management API); engagement from X and LinkedIn | ADR 0018, 0021 | Pages built, as their own platform with their own app (LinkedIn grants the API only to an app with no other products), not yet run against a real Page; engagement not yet |
 | 10 | Developer tooling: the CLI as an API client with `araldo login` (device sign-in), `araldo listen` (webhooks to localhost), SDKs generated from the contract, a request log in the dashboard | ADR 0005, 0028 | CLI client built: device sign-in (`araldo auth login`) with user tokens that act as the person, a test and a live credential per server (`--live`, as the Stripe CLI), `--org`, `members`, `org`, `channels list`, `araldo api`, `araldo listen` (the event stream forwarded to localhost) and `GET /v1/me`; server administration under `araldo admin`, audited as the operator. SDKs and a request log next |
 | 11 | AI drafting in the dashboard with the organization's own model key | ADR 0001 | Planned |
 | 12 | The rest of OpenTelemetry (traces, logs, publish lateness) | ADR 0014 | Planned (built-in backups, ADR 0013, were withdrawn: they are the operator's) |

@@ -145,7 +145,8 @@ check's result.
 | Mastodon | Server and an access token (write:statuses, write:media, read:accounts). |
 | Gab | An access token (write:statuses, write:media, read:accounts). Gab is one service, so there is no server to give. |
 | X | A sign-in through your X app, below; or the app's API key and secret and the account's access token and secret, pasted (read and write). |
-| LinkedIn | A sign-in through your LinkedIn app, below; or a member access token from its token tools (openid, profile, w_member_social), pasted. Tokens last 60 days. |
+| LinkedIn | A sign-in through your LinkedIn app, below; or a member access token from its token tools (openid, profile, w_member_social), pasted. Tokens last 60 days. Posts go to the member's feed. |
+| LinkedIn Pages | A sign-in through a second LinkedIn app with the Community Management API, below, choosing Pages: each is a channel, posting as the Page; or a token and the Page's ID, pasted. |
 | Threads | A sign-in through your Threads app, below. |
 | Facebook Pages, Instagram | A sign-in through your Meta app, below; you choose which Pages, or which Instagram accounts linked to them. |
 | Pinterest | A sign-in through your Pinterest app, below, choosing boards: each board is a channel; or an access token and a board ID, pasted. |
@@ -183,6 +184,18 @@ not use the Advertising API yet. Tokens last 60 days. LinkedIn gives
 refresh tokens only to apps it has approved for them; without one, the
 channel says a week ahead when to sign in again, and needs it once the
 token expires.
+
+**LinkedIn Pages.** To post as a company Page rather than a member, use a
+second LinkedIn app with no other products, verified by a Page admin, and
+request LinkedIn's *Community Management API* for it (the Development tier
+covers your own Pages; the use case is *Direct Advertiser*). Once LinkedIn
+grants it, add Araldo's redirect URI
+(`{ARALDO_BASE_URL}/connect/linkedin_pages/callback`) under Auth →
+Authorized redirect URLs, add the app under Developer apps as LinkedIn
+Page, then connect: each Page you administer is offered as a channel, and
+its posts appear as the Page. The sign-in asks for `r_organization_admin`
+(to list your Pages) and `w_organization_social` (to post). Tokens last 60
+days, as for members.
 
 **YouTube.** In a Google Cloud project, enable the *YouTube Data API v3*,
 configure the OAuth consent screen, and create an OAuth client of type *Web

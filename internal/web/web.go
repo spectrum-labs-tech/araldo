@@ -33,6 +33,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/media"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
@@ -542,6 +543,9 @@ var funcs = template.FuncMap{
 	"join": strings.Join,
 	"icon": func(provider any) template.HTML {
 		p := fmt.Sprint(provider)
+		if p == string(platform.LinkedInPages) {
+			p = string(platform.LinkedIn) // the same mark
+		}
 		if !iconNames[p] {
 			p = "sandbox"
 		}

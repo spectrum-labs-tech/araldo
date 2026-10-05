@@ -49,7 +49,7 @@ func (fakeOAuth) Exchange(_ context.Context, app platform.App, _, code, verifier
 	soon := time.Now().Add(time.Hour)
 	acct := func(n string) platform.Connection {
 		return platform.Connection{Account: platform.Account{ExternalID: "acct-" + n, Handle: "@" + n, DisplayName: "Account " + n},
-			Credentials: platform.Credentials{"access_token": code + "-" + n}, ExpiresAt: &soon}
+			Credentials: platform.Credentials{"access_token": code + "-" + n, "page": n}, ExpiresAt: &soon}
 	}
 	switch code {
 	case "many":
@@ -151,6 +151,15 @@ func TestOAuthConnections(t *testing.T) {
 	// reconnecting.
 	if n, err := core.RefreshTokensOrg(w.s, w.org.ID); err != nil || n != 2 {
 		t.Fatalf("refresh: %d, %v", n, err)
+	}
+	// A refresh returns only the new tokens; what else the channel holds
+	// (here its page) stays.
+	renewed, err := w.s.Channel(ctx, live, ch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, err := core.StoredCredentials(w.s, renewed); err != nil || c["access_token"] != "renewed" || c["page"] != "a" {
+		t.Fatalf("credentials after a refresh: %v, %v", c, err)
 	}
 	state = signIn(t, w, live, app)
 	if _, err := w.s.FinishConnect(ctx, live, platform.Threads, state, "revoked"); err != nil {

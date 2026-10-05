@@ -49,6 +49,12 @@ func UsableCredentials(s *Service, ch *model.Channel) (platform.Credentials, err
 
 // CollectAdsOrg is CollectAds for one org, so a test reads only its own
 // ad accounts.
+// StoredCredentials are a channel's credentials as stored, without
+// renewing anything.
+func StoredCredentials(s *Service, ch *model.Channel) (platform.Credentials, error) {
+	return credentialsWith(context.Background(), s.keys, ch)
+}
+
 func CollectAdsOrg(s *Service, org uuid.UUID) (int, error) {
 	return s.collectAds(context.Background(), &org)
 }

@@ -204,6 +204,18 @@ type multiImage struct {
 // Publish posts the single part (LinkedIn has no threads) with any images
 // (https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api).
 func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platform.Payload, onPart func(platform.RemoteRef) error) (platform.Result, error) {
+	return a.publish(ctx, c, p, onPart, func(h map[string]string) (string, error) {
+		sub, _, err := a.me(ctx, h)
+		if err != nil {
+			return "", err
+		}
+		return "urn:li:person:" + sub, nil
+	})
+}
+
+// publish posts as the author authorOf names: a member, or a Page.
+func (a *Adapter) publish(ctx context.Context, c platform.Credentials, p platform.Payload, onPart func(platform.RemoteRef) error,
+	authorOf func(h map[string]string) (string, error)) (platform.Result, error) {
 	res := platform.Result{Parts: append([]platform.RemoteRef(nil), p.Posted...)}
 	if len(p.Posted) >= len(p.Parts) {
 		return res, nil
@@ -212,11 +224,10 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 	if err != nil {
 		return res, err
 	}
-	sub, _, err := a.me(ctx, h)
+	author, err := authorOf(h)
 	if err != nil {
 		return res, err
 	}
-	author := "urn:li:person:" + sub
 	body := post{Author: author, Commentary: Commentary(p.Parts[0]), Visibility: "PUBLIC", LifecycleState: "PUBLISHED",
 		Distribution: distribution{FeedDistribution: "MAIN_FEED", TargetEntities: []string{}, ThirdPartyDistributionChannels: []string{}}}
 	switch {

@@ -124,6 +124,7 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 		telegram.New(client),
 		x.New(client),
 		linkedin.New(client),
+		linkedin.NewPages(client),
 		pinterest.New(client),
 		youtube.New(client),
 		tiktok.New(client),

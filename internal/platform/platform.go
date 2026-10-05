@@ -34,9 +34,12 @@ const (
 	Instagram Provider = "instagram"
 	Threads   Provider = "threads"
 	LinkedIn  Provider = "linkedin"
-	Pinterest Provider = "pinterest"
-	YouTube   Provider = "youtube"
-	TikTok    Provider = "tiktok"
+	// LinkedInPages posts as company Pages, through its own app (the
+	// Community Management API); LinkedIn posts to a member's feed.
+	LinkedInPages Provider = "linkedin_pages"
+	Pinterest     Provider = "pinterest"
+	YouTube       Provider = "youtube"
+	TikTok        Provider = "tiktok"
 )
 
 // Credentials are a channel's decrypted settings and secrets, by field
@@ -326,5 +329,7 @@ type Connector interface {
 // in again now; or ErrNoRefresh, for a token that cannot be renewed but
 // still works until it expires.
 type Refresher interface {
+	// Refresh returns the credentials that changed (the new tokens); the
+	// channel keeps the rest (a Page or board ID, an API version).
 	Refresh(ctx context.Context, app App, c Credentials) (Credentials, *time.Time, error)
 }

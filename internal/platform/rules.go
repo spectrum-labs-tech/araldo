@@ -234,6 +234,14 @@ var rules = map[Provider]Rules{
 }
 
 // RulesFor returns a provider's rules.
+// A LinkedIn Page posts by the same rules as a member: the same Posts,
+// Images and Videos APIs, with the Page as author.
+func init() {
+	r := rules[LinkedIn]
+	r.Provider, r.Name = LinkedInPages, "LinkedIn Page"
+	rules[LinkedInPages] = r
+}
+
 func RulesFor(p Provider) (Rules, bool) {
 	r, ok := rules[p]
 	return r, ok

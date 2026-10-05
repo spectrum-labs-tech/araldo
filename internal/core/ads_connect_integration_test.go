@@ -86,13 +86,19 @@ func TestAdNetworkSignIn(t *testing.T) {
 		t.Fatalf("ad account %+v", first)
 	}
 
-	// Reading uses the app's credentials.
-	if n, err := core.CollectAdsOrg(w.s, w.org.ID); err != nil || n != 2 {
-		t.Fatalf("collect: %d, %v", n, err)
-	}
-	got, err := w.s.AdAccount(ctx, live, first.ID)
-	if err != nil || got.ReadAt == nil || got.Status != model.AdAccountActive {
-		t.Fatalf("after reading: %+v, %v", got, err)
+	// Reading uses the app's credentials. The accounts are due by the
+	// database's clock, which may run a little ahead of this one, so wait.
+	var got *model.AdAccount
+	waitFor(t, "the accounts to be read", func() {
+		if _, err := core.CollectAdsOrg(w.s, w.org.ID); err != nil {
+			t.Fatal(err)
+		}
+	}, func() bool {
+		got, err = w.s.AdAccount(ctx, live, first.ID)
+		return err == nil && got.ReadAt != nil
+	})
+	if got.Status != model.AdAccountActive {
+		t.Fatalf("after reading: %+v", got)
 	}
 
 	// Signing in again reconnects; it never duplicates.

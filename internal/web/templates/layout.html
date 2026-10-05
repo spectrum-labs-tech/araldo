@@ -73,6 +73,11 @@
     {{else}}{{template "content" .}}{{end}}
   </main>
 </div>
+{{else if .Public}}
+<main id="main" class="mx-auto max-w-[1100px] min-w-0 px-4 py-6 md:px-8">
+  <p class="brandmark no-print mb-4 text-lg"><img src="/static/icon.svg" alt="" width="22" height="22"> Araldo</p>
+  {{template "content" .}}
+</main>
 {{else}}
 <main id="main" class="grid min-h-[90vh] place-items-center p-4">
   <div class="w-full max-w-sm rounded-xl border border-line bg-panel p-8">

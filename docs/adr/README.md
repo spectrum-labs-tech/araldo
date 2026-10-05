@@ -31,7 +31,7 @@ open a pull request.
 | [0023](0023-paid-promotion.md) | Paid promotion on any network, with spend that cannot exceed a cap | accepted; phase 1 (reporting) built; promotions not yet |
 | [0024](0024-newsletters.md) | Newsletters are designed and scheduled in Araldo and sent by the email provider, which owns the list | accepted; phase 1 built |
 | [0025](0025-web-analytics.md) | Web analytics are provider adapters that report visits and signups by Araldo's own link tags | accepted; built for Plausible and GA4 |
-| [0026](0026-reports.md) | A brand's report is computed on demand from what Araldo already reads, one period at a time | accepted; phase 1 built; share links and monthly email not yet |
+| [0026](0026-reports.md) | A brand's report is computed on demand from what Araldo already reads, one period at a time | accepted; phase 1 and share links built; monthly email not yet |
 | [0027](0027-video-and-resizing.md) | Images too big for a platform are resized for it, and video is media stored in object storage | accepted; built |
 | [0028](0028-cli-as-api-client.md) | The CLI is an API client, modeled on `gh`; only server administration touches the database | accepted; built (device sign-in and user tokens, a test and a live credential per server, `/v1/members` and `/v1/org`, `araldo admin`); `araldo listen`; `auth switch` not yet |
 | [0029](0029-backward-compatible-migrations.md) | Migrations work with the release still running, and a test enforces it | accepted; built |

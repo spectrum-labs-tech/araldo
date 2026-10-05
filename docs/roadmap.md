@@ -83,7 +83,7 @@ Principles every feature keeps:
 | 2 | MCP over HTTP at `POST /v1/mcp` | ADR 0020 | Done |
 | 3 | Web analytics adapters: signups by post, network and campaign (Plausible), then cost per signup beside ad spend and GA4 | ADR 0025 | Done: Plausible and GA4, signups by post, cost per signup by ad campaign |
 | 4 | Newsletters phase 1: mail accounts, issues with a delivery per account, renderer and theme, Brevo and sandbox providers | ADR 0024 | Done: Brevo and the sandbox, approval, hand-off, results, dashboard, API and MCP drafting; templates with data and a top-posts block are phase 2 |
-| 5 | Client reports: one page per brand per month across posts, ads, newsletters and analytics | ADR 0026 | Phase 1 done: the page with a print stylesheet, the API and the MCP tool; share links next |
+| 5 | Client reports: one page per brand per month across posts, ads, newsletters and analytics | ADR 0026 | Phase 1 done: the page with a print stylesheet, the API and the MCP tool, and share links; a monthly email next |
 | 6 | Pinterest (images) | ADR 0009 | Done: boards as channels, by sign-in or pasted token; engagement reading next |
 | 7 | Video media and resizing images to fit each platform, then YouTube and TikTok | ADR 0027 | Done: images resized per platform; video on Bluesky, X, Mastodon, Gab, LinkedIn, Facebook, Instagram (reels), Threads, Telegram, Discord, YouTube and TikTok |
 | 8 | Ads phase 2: promotions on the first network with real spend, under per-brand caps | ADR 0023 | Decided |

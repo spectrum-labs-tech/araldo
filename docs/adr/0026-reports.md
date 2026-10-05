@@ -1,6 +1,6 @@
 # ADR 0026: A brand's report is computed on demand from what Araldo already reads, one period at a time
 
-- Status: accepted; phase 1 built; share links and monthly email not yet
+- Status: accepted; phase 1 and share links built; monthly email not yet
 - Date: 2026-10-03
 
 ## Context

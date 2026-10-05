@@ -111,7 +111,7 @@ func (s *Server) parse() error {
 		if name == "layout" || strings.HasPrefix(name, "_") {
 			continue // the layout and partials are parsed with every page
 		}
-		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", "templates/_icons.html", e)
+		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", "templates/_*.html", e)
 		if err != nil {
 			return fmt.Errorf("web: parse %s: %w", e, err)
 		}
@@ -164,6 +164,9 @@ type view struct {
 	Guide bool
 	// Nonce allows the editor's style elements (Content-Security-Policy).
 	Nonce string
+	// Public pages (a shared report) are full width with no navigation,
+	// for someone who is not signed in.
+	Public bool
 	// OrgStatus and StatusNote are the org's, when not active (ADR 0031);
 	// BillingLink shows owners the way to billing, and SignupURL where
 	// accounts are made.
@@ -522,6 +525,9 @@ var funcs = template.FuncMap{
 	"moneyStat": func(label string, p core.Pair, currency, lowerBetter string) statCard {
 		return statCard{Label: label, Pair: p, Currency: currency, LowerBetter: lowerBetter}
 	},
+	// reportView is a report for the reportBody partial; public leaves out
+	// links into the dashboard.
+	"reportView": func(r *core.Report, public bool) reportView { return reportView{R: r, Public: public} },
 	// issueResults adds up an issue's deliveries' results.
 	"issueResults": func(is *model.Issue) model.MailResults {
 		var r model.MailResults

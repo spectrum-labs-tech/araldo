@@ -876,3 +876,17 @@ type APIRequest struct {
 	RequestID   string
 	CreatedAt   time.Time
 }
+
+// ReportShare is a link to a brand's report for a month, for people
+// outside the org (ADR 0026).
+type ReportShare struct {
+	ID        uuid.UUID
+	OrgID     uuid.UUID
+	BrandID   uuid.UUID
+	Livemode  bool
+	Month     string // YYYY-MM
+	CreatedBy *uuid.UUID
+	ExpiresAt time.Time
+	RevokedAt *time.Time
+	CreatedAt time.Time
+}

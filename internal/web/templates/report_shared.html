@@ -1,0 +1,12 @@
+{{define "content"}}
+{{with .Data}}
+{{$r := .R}}
+<h1>{{$r.Brand.Name}}: {{fmtPeriod $r.Since $r.Until}}</h1>
+<p class="text-muted">Compared with {{fmtPeriod $r.PrevSince $r.PrevUntil}}.{{if $r.Settling}} The last week's analytics and ad figures may still change.{{end}}
+  To keep a copy, print the page or save it as a PDF.</p>
+{{template "reportBody" .}}
+{{else}}
+<h1>Report not found</h1>
+<p>This link does not work: it may have expired or been withdrawn. Ask whoever sent it for a new one.</p>
+{{end}}
+{{end}}

@@ -726,6 +726,14 @@ always has the latest figures; sections a key may not see (ads need
 out. Print the page, or save it as a PDF from the browser, to keep or send
 a copy.
 
+**Share links.** Admins and owners can make a link to a brand's month from
+its report, for a client or anyone outside the org: anyone holding it reads
+that one report, read-only and without an account, for 30 days. It links
+nowhere in the dashboard, asks search engines not to index it, and stops
+working when withdrawn from the report page, when it expires, or while the
+org is suspended. Each link is audited (`report.share`, `report.unshare`);
+it is shown once, and only its hash is stored.
+
 ## Backups
 
 Araldo has no backup command: back it up the way you back up any Postgres

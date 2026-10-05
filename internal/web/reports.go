@@ -4,10 +4,16 @@ package web
 
 import (
 	"fmt"
+	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
+
+	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
@@ -19,6 +25,17 @@ type reportData struct {
 	// Month is the period as the month picker shows it, when it is one.
 	Month  string
 	Report *core.Report
+	// CanShare is set for those who make share links, Shares are the
+	// brand's open ones, and ShareLink the one just made, shown once.
+	CanShare  bool
+	Shares    []*model.ReportShare
+	ShareLink string
+}
+
+// reportView is the report partial's data.
+type reportView struct {
+	R      *core.Report
+	Public bool
 }
 
 func (s *Server) reportsPage(c *reqCtx) error {
@@ -50,7 +67,72 @@ func (s *Server) reportsPage(c *reqCtx) error {
 	if r := d.Report; r.Since.Day() == 1 && r.Until.AddDate(0, 0, 1).Day() == 1 && r.Since.Month() == r.Until.Month() {
 		d.Month = r.Since.Format("2006-01")
 	}
+	if d.CanShare = c.actor.Can(core.PermMembersWrite); d.CanShare {
+		if d.Shares, err = s.svc.ReportShares(c.ctx(), c.actor, d.Brand.ID); err != nil {
+			return err
+		}
+	}
 	return s.page(c, "reports", "reports", "Report: "+d.Brand.Name, d)
+}
+
+// shareReport makes a link to the brand's month and shows it once, on the
+// report it shares.
+func (s *Server) shareReport(c *reqCtx) error {
+	b, err := s.svc.ResolveBrand(c.ctx(), c.actor, c.r.PostFormValue("brand"))
+	if err != nil {
+		return err
+	}
+	month := c.r.PostFormValue("month")
+	token, _, err := s.svc.CreateReportShare(c.ctx(), c.actor, b.ID, month)
+	if err != nil {
+		return err
+	}
+	c.r.URL.RawQuery = url.Values{"brand": {id.Format(id.Brand, b.ID)}, "month": {month}}.Encode()
+	d := &reportData{Brand: b, Month: month, CanShare: true, ShareLink: s.svc.ShareURL(token)}
+	if d.Brands, err = s.svc.Brands(c.ctx(), c.actor); err != nil {
+		return err
+	}
+	if d.Report, err = s.svc.BrandReport(c.ctx(), c.actor, core.ReportInput{BrandID: b.ID, Month: month}); err != nil {
+		return err
+	}
+	if d.Shares, err = s.svc.ReportShares(c.ctx(), c.actor, b.ID); err != nil {
+		return err
+	}
+	return s.page(c, "reports", "reports", "Report: "+b.Name, d)
+}
+
+func (s *Server) unshareReport(c *reqCtx) error {
+	shareID, err := uuid.Parse(c.r.PathValue("id"))
+	if err != nil {
+		return apperr.NotFound("shared report")
+	}
+	if err := s.svc.RevokeReportShare(c.ctx(), c.actor, shareID); err != nil {
+		return err
+	}
+	return redirect(c, "/reports?"+url.Values{"brand": {c.r.PostFormValue("brand")}, "month": {c.r.PostFormValue("month")}}.Encode(),
+		"The link no longer works.")
+}
+
+// sharedReport shows a shared report to anyone holding its link, with no
+// sign-in: read-only, nothing linking into the dashboard, not indexed.
+func (s *Server) sharedReport(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	rep, _, err := s.svc.SharedReport(r.Context(), r.PathValue("token"))
+	if err != nil {
+		v := s.view(nil, "", "Report not found", nil)
+		v.Public = true
+		status := http.StatusNotFound
+		if apperr.As(err).Kind != apperr.KindNotFound {
+			status = http.StatusServiceUnavailable
+			s.log.ErrorContext(r.Context(), "showing a shared report", "err", err)
+		}
+		s.render(w, status, "report_shared", v)
+		return
+	}
+	v := s.view(nil, "", rep.Brand.Name+": report", reportView{R: rep, Public: true})
+	v.Public = true
+	s.render(w, http.StatusOK, "report_shared", v)
 }
 
 // change describes how a figure moved from the period before: "+12%",

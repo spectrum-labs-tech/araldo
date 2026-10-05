@@ -18,12 +18,12 @@ func errorsIs(err, target error) bool { return errors.Is(err, target) }
 // Orgs and memberships.
 
 const orgCols = `id, name, require_mfa, status, status_note, COALESCE(external_ref, ''), limit_brands, limit_channels, limit_members,
-	limit_posts_month, created_at`
+	limit_posts_month, created_at, require_sso`
 
 func scanOrg(r pgx.Row) (*model.Org, error) {
 	var o model.Org
 	err := r.Scan(&o.ID, &o.Name, &o.RequireMFA, &o.Status, &o.StatusNote, &o.ExternalRef, &o.Limits.Brands, &o.Limits.Channels,
-		&o.Limits.Members, &o.Limits.PostsMonth, &o.CreatedAt)
+		&o.Limits.Members, &o.Limits.PostsMonth, &o.CreatedAt, &o.RequireSSO)
 	return &o, mapErr(err)
 }
 
@@ -54,6 +54,12 @@ func (s *Store) FindOrgs(ctx context.Context, name string, limit int) ([]*model.
 
 func (s *Store) UpdateOrg(ctx context.Context, o *model.Org) error {
 	return s.execOne(ctx, `UPDATE orgs SET name = $2, require_mfa = $3, updated_at = now() WHERE id = $1`, o.ID, o.Name, o.RequireMFA)
+}
+
+// SetOrgRequireSSO sets whether members reach the org only through its
+// single sign-on (ADR 0033).
+func (s *Store) SetOrgRequireSSO(ctx context.Context, id uuid.UUID, on bool) error {
+	return s.execOne(ctx, `UPDATE orgs SET require_sso = $2, updated_at = now() WHERE id = $1`, id, on)
 }
 
 // DeleteOrg deletes an org and, through its foreign keys, everything in

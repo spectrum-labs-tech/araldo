@@ -139,7 +139,7 @@ func (s *Service) Login(ctx context.Context, email, password, userAgent, ip stri
 			_ = s.store.SetPassword(ctx, u.ID, h)
 		}
 	}
-	return s.startSession(ctx, u, userAgent, ip, now, false)
+	return s.startSession(ctx, u, userAgent, ip, now, false, nil)
 }
 
 // locked refuses a user whose account is locked after failed attempts.
@@ -170,8 +170,11 @@ func (s *Service) resetFailures(ctx context.Context, u *model.User) error {
 }
 
 // startSession signs u in. A user with a second factor waits for it,
-// unless verified (a passkey, which verifies the person, signed them in).
-func (s *Service) startSession(ctx context.Context, u *model.User, userAgent, ip string, now time.Time, verified bool) (*LoginResult, error) {
+// unless verified (a passkey, which verifies the person, or single sign-on
+// signed them in). A session through an org's single sign-on (ssoOrg)
+// starts in that org.
+func (s *Service) startSession(ctx context.Context, u *model.User, userAgent, ip string, now time.Time, verified bool,
+	ssoOrg *uuid.UUID) (*LoginResult, error) {
 	token, hash := authn.NewToken()
 	csrf, _ := authn.NewToken()
 	ss := &model.Session{
@@ -182,7 +185,9 @@ func (s *Service) startSession(ctx context.Context, u *model.User, userAgent, ip
 		ss.State, ss.ExpiresAt, ss.SudoUntil = model.SessionPendingMFA, now.Add(PendingMFAWindow), nil
 	}
 	// Start in the user's first org, in test mode.
-	if ms, err := s.store.UserMemberships(ctx, u.ID); err == nil && len(ms) > 0 {
+	if ssoOrg != nil {
+		ss.CurrentOrg, ss.SSOOrg = ssoOrg, ssoOrg
+	} else if ms, err := s.store.UserMemberships(ctx, u.ID); err == nil && len(ms) > 0 {
 		ss.CurrentOrg = &ms[0].OrgID
 	}
 	if err := s.store.CreateSession(ctx, ss, hash); err != nil {

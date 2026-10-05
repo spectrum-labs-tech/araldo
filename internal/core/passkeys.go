@@ -259,7 +259,7 @@ func (s *Service) FinishPasskeyLogin(ctx context.Context, token string, response
 	if err := s.resetFailures(ctx, who.u); err != nil {
 		return nil, err
 	}
-	return s.startSession(ctx, who.u, userAgent, ip, now, true)
+	return s.startSession(ctx, who.u, userAgent, ip, now, true, nil)
 }
 
 func (s *Service) usePasskey(ctx context.Context, userID uuid.UUID, cred *webauthn.Credential) error {

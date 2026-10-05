@@ -93,6 +93,9 @@ type Session struct {
 	CreatedAt  time.Time
 	LastSeenAt time.Time
 	ExpiresAt  time.Time
+	// SSOOrg is the org whose single sign-on started the session (ADR
+	// 0033); nil for a password or passkey sign-in.
+	SSOOrg *uuid.UUID
 }
 
 // Org is a tenant.
@@ -100,6 +103,9 @@ type Org struct {
 	ID         uuid.UUID
 	Name       string
 	RequireMFA bool
+	// RequireSSO: members reach the org only signed in through its single
+	// sign-on (ADR 0033).
+	RequireSSO bool
 	// Status, its note, Limits and ExternalRef are set by the operator
 	// (ADR 0031). ExternalRef is "" when unset.
 	Status      OrgStatus
@@ -787,6 +793,9 @@ type UserToken struct {
 	LastUsedAt *time.Time
 	RevokedAt  *time.Time
 	CreatedAt  time.Time
+	// SSOOrg is the org whose single sign-on the approving session came
+	// through (ADR 0033).
+	SSOOrg *uuid.UUID
 }
 
 // DeviceAuthorization is one device sign-in (RFC 8628): a CLI waiting for
@@ -803,6 +812,29 @@ type DeviceAuthorization struct {
 	LastPolledAt *time.Time
 	ExpiresAt    time.Time
 	CreatedAt    time.Time
+	// SSOOrg is the approving session's (ADR 0033).
+	SSOOrg *uuid.UUID
+}
+
+// SSOConnection is an org's OpenID Connect identity provider (ADR 0033).
+// Its client secret stays sealed in the store.
+type SSOConnection struct {
+	OrgID       uuid.UUID
+	Issuer      string
+	ClientID    string
+	DefaultRole Role
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// SSODomain is an email domain an org signs in through its provider, once
+// a DNS TXT record with Token proves the org holds it.
+type SSODomain struct {
+	OrgID      uuid.UUID
+	Domain     string
+	Token      string
+	VerifiedAt *time.Time
+	CreatedAt  time.Time
 }
 
 // WebhookEndpoint receives events.

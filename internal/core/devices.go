@@ -104,7 +104,7 @@ func (s *Service) DecideDevice(ctx context.Context, ss *model.Session, userCode 
 	}
 	a := Actor{UserID: &ss.UserID, RequestID: "dashboard"}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
-		if err := tx.DecideDevice(ctx, d.ID, status, ss.UserID); err != nil {
+		if err := tx.DecideDevice(ctx, d.ID, status, ss.UserID, ss.SSOOrg); err != nil {
 			return notFoundAs(err, errNoDevice)
 		}
 		return s.audit(ctx, tx, a, action, id.Format(id.Device, d.ID),
@@ -161,7 +161,7 @@ func (s *Service) PollDevice(ctx context.Context, deviceCode string) (string, *m
 		}
 		plain = authn.NewUserToken()
 		tok = &model.UserToken{ID: id.New(), UserID: *d.UserID, Livemode: d.Livemode, Name: d.DeviceName, Hint: authn.KeyHint(plain),
-			CreatedIP: d.ClientIP, CreatedAt: now}
+			CreatedIP: d.ClientIP, CreatedAt: now, SSOOrg: d.SSOOrg}
 		if err := tx.CreateUserToken(ctx, tok, authn.HashToken(plain)); err != nil {
 			return err
 		}
@@ -183,8 +183,9 @@ var errTokenInvalid = &apperr.Error{Kind: apperr.KindUnauthorized, Code: "user_t
 // AuthenticateUserToken turns a user token into an actor: the person, as a
 // member of the org named (an ID or name; empty when they belong to one),
 // in the token's mode. Their role is read now, so a change takes effect at
-// once, and an org that requires two-factor authentication refuses a
-// person without it.
+// once; an org that requires two-factor authentication refuses a person
+// without it, and one that requires single sign-on a token not approved
+// from a session that came through it (ADR 0033).
 func (s *Service) AuthenticateUserToken(ctx context.Context, token, org, requestID string) (Actor, error) {
 	if !authn.IsUserToken(token) {
 		return Actor{}, errTokenInvalid
@@ -224,6 +225,10 @@ func (s *Service) AuthenticateUserToken(ctx context.Context, token, org, request
 		if !u.SecondFactor() {
 			return Actor{}, apperr.Forbidden("%s requires two-factor authentication: turn it on in the dashboard, under your account.", o.Name)
 		}
+	}
+	if o.RequireSSO && (t.SSOOrg == nil || *t.SSOOrg != o.ID) {
+		return Actor{}, &apperr.Error{Kind: apperr.KindForbidden, Code: "sso_required",
+			Message: o.Name + " requires single sign-on: run araldo auth login again, and approve it signed in through single sign-on."}
 	}
 	if o.Status == model.OrgSuspended {
 		return Actor{}, errOrgSuspended

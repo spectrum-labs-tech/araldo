@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -93,6 +94,10 @@ type Service struct {
 	denied denials
 	// requests buffers the request log on its way to the database (ADR 0032).
 	requests requestLog
+	// SSOHTTP reaches identity providers (ADR 0033).
+	SSOHTTP *http.Client
+	// LookupTXT reads DNS TXT records, to verify single sign-on domains.
+	LookupTXT func(ctx context.Context, name string) ([]string, error)
 }
 
 // New returns the application.
@@ -103,6 +108,8 @@ func New(st *store.Store, keys *keyring.Keyring, platforms *platform.Registry, l
 		mailers:    email.NewRegistry(append([]email.Mailer{email.SandboxMailer{}}, cfg.Mailers...)...),
 		HTTP:       netguard.Client(cfg.PrivateWebhooks, deliveryTimeout),
 		MediaHTTP:  mediaClient(netguard.Client(cfg.PrivateWebhooks, mediaFetchTimeout)),
+		SSOHTTP:    netguard.Client(cfg.PrivateWebhooks, ssoHTTPTimeout),
+		LookupTXT:  net.DefaultResolver.LookupTXT,
 		blobs:      cfg.Blobs, metrics: noopMetrics()}
 }
 

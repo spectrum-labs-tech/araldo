@@ -91,7 +91,7 @@ Principles every feature keeps:
 | 10 | Developer tooling: the CLI as an API client with `araldo login` (device sign-in), `araldo listen` (webhooks to localhost), SDKs generated from the contract, a request log in the dashboard | ADR 0005, 0028 | CLI client built: device sign-in (`araldo auth login`) with user tokens that act as the person, a test and a live credential per server (`--live`, as the Stripe CLI), `--org`, `members`, `org`, `channels list`, `araldo api`, `araldo listen` (the event stream forwarded to localhost), `posts` and `templates`, and `GET /v1/me`; server administration under `araldo admin`, audited as the operator; a request log in the dashboard (ADR 0032). SDKs next |
 | 11 | AI drafting in the dashboard with the organization's own model key | ADR 0001 | Planned |
 | 12 | The rest of OpenTelemetry (traces, logs, publish lateness) | ADR 0014 | Planned (built-in backups, ADR 0013, were withdrawn: they are the operator's) |
-| 13 | Passkeys (WebAuthn) and OIDC single sign-on | ADR 0007 | Passkeys built; OIDC single sign-on next |
+| 13 | Passkeys (WebAuthn) and OIDC single sign-on | ADR 0007, ADR 0033 | Passkeys built; single sign-on core built, dashboard next |
 | 14 | Hosted plan: a separate install with sign-up, billing and developer apps shared by every organization, at araldo.dev (the project's site and docs, `app.araldo.dev` for the dashboard, `api.araldo.dev` for the API) | ADR 0021, 0030, 0031 | Built in Araldo: install-wide developer apps (`araldo admin apps`), the operator API with org limits and status, and links out to sign up and to pay. Sign-up and billing themselves live in the host's own service |
 
 ## Not now

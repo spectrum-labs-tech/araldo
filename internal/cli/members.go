@@ -127,15 +127,16 @@ func runAdminOrg(ctx context.Context, args []string, _, stderr io.Writer) error 
 		return runAdminOrgDelete(ctx, args[1:], stderr)
 	}
 	if len(args) == 0 || args[0] != "update" {
-		return usageErr("org update [--org ORG] [--name NAME] [--require-mfa true|false] [--status S] [--status-note N] [--external-ref R] [--limits L] | delete --org ORG --confirm NAME")
+		return usageErr("org update [--org ORG] [--name NAME] [--require-mfa true|false] [--require-sso true|false] [--status S] [--status-note N] [--external-ref R] [--limits L] | delete --org ORG --confirm NAME")
 	}
-	var as, org, name, requireMFA, status, note, ref, limits string
+	var as, org, name, requireMFA, requireSSO, status, note, ref, limits string
 	set := map[string]bool{}
 	if err := flags("org update", stderr, args[1:], func(fs *flag.FlagSet) {
 		fs.StringVar(&org, "org", "", "the org, by ID or name (needed when the server has more than one)")
 		fs.StringVar(&as, "as", "", "no longer needed (picks that member's org if --org is not given)")
 		fs.StringVar(&name, "name", "", "a new name")
 		fs.StringVar(&requireMFA, "require-mfa", "", "true to require two-factor authentication of every member, false not to")
+		fs.StringVar(&requireSSO, "require-sso", "", "false to stop requiring single sign-on, as when the org's identity provider is gone (ADR 0033)")
 		// Each records that it was given, so an empty value can clear.
 		given := func(name string, v *string) func(string) error {
 			return func(s string) error { *v, set[name] = s, true; return nil }
@@ -167,6 +168,15 @@ func runAdminOrg(ctx context.Context, args []string, _, stderr io.Writer) error 
 	}
 	if err := a.Svc.UpdateOrg(ctx, actor, nil, newName, mfa); err != nil {
 		return err
+	}
+	if requireSSO != "" {
+		on, err := strconv.ParseBool(requireSSO)
+		if err != nil {
+			return usageErr("--require-sso is true or false")
+		}
+		if err := a.Svc.SetRequireSSO(ctx, actor, nil, on); err != nil {
+			return err
+		}
 	}
 	var ch core.OrgChange
 	if set["status"] {

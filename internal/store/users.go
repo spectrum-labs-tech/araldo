@@ -158,19 +158,19 @@ func (s *Store) RemainingRecoveryCodes(ctx context.Context, userID uuid.UUID) (i
 
 // Sessions.
 
-const sessionCols = `id, user_id, csrf_token, state, current_org, livemode, sudo_until, user_agent, ip, created_at, last_seen_at, expires_at`
+const sessionCols = `id, user_id, csrf_token, state, current_org, livemode, sudo_until, user_agent, ip, created_at, last_seen_at, expires_at, sso_org_id`
 
 func scanSession(r pgx.Row) (*model.Session, error) {
 	var ss model.Session
 	err := r.Scan(&ss.ID, &ss.UserID, &ss.CSRFToken, &ss.State, &ss.CurrentOrg, &ss.Livemode, &ss.SudoUntil, &ss.UserAgent, &ss.IP,
-		&ss.CreatedAt, &ss.LastSeenAt, &ss.ExpiresAt)
+		&ss.CreatedAt, &ss.LastSeenAt, &ss.ExpiresAt, &ss.SSOOrg)
 	return &ss, mapErr(err)
 }
 
 func (s *Store) CreateSession(ctx context.Context, ss *model.Session, tokenHash []byte) error {
-	_, err := s.q.Exec(ctx, `INSERT INTO sessions (id, user_id, token_hash, csrf_token, state, current_org, livemode, sudo_until, user_agent, ip, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		ss.ID, ss.UserID, tokenHash, ss.CSRFToken, ss.State, ss.CurrentOrg, ss.Livemode, ss.SudoUntil, ss.UserAgent, ss.IP, ss.ExpiresAt)
+	_, err := s.q.Exec(ctx, `INSERT INTO sessions (id, user_id, token_hash, csrf_token, state, current_org, livemode, sudo_until, user_agent, ip, expires_at,
+		sso_org_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		ss.ID, ss.UserID, tokenHash, ss.CSRFToken, ss.State, ss.CurrentOrg, ss.Livemode, ss.SudoUntil, ss.UserAgent, ss.IP, ss.ExpiresAt, ss.SSOOrg)
 	return mapErr(err)
 }
 

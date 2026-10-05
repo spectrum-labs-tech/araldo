@@ -14,18 +14,18 @@ import (
 
 // User tokens and device sign-ins (ADR 0028).
 
-const utokCols = `id, user_id, livemode, name, hint, created_ip, last_used_at, revoked_at, created_at`
+const utokCols = `id, user_id, livemode, name, hint, created_ip, last_used_at, revoked_at, created_at, sso_org_id`
 
 func scanUserToken(r pgx.Row) (*model.UserToken, error) {
 	var t model.UserToken
-	err := r.Scan(&t.ID, &t.UserID, &t.Livemode, &t.Name, &t.Hint, &t.CreatedIP, &t.LastUsedAt, &t.RevokedAt, &t.CreatedAt)
+	err := r.Scan(&t.ID, &t.UserID, &t.Livemode, &t.Name, &t.Hint, &t.CreatedIP, &t.LastUsedAt, &t.RevokedAt, &t.CreatedAt, &t.SSOOrg)
 	return &t, mapErr(err)
 }
 
 // CreateUserToken stores a token by its hash.
 func (s *Store) CreateUserToken(ctx context.Context, t *model.UserToken, tokenHash []byte) error {
-	_, err := s.q.Exec(ctx, `INSERT INTO user_tokens (id, user_id, livemode, name, token_hash, hint, created_ip) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		t.ID, t.UserID, t.Livemode, t.Name, tokenHash, t.Hint, t.CreatedIP)
+	_, err := s.q.Exec(ctx, `INSERT INTO user_tokens (id, user_id, livemode, name, token_hash, hint, created_ip, sso_org_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, t.ID, t.UserID, t.Livemode, t.Name, tokenHash, t.Hint, t.CreatedIP, t.SSOOrg)
 	return mapErr(err)
 }
 
@@ -66,12 +66,12 @@ func (s *Store) PruneUserTokens(ctx context.Context, cutoff time.Time) (int, err
 	return int(tag.RowsAffected()), err
 }
 
-const deviceCols = `id, user_code, device_name, livemode, client_ip, status, user_id, poll_interval, last_polled_at, expires_at, created_at`
+const deviceCols = `id, user_code, device_name, livemode, client_ip, status, user_id, poll_interval, last_polled_at, expires_at, created_at, sso_org_id`
 
 func scanDevice(r pgx.Row) (*model.DeviceAuthorization, error) {
 	var d model.DeviceAuthorization
 	err := r.Scan(&d.ID, &d.UserCode, &d.DeviceName, &d.Livemode, &d.ClientIP, &d.Status, &d.UserID, &d.PollInterval, &d.LastPolledAt,
-		&d.ExpiresAt, &d.CreatedAt)
+		&d.ExpiresAt, &d.CreatedAt, &d.SSOOrg)
 	return &d, mapErr(err)
 }
 
@@ -88,10 +88,12 @@ func (s *Store) PendingDeviceByCode(ctx context.Context, userCode string) (*mode
 	return scanDevice(s.q.QueryRow(ctx, `SELECT `+deviceCols+` FROM device_authorizations WHERE user_code = $1 AND status = 'pending'`, userCode))
 }
 
-// DecideDevice approves (with the user) or denies a waiting sign-in;
-// ErrNotFound if it is no longer waiting.
-func (s *Store) DecideDevice(ctx context.Context, id uuid.UUID, status string, userID uuid.UUID) error {
-	return s.execOne(ctx, `UPDATE device_authorizations SET status = $2, user_id = $3 WHERE id = $1 AND status = 'pending'`, id, status, userID)
+// DecideDevice approves (with the user, and the org whose single sign-on
+// their session came through) or denies a waiting sign-in; ErrNotFound if
+// it is no longer waiting.
+func (s *Store) DecideDevice(ctx context.Context, id uuid.UUID, status string, userID uuid.UUID, ssoOrg *uuid.UUID) error {
+	return s.execOne(ctx, `UPDATE device_authorizations SET status = $2, user_id = $3, sso_org_id = $4 WHERE id = $1 AND status = 'pending'`,
+		id, status, userID, ssoOrg)
 }
 
 // PollDevice finds a sign-in by its device code, locked for the caller's

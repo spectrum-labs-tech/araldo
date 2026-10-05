@@ -137,6 +137,9 @@ func (s *Service) Tasks() []opsched.Task {
 		{Name: "passkeys.prune", Interval: time.Hour, Run: func(ctx context.Context) (int, error) {
 			return s.store.PrunePasskeyChallenges(ctx, s.Now())
 		}},
+		{Name: "sso.prune", Interval: time.Hour, Run: func(ctx context.Context) (int, error) {
+			return s.store.PruneSSOStates(ctx, s.Now())
+		}},
 		{Name: "devices.prune", Interval: time.Hour, Run: func(ctx context.Context) (int, error) {
 			return s.store.PruneDevices(ctx, s.Now().Add(-24*time.Hour))
 		}},

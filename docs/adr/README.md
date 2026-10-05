@@ -17,7 +17,7 @@ open a pull request.
 | [0009](0009-platform-adapters.md) | Platforms are adapters; developer app credentials live in the database | accepted; built for every platform but Reddit; install-wide apps and Mastodon app registration not yet (ADR 0021) |
 | [0010](0010-templates.md) | Templates are versioned Go text/templates with a JSON Schema and per-platform bodies | accepted; built, except the per-version `media` field and warnings on save |
 | [0011](0011-publishing.md) | Publishing is an outbox with leases, and it never double-posts silently | accepted; built, except `Finder` reconciliation and editing a queued target; slots changed by ADR 0022 |
-| [0012](0012-events-and-webhooks.md) | Events are written in the same transaction; webhooks are signed and retried | accepted; built, except notice of a disabled endpoint and the event stream for `araldo listen` |
+| [0012](0012-events-and-webhooks.md) | Events are written in the same transaction; webhooks are signed and retried | accepted; built, except notice of a disabled endpoint |
 | [0013](0013-backups.md) | Built-in encrypted backups that the server itself cannot read | withdrawn: backups are the operator's |
 | [0014](0014-telemetry.md) | OpenTelemetry and slog, with no secrets or unpublished content | accepted; slog and metrics built; traces, logs through OpenTelemetry and publish lateness not yet |
 | [0015](0015-dashboard.md) | A server-rendered dashboard embedded in the binary | accepted; built, except the calendar and the request log |
@@ -33,5 +33,5 @@ open a pull request.
 | [0025](0025-web-analytics.md) | Web analytics are provider adapters that report visits and signups by Araldo's own link tags | accepted; built for Plausible and GA4 |
 | [0026](0026-reports.md) | A brand's report is computed on demand from what Araldo already reads, one period at a time | accepted; phase 1 built; share links and monthly email not yet |
 | [0027](0027-video-and-resizing.md) | Images too big for a platform are resized for it, and video is media stored in object storage | accepted; built |
-| [0028](0028-cli-as-api-client.md) | The CLI is an API client, modeled on `gh`; only server administration touches the database | accepted; built (device sign-in and user tokens, a test and a live credential per server, `/v1/members` and `/v1/org`, `araldo admin`); `araldo listen` and `auth switch` not yet |
+| [0028](0028-cli-as-api-client.md) | The CLI is an API client, modeled on `gh`; only server administration touches the database | accepted; built (device sign-in and user tokens, a test and a live credential per server, `/v1/members` and `/v1/org`, `araldo admin`); `araldo listen`; `auth switch` not yet |
 | [0029](0029-backward-compatible-migrations.md) | Migrations work with the release still running, and a test enforces it | accepted; built |

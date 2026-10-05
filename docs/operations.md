@@ -252,6 +252,7 @@ araldo channels list --live             # the same, in live mode
 araldo members list                     # members, invite, role, remove
 araldo members invite --email them@example.com --role editor   # prints the link to send them
 araldo org view                         # and org update --name
+araldo listen --forward-to http://localhost:3000/webhooks   # events as they happen, to your own server
 araldo channels list --json handle,status --jq '.[] | select(.status != "active")'
 araldo api channels                     # any /v1 request, authenticated
 araldo api -X GET posts -f limit=5      # -f fields are the query with -X GET...
@@ -287,6 +288,12 @@ araldo api -X POST posts --input post.json   # ...and otherwise make it a POST, 
   config directory.
 - An API key can do what its scopes allow, but never manage members or the
   org: that takes a person.
+- **`araldo listen`**, like `stripe listen`, prints the org's events as they
+  happen (`GET /v1/events/stream`) and, with `--forward-to`, POSTs each to
+  a local URL signed like a webhook (`Araldo-Signature`), so a receiver can
+  be built on a laptop with no public address. The signing secret it
+  prints is this computer's and stays the same, so the receiver is set up
+  once. `--events` picks types; it reconnects and resumes on its own.
 
 Commands that change the server itself (`migrate`, and under `araldo
 admin`: `bootstrap`, `keys`, `users`, `apikeys create`, and the operator's

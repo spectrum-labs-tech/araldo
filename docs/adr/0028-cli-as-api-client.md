@@ -1,6 +1,6 @@
 # ADR 0028: The CLI is an API client, modeled on `gh`; only server administration touches the database
 
-- Status: accepted; built (device sign-in and user tokens, a test and a live credential per server, `/v1/members` and `/v1/org`, `araldo admin`); `araldo listen` and `auth switch` not yet
+- Status: accepted; built (device sign-in and user tokens, a test and a live credential per server, `/v1/members` and `/v1/org`, `araldo admin`); `araldo listen`; `auth switch` not yet
 - Date: 2026-10-04
 - Supersedes: [ADR 0019](0019-administration-api.md) decision 1 ("the CLI takes operators with
   database access; there is no session-authenticated API") and decision 6's CLI half

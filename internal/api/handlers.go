@@ -109,6 +109,7 @@ func (h *Handler) routes() {
 	h.handle("GET /v1/reports", h.report, "brand", "month", "since", "until")
 
 	h.handle("GET /v1/events", h.listEvents, paged("type")...)
+	h.handle("GET /v1/events/stream", h.streamEvents, "types", "starting_after")
 
 	h.handle("GET /v1/me", h.me)
 	h.public("POST /v1/auth/device", h.startDevice)

@@ -33,6 +33,9 @@ type Host struct {
 	// Org is the org a user token acts in by default, set with araldo auth
 	// login --org (ADR 0028).
 	Org string `yaml:"org,omitempty"`
+	// ListenSecret signs the events araldo listen forwards from this server,
+	// made the first time and kept, so a local receiver is set up once.
+	ListenSecret string `yaml:"listen_secret,omitempty"`
 	// User and Token are the one key of a file written before modes, read
 	// as the test key: that is what the CLI made then.
 	User  string `yaml:"user,omitempty"`
@@ -226,6 +229,27 @@ func (s *Store) SetOrg(name, org string) error {
 	}
 	h.Org = org
 	return s.Save(f)
+}
+
+// ListenSecret returns the secret araldo listen signs this host's events
+// with, making and keeping one the first time.
+func (s *Store) ListenSecret(name string, newSecret func() string) (string, error) {
+	f, err := s.Load()
+	if err != nil {
+		return "", err
+	}
+	h := f.Hosts[name]
+	if h == nil {
+		h = &Host{}
+		f.Hosts[name] = h
+	}
+	if h.ListenSecret == "" {
+		h.ListenSecret = newSecret()
+		if err := s.Save(f); err != nil {
+			return "", err
+		}
+	}
+	return h.ListenSecret, nil
 }
 
 // SignOut forgets a host and both its keys.

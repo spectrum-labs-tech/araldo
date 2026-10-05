@@ -1601,6 +1601,36 @@ paths:
                       data: { type: array, items: { $ref: "#/components/schemas/Event" } }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/events/stream:
+    get:
+      summary: Stream events as they happen
+      description: |
+        The org's new events, in the credential's mode, as server-sent events
+        (`text/event-stream`): each has an `id` (the event's), an `event` (its
+        type) and `data` (the event, as `GET /v1/events/{id}` returns it). A
+        comment every 15 seconds keeps the connection open. Reconnect with
+        `Last-Event-ID` (or `starting_after`) to resume after the last event
+        seen; otherwise the stream starts now. `araldo listen` uses it to
+        forward events to a local URL, like `stripe listen`. Needs `events:read`.
+      tags: [Events]
+      parameters:
+        - name: types
+          in: query
+          description: Only these event types, comma-separated.
+          schema: { type: string, example: "post.published,post.failed" }
+        - $ref: "#/components/parameters/StartingAfter"
+        - name: Last-Event-ID
+          in: header
+          description: The last event seen, to resume after it.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The stream.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/events/{id}:
     parameters: [{ $ref: "#/components/parameters/ID" }]
     get:

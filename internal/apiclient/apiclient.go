@@ -6,6 +6,7 @@
 package apiclient
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -118,4 +119,74 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 		return nil, &APIError{Status: resp.StatusCode, Problem: raw}
 	}
 	return raw, nil
+}
+
+// Event is one server-sent event from a stream.
+type Event struct {
+	ID, Type string
+	Data     json.RawMessage
+}
+
+// Stream reads server-sent events from path, calling fn for each, until
+// the stream ends (nil), ctx ends, or fn fails. lastID resumes after that
+// event. An error response is an *APIError, as from Do.
+func (c *Client) Stream(ctx context.Context, path string, query url.Values, lastID string, fn func(Event) error) error {
+	u := c.BaseURL + path
+	if len(query) > 0 {
+		u += "?" + query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return err
+	}
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	if c.UserAgent != "" {
+		req.Header.Set("User-Agent", c.UserAgent)
+	}
+	if c.Org != "" {
+		req.Header.Set("Araldo-Org", c.Org)
+	}
+	if lastID != "" {
+		req.Header.Set("Last-Event-ID", lastID)
+	}
+	streaming := *c.HTTP
+	streaming.Timeout = 0 // a stream lasts as long as ctx
+	resp, err := streaming.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode/100 != 2 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return &APIError{Status: resp.StatusCode, Problem: raw}
+	}
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(make([]byte, 64<<10), 4<<20)
+	var e Event
+	for sc.Scan() {
+		line := sc.Text()
+		switch {
+		case line == "":
+			if e.ID != "" || len(e.Data) > 0 {
+				if err := fn(e); err != nil {
+					return err
+				}
+			}
+			e = Event{}
+		case strings.HasPrefix(line, ":"): // a comment: a heartbeat
+		case strings.HasPrefix(line, "id: "):
+			e.ID = line[len("id: "):]
+		case strings.HasPrefix(line, "event: "):
+			e.Type = line[len("event: "):]
+		case strings.HasPrefix(line, "data: "):
+			e.Data = append(e.Data, line[len("data: "):]...)
+		}
+	}
+	if err := sc.Err(); err != nil && ctx.Err() == nil {
+		return err
+	}
+	return nil
 }

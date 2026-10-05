@@ -44,6 +44,7 @@ func commands() []command {
 		{name: "members", group: groupClient, summary: "Members: list, invite, role, remove", run: runMembers},
 		{name: "org", group: groupClient, summary: "The org's settings: view, update", run: runOrg},
 		{name: "api", group: groupClient, summary: "Make an authenticated request to the API", run: runAPI},
+		{name: "listen", group: groupClient, summary: "Print the org's events as they happen, and forward them to a local URL", run: runListen},
 		{name: "mcp", group: groupClient, summary: "Serve Araldo's tools to an AI assistant over stdio (MCP)", run: runMCP},
 		{name: "server", group: groupServer, summary: "Run the API and dashboard", run: runServer},
 		{name: "worker", group: groupServer, summary: "Publish posts, deliver webhooks and run background tasks", run: runWorker},

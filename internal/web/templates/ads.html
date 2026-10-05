@@ -64,7 +64,7 @@
       <select name="brand">{{range $d.Brands}}<option value="{{brandID .ID}}" {{if eq $d.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
     </label>
     <label>Through
-      <select name="app">{{range $d.Apps}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+      <select name="app">{{range $d.Apps}}<option value="{{.ID}}">{{.Name}}{{if .Install}} (provided by this server){{end}}</option>{{end}}</select></label>
     <p class="text-sm text-muted">You sign in with {{$d.Network.Name}} and choose the ad accounts to read. Araldo asks only to read them; it stores the token encrypted. Connecting spends nothing.</p>
     <div><button class="btn-primary">Sign in with {{$d.Network.Name}}</button></div>
   </form>

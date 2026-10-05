@@ -211,8 +211,10 @@ type Channel struct {
 	HoldUntil   *time.Time
 	CreatedAt   time.Time
 	// AppID is the developer app an OAuth channel connected through, and
-	// TokenExpiresAt when its token expires (ADR 0021).
+	// TokenExpiresAt when its token expires (ADR 0021). InstallApp says the
+	// app is the install's, not the org's (ADR 0030).
 	AppID          *uuid.UUID
+	InstallApp     bool
 	TokenExpiresAt *time.Time
 	// CheckedAt is the last daily health check, and CheckError what it
 	// found wrong ("" when it passed).
@@ -220,10 +222,13 @@ type Channel struct {
 	CheckError string
 }
 
-// ProviderApp is an org's developer app on a platform (ADR 0021).
+// ProviderApp is a developer app on a platform: an org's (ADR 0021), or,
+// with Install, one the install provides to every org (ADR 0030; OrgID is
+// then zero).
 type ProviderApp struct {
 	ID       uuid.UUID
 	OrgID    uuid.UUID
+	Install  bool
 	Provider platform.Provider
 	Name     string
 	ClientID string
@@ -235,12 +240,14 @@ type ProviderApp struct {
 
 // OAuthState is a sign-in in progress (ADR 0021).
 type OAuthState struct {
-	OrgID    uuid.UUID
-	UserID   uuid.UUID
-	BrandID  uuid.UUID
-	AppID    uuid.UUID
-	Provider platform.Provider
-	Verifier string
+	OrgID   uuid.UUID
+	UserID  uuid.UUID
+	BrandID uuid.UUID
+	AppID   uuid.UUID
+	// InstallApp says AppID is an install app (ADR 0030).
+	InstallApp bool
+	Provider   platform.Provider
+	Verifier   string
 	// Connections, encrypted, wait for the member to choose among them.
 	Connections []byte
 	CreatedAt   time.Time
@@ -417,8 +424,10 @@ type AdAccount struct {
 	Timezone    string
 	Settings    map[string]string // non-secret fields
 	Credentials []byte            // encrypted secret fields
-	// AppID is the developer app a signed-in account connected through.
+	// AppID is the developer app a signed-in account connected through;
+	// InstallApp says it is the install's (ADR 0030).
 	AppID      *uuid.UUID
+	InstallApp bool
 	Status     AdAccountStatus
 	StatusNote string
 	ReadAt     *time.Time

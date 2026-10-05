@@ -1,6 +1,6 @@
 # ADR 0021: Channels connect with OAuth through an org's developer apps; images reach platforms by signed links
 
-- Status: accepted; built (install-wide apps later)
+- Status: accepted; built (install-wide apps in [ADR 0030](0030-install-wide-apps.md))
 - Date: 2026-10-02
 
 ## Context
@@ -18,7 +18,7 @@ URL: they fetch the file themselves.
 1. **Developer apps belong to an org** (`provider_apps`): a provider, a
    name, the client ID, and the client secret, encrypted like channel
    credentials ([ADR 0008](0008-encryption.md)). Admins manage them in the
-   dashboard. Install-wide apps, shared by every org, come later.
+   dashboard. Install-wide apps, shared by every org, came later ([ADR 0030](0030-install-wide-apps.md)).
 2. **Connecting is a browser flow** in the dashboard, in live mode:
    *Connect with Threads* → choose the app (when there is more than one)
    → the platform's sign-in → `/connect/{provider}/callback` → choose which

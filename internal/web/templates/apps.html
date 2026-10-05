@@ -24,7 +24,20 @@ redirect URI below, and add its ID and secret here; then connect channels throug
   {{end}}
   </tbody>
 </table>
-{{else}}<p class="text-muted">No apps yet.</p>{{end}}
+{{else}}<p class="text-muted">No apps of your own yet.</p>{{end}}
+
+{{if $d.InstallApps}}
+<h2 class="mt-6">Provided by this server</h2>
+<p class="mb-2 text-sm text-muted">Every org on this server can connect through these. Your own app for a platform is offered first.</p>
+<table>
+  <thead><tr><th>App</th><th>Platform</th><th>Added</th></tr></thead>
+  <tbody>
+  {{range $d.InstallApps}}
+  <tr><td>{{.Name}}</td><td><span class="inline-flex items-center gap-1.5">{{icon .Provider}} {{index $d.Names .Provider}}</span></td><td>{{fmtTime .CreatedAt}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}
 
 {{if $d.Providers}}
 <section class="card">
@@ -74,6 +87,7 @@ redirect URI below, and add its ID and secret here; then connect channels throug
 <h3>Good to know</h3>
 <ul class="guide-tips">
   <li><strong>One app can serve every install.</strong> Register each install's redirect URI with the same app, and add it in each.</li>
+  <li><strong>Apps provided by this server</strong> need no setup: connect through them from Channels. Add your own to use your quota and standing with the platform instead.</li>
   <li><strong>Development mode is enough for your own accounts.</strong> A platform's app review is only needed to connect other people's.</li>
   <li><strong>Araldo asks for the least access</strong> each platform needs to post, or to read ad results.</li>
   <li><strong>Name an app for what it does here</strong> ("LinkedIn posting", "LinkedIn Pages"); rename it in the list above any time.</li>

@@ -8,11 +8,15 @@ import (
 	"bytes"
 	"context"
 	"net/url"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
@@ -174,14 +178,126 @@ func TestOAuthConnections(t *testing.T) {
 		t.Fatalf("a refused refresh: %+v, %v", got, err)
 	}
 
-	// Apps belong to their org.
-	if apps, err := other.s.ProviderApps(ctx, otherLive); err != nil || len(apps) != 0 {
-		t.Fatalf("another org sees %d apps, %v", len(apps), err)
+	// Apps belong to their org. (Other tests' install apps are offered to
+	// every org.)
+	apps, err := other.s.ProviderApps(ctx, otherLive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range apps {
+		if !a.Install {
+			t.Fatalf("another org sees %+v", a)
+		}
 	}
 	if _, err := other.s.BeginConnect(ctx, otherLive, other.brand.ID, app.ID); kind(err) != apperr.KindNotFound {
 		t.Fatalf("another org using this app: %v", err)
 	}
 	if err := w.s.DeleteProviderApp(ctx, live, app.ID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestInstallApps checks an app the operator registers for the install is
+// offered to every org, signs in and renews for each, and only the
+// operator manages it (ADR 0030).
+func TestInstallApps(t *testing.T) {
+	t.Parallel()
+	w, other := newWorld(t, withFakeOAuth), newWorld(t, withFakeOAuth)
+	ctx := t.Context()
+	live, otherLive := w.owner, other.owner
+	live.Livemode, otherLive.Livemode = true, true
+	op := core.InstallOperator("araldo admin apps add")
+	in := core.ProviderAppInput{Provider: platform.Threads, Name: "Threads " + uuid.NewString()[:8], ClientID: "client-1", ClientSecret: "s3cret"}
+
+	if _, err := w.s.CreateInstallApp(ctx, live, in); kind(err) != apperr.KindForbidden {
+		t.Fatalf("an org owner adding an install app: %v", err)
+	}
+	app, err := w.s.CreateInstallApp(ctx, op, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(app.ClientSecret, []byte("s3cret")) || !app.Install {
+		t.Fatalf("app %+v: the secret must be encrypted", app)
+	}
+	if _, err := w.s.CreateInstallApp(ctx, op, in); kind(err) != apperr.KindInvalid {
+		t.Fatalf("a second app of the same name: %v", err)
+	}
+	var orgID *uuid.UUID
+	var command string
+	if err := open(t).Pool().QueryRow(ctx, `SELECT org_id, detail->>'operator_command' FROM audit_events WHERE action = 'install_app.create'
+		AND target = $1`, id.Format(id.ProviderApp, app.ID)).Scan(&orgID, &command); err != nil || orgID != nil || command != "araldo admin apps add" {
+		t.Fatalf("the audit: org %v, %q, %v", orgID, command, err)
+	}
+
+	// Both orgs are offered it, without its client ID, after their own.
+	own, err := w.s.CreateProviderApp(ctx, live, core.ProviderAppInput{Provider: platform.Threads, ClientID: "client-1", ClientSecret: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	apps, err := w.s.ProviderApps(ctx, live)
+	if err != nil || len(apps) < 2 || apps[0].ID != own.ID {
+		t.Fatalf("the org's apps first: %v, %v", apps, err)
+	}
+	for _, ow := range []*world{w, other} {
+		a := ow.owner
+		a.Livemode = true
+		apps, err := ow.s.ProviderApps(ctx, a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := slices.IndexFunc(apps, func(a *model.ProviderApp) bool { return a.ID == app.ID })
+		if i < 0 || !apps[i].Install || apps[i].ClientID != "" || apps[i].ClientSecret != nil {
+			t.Fatalf("the install app as an org sees it: %d in %v", i, apps)
+		}
+	}
+
+	// Each org signs in through it, and its tokens renew.
+	for _, ow := range []*world{w, other} {
+		a := ow.owner
+		a.Livemode = true
+		res, err := ow.s.FinishConnect(ctx, a, platform.Threads, signIn(t, ow, a, app), "one")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ch := res.Channels[0]
+		if ch.AppID == nil || *ch.AppID != app.ID || !ch.InstallApp {
+			t.Fatalf("channel %+v", ch)
+		}
+		if n, err := core.RefreshTokensOrg(ow.s, ow.org.ID); err != nil || n != 1 {
+			t.Fatalf("refresh: %d, %v", n, err)
+		}
+		if got, err := ow.s.Channel(ctx, a, ch.ID); err != nil || got.AppID == nil || *got.AppID != app.ID || !got.InstallApp {
+			t.Fatalf("channel read back: %+v, %v", got, err)
+		}
+	}
+
+	// Orgs cannot change it; the operator can.
+	if _, err := w.s.RenameProviderApp(ctx, live, app.ID, "mine"); kind(err) != apperr.KindNotFound {
+		t.Fatalf("an org renaming an install app: %v", err)
+	}
+	if err := w.s.DeleteProviderApp(ctx, live, app.ID); kind(err) != apperr.KindNotFound {
+		t.Fatalf("an org deleting an install app: %v", err)
+	}
+	if _, err := w.s.InstallApps(ctx, live); kind(err) != apperr.KindForbidden {
+		t.Fatalf("an org listing install apps with their client IDs: %v", err)
+	}
+	renamed, err := w.s.RenameInstallApp(ctx, op, app.ID, in.Name+" renamed")
+	if err != nil || renamed.Name != in.Name+" renamed" {
+		t.Fatalf("rename: %+v, %v", renamed, err)
+	}
+
+	// Removed, it is no longer offered; channels made through it stay.
+	if err := w.s.DeleteInstallApp(ctx, op, app.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.s.BeginConnect(ctx, live, w.brand.ID, app.ID); kind(err) != apperr.KindNotFound {
+		t.Fatalf("connecting through a removed app: %v", err)
+	}
+	chs, err := other.s.Channels(ctx, otherLive, &other.brand.ID)
+	if err != nil || len(chs) != 1 || chs[0].AppID != nil || chs[0].Status != model.ChannelActive {
+		t.Fatalf("the channel after its app was removed: %v, %v", chs, err)
+	}
+	if err := w.s.DeleteInstallApp(ctx, op, app.ID); kind(err) != apperr.KindNotFound {
+		t.Fatalf("removing it twice: %v", err)
 	}
 }

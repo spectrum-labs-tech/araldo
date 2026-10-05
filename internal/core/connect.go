@@ -115,12 +115,24 @@ func (s *Service) ConnectRedirectURI(p platform.Provider) string {
 	return s.cfg.BaseURL + "/connect/" + string(p) + "/callback"
 }
 
-// ProviderApps lists the org's developer apps (never their secrets).
+// ProviderApps lists the developer apps the org can sign in through (never
+// their secrets): its own, then the install's (ADR 0030), marked Install.
 func (s *Service) ProviderApps(ctx context.Context, a Actor) ([]*model.ProviderApp, error) {
 	if err := a.require(PermChannelsWrite); err != nil {
 		return nil, err
 	}
-	return s.store.ProviderApps(ctx, a.OrgID)
+	apps, err := s.store.ProviderApps(ctx, a.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	installed, err := s.store.InstallApps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, app := range installed {
+		app.ClientID, app.ClientSecret = "", nil // the operator's, not the org's
+	}
+	return append(apps, installed...), nil
 }
 
 // CreateProviderApp registers a developer app; its secret is encrypted.
@@ -128,24 +140,7 @@ func (s *Service) CreateProviderApp(ctx context.Context, a Actor, in ProviderApp
 	if err := a.require(connectPermission(in.Provider)); err != nil {
 		return nil, err
 	}
-	var ps apperr.Problems
-	if _, ok := s.connector(in.Provider); !ok {
-		ps.Add("provider_invalid", "provider", "%q does not connect with OAuth.", in.Provider)
-	}
-	in.Name, in.ClientID, in.ClientSecret = strings.TrimSpace(in.Name), strings.TrimSpace(in.ClientID), strings.TrimSpace(in.ClientSecret)
-	if in.Name == "" {
-		in.Name = s.ProviderName(in.Provider) + " app"
-	}
-	if len(in.Name) > 100 {
-		ps.Add("name_invalid", "name", "Names are at most 100 characters.")
-	}
-	if in.ClientID == "" || len(in.ClientID) > 500 {
-		ps.Add("client_id_invalid", "client_id", "Give the app's client ID (app ID).")
-	}
-	if in.ClientSecret == "" || len(in.ClientSecret) > 500 {
-		ps.Add("client_secret_invalid", "client_secret", "Give the app's client secret (app secret).")
-	}
-	if err := ps.Err("The app is not valid."); err != nil {
+	if err := s.checkApp(&in); err != nil {
 		return nil, err
 	}
 	app := &model.ProviderApp{ID: id.New(), OrgID: a.OrgID, Provider: in.Provider, Name: in.Name, ClientID: in.ClientID, CreatedBy: a.UserID}
@@ -213,7 +208,11 @@ func (s *Service) appCredentials(ctx context.Context, app *model.ProviderApp) (p
 }
 
 func appCredentialsWith(ctx context.Context, keys *keyring.Keyring, app *model.ProviderApp) (platform.App, error) {
-	secret, err := keys.Decrypt(ctx, app.OrgID, appSecretAAD(app.ID), app.ClientSecret)
+	org, aad := app.OrgID, appSecretAAD(app.ID)
+	if app.Install {
+		org, aad = keyring.Install, installAppSecretAAD(app.ID)
+	}
+	secret, err := keys.Decrypt(ctx, org, aad, app.ClientSecret)
 	if err != nil {
 		return platform.App{}, err
 	}
@@ -235,7 +234,7 @@ func stateHash(state string) []byte {
 // platform's address to send the member to. Only members connect, in live
 // mode.
 func (s *Service) BeginConnect(ctx context.Context, a Actor, brandID, appID uuid.UUID) (string, error) {
-	app, err := s.store.ProviderApp(ctx, a.OrgID, appID)
+	app, err := s.connectApp(ctx, a.OrgID, appID)
 	if err != nil {
 		return "", notFound(err, "app")
 	}
@@ -263,7 +262,7 @@ func (s *Service) BeginConnect(ctx context.Context, a Actor, brandID, appID uuid
 	sum := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
 	if err := s.store.CreateOAuthState(ctx, stateHash(state), &model.OAuthState{OrgID: a.OrgID, UserID: *a.UserID, BrandID: brandID,
-		AppID: app.ID, Provider: app.Provider, Verifier: verifier}); err != nil {
+		AppID: app.ID, InstallApp: app.Install, Provider: app.Provider, Verifier: verifier}); err != nil {
 		return "", err
 	}
 	return conn.AuthorizeURL(creds, s.ConnectRedirectURI(app.Provider), state, challenge), nil
@@ -308,7 +307,7 @@ func (s *Service) FinishConnect(ctx context.Context, a Actor, provider platform.
 	if len(st.Connections) > 0 {
 		return nil, errConnectExpired // the code was already exchanged
 	}
-	app, err := s.store.ProviderApp(ctx, a.OrgID, st.AppID)
+	app, err := appFor(ctx, s.store, a.OrgID, st.AppID, st.InstallApp)
 	if err != nil {
 		return nil, notFound(err, "app")
 	}
@@ -415,7 +414,7 @@ func (s *Service) connectAll(ctx context.Context, a Actor, st *model.OAuthState,
 				}
 			}
 			ch.DisplayName, ch.Handle, ch.ExternalID, ch.ProfileURL = c.Account.DisplayName, c.Account.Handle, c.Account.ExternalID, c.Account.URL
-			ch.Status, ch.StatusNote, ch.AppID, ch.TokenExpiresAt = model.ChannelActive, "", &st.AppID, c.ExpiresAt
+			ch.Status, ch.StatusNote, ch.AppID, ch.InstallApp, ch.TokenExpiresAt = model.ChannelActive, "", &st.AppID, st.InstallApp, c.ExpiresAt
 			raw, err := json.Marshal(c.Credentials)
 			if err != nil {
 				return err
@@ -504,7 +503,7 @@ func (s *Service) refreshOne(ctx context.Context, ch *model.Channel, r platform.
 		}
 		// Keys through the transaction too: see keyring.With.
 		keys := s.keys.With(tx)
-		app, err := tx.ProviderApp(ctx, locked.OrgID, *locked.AppID)
+		app, err := appFor(ctx, tx, locked.OrgID, *locked.AppID, locked.InstallApp)
 		if err != nil {
 			return err
 		}

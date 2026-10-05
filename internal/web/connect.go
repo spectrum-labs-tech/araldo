@@ -17,10 +17,13 @@ import (
 // Developer apps and OAuth connections (ADR 0021).
 
 type appsData struct {
-	Apps      []*model.ProviderApp
-	Providers []core.ProviderInfo
-	Redirects map[platform.Provider]string
-	Form      map[string]string
+	// Apps are the org's; InstallApps the server provides to every org
+	// (ADR 0030), which members use but cannot change.
+	Apps        []*model.ProviderApp
+	InstallApps []*model.ProviderApp
+	Providers   []core.ProviderInfo
+	Redirects   map[platform.Provider]string
+	Form        map[string]string
 	// Names are providers' names for people, Added which have an app, and
 	// Sites where each registers one (for the guide).
 	Names map[platform.Provider]string
@@ -45,9 +48,14 @@ func (s *Server) appsData(c *reqCtx) (*appsData, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &appsData{Apps: apps, Redirects: map[platform.Provider]string{}, Form: map[string]string{},
+	d := &appsData{Redirects: map[platform.Provider]string{}, Form: map[string]string{},
 		Names: map[platform.Provider]string{}, Added: map[platform.Provider]bool{}, Sites: developerSites, Guides: appGuides}
 	for _, a := range apps {
+		if a.Install {
+			d.InstallApps = append(d.InstallApps, a)
+		} else {
+			d.Apps = append(d.Apps, a)
+		}
 		d.Added[a.Provider] = true
 		d.Names[a.Provider] = s.svc.ProviderName(a.Provider)
 	}

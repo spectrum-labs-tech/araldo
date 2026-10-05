@@ -139,6 +139,25 @@ with its platform: revoked ones mark the channel *needs reauth* (with the
 platform outage, a retired API version) show under the channel as the last
 check's result.
 
+**Apps for every org.** An install that hosts orgs other than its
+operator's can register each platform's app once, for every org to sign in
+through ([ADR 0030](adr/0030-install-wide-apps.md)). The client secret is
+read from stdin and sealed with the install's key:
+
+```sh
+printf '%s\n' "$CLIENT_SECRET" | araldo admin apps add --provider linkedin --name "LinkedIn" --client-id CLIENT_ID
+araldo admin apps list
+araldo admin apps rename --app app_… --name "LinkedIn posting"
+araldo admin apps remove --app app_…
+```
+
+`add` prints the redirect URI to register with the platform. Members see
+these apps as *provided by this server*: they connect through them, but
+cannot see their client IDs or change them, and an org's own app for the
+platform is offered first. Every org shares the app's quota and its
+standing with the platform. Removing one leaves what was connected through
+it working until its token needs renewing, as removing an org's app does.
+
 | Platform | How it connects |
 |---|---|
 | Bluesky | Handle and an app password. |

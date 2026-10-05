@@ -25,6 +25,7 @@ func adminCommands() []command {
 		{name: "apikeys", summary: "API keys: create (prints only the key, for piping into a secret store)", run: runAPIKeys},
 		{name: "members", summary: "Org members, as the operator: list, add, role, remove", run: runAdminMembers},
 		{name: "org", summary: "Org settings, as the operator: update", run: runAdminOrg},
+		{name: "apps", summary: "Developer apps every org can connect through: list, add, rename, remove", run: runAdminApps},
 	}
 }
 

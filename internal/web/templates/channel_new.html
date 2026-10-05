@@ -20,7 +20,7 @@
     <select name="brand">{{range $f.Brands}}<option value="{{brandID .ID}}" {{if eq $f.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
   </label>{{end}}
   <label>Through
-    <select name="app">{{range $f.Apps}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+    <select name="app">{{range $f.Apps}}<option value="{{.ID}}">{{.Name}}{{if .Install}} (provided by this server){{end}}</option>{{end}}</select></label>
   <p class="text-sm text-muted">You sign in with {{$f.Provider.Name}} and choose what Araldo may do; the token is stored encrypted and renewed before it expires where {{$f.Provider.Name}} allows it.</p>
   <div><button class="btn-primary">Sign in with {{$f.Provider.Name}}</button></div>
   {{else}}

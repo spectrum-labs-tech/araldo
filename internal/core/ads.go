@@ -294,7 +294,7 @@ func (s *Service) readAdAccount(ctx context.Context, ac *model.AdAccount, now ti
 	}
 	var app platform.App
 	if ac.AppID != nil {
-		pa, err := s.store.ProviderApp(ctx, ac.OrgID, *ac.AppID)
+		pa, err := appFor(ctx, s.store, ac.OrgID, *ac.AppID, ac.InstallApp)
 		if err == nil {
 			app, err = s.appCredentials(ctx, pa)
 		}
@@ -331,7 +331,7 @@ func (s *Service) connectAdAccounts(ctx context.Context, a Actor, st *model.OAut
 	if !ok {
 		return nil, apperr.Invalid("network_unsupported", "provider", "This install cannot read %q ad accounts.", network)
 	}
-	app, err := s.store.ProviderApp(ctx, a.OrgID, st.AppID)
+	app, err := appFor(ctx, s.store, a.OrgID, st.AppID, st.InstallApp)
 	if err != nil {
 		return nil, notFound(err, "app")
 	}
@@ -357,7 +357,7 @@ func (s *Service) connectAdAccounts(ctx context.Context, a Actor, st *model.OAut
 				ac, reconnect = e, true
 			}
 		}
-		ac.Name, ac.Currency, ac.Timezone, ac.AppID = acct.Name, acct.Currency, acct.Timezone, &st.AppID
+		ac.Name, ac.Currency, ac.Timezone, ac.AppID, ac.InstallApp = acct.Name, acct.Currency, acct.Timezone, &st.AppID, st.InstallApp
 		raw, err := json.Marshal(c.Credentials)
 		if err != nil {
 			return nil, err

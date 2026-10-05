@@ -316,14 +316,21 @@ func (s *Store) ClaimDueHandoffs(ctx context.Context, orgID *uuid.UUID, provider
 
 // DeliveryHandedOff records a delivery's campaign at its provider. It is
 // ErrNotFound if the delivery stopped being queued meanwhile.
-func (s *Store) DeliveryHandedOff(ctx context.Context, orgID, id uuid.UUID, campaignID string, nextRead time.Time) error {
-	return s.execOne(ctx, `UPDATE newsletter_deliveries SET status = 'handed_off', campaign_id = $3, next_read_at = $4, lease_until = NULL,
-		last_error = '', updated_at = now() WHERE org_id = $1 AND id = $2 AND status = 'queued'`, orgID, id, campaignID, nextRead)
+//
+// sendAt is the send time the campaign was scheduled for: if the issue was
+// moved meanwhile, it is ErrNotFound too, and the campaign is stale.
+func (s *Store) DeliveryHandedOff(ctx context.Context, orgID, id uuid.UUID, campaignID string, nextRead, sendAt time.Time) error {
+	return s.execOne(ctx, `UPDATE newsletter_deliveries d SET status = 'handed_off', campaign_id = $3, next_read_at = $4, lease_until = NULL,
+		last_error = '', updated_at = now() FROM newsletter_issues i
+		WHERE i.org_id = d.org_id AND i.id = d.issue_id AND i.send_at = $5
+		AND d.org_id = $1 AND d.id = $2 AND d.status = 'queued'`, orgID, id, campaignID, nextRead, sendAt)
 }
 
-// RetryHandoff keeps a delivery queued, to be tried again at next.
+// RetryHandoff keeps a delivery queued, to be tried again at next. The
+// lease is released: a delivery waiting to retry is not being handed off,
+// and its issue can be moved or canceled meanwhile.
 func (s *Store) RetryHandoff(ctx context.Context, orgID, id uuid.UUID, lastError string, next time.Time) error {
-	return s.execOne(ctx, `UPDATE newsletter_deliveries SET lease_until = $3, last_error = $4, updated_at = now()
+	return s.execOne(ctx, `UPDATE newsletter_deliveries SET handoff_at = $3, lease_until = NULL, last_error = $4, updated_at = now()
 		WHERE org_id = $1 AND id = $2 AND status = 'queued'`, orgID, id, next, lastError)
 }
 

@@ -5,6 +5,7 @@
 package core_test
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -444,5 +445,65 @@ func TestNewsletterRules(t *testing.T) {
 	}
 	if _, err := w.s.ScheduleIssue(ctx, w.owner, is.ID, time.Now().Add(time.Hour)); kind(err) != apperr.KindInvalid {
 		t.Fatalf("scheduling through a disconnected account: %v", err)
+	}
+}
+
+// TestNewsletterRetryingHandoffCanBeStopped checks an issue whose hand-off
+// failed and waits to retry can be canceled at once: waiting to retry is
+// not being handed off.
+func TestNewsletterRetryingHandoffCanBeStopped(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	setTheme(t, w)
+	connectSandboxMail(t, w, "news@araldo.dev", map[string]string{"simulate": "uncertain"})
+	is, err := w.s.CreateIssue(ctx, w.owner, core.IssueInput{BrandID: w.brand.ID, Subject: "Hi", Body: "Hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = w.s.ScheduleIssue(ctx, w.owner, is.ID, time.Now().Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "a failed attempt", func() {
+		if _, err := core.HandOffNewslettersOrg(w.s, w.org.ID); err != nil {
+			t.Fatal(err)
+		}
+	}, func() bool {
+		got, err := w.s.Issue(ctx, w.owner, is.ID)
+		return err == nil && got.Deliveries[0].Attempts >= 1 && got.Deliveries[0].LastError != ""
+	})
+	got, err := w.s.CancelIssue(ctx, w.owner, is.ID)
+	if err != nil || got.Status != model.IssueCanceled {
+		t.Fatalf("canceling while the hand-off waits to retry: %+v, %v", got, err)
+	}
+}
+
+// TestNewsletterStaleHandoffIsRefused checks a hand-off scheduled for a
+// send time the issue was moved from is not recorded, so the campaign is
+// taken back and the delivery handed off again on the new schedule.
+func TestNewsletterStaleHandoffIsRefused(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	setTheme(t, w)
+	connectSandboxMail(t, w, "news@araldo.dev", nil)
+	is, err := w.s.CreateIssue(ctx, w.owner, core.IssueInput{BrandID: w.brand.ID, Subject: "Hi", Body: "Hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := time.Now().Add(48 * time.Hour).Truncate(time.Second)
+	if is, err = w.s.ScheduleIssue(ctx, w.owner, is.ID, first); err != nil {
+		t.Fatal(err)
+	}
+	moved := first.Add(time.Hour)
+	if _, err = w.s.ScheduleIssue(ctx, w.owner, is.ID, moved); err != nil {
+		t.Fatal(err)
+	}
+	st, d := open(t), is.Deliveries[0]
+	if err := st.DeliveryHandedOff(ctx, w.org.ID, d.ID, "sbx_stale", first.Add(time.Hour), first); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("recording a hand-off for the old send time: %v", err)
+	}
+	if err := st.DeliveryHandedOff(ctx, w.org.ID, d.ID, "sbx_fresh", moved.Add(time.Hour), moved); err != nil {
+		t.Fatalf("recording one for the new send time: %v", err)
 	}
 }

@@ -1278,13 +1278,15 @@ func (s *Service) handOff(ctx context.Context, d *model.IssueDelivery, now time.
 		}
 	}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
-		if err := tx.DeliveryHandedOff(ctx, d.OrgID, d.ID, campaignID, is.SendAt.Add(firstLookAfter)); err != nil {
+		if err := tx.DeliveryHandedOff(ctx, d.OrgID, d.ID, campaignID, is.SendAt.Add(firstLookAfter), *is.SendAt); err != nil {
 			return err
 		}
 		return s.refreshIssue(ctx, tx, is, "", "")
 	})
 	if errors.Is(err, store.ErrNotFound) {
-		// Canceled while it was being handed off: take it back.
+		// Canceled, or moved, while it was being handed off: take the
+		// campaign back; a moved issue's delivery is handed off again on
+		// its new schedule.
 		if cerr := m.Cancel(ctx, creds, campaignID); cerr != nil {
 			s.log.WarnContext(ctx, "removing a campaign canceled during hand-off failed", "delivery", tag, "err", cerr)
 		}

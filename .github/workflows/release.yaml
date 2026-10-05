@@ -87,5 +87,13 @@ jobs:
   notify:
     needs: [binaries, image-and-chart]
     if: ${{ failure() }}
-    uses: spectrum-labs-tech/.github/.github/workflows/discord-cicd-notify.yaml@main
-    secrets: inherit
+    # On a GitHub-hosted runner: the shared reusable workflow runs on
+    # self-hosted runners, which this public repository cannot use, so its
+    # job waited forever and held up every later run on main.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Discord
+        uses: spectrum-labs-tech/.github/actions/discord-notify@main
+        with:
+          webhook: ${{ secrets.DISCORD_CICD_WEBHOOK }}
+          status: failure

@@ -653,6 +653,36 @@ func TestRenameAnApp(t *testing.T) {
 	}
 }
 
+// TestDashboardDenialsAreAudited checks a member refused an action by their
+// role is in the audit log, by route.
+func TestDashboardDenialsAreAudited(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	email := fmt.Sprintf("editor-%s@example.com", uuid.NewString()[:8])
+	if _, err := d.s.AddMember(ctx, d.owner, d.login.Session, email, model.RoleEditor, "a long enough password"); err != nil {
+		t.Fatal(err)
+	}
+	login, err := d.s.Login(ctx, email, "a long enough password", "test", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"csrf": {login.Session.CSRFToken}, "name": {"Taken over"}}
+	r := httptest.NewRequest(http.MethodPost, "/org", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.AddCookie(&http.Cookie{Name: "araldo_session", Value: login.Token})
+	rec := httptest.NewRecorder()
+	d.srv.ServeHTTP(rec, r)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("an editor renaming the org: %d", rec.Code)
+	}
+	var target, code string
+	if err := d.st.Pool().QueryRow(ctx, `SELECT target, detail->>'code' FROM audit_events WHERE org_id = $1 AND action = 'access.denied'
+		AND actor_user = $2`, d.owner.OrgID, login.User.ID).Scan(&target, &code); err != nil || target != "POST /org" || code != "forbidden" {
+		t.Fatalf("the denial: %q %q, %v", target, code, err)
+	}
+}
+
 func TestConnectTheCLI(t *testing.T) {
 	t.Parallel()
 	d := newDash(t)

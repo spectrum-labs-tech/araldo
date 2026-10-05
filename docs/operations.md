@@ -106,7 +106,7 @@ dashboard) can grant them ([ADR 0019](adr/0019-administration-api.md)):
 |---|---|
 | `keys:write` | List, create, roll and revoke keys in its mode, with no more access than its own (`/v1/api_keys`). For a Terraform provider or a secrets rotator. |
 | `posts:approve` | Approve or reject posts waiting for review (`/v1/posts/{id}/approve`, `/reject`), never one it created. For approving from Slack or your own tools. |
-| `audit:read` | Read the audit log (`/v1/audit_events`). For exporting to a SIEM. |
+| `audit:read` | Read the audit log (`/v1/audit_events`): every change, and every refusal (`access.denied`, outcome `denied`, with the route and the reason; one per credential and route a minute). For exporting to a SIEM. |
 
 ```bash
 araldo admin apikeys create --org "Your org" --name "terraform" \

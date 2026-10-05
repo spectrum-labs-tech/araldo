@@ -328,9 +328,23 @@ func (s *Server) formErr(c *reqCtx, page, nav, title string, data any, err error
 	status := http.StatusUnprocessableEntity
 	if ae.Kind == apperr.KindForbidden {
 		status = http.StatusForbidden
+		s.recordDenial(c, ae)
 	}
 	s.render(c.w, status, page, v)
 	return nil
+}
+
+// recordDenial audits a member refused an action (ADR 0004); a password
+// confirmation asked for is not a refusal.
+func (s *Server) recordDenial(c *reqCtx, ae *apperr.Error) {
+	if c.member == nil || ae.Code == "reauthentication_required" {
+		return
+	}
+	op := c.r.Pattern // the route, without the IDs in it
+	if op == "" {
+		op = c.r.Method + " " + c.r.URL.Path
+	}
+	s.svc.RecordDenial(c.ctx(), c.actor, op, ae.Code)
 }
 
 func (s *Server) handleErr(c *reqCtx, err error) {
@@ -350,6 +364,7 @@ func (s *Server) handleErr(c *reqCtx, err error) {
 			http.Redirect(c.w, c.r, "/confirm?next="+url.QueryEscape(c.r.URL.RequestURI()), http.StatusSeeOther)
 			return
 		}
+		s.recordDenial(c, ae)
 		s.renderError(c, http.StatusForbidden, ae.Message)
 	default:
 		s.renderError(c, http.StatusUnprocessableEntity, ae.Error())

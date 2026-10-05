@@ -9,7 +9,7 @@ open a pull request.
 | [0001](0001-scope.md) | Araldo is a distribution API for developers; callers bring the content | accepted; ads narrowed by ADR 0023 |
 | [0002](0002-layout-and-storage.md) | One module, one binary, Postgres only, a fixed layout | accepted; built |
 | [0003](0003-license.md) | AGPL-3.0-or-later for the server; permissive licenses for clients | accepted; in effect (the DCO sign-off is not checked in CI) |
-| [0004](0004-tenancy-roles-approvals.md) | Orgs are the tenant boundary; brands group channels; four roles and optional approvals | accepted; built, except auditing denials (brand-limited members remain deferred) |
+| [0004](0004-tenancy-roles-approvals.md) | Orgs are the tenant boundary; brands group channels; four roles and optional approvals | accepted; built; brand-limited members remain deferred |
 | [0005](0005-api-conventions.md) | A contract-first API with Stripe-style conventions | accepted; built, except SDKs and the dashboard's request log; amended by ADR 0019 and ADR 0028 |
 | [0006](0006-test-mode-and-api-keys.md) | Every org has a test mode that can never post publicly | accepted; built; key rolling amended by ADR 0019 |
 | [0007](0007-authentication-and-mfa.md) | Passwords, passkeys and TOTP built in; MFA can be required per org | accepted; passwords, TOTP, recovery codes and required MFA built; passkeys, email flows and the breached-password check not yet |

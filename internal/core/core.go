@@ -81,6 +81,8 @@ type Service struct {
 	metrics *metrics
 	// schemaSeen is set once Ready has found the schema current.
 	schemaSeen atomic.Bool
+	// denied paces the recording of denials.
+	denied denials
 }
 
 // New returns the application.

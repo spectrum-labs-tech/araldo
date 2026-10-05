@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
+	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
@@ -62,6 +63,11 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case apperr.KindUnavailable:
 		h.log.WarnContext(r.Context(), "request failed: a dependency is unavailable", "path", r.URL.Path, "err", err)
 		w.Header().Set("Retry-After", "30")
+	case apperr.KindForbidden:
+		// A refused action is audited like a change (ADR 0004).
+		if a, ok := r.Context().Value(actorKey).(core.Actor); ok {
+			h.svc.RecordDenial(r.Context(), a, first(r.Pattern, r.Method+" "+r.URL.Path), ae.Code)
+		}
 	}
 	p := problem{Type: "about:blank", Title: http.StatusText(status), Status: status, Detail: ae.Message, Code: ae.Code, Param: ae.Param,
 		RequestID: RequestID(r.Context()), Errors: ae.Problems}

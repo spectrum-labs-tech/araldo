@@ -45,6 +45,11 @@ func (s *Service) ResolveBrand(ctx context.Context, a Actor, ref string) (*model
 // IdempotencyWindow is how long a key is remembered.
 const IdempotencyWindow = 24 * time.Hour
 
+// idempotencyAbandoned is how long a key may stay in progress before a
+// retry of the same request takes it over: far longer than any request
+// runs (the server's timeouts are a minute), so its process is gone.
+const idempotencyAbandoned = 5 * time.Minute
+
 // IdempotentReplay is a stored response to replay.
 type IdempotentReplay struct {
 	Status int
@@ -61,7 +66,8 @@ func (s *Service) BeginIdempotent(ctx context.Context, a Actor, key string, fing
 	if len(key) > 255 {
 		return nil, apperr.Invalid("idempotency_key_invalid", "Idempotency-Key", "Idempotency keys are at most 255 characters.")
 	}
-	rec, claimed, err := s.store.BeginIdempotent(ctx, *a.KeyID, key, fingerprint, s.Now().Add(-IdempotencyWindow))
+	now := s.Now()
+	rec, claimed, err := s.store.BeginIdempotent(ctx, *a.KeyID, key, fingerprint, now.Add(-IdempotencyWindow), now.Add(-idempotencyAbandoned))
 	if err != nil || claimed {
 		return nil, err
 	}

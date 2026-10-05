@@ -214,7 +214,19 @@ func (h *Handler) idempotent(w http.ResponseWriter, r *http.Request, a core.Acto
 	}
 	rec := &recorder{ResponseWriter: w, status: http.StatusOK}
 	r.Body = readCloser{bytes.NewReader(body)}
+	finished := false
+	defer func() {
+		if !finished {
+			// The handler panicked: release the key, as for an error, so a
+			// retry is not refused for a day. The panic goes on to the
+			// server's recovery.
+			if err := h.svc.FinishIdempotent(r.Context(), a, key, http.StatusInternalServerError, nil); err != nil {
+				h.log.ErrorContext(r.Context(), "releasing idempotency key", "err", err)
+			}
+		}
+	}()
 	h.mux.ServeHTTP(rec, r)
+	finished = true
 	if err := h.svc.FinishIdempotent(r.Context(), a, key, rec.status, rec.buf.Bytes()); err != nil {
 		h.log.ErrorContext(r.Context(), "storing idempotent response", "err", err)
 	}

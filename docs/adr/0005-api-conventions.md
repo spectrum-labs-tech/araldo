@@ -39,7 +39,12 @@ set the bar most developers now expect.
      with `Idempotent-Replayed: true`;
    - the same key with a different request is `409 idempotency_key_reused`;
    - a retry while the first request is still running is
-     `409 idempotency_key_in_use`, which clients may retry.
+     `409 idempotency_key_in_use`, which clients may retry;
+   - only a response that took effect (2xx) is stored; an error, or a
+     request that crashed, releases the key so a corrected retry runs. A key
+     left in progress for 5 minutes (its process died) is taken over by a
+     retry of the same request. If that process had already committed, the
+     retry runs again: the key and the work are not one transaction.
 6. **Pagination** is by cursor: `limit` (1–100, default 20),
    `starting_after` or `ending_before` (an object ID). A list is
    `{ "object": "list", "data": [...], "has_more": true }`. There are no

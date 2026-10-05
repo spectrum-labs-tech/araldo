@@ -272,14 +272,25 @@ type IdempotencyRecord struct {
 }
 
 // BeginIdempotent claims key for a request. If the key exists, it returns
-// the stored record and claimed=false.
-func (s *Store) BeginIdempotent(ctx context.Context, apiKeyID uuid.UUID, key string, fingerprint []byte, since time.Time) (*IdempotencyRecord, bool, error) {
+// the stored record and claimed=false, unless the same request claimed it
+// before abandoned (still in progress from before abandoned, its process
+// gone), when this request takes it over.
+func (s *Store) BeginIdempotent(ctx context.Context, apiKeyID uuid.UUID, key string, fingerprint []byte, since, abandoned time.Time) (*IdempotencyRecord, bool, error) {
 	// Forget an expired record first, so the key can be reused.
 	if _, err := s.q.Exec(ctx, `DELETE FROM idempotency_keys WHERE api_key_id = $1 AND key = $2 AND created_at < $3`, apiKeyID, key, since); err != nil {
 		return nil, false, err
 	}
 	tag, err := s.q.Exec(ctx, `INSERT INTO idempotency_keys (api_key_id, key, fingerprint, status) VALUES ($1, $2, $3, 'in_progress')
 		ON CONFLICT DO NOTHING`, apiKeyID, key, fingerprint)
+	if err != nil {
+		return nil, false, err
+	}
+	if tag.RowsAffected() == 1 {
+		return nil, true, nil
+	}
+	tag, err = s.q.Exec(ctx, `UPDATE idempotency_keys SET created_at = now()
+		WHERE api_key_id = $1 AND key = $2 AND fingerprint = $3 AND status = 'in_progress' AND created_at < $4`,
+		apiKeyID, key, fingerprint, abandoned)
 	if err != nil {
 		return nil, false, err
 	}

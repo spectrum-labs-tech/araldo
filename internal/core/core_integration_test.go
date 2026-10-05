@@ -655,6 +655,44 @@ func TestTheDatabaseKeepsModesApart(t *testing.T) {
 	}
 }
 
+// TestAbandonedIdempotencyKey checks that a key left in progress by a
+// request whose process died is taken over by a retry of the same request
+// once it is surely abandoned, instead of refusing it for a day.
+func TestAbandonedIdempotencyKey(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	plain, _, err := w.s.CreateAPIKey(ctx, w.owner, w.session, core.APIKeyInput{Name: "idempotent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := w.s.AuthenticateKey(ctx, plain, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, req, other := uuid.NewString(), []byte("POST /v1/posts"), []byte("POST /v1/brands")
+	if replay, err := w.s.BeginIdempotent(ctx, a, key, req); err != nil || replay != nil {
+		t.Fatalf("first claim: %v, %v", replay, err)
+	}
+	// The request's process dies: the key is never finished.
+	if _, err := w.s.BeginIdempotent(ctx, a, key, req); apperr.As(err).Code != "idempotency_key_in_use" {
+		t.Fatalf("a retry while it may still run: %v", err)
+	}
+	w.s.Now = func() time.Time { return time.Now().Add(10 * time.Minute) }
+	if _, err := w.s.BeginIdempotent(ctx, a, key, other); apperr.As(err).Code != "idempotency_key_reused" {
+		t.Fatalf("another request with the abandoned key: %v", err)
+	}
+	if replay, err := w.s.BeginIdempotent(ctx, a, key, req); err != nil || replay != nil {
+		t.Fatalf("a retry once it is abandoned: %v, %v", replay, err)
+	}
+	if err := w.s.FinishIdempotent(ctx, a, key, http.StatusCreated, []byte(`{"id":"x"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if replay, err := w.s.BeginIdempotent(ctx, a, key, req); err != nil || replay == nil || replay.Status != http.StatusCreated {
+		t.Fatalf("after it finished: %+v, %v", replay, err)
+	}
+}
+
 func TestOperatorAPIKeys(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

@@ -66,12 +66,15 @@ type Handler struct {
 	// operatorOnly are the operator API's routes, for operator keys only
 	// (ADR 0031).
 	operatorOnly map[string]bool
+	// StreamRecheck is how often an open event stream checks its
+	// credential still works; tests shorten it.
+	StreamRecheck time.Duration
 }
 
 // New returns the API handler.
 func New(svc *core.Service, log *slog.Logger) *Handler {
 	h := &Handler{svc: svc, log: log, mux: http.NewServeMux(), limiter: newLimiter(25, 100), Query: map[string][]string{}, open: map[string]bool{},
-		operatorOnly: map[string]bool{}}
+		operatorOnly: map[string]bool{}, StreamRecheck: 30 * time.Second}
 	h.routes()
 	h.operatorRoutes()
 	return h

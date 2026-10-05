@@ -65,7 +65,7 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprint(w, "retry: 3000\n: connected\n\n")
 	_ = rc.Flush()
-	quiet := time.Now()
+	quiet, checked := time.Now(), time.Now()
 	ticker := time.NewTicker(streamPoll)
 	defer ticker.Stop()
 	for {
@@ -90,6 +90,15 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) error {
 		case <-r.Context().Done():
 			return nil
 		case <-ticker.C:
+		}
+		// A stream lasts as long as its credential: a revoked key or token,
+		// a removed member or a suspended org ends it, and the client's
+		// reconnection is refused with the reason. A role change applies.
+		if time.Since(checked) >= h.StreamRecheck {
+			if a, err = h.authenticate(r, false); err != nil {
+				return nil //nolint:nilerr // headers are sent: ending the stream is the answer
+			}
+			checked = time.Now()
 		}
 		if evs, err = h.svc.EventsSince(r.Context(), a, cursor, streamBatch); err != nil {
 			return nil //nolint:nilerr // headers are sent: ending the stream is the answer; the client reconnects

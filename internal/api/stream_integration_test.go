@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/api"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -133,5 +134,35 @@ func TestEventStream(t *testing.T) {
 	status, got := c.do(http.MethodGet, "/v1/events/stream?types=post.nope", "", nil, nil)
 	if status != http.StatusBadRequest || got["param"] != "types" {
 		t.Fatalf("an unknown type: %d %v", status, got)
+	}
+}
+
+// TestEventStreamEndsWithItsCredential checks an open stream ends once its
+// key is revoked, rather than going on for as long as the client stays.
+func TestEventStreamEndsWithItsCredential(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	h, ok := c.h.(*api.Handler)
+	if !ok {
+		t.Fatalf("the handler is a %T", c.h)
+	}
+	h.StreamRecheck = 100 * time.Millisecond
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	plain, k, err := c.s.CreateOperatorAPIKey(t.Context(), c.owner, core.APIKeyInput{Name: "streaming"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := stream(t, t.Context(), srv, plain, "", "")
+	if err := c.s.RevokeAPIKey(t.Context(), c.owner, k.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case _, open := <-events:
+		if open {
+			t.Fatal("an event arrived instead of the stream ending")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the stream outlived its revoked key")
 	}
 }

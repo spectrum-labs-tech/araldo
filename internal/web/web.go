@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 
@@ -406,9 +407,16 @@ func redirect(c *reqCtx, path, notice string) error {
 	return nil
 }
 
-// safeNext keeps a post-login redirect on this site.
+// safeNext keeps a post-login redirect on this site: a path, not another
+// host. Browsers drop tabs and newlines from URLs and read backslashes as
+// slashes, so "/<tab>/evil.example" or "/\evil.example" would leave; those
+// are refused too.
 func safeNext(next string) string {
-	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
+	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.Contains(next, "\\") ||
+		strings.IndexFunc(next, unicode.IsControl) >= 0 {
+		return "/"
+	}
+	if u, err := url.Parse(next); err != nil || u.Scheme != "" || u.Host != "" {
 		return "/"
 	}
 	return next

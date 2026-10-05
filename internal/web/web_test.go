@@ -91,6 +91,11 @@ func TestSafeNext(t *testing.T) {
 		"/\\evil.example":      "/",
 		"https://evil.example": "/",
 		"posts":                "/",
+		"/\t/evil.example":     "/",
+		"/\n/evil.example":     "/",
+		`/x\..\evil`:           "/",
+		"/posts?q=a%20b#top":   "/posts?q=a%20b#top",
+		"/%09/evil.example":    "/%09/evil.example", // encoded, it stays a path
 	}
 	for in, want := range tests {
 		if got := safeNext(in); got != want {

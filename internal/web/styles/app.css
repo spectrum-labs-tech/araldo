@@ -470,6 +470,12 @@
   .json {
     @apply overflow-auto rounded-lg border border-line bg-panel p-4 text-xs;
   }
+  .app-guide {
+    @apply my-1 ml-5 flex list-decimal flex-col gap-1;
+  }
+  .app-guide-notes {
+    @apply ml-5 flex list-disc flex-col gap-1 text-muted;
+  }
   .copy-box {
     @apply rounded-md border border-line bg-bg px-2.5 py-1.5 break-all;
   }

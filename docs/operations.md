@@ -154,11 +154,16 @@ check's result.
 | Discord, Telegram | A webhook URL; a bot token and chat. |
 
 **X.** At developer.x.com, in your app's *User authentication settings*,
-turn on OAuth 2.0 as a *Web App* (a confidential client) with read and
-write permission, and add Araldo's redirect URI
-(`{ARALDO_BASE_URL}/connect/x/callback`) as a callback URI. Add the app's
-OAuth 2.0 client ID and secret (not the API key) under Developer apps,
-then connect. The sign-in asks for `tweet.read`, `tweet.write`,
+choose *Read and write* (Araldo needs no direct messages), leave *Request
+email from users* off, choose *Web App, Automated App or Bot* (a
+confidential client: Araldo keeps the secret on its server), add Araldo's
+redirect URI (`{ARALDO_BASE_URL}/connect/x/callback`) as a callback URI,
+and give your product's site as the website URL. Add the app's OAuth 2.0
+client ID and secret (not the API key) under Developer apps, then
+connect. The Free tier posts text only; images and video need Basic. If
+you paste OAuth 1.0a keys instead, generate the access token after
+choosing *Read and write*: a token keeps the permissions it was made
+with. The sign-in asks for `tweet.read`, `tweet.write`,
 `users.read`, `media.write` and `offline.access`; tokens last two hours and
 are renewed automatically, each renewal replacing the refresh token. What
 an app may post and read depends on its X API access tier.

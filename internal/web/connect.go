@@ -26,6 +26,8 @@ type appsData struct {
 	Names map[platform.Provider]string
 	Added map[platform.Provider]bool
 	Sites map[platform.Provider]string
+	// Guides say how to register each platform's app.
+	Guides map[platform.Provider]appGuide
 }
 
 // developerSites are where each provider's developer apps are registered.
@@ -43,7 +45,7 @@ func (s *Server) appsData(c *reqCtx) (*appsData, error) {
 		return nil, err
 	}
 	d := &appsData{Apps: apps, Redirects: map[platform.Provider]string{}, Form: map[string]string{},
-		Names: map[platform.Provider]string{}, Added: map[platform.Provider]bool{}, Sites: developerSites}
+		Names: map[platform.Provider]string{}, Added: map[platform.Provider]bool{}, Sites: developerSites, Guides: appGuides}
 	for _, a := range apps {
 		d.Added[a.Provider] = true
 		d.Names[a.Provider] = s.svc.ProviderName(a.Provider)

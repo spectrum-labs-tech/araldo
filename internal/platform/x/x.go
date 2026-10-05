@@ -78,7 +78,8 @@ func (a *Adapter) Fields() []platform.Field {
 	return []platform.Field{
 		{Name: "api_key", Label: "API key", Help: where + " → API Key and Secret"},
 		{Name: "api_secret", Label: "API key secret", Secret: true},
-		{Name: "access_token", Label: "Access token", Help: where + " → Access Token and Secret, for the account to post as"},
+		{Name: "access_token", Label: "Access token", Help: where + " → Access Token and Secret, for the account to post as. " +
+			"Generate it after setting the app to read and write: a token keeps the permissions it was made with"},
 		{Name: "access_token_secret", Label: "Access token secret", Secret: true},
 	}
 }

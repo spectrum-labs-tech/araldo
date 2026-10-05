@@ -405,6 +405,8 @@ func TestAppsPageLinksPerPlatform(t *testing.T) {
 		block := regexp.MustCompile(`(?s)<div data-when="provider=` + p + `"[^>]*>(.*?)</div>`).FindStringSubmatch(page)
 		if block == nil || !strings.Contains(block[1], `id="redirect-`+p+`"`) || !strings.Contains(block[1], "Register the app at") {
 			t.Errorf("no block of %s's links: %v", p, block)
+		} else if !strings.Contains(block[1], `<ol class="app-guide">`) || !strings.Contains(block[1], "<strong>Client secret</strong> is") {
+			t.Errorf("%s's block has no setup guide: %s", p, block[1])
 		}
 		if !strings.Contains(page, `<li data-when="provider=`+p+`">`) {
 			t.Errorf("the guide's developer site for %s is not tied to the choice", p)

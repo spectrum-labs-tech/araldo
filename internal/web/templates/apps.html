@@ -37,6 +37,11 @@ redirect URI below, and add its ID and secret here; then connect channels throug
       <span class="flex flex-wrap items-center gap-2"><code id="redirect-{{.Provider}}" class="copy-box">{{index $d.Redirects .Provider}}</code>
         <button type="button" data-copy="redirect-{{.Provider}}" aria-label="Copy the {{.Name}} redirect URI">Copy</button></span>
       {{with index $d.Sites .Provider}}<span>Register the app at <a href="{{.}}" rel="noopener" target="_blank">{{.}}</a></span>{{end}}
+      {{with index $d.Guides .Provider}}
+      <ol class="app-guide">{{range .Steps}}<li>{{.}}</li>{{end}}</ol>
+      <p>Then here: <strong>Client ID</strong> is {{.ClientID}}, and <strong>Client secret</strong> is {{.Confidential}}.</p>
+      {{with .Notes}}<ul class="app-guide-notes">{{range .}}<li>{{.}}</li>{{end}}</ul>{{end}}
+      {{end}}
     </div>
     {{end}}
     <label>Name <input name="name" maxlength="100" value="{{index $d.Form "name"}}" placeholder="Threads app"></label>

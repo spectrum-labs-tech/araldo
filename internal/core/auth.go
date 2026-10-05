@@ -454,7 +454,9 @@ func (s *Service) RemainingRecoveryCodes(ctx context.Context, userID uuid.UUID) 
 	return s.store.RemainingRecoveryCodes(ctx, userID)
 }
 
-// ChangePassword sets a new password and signs out other sessions.
+// ChangePassword sets a new password and signs out everywhere else: other
+// sessions, and the CLI's user tokens, since a changed password is often
+// a taken-over account being taken back.
 func (s *Service) ChangePassword(ctx context.Context, ss *model.Session, current, next string) error {
 	u, err := s.store.User(ctx, ss.UserID)
 	if err != nil {
@@ -473,6 +475,9 @@ func (s *Service) ChangePassword(ctx context.Context, ss *model.Session, current
 	}
 	return s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.SetPassword(ctx, u.ID, hash); err != nil {
+			return err
+		}
+		if err := tx.RevokeAllUserTokens(ctx, u.ID, s.Now()); err != nil {
 			return err
 		}
 		return tx.DeleteOtherSessions(ctx, u.ID, ss.ID)

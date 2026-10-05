@@ -63,6 +63,7 @@
 
 <section class="card">
   <h2>Password</h2>
+  <p class="mb-3 text-sm text-muted">Changing it signs you out everywhere else, the CLI included.</p>
   <form method="post" action="/account/password" class="flex max-w-xl flex-col gap-4">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <label>Current password <input type="password" name="current_password" autocomplete="current-password" required></label>

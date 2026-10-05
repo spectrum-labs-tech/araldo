@@ -1445,3 +1445,114 @@ func TestSlowEndpointHoldsOnlyItsOwnDeliveries(t *testing.T) {
 		t.Fatalf("%d deliveries at once to one endpoint, want at most %d", m, store.PerEndpoint)
 	}
 }
+
+// userToken signs the CLI in for w's owner, as the device flow does.
+func userToken(t *testing.T, w *world, ss *model.Session) string {
+	t.Helper()
+	ctx := t.Context()
+	start, err := w.s.StartDevice(ctx, "araldo CLI", false, "203.0.113.9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.s.DecideDevice(ctx, ss, start.UserCode, true); err != nil {
+		t.Fatal(err)
+	}
+	plain, _, err := w.s.PollDevice(ctx, start.DeviceCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plain
+}
+
+// TestAccountSecurity checks changing a password signs out everywhere
+// else, recovery codes are replaced only with a recent password, and
+// two-factor authentication stays on where an org requires it (ADR 0007).
+func TestAccountSecurity(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	const pw = "correct horse battery"
+	login := func(password string) *core.LoginResult {
+		t.Helper()
+		l, err := w.s.Login(ctx, w.user.Email, password, "test", "127.0.0.1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return l
+	}
+	here, elsewhere := login(pw), login(pw)
+	cli := userToken(t, w, here.Session)
+
+	if err := w.s.ChangePassword(ctx, here.Session, "not my password", "a brand new password"); code(err) != "bad_password" {
+		t.Fatalf("the wrong current password: %v", err)
+	}
+	if err := w.s.ChangePassword(ctx, here.Session, pw, "short"); code(err) != "password_invalid" {
+		t.Fatalf("a short new password: %v", err)
+	}
+	const next = "a brand new password"
+	if err := w.s.ChangePassword(ctx, here.Session, pw, next); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := w.s.Session(ctx, here.Token); err != nil {
+		t.Fatalf("the session that changed it: %v", err)
+	}
+	if _, _, err := w.s.Session(ctx, elsewhere.Token); err == nil {
+		t.Fatal("another session survived the change")
+	}
+	if _, err := w.s.AuthenticateUserToken(ctx, cli, "", ""); err == nil {
+		t.Fatal("the CLI's token survived the change")
+	}
+	if _, err := w.s.Login(ctx, w.user.Email, pw, "", ""); !errors.Is(err, core.ErrBadCredentials) {
+		t.Fatalf("the old password: %v", err)
+	}
+	fresh := login(next)
+
+	// Recovery codes: replaced only after confirming the password; the old
+	// ones stop working.
+	secretText, _, err := w.s.BeginTOTP(ctx, fresh.Session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := decodeB32(t, secretText)
+	old, err := w.s.ConfirmTOTP(ctx, fresh.Session, authn.TOTPCode(secret, authn.TOTPStep(time.Now())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := *fresh.Session
+	stale.SudoUntil = nil
+	if _, err := w.s.RegenerateRecoveryCodes(ctx, &stale); code(err) != "reauthentication_required" {
+		t.Fatalf("new codes without a recent password: %v", err)
+	}
+	codes, err := w.s.RegenerateRecoveryCodes(ctx, fresh.Session)
+	if err != nil || len(codes) != 10 {
+		t.Fatalf("new codes: %d, %v", len(codes), err)
+	}
+	signIn := login(next)
+	if err := w.s.VerifySecondFactor(ctx, signIn.Session, old[0]); kind(err) != apperr.KindUnauthorized {
+		t.Fatalf("an old recovery code: %v", err)
+	}
+	if err := w.s.VerifySecondFactor(ctx, signIn.Session, codes[0]); err != nil {
+		t.Fatalf("a new recovery code: %v", err)
+	}
+
+	// Two-factor authentication stays on while an org requires it.
+	owner := memberActor(t, w, false)
+	if err := w.s.UpdateOrg(ctx, owner, fresh.Session, w.org.Name, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.s.DisableTOTP(ctx, fresh.Session); kind(err) != apperr.KindForbidden {
+		t.Fatalf("turning it off where it is required: %v", err)
+	}
+	if err := w.s.UpdateOrg(ctx, owner, fresh.Session, w.org.Name, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.s.DisableTOTP(ctx, &stale); code(err) != "reauthentication_required" {
+		t.Fatalf("turning it off without a recent password: %v", err)
+	}
+	if err := w.s.DisableTOTP(ctx, fresh.Session); err != nil {
+		t.Fatal(err)
+	}
+	if l := login(next); l.NeedsMFA {
+		t.Fatal("still asked for a code with two-factor authentication off")
+	}
+}

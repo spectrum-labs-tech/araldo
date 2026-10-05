@@ -41,6 +41,8 @@ func commands() []command {
 	return []command{
 		{name: "auth", group: groupClient, summary: "Sign in to a server: login, status, logout, token", run: runAuth},
 		{name: "channels", group: groupClient, summary: "Channels: list, with their status and last check", run: runChannels},
+		{name: "members", group: groupClient, summary: "Members: list, invite, role, remove", run: runMembers},
+		{name: "org", group: groupClient, summary: "The org's settings: view, update", run: runOrg},
 		{name: "api", group: groupClient, summary: "Make an authenticated request to the API", run: runAPI},
 		{name: "mcp", group: groupClient, summary: "Serve Araldo's tools to an AI assistant over stdio (MCP)", run: runMCP},
 		{name: "server", group: groupServer, summary: "Run the API and dashboard", run: runServer},
@@ -57,6 +59,9 @@ func commands() []command {
 func allCommands() []command {
 	cs := commands()
 	for _, c := range adminCommands() {
+		if c.name == "members" || c.name == "org" {
+			continue // client commands now, acting as the person signed in
+		}
 		cs = append(cs, command{name: c.name, run: movedToAdmin(c.name, c.run)})
 	}
 	return cs

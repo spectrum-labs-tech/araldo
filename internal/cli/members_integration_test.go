@@ -55,11 +55,11 @@ func TestMembersAndOrg(t *testing.T) {
 		t.Fatalf("list after removing:\n%s", out)
 	}
 
-	// The old names and --as still work, and say what replaced them.
-	_, errOut = run("org", "update", "--as", owner, "--name", "Renamed "+suffix, "--require-mfa", "false")
-	for _, want := range []string{"araldo org is now araldo admin org", "--as is no longer needed", "Renamed " + suffix, "two-factor required: false"} {
+	// --as still works, and says it is no longer needed.
+	_, errOut = run("admin", "org", "update", "--as", owner, "--name", "Renamed "+suffix, "--require-mfa", "false")
+	for _, want := range []string{"--as is no longer needed", "Renamed " + suffix, "two-factor required: false"} {
 		if !strings.Contains(errOut, want) {
-			t.Errorf("org update under its old name: %q, want %q", errOut, want)
+			t.Errorf("org update with --as: %q, want %q", errOut, want)
 		}
 	}
 	org = "Renamed " + suffix

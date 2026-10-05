@@ -242,12 +242,16 @@ link to the install, like Threads.
 ([ADR 0028](adr/0028-cli-as-api-client.md)), modeled on GitHub's `gh`.
 
 ```sh
-araldo auth login --hostname araldo.example.com   # opens the dashboard to make a test key; paste it back
-araldo auth login --hostname araldo.example.com --live   # ...and a live key beside it
-araldo auth login --hostname araldo.example.com --with-token < key.txt   # scripts and CI
-araldo auth status                      # both keys on each server, and whether they still work
+araldo auth login --hostname araldo.example.com   # a one-time code to approve in the dashboard
+araldo auth login --hostname araldo.example.com --live   # ...and live mode beside it
+araldo auth login --hostname araldo.example.com --org "Spectrum Labs"   # a default org, if you are in several
+araldo auth login --hostname araldo.example.com --with-token < key.txt   # an API key, for scripts and CI
+araldo auth status                      # both modes on each server, and whether they still work
 araldo channels list                    # a table in a terminal; tab-separated when piped
-araldo channels list --live             # the same, with the live key
+araldo channels list --live             # the same, in live mode
+araldo members list                     # members, invite, role, remove
+araldo members invite --email them@example.com --role editor   # prints the link to send them
+araldo org view                         # and org update --name
 araldo channels list --json handle,status --jq '.[] | select(.status != "active")'
 araldo api channels                     # any /v1 request, authenticated
 araldo api -X GET posts -f limit=5      # -f fields are the query with -X GET...
@@ -255,23 +259,38 @@ araldo api posts --paginate --jq '.data | length'   # every page of a list, as o
 araldo api -X POST posts --input post.json   # ...and otherwise make it a POST, as with gh api
 ```
 
-- As the Stripe CLI does, it keeps a **test key and a live key** for each
-  server, since every key belongs to one mode. Commands use the test key,
-  which reaches only sandbox channels, unless given `--live`.
-- Keys are kept in the system keychain (macOS Keychain, Windows
+- **Signing in is a device code**, as with `gh`: `auth login` prints a
+  one-time code like `BDFG-HJKL` and opens the dashboard's **Sign in a
+  device** page (or prints its address, over SSH). Approve it there, signed
+  in and after confirming your password; the page shows the computer's
+  name, the mode and where the request came from, so approve only a code
+  you just saw in your own terminal. The CLI then gets a **token that acts
+  as you**: your role in each of your orgs, read at the time, so a change
+  takes effect at once. Sign devices out under **Your account → Devices**
+  or with `auth logout`. A token lasts until then, or a year unused; an
+  operator's password reset revokes them all. Some changes (API keys,
+  owners, no longer requiring two-factor) need a password confirmation and
+  stay in the dashboard.
+- **In several orgs?** Name one with `--org` (an ID or name), set a default
+  with `auth login --org`, or set `ARALDO_ORG`. An org that requires
+  two-factor authentication refuses the token of someone without it.
+- As the Stripe CLI does, it keeps a **test credential and a live one** for
+  each server, since every token and key belongs to one mode. Commands act
+  in test mode, which reaches only sandbox channels, unless given `--live`.
+- Credentials are kept in the system keychain (macOS Keychain, Windows
   Credential Manager, the Secret Service on Linux), or in `hosts.yaml` in the
   config directory, mode 0600, where there is no keychain or with
   `--insecure-storage`.
-- `ARALDO_TOKEN` (or `ARALDO_API_KEY`) and `ARALDO_HOST` override the stored
-  sign-in, for CI; `ARALDO_CONFIG_DIR` moves the config directory.
-- `auth login` opens the dashboard's **Connect the araldo CLI** page (or
-  prints its address, over SSH): confirm your password, pick a brand or all,
-  create the key (in the mode asked for, whatever mode the dashboard shows),
-  and paste it at the prompt, which does not echo it.
+- `ARALDO_TOKEN` (a token or an API key, such as one in CI) and
+  `ARALDO_HOST` override the stored sign-in; `ARALDO_CONFIG_DIR` moves the
+  config directory.
+- An API key can do what its scopes allow, but never manage members or the
+  org: that takes a person.
 
-Commands that change the server itself (`migrate`, `bootstrap`, `keys`,
-`users`, `apikeys create`) still run where the deployment's configuration
-is, with direct access to its database.
+Commands that change the server itself (`migrate`, and under `araldo
+admin`: `bootstrap`, `keys`, `users`, `apikeys create`, and the operator's
+`members` and `org`) still run where the deployment's configuration is,
+with direct access to its database.
 
 ## AI assistants (MCP)
 
@@ -280,8 +299,9 @@ Protocol ([ADR 0020](adr/0020-mcp.md)). It talks to an Araldo API with a
 key, so it needs no database, and the key decides what the assistant may
 do: start with a test key (its posts reach only sandbox channels), then a
 live key limited to the brand it should post for. Without `ARALDO_URL` and
-`ARALDO_API_KEY` it uses the key `araldo auth login` stored: the test key,
-or the live one with `araldo mcp --live`.
+`ARALDO_API_KEY` it uses the credential `araldo auth login` stored: the
+test one, or the live one with `araldo mcp --live` (and `--org` for a
+person in several orgs).
 
 | Tool | Does |
 |---|---|

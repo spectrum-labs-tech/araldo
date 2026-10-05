@@ -1,6 +1,6 @@
 # ADR 0028: The CLI is an API client, modeled on `gh`; only server administration touches the database
 
-- Status: accepted; steps 1 and 4 built (sign-in through the dashboard, a test and a live key per server; `araldo admin`, audited as the operator, which holds `members` and `org` until step 3)
+- Status: accepted; built (device sign-in and user tokens, a test and a live credential per server, `/v1/members` and `/v1/org`, `araldo admin`); `araldo listen` and `auth switch` not yet
 - Date: 2026-10-04
 - Supersedes: [ADR 0019](0019-administration-api.md) decision 1 ("the CLI takes operators with
   database access; there is no session-authenticated API") and decision 6's CLI half
@@ -113,9 +113,10 @@ which `gh` has no counterpart of, the model is the Stripe CLI.
    1. The client foundation: hosts and credentials (a test and a live key per server), `araldo api`,
       table/JSON output, and `channels list` as a client command; `auth login` through the
       dashboard's key page. Done.
-   2. The device flow, user tokens, the `/device` page and the Devices list, when member-only
-      commands come to the CLI.
+   2. The device flow, user tokens, the `/device` page and the Devices list. Done; `auth login`
+      uses it, and the dashboard's key page stays for CLIs that still open it.
    3. `/v1/members` and `/v1/org`; `members` and `org` become client commands; `--as` is removed.
+      Done (members join by invitation, `/v1/invitations`).
    4. Server administration moves under `araldo admin`, audited as the operator. Done; until
       step 3, `members` and `org` sit there too, acting as the operator in the org `--org`
       names, and the old top-level names still work, pointing to the new ones.

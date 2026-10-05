@@ -30,6 +30,9 @@ type Host struct {
 	URL  string   `yaml:"url"`
 	Test *Account `yaml:"test,omitempty"`
 	Live *Account `yaml:"live,omitempty"`
+	// Org is the org a user token acts in by default, set with araldo auth
+	// login --org (ADR 0028).
+	Org string `yaml:"org,omitempty"`
 	// User and Token are the one key of a file written before modes, read
 	// as the test key: that is what the CLI made then.
 	User  string `yaml:"user,omitempty"`
@@ -211,6 +214,20 @@ func (s *Store) SignIn(name, base, user, token string, live, insecure bool) (Whe
 	return where, s.Save(f)
 }
 
+// SetOrg sets the org a host's user tokens act in by default ("" for none).
+func (s *Store) SetOrg(name, org string) error {
+	f, err := s.Load()
+	if err != nil {
+		return err
+	}
+	h := f.Hosts[name]
+	if h == nil {
+		return fmt.Errorf("%w to %s", ErrNotSignedIn, name)
+	}
+	h.Org = org
+	return s.Save(f)
+}
+
 // SignOut forgets a host and both its keys.
 func (s *Store) SignOut(name string) error {
 	f, err := s.Load()
@@ -240,7 +257,9 @@ func (s *Store) SignOut(name string) error {
 // Credential is what a command calls the API with.
 type Credential struct {
 	Name, URL, Token, User string
-	Where                  Where
+	// Org is the org to act in: ARALDO_ORG, or the host's default.
+	Org   string
+	Where Where
 	// Live is the mode asked for; a token from the environment is in
 	// whatever mode it is.
 	Live bool
@@ -269,10 +288,13 @@ func (s *Store) Resolve(hostname string, live bool) (Credential, error) {
 	if err != nil {
 		return Credential{}, err
 	}
-	c := Credential{Name: name, URL: base, Live: live}
+	c := Credential{Name: name, URL: base, Live: live, Org: os.Getenv("ARALDO_ORG")}
 	h := f.Hosts[name]
 	if h != nil && h.URL != "" {
 		c.URL = h.URL
+	}
+	if h != nil && c.Org == "" {
+		c.Org = h.Org
 	}
 	if envToken != "" {
 		c.Token, c.Where = envToken, InEnv

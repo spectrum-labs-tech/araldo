@@ -25,7 +25,10 @@ type Client struct {
 	Token string
 	// UserAgent names the caller, e.g. araldo-cli/1.2.3.
 	UserAgent string
-	HTTP      *http.Client
+	// Org names the org a user token acts in (the Araldo-Org header, ADR
+	// 0028): an ID or name. API keys belong to one org and ignore it.
+	Org  string
+	HTTP *http.Client
 }
 
 // New returns a client for baseURL.
@@ -39,6 +42,15 @@ func New(baseURL, token, userAgent string) *Client {
 type APIError struct {
 	Status  int
 	Problem json.RawMessage
+}
+
+// Code is the problem's machine-readable code, if it has one.
+func (e *APIError) Code() string {
+	var p struct {
+		Code string `json:"code"`
+	}
+	_ = json.Unmarshal(e.Problem, &p)
+	return p.Code
 }
 
 func (e *APIError) Error() string {
@@ -80,6 +92,9 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 	req.Header.Set("Accept", "application/json")
 	if c.UserAgent != "" {
 		req.Header.Set("User-Agent", c.UserAgent)
+	}
+	if c.Org != "" {
+		req.Header.Set("Araldo-Org", c.Org)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

@@ -23,8 +23,8 @@ func adminCommands() []command {
 		{name: "users", summary: "Users: create, reset-password", run: runUsers},
 		{name: "keys", summary: "Master keys: generate, rotate, status", run: runKeys},
 		{name: "apikeys", summary: "API keys: create (prints only the key, for piping into a secret store)", run: runAPIKeys},
-		{name: "members", summary: "Org members: list, add, role, remove", run: runMembers},
-		{name: "org", summary: "Org settings: update", run: runOrg},
+		{name: "members", summary: "Org members, as the operator: list, add, role, remove", run: runAdminMembers},
+		{name: "org", summary: "Org settings, as the operator: update", run: runAdminOrg},
 	}
 }
 

@@ -40,8 +40,8 @@ func TestRun(t *testing.T) {
 		{name: "members add needs a target", args: []string{"admin", "members", "add", "--role", "editor"}, wantCode: ExitUsage, wantStderr: "--email"},
 		{name: "members role needs a real role", args: []string{"admin", "members", "role", "--email", "b@example.com", "--role", "boss"}, wantCode: ExitUsage, wantStderr: "--role is owner, admin, editor or viewer"},
 		{name: "org needs update", args: []string{"admin", "org"}, wantCode: ExitUsage, wantStderr: "org update"},
-		{name: "an old name still works and says where it went", args: []string{"members"}, wantCode: ExitUsage,
-			wantStderr: "! araldo members is now araldo admin members"},
+		{name: "an old name still works and says where it went", args: []string{"users"}, wantCode: ExitUsage,
+			wantStderr: "! araldo users is now araldo admin users"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -187,7 +187,7 @@ func TestHelpListsAdminOnce(t *testing.T) {
 		t.Fatalf("help: exit %d", code)
 	}
 	for _, line := range strings.Split(stdout.String(), "\n") {
-		if f := strings.Fields(line); len(f) > 0 && (f[0] == "bootstrap" || f[0] == "members" || f[0] == "apikeys") {
+		if f := strings.Fields(line); len(f) > 0 && (f[0] == "bootstrap" || f[0] == "users" || f[0] == "apikeys") {
 			t.Errorf("help lists %s at the top level: %q", f[0], line)
 		}
 	}

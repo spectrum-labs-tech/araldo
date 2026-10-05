@@ -17,7 +17,7 @@ import (
 // keys (ADR 0019). These are server administration (ADR 0028): they act as
 // the operator, in the org named with --org.
 
-func runMembers(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runAdminMembers(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return usageErr("members list | add | role | remove")
 	}
@@ -121,7 +121,7 @@ func runMembers(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	return nil
 }
 
-func runOrg(ctx context.Context, args []string, _, stderr io.Writer) error {
+func runAdminOrg(ctx context.Context, args []string, _, stderr io.Writer) error {
 	if len(args) == 0 || args[0] != "update" {
 		return usageErr("org update [--org ORG] [--name NAME] [--require-mfa true|false]")
 	}

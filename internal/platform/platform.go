@@ -200,6 +200,8 @@ type Error struct {
 	Err  error
 }
 
+// Error is the error's text, scrubbed of credentials (see Scrub): it is
+// stored on targets, sent in events and logged.
 func (e *Error) Error() string {
 	msg := string(e.Kind)
 	if e.Msg != "" {
@@ -208,7 +210,7 @@ func (e *Error) Error() string {
 	if e.Err != nil {
 		msg += ": " + e.Err.Error()
 	}
-	return msg
+	return Scrub(msg)
 }
 
 func (e *Error) Unwrap() error { return e.Err }

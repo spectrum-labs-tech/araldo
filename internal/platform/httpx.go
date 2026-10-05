@@ -37,7 +37,7 @@ func Do(client *http.Client, req *http.Request) (*http.Response, error) {
 	if wrote.Load() {
 		kind = Uncertain
 	}
-	return nil, &Error{Kind: kind, Code: "network", Msg: "request to " + req.URL.Host + " failed", Err: err}
+	return nil, &Error{Kind: kind, Code: "network", Msg: "request to " + req.URL.Host + " failed", Err: redactURL(err)}
 }
 
 // JSON sends a JSON request and decodes a JSON response into out (if not
@@ -71,7 +71,7 @@ func SendStream(ctx context.Context, client *http.Client, method, url string, he
 	contentType string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		return &Error{Kind: Rejected, Code: "request", Err: err}
+		return &Error{Kind: Rejected, Code: "request", Err: redactURL(err)}
 	}
 	if body != nil {
 		req.ContentLength = length

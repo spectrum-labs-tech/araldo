@@ -168,3 +168,46 @@ func TestMeViewMatchesContract(t *testing.T) {
 		t.Fatalf("does not match the contract: %v\n%s", err, raw)
 	}
 }
+
+// Orgs, as members and the operator see them, and usage render as the
+// contract says, with limits set and unset (ADR 0031).
+func TestOperatorViewsMatchContract(t *testing.T) {
+	t.Parallel()
+	doc, err := openapi3.NewLoader().LoadFromData(contract.OpenAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	three := 3
+	o := &model.Org{ID: uuid.New(), Name: "Araldo", Status: model.OrgReadOnly, StatusNote: "Past due", ExternalRef: "cus_1",
+		Limits: model.OrgLimits{Brands: &three}, CreatedAt: time.Now()}
+	inv := core.ViewInvitation(&model.Invitation{ID: uuid.New(), Email: "a@araldo.dev", Role: model.RoleOwner, ExpiresAt: time.Now()})
+	inv.URL = "https://araldo.example/invite/x"
+	created := core.ViewOperatedOrg(o)
+	created.OwnerInvitation = &inv
+	tests := []struct {
+		name, schema string
+		view         any
+	}{
+		{"an org", "Org", core.ViewOrg(o)},
+		{"an org with no limits", "Org", core.ViewOrg(&model.Org{ID: uuid.New(), Name: "x", Status: model.OrgActive})},
+		{"an operated org", "OperatedOrg", core.ViewOperatedOrg(o)},
+		{"a created org", "OperatedOrg", created},
+		{"usage", "Usage", core.ViewUsage(o.ID, &model.OrgUsage{Brands: 2, MediaBytes: 1 << 40, PeriodStart: time.Now(), PeriodEnd: time.Now()})},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			raw, err := json.Marshal(tt.view)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var v map[string]any
+			if err := json.Unmarshal(raw, &v); err != nil {
+				t.Fatal(err)
+			}
+			if err := doc.Components.Schemas[tt.schema].Value.VisitJSON(v); err != nil {
+				t.Fatalf("does not match the contract: %v\n%s", err, raw)
+			}
+		})
+	}
+}

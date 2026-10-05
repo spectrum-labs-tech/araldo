@@ -18,6 +18,23 @@
 </section>
 {{end}}
 
+{{with $d.Usage}}
+<section class="card">
+  <h2>Usage and limits</h2>
+  {{$l := $d.Org.Limits}}
+  <table>
+    <thead><tr><th>What</th><th>Used</th><th>Limit</th></tr></thead>
+    <tbody>
+      <tr><td>Brands</td><td>{{.Brands}}</td><td>{{with $l.Brands}}{{.}}{{else}}None{{end}}</td></tr>
+      <tr><td>Live channels</td><td>{{.Channels}}</td><td>{{with $l.Channels}}{{.}}{{else}}None{{end}}</td></tr>
+      <tr><td>Members and open invitations</td><td>{{.Members}}</td><td>{{with $l.Members}}{{.}}{{else}}None{{end}}</td></tr>
+      <tr><td>Live posts this month</td><td>{{.PostsCreated}}</td><td>{{with $l.PostsMonth}}{{.}}{{else}}None{{end}}</td></tr>
+    </tbody>
+  </table>
+  {{if $.BillingLink}}<p class="mt-3"><a href="/org/billing">Change your plan in billing</a></p>{{end}}
+</section>
+{{end}}
+
 <section class="card">
   <h2>Members</h2>
   <table>

@@ -36,3 +36,4 @@ open a pull request.
 | [0028](0028-cli-as-api-client.md) | The CLI is an API client, modeled on `gh`; only server administration touches the database | accepted; built (device sign-in and user tokens, a test and a live credential per server, `/v1/members` and `/v1/org`, `araldo admin`); `araldo listen`; `auth switch` not yet |
 | [0029](0029-backward-compatible-migrations.md) | Migrations work with the release still running, and a test enforces it | accepted; built |
 | [0030](0030-install-wide-apps.md) | Install-wide developer apps, managed by the operator, offered to every org beside its own | accepted; built |
+| [0031](0031-operator-api.md) | An operator API, org limits and status, and links out for sign-up and billing | accepted; built |

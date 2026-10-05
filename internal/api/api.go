@@ -63,12 +63,17 @@ type Handler struct {
 	Query map[string][]string
 	// open are the routes that need no API key.
 	open map[string]bool
+	// operatorOnly are the operator API's routes, for operator keys only
+	// (ADR 0031).
+	operatorOnly map[string]bool
 }
 
 // New returns the API handler.
 func New(svc *core.Service, log *slog.Logger) *Handler {
-	h := &Handler{svc: svc, log: log, mux: http.NewServeMux(), limiter: newLimiter(25, 100), Query: map[string][]string{}, open: map[string]bool{}}
+	h := &Handler{svc: svc, log: log, mux: http.NewServeMux(), limiter: newLimiter(25, 100), Query: map[string][]string{}, open: map[string]bool{},
+		operatorOnly: map[string]bool{}}
 	h.routes()
+	h.operatorRoutes()
 	return h
 }
 
@@ -131,7 +136,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.mux.ServeHTTP(w, r)
 		return
 	}
-	a, err := h.authenticate(r)
+	a, err := h.authenticate(r, h.operatorOnly[pattern])
 	if err != nil {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="araldo"`)
 		h.fail(w, r, err)
@@ -147,7 +152,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(context.WithValue(r.Context(), actorKey, a))
-	if r.Method == http.MethodPost {
+	if r.Method == http.MethodPost && !a.Operator {
 		if key := r.Header.Get("Idempotency-Key"); key != "" {
 			h.idempotent(w, r, a, key)
 			return
@@ -177,7 +182,9 @@ func (h *Handler) noRoute(w http.ResponseWriter, r *http.Request) {
 		Message: fmt.Sprintf("There is no %s; see /v1/openapi.yaml for the routes.", r.URL.Path)})
 }
 
-func (h *Handler) authenticate(r *http.Request) (core.Actor, error) {
+// authenticate reads the request's credential: on the operator API an
+// operator key, anywhere else an API key or user token.
+func (h *Handler) authenticate(r *http.Request, operator bool) (core.Actor, error) {
 	auth := r.Header.Get("Authorization")
 	token, ok := strings.CutPrefix(auth, "Bearer ")
 	if !ok {
@@ -191,6 +198,13 @@ func (h *Handler) authenticate(r *http.Request) (core.Actor, error) {
 			Message: "Send your API key as a bearer token: Authorization: Bearer ald_test_…"}
 	}
 	token = strings.TrimSpace(token)
+	if operator {
+		return h.svc.AuthenticateOperatorKey(r.Context(), token, RequestID(r.Context()))
+	}
+	if strings.HasPrefix(token, authn.OperatorKeyPrefix) {
+		return core.Actor{}, &apperr.Error{Kind: apperr.KindUnauthorized, Code: "api_key_invalid",
+			Message: "An operator key works only on the operator API, under /v1/operator/; use an API key or user token here."}
+	}
 	if strings.HasPrefix(token, authn.UserTokenPrefix) {
 		// A person, through the CLI (ADR 0028): the org is the request's.
 		return h.svc.AuthenticateUserToken(r.Context(), token, r.Header.Get("Araldo-Org"), RequestID(r.Context()))
@@ -200,6 +214,9 @@ func (h *Handler) authenticate(r *http.Request) (core.Actor, error) {
 
 // rateKey is the credential a request is counted against.
 func rateKey(a core.Actor) string {
+	if a.OperatorKeyID != nil {
+		return "operator_key:" + a.OperatorKeyID.String()
+	}
 	if a.TokenID != nil {
 		return "user_token:" + a.TokenID.String()
 	}

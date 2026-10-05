@@ -64,6 +64,11 @@ tags:
   - name: Audit
   - name: Platforms
   - name: MCP
+  - name: Operator
+    description: |
+      The install's operator API (ADR 0031), for the service that runs a
+      hosted install: create and manage orgs from outside. Operator keys
+      only (`ald_op_…`, from `araldo admin operator-keys create`).
 
 paths:
   /v1/openapi.yaml:
@@ -1880,6 +1885,147 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/operator/orgs:
+    get:
+      summary: List orgs
+      description: Every org on the install, newest first; or, with `external_ref`, the one org with it (an empty list if none).
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/StartingAfter" }
+        - { $ref: "#/components/parameters/EndingBefore" }
+        - { name: external_ref, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Orgs.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/OperatedOrg" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Create an org
+      description: |
+        Makes an org with no members and invites its first owner: send them
+        `owner_invitation.url`, valid for a week, where they create their
+        account (or sign in) and join. An external reference, unique on the
+        install, ties the org to the caller's own records; a second org with
+        the same one is refused (`external_ref_taken`), so a retry is safe.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, owner_email]
+              properties:
+                name: { type: string, maxLength: 100 }
+                owner_email: { type: string, format: email }
+                external_ref: { type: string, maxLength: 200 }
+                limits: { $ref: "#/components/schemas/OrgLimits" }
+      responses:
+        "201":
+          description: The org, with its owner's invitation.
+          content: { application/json: { schema: { $ref: "#/components/schemas/OperatedOrg" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/orgs/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Get an org
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      responses:
+        "200":
+          description: The org.
+          content: { application/json: { schema: { $ref: "#/components/schemas/OperatedOrg" } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Change an org
+      description: |
+        Changes what is given and leaves the rest. `limits` replaces all
+        four: a limit left out or null is none. Lowering a limit removes
+        nothing; it stops more. `read_only` lets the org read but change
+        nothing (scheduled posts still go out); `suspended` refuses its keys
+        and tokens, shows its members only a notice, and publishes and sends
+        nothing. The note is shown to the org.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+                status: { type: string, enum: [active, read_only, suspended] }
+                status_note: { type: string, maxLength: 500 }
+                external_ref: { type: string, maxLength: 200 }
+                limits: { $ref: "#/components/schemas/OrgLimits" }
+      responses:
+        "200":
+          description: The org.
+          content: { application/json: { schema: { $ref: "#/components/schemas/OperatedOrg" } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Delete an org
+      description: Deletes the org and everything in it, for good; its encrypted data cannot be recovered. `confirm` is the org's exact name.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      parameters:
+        - { name: confirm, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Deleted.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/orgs/{id}/invitations:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Invite someone to an org
+      description: With any role, owners included, such as a new link for a first owner whose invitation expired.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email: { type: string, format: email }
+                role: { type: string, enum: [owner, admin, editor, viewer] }
+      responses:
+        "201":
+          description: The invitation, with its link.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Invitation" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/orgs/{id}/usage:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: An org's usage
+      description: What the org has now, and what it did in a calendar month (UTC), this one unless `month` is given.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      parameters:
+        - { name: month, in: query, schema: { type: string, pattern: "^[0-9]{4}-[0-9]{2}$" }, description: "Such as 2026-10." }
+      responses:
+        "200":
+          description: Usage.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Usage" } } }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/api_keys:
     get:
       summary: List API keys
@@ -2143,6 +2289,10 @@ components:
         as the person in the org the `Araldo-Org` header names (an ID or
         name; not needed for someone in one org), with their current role,
         in the token's mode. Idempotency-Key applies to API keys.
+    operatorKey:
+      type: http
+      scheme: bearer
+      description: An operator key (ald_op_…), for the operator API only (ADR 0031).
 
   parameters:
     ID:
@@ -2672,7 +2822,46 @@ components:
         object: { type: string, enum: [org] }
         name: { type: string }
         require_mfa: { type: boolean }
+        status:
+          type: string
+          enum: [active, read_only, suspended]
+          description: Set by the install's operator. A read-only org can read but not change anything; a suspended one is refused.
+        status_note: { type: string, description: The operator's note on the status. }
+        limits: { $ref: "#/components/schemas/OrgLimits" }
         created_at: { type: string, format: date-time }
+
+    OrgLimits:
+      type: object
+      description: What the org may have, set by the install's operator; null is no limit.
+      properties:
+        brands: { type: integer, nullable: true, minimum: 0 }
+        channels: { type: integer, nullable: true, minimum: 0, description: Live channels. }
+        members: { type: integer, nullable: true, minimum: 0, description: Members and open invitations. }
+        posts_per_month: { type: integer, nullable: true, minimum: 0, description: Live posts created in a calendar month (UTC). }
+
+    OperatedOrg:
+      allOf:
+        - $ref: "#/components/schemas/Org"
+        - type: object
+          properties:
+            external_ref: { type: string, description: The operator's reference for the org; empty if none. }
+            owner_invitation:
+              allOf: [{ $ref: "#/components/schemas/Invitation" }]
+              description: The first owner's invitation, with its link; only in the response that created the org.
+
+    Usage:
+      type: object
+      properties:
+        object: { type: string, enum: [usage] }
+        org: { type: string }
+        period_start: { type: string, format: date-time }
+        period_end: { type: string, format: date-time }
+        brands: { type: integer }
+        live_channels: { type: integer }
+        members: { type: integer, description: Members and open invitations. }
+        live_posts_created: { type: integer, description: In the period. }
+        live_targets_published: { type: integer, description: "Posts published to a channel, in the period." }
+        media_bytes: { type: integer, format: int64, description: Media stored now. }
 
     Member:
       type: object

@@ -225,8 +225,12 @@ func (s *Service) AuthenticateUserToken(ctx context.Context, token, org, request
 			return Actor{}, apperr.Forbidden("%s requires two-factor authentication: turn it on in the dashboard, under your account.", o.Name)
 		}
 	}
+	if o.Status == model.OrgSuspended {
+		return Actor{}, errOrgSuspended
+	}
 	_ = s.store.TouchUserToken(ctx, t.ID, now)
-	return Actor{OrgID: m.OrgID, Livemode: t.Livemode, UserID: &t.UserID, Role: m.Role, TokenID: &t.ID, RequestID: requestID}, nil
+	return Actor{OrgID: m.OrgID, Livemode: t.Livemode, UserID: &t.UserID, Role: m.Role, TokenID: &t.ID, RequestID: requestID,
+		OrgStatus: o.Status}, nil
 }
 
 // pickMembership chooses the membership an org header names: by ID or

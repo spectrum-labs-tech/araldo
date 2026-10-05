@@ -65,6 +65,12 @@ type dash struct {
 // the sandbox and any extra adapters.
 func newDash(t *testing.T, extra ...platform.Adapter) *dash {
 	t.Helper()
+	return newDashWith(t, nil, extra...)
+}
+
+// newDashWith is newDash on a server configured by configure.
+func newDashWith(t *testing.T, configure func(*core.Config), extra ...platform.Adapter) *dash {
+	t.Helper()
 	dsn := os.Getenv("ARALDO_TEST_DSN")
 	if dsn == "" {
 		t.Skip("ARALDO_TEST_DSN not set (task db:up && task test:integration)")
@@ -87,7 +93,11 @@ func newDash(t *testing.T, extra ...platform.Adapter) *dash {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	adapters := append([]platform.Adapter{sandbox.New("https://araldo.test")}, extra...)
 	kr := keyring.New(mk, st)
-	s := core.New(st, kr, platform.NewRegistry(adapters...), log, core.Config{BaseURL: "https://araldo.test"})
+	cfg := core.Config{BaseURL: "https://araldo.test"}
+	if configure != nil {
+		configure(&cfg)
+	}
+	s := core.New(st, kr, platform.NewRegistry(adapters...), log, cfg)
 	email := fmt.Sprintf("web-%s@example.com", uuid.NewString()[:8])
 	u, err := s.CreateUser(ctx, email, "Owner", "correct horse battery")
 	if err != nil {

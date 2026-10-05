@@ -485,16 +485,57 @@ func ParseID(p id.Prefix, s string, what string) (uuid.UUID, error) {
 
 // OrgView is an org's settings.
 type OrgView struct {
-	ID         string    `json:"id"`
-	Object     string    `json:"object"`
-	Name       string    `json:"name"`
-	RequireMFA bool      `json:"require_mfa"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         string `json:"id"`
+	Object     string `json:"object"`
+	Name       string `json:"name"`
+	RequireMFA bool   `json:"require_mfa"`
+	// Status, its note and the limits are the operator's (ADR 0031).
+	Status     model.OrgStatus `json:"status"`
+	StatusNote string          `json:"status_note"`
+	Limits     model.OrgLimits `json:"limits"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 // ViewOrg renders an org.
 func ViewOrg(o *model.Org) OrgView {
-	return OrgView{ID: id.Format(id.Org, o.ID), Object: "org", Name: o.Name, RequireMFA: o.RequireMFA, CreatedAt: o.CreatedAt.UTC()}
+	return OrgView{ID: id.Format(id.Org, o.ID), Object: "org", Name: o.Name, RequireMFA: o.RequireMFA, Status: o.Status,
+		StatusNote: o.StatusNote, Limits: o.Limits, CreatedAt: o.CreatedAt.UTC()}
+}
+
+// OperatedOrgView is an org as the operator API shows it, with its
+// external reference (ADR 0031).
+type OperatedOrgView struct {
+	OrgView
+	ExternalRef string `json:"external_ref"`
+	// OwnerInvitation is the first owner's invitation, in the response
+	// that created the org only.
+	OwnerInvitation *InvitationView `json:"owner_invitation,omitempty"`
+}
+
+// ViewOperatedOrg renders an org for the operator.
+func ViewOperatedOrg(o *model.Org) OperatedOrgView {
+	return OperatedOrgView{OrgView: ViewOrg(o), ExternalRef: o.ExternalRef}
+}
+
+// UsageView is what an org has, and did in a month (ADR 0031).
+type UsageView struct {
+	Object               string    `json:"object"`
+	Org                  string    `json:"org"`
+	PeriodStart          time.Time `json:"period_start"`
+	PeriodEnd            time.Time `json:"period_end"`
+	Brands               int       `json:"brands"`
+	LiveChannels         int       `json:"live_channels"`
+	Members              int       `json:"members"`
+	LivePostsCreated     int       `json:"live_posts_created"`
+	LiveTargetsPublished int       `json:"live_targets_published"`
+	MediaBytes           int64     `json:"media_bytes"`
+}
+
+// ViewUsage renders an org's usage.
+func ViewUsage(orgID uuid.UUID, u *model.OrgUsage) UsageView {
+	return UsageView{Object: "usage", Org: id.Format(id.Org, orgID), PeriodStart: u.PeriodStart.UTC(), PeriodEnd: u.PeriodEnd.UTC(),
+		Brands: u.Brands, LiveChannels: u.Channels, Members: u.Members, LivePostsCreated: u.PostsCreated,
+		LiveTargetsPublished: u.TargetsSent, MediaBytes: u.MediaBytes}
 }
 
 // MemberView is a person's membership of the org.

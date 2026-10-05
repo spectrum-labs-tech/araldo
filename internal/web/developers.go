@@ -4,6 +4,7 @@ package web
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"time"
 
@@ -402,6 +403,15 @@ type orgData struct {
 	Invited    *model.Invitation
 	IsOwner    bool
 	IsAdmin    bool
+	// Usage is shown, against the org's limits, to those who manage it
+	// when it has limits (ADR 0031).
+	Usage *model.OrgUsage
+}
+
+// Limited reports whether the org has any limit.
+func (d *orgData) Limited() bool {
+	l := d.Org.Limits
+	return l.Brands != nil || l.Channels != nil || l.Members != nil || l.PostsMonth != nil
 }
 
 func (s *Server) orgPage(c *reqCtx) error {
@@ -423,8 +433,24 @@ func (s *Server) orgData(c *reqCtx) (*orgData, error) {
 		if d.Invitations, err = s.svc.Invitations(c.ctx(), c.actor); err != nil {
 			return nil, err
 		}
+		if d.Limited() {
+			if d.Usage, err = s.svc.Usage(c.ctx(), c.actor, time.Now()); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return d, nil
+}
+
+// billing sends an owner to the install's billing page with a signed
+// hand-off (ADR 0031).
+func (s *Server) billing(c *reqCtx) error {
+	link, err := s.svc.BillingLink(c.ctx(), c.actor)
+	if err != nil {
+		return err
+	}
+	http.Redirect(c.w, c.r, link, http.StatusSeeOther) //nolint:gosec // G710: the address is ARALDO_BILLING_URL, set by the operator, not the request
+	return nil
 }
 
 func (s *Server) saveOrg(c *reqCtx) error {

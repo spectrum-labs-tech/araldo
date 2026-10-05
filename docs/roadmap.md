@@ -92,7 +92,7 @@ Principles every feature keeps:
 | 11 | AI drafting in the dashboard with the organization's own model key | ADR 0001 | Planned |
 | 12 | The rest of OpenTelemetry (traces, logs, publish lateness) | ADR 0014 | Planned (built-in backups, ADR 0013, were withdrawn: they are the operator's) |
 | 13 | Passkeys (WebAuthn) and OIDC single sign-on | ADR 0007 | Planned |
-| 14 | Hosted plan: a separate install with sign-up, billing and developer apps shared by every organization, at araldo.dev (the project's site and docs, `app.araldo.dev` for the dashboard, `api.araldo.dev` for the API) | ADR 0021, 0030 | Install-wide developer apps built (`araldo admin apps`); sign-up and billing not yet |
+| 14 | Hosted plan: a separate install with sign-up, billing and developer apps shared by every organization, at araldo.dev (the project's site and docs, `app.araldo.dev` for the dashboard, `api.araldo.dev` for the API) | ADR 0021, 0030, 0031 | Built in Araldo: install-wide developer apps (`araldo admin apps`), the operator API with org limits and status, and links out to sign up and to pay. Sign-up and billing themselves live in the host's own service |
 
 ## Not now
 

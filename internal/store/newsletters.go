@@ -303,12 +303,13 @@ func (s *Store) HandoffInFlight(ctx context.Context, orgID, issueID uuid.UUID, n
 
 // ClaimDueHandoffs takes queued deliveries of providers the caller can
 // send through whose hand-off is due, in one org or (orgID nil) every
-// org: each is leased, and counts an attempt.
+// org but suspended ones (ADR 0031): each is leased, and counts an attempt.
 func (s *Store) ClaimDueHandoffs(ctx context.Context, orgID *uuid.UUID, providers []string, now time.Time, lease time.Duration, limit int) ([]*model.IssueDelivery, error) {
 	return collectDeliveries(s.q.Query(ctx, `UPDATE newsletter_deliveries SET lease_until = $3, attempts = attempts + 1, updated_at = now()
 		WHERE id IN (
 			SELECT id FROM newsletter_deliveries WHERE status = 'queued' AND handoff_at <= $2 AND (lease_until IS NULL OR lease_until <= $2)
 				AND ($1::uuid IS NULL OR org_id = $1) AND provider = ANY($5)
+				AND NOT EXISTS (SELECT 1 FROM orgs WHERE orgs.id = newsletter_deliveries.org_id AND orgs.status = 'suspended')
 			ORDER BY handoff_at LIMIT $4 FOR UPDATE SKIP LOCKED)
 		RETURNING `+deliveryCols, orgID, now, now.Add(lease), limit, providers))
 }

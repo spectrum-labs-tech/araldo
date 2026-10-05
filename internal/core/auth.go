@@ -521,7 +521,11 @@ func (s *Service) MemberActor(ctx context.Context, userID, orgID uuid.UUID, live
 	if err != nil {
 		return Actor{}, nil, notFound(err, "org")
 	}
-	return Actor{OrgID: orgID, Livemode: livemode, UserID: &userID, Role: m.Role, RequestID: requestID}, m, nil
+	o, err := s.store.Org(ctx, orgID)
+	if err != nil {
+		return Actor{}, nil, notFound(err, "org")
+	}
+	return Actor{OrgID: orgID, Livemode: livemode, UserID: &userID, Role: m.Role, RequestID: requestID, OrgStatus: o.Status}, m, nil
 }
 
 func truncate(s string, n int) string {

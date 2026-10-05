@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -55,6 +56,13 @@ type Config struct {
 	// MaxVideoBytes is the largest video accepted (ADR 0027); zero is
 	// DefaultMaxVideoBytes.
 	MaxVideoBytes int64
+	// SignupURL, when set, is where people create an account and org; then
+	// members cannot create orgs themselves (ADR 0031).
+	SignupURL string
+	// BillingURL, when set, is where owners are sent, with a hand-off
+	// signed with BillingLinkKey, to manage billing (ADR 0031).
+	BillingURL     string
+	BillingLinkKey []byte
 }
 
 // Service is the application.
@@ -178,6 +186,12 @@ type Actor struct {
 	// nothing. OperatorCommand is the command, for the audit log.
 	Operator        bool
 	OperatorCommand string
+	// OperatorKeyID is the operator key acting through the operator API
+	// (ADR 0031), for the audit log.
+	OperatorKeyID *uuid.UUID
+	// OrgStatus is the org's status when the actor was made (ADR 0031):
+	// read-only refuses changes, suspended everything.
+	OrgStatus model.OrgStatus
 }
 
 // IsKey reports whether the actor is an API key.
@@ -199,6 +213,22 @@ func (a Actor) Can(p Permission) bool {
 }
 
 func (a Actor) require(p Permission) error {
+	if err := a.statusAllows(p); err != nil {
+		return err
+	}
+	return a.permitted(p)
+}
+
+// requireToRead is require for reading what p manages (an org's API keys
+// need keys:write to see): a read-only org still reads it.
+func (a Actor) requireToRead(p Permission) error {
+	if !a.Operator && a.OrgStatus == model.OrgSuspended {
+		return errOrgSuspended
+	}
+	return a.permitted(p)
+}
+
+func (a Actor) permitted(p Permission) error {
 	if !a.Can(p) {
 		if a.IsKey() {
 			return &apperr.Error{Kind: apperr.KindForbidden, Code: "scope_missing", Message: "This API key lacks the " + string(p) + " scope."}
@@ -207,6 +237,24 @@ func (a Actor) require(p Permission) error {
 	}
 	return nil
 }
+
+// statusAllows checks the org's status lets the actor use p: a suspended
+// org nothing, a read-only one only reading (ADR 0031). The operator is
+// never held back.
+func (a Actor) statusAllows(p Permission) error {
+	switch {
+	case a.Operator:
+	case a.OrgStatus == model.OrgSuspended:
+		return errOrgSuspended
+	case a.OrgStatus == model.OrgReadOnly && !strings.HasSuffix(string(p), ":read"):
+		return &apperr.Error{Kind: apperr.KindForbidden, Code: "org_read_only",
+			Message: "This org is read-only: it can read, but not change anything. An owner can find out why under Org settings."}
+	}
+	return nil
+}
+
+var errOrgSuspended = &apperr.Error{Kind: apperr.KindForbidden, Code: "org_suspended",
+	Message: "This org is suspended. An owner can find out why by signing in to the dashboard."}
 
 // brandAllowed checks a key restricted to one brand.
 func (a Actor) brandAllowed(brandID uuid.UUID) error {
@@ -260,6 +308,9 @@ func (s *Service) audit(ctx context.Context, tx *store.Store, a Actor, action, t
 		// The operator, not a member: what they ran is the record.
 		e.ActorUser, e.ActorKey = nil, nil
 		e.Detail = map[string]any{"operator_command": a.OperatorCommand}
+		if a.OperatorKeyID != nil {
+			e.Detail = map[string]any{"operator_key": id.Format(id.OperatorKey, *a.OperatorKeyID)}
+		}
 		for k, v := range detail {
 			e.Detail[k] = v
 		}

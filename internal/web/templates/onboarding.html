@@ -1,9 +1,13 @@
 {{define "content"}}
 <h1>Create your organization</h1>
 <p class="mb-4">An organization holds your brands, channels, API keys and team.</p>
+{{with .SignupURL}}
+<p>On this server, organizations are created when you sign up: <a href="{{.}}">sign up</a>, or ask someone to invite you to theirs.</p>
+{{else}}
 <form method="post" action="/onboarding" class="flex max-w-xl flex-col gap-4">
   <input type="hidden" name="csrf" value="{{.CSRF}}">
   <label>Name <input name="name" required maxlength="100" placeholder="Spectrum Labs" autofocus></label>
   <div><button class="btn-primary">Create</button></div>
 </form>
+{{end}}
 {{end}}

@@ -93,7 +93,60 @@ type Org struct {
 	ID         uuid.UUID
 	Name       string
 	RequireMFA bool
+	// Status, its note, Limits and ExternalRef are set by the operator
+	// (ADR 0031). ExternalRef is "" when unset.
+	Status      OrgStatus
+	StatusNote  string
+	Limits      OrgLimits
+	ExternalRef string
+	CreatedAt   time.Time
+}
+
+// OrgStatus is what an org may do (ADR 0031).
+type OrgStatus string
+
+const (
+	// OrgActive: everything.
+	OrgActive OrgStatus = "active"
+	// OrgReadOnly: members and keys read but change nothing; scheduled
+	// posts still go out.
+	OrgReadOnly OrgStatus = "read_only"
+	// OrgSuspended: keys are refused, members see a notice, and nothing is
+	// published or sent.
+	OrgSuspended OrgStatus = "suspended"
+)
+
+// Valid reports whether s is a known status.
+func (s OrgStatus) Valid() bool { return s == OrgActive || s == OrgReadOnly || s == OrgSuspended }
+
+// OrgLimits caps what an org may have (ADR 0031); nil is unlimited.
+type OrgLimits struct {
+	Brands     *int `json:"brands"`
+	Channels   *int `json:"channels"`
+	Members    *int `json:"members"`
+	PostsMonth *int `json:"posts_per_month"`
+}
+
+// OrgUsage is what an org has and did in a month (ADR 0031).
+type OrgUsage struct {
+	Brands       int
+	Channels     int // live
+	Members      int // with open invitations
+	PostsCreated int // live, in the month
+	TargetsSent  int // live, published in the month
+	MediaBytes   int64
+	PeriodStart  time.Time
+	PeriodEnd    time.Time
+}
+
+// OperatorKey authenticates the operator API (ADR 0031).
+type OperatorKey struct {
+	ID         uuid.UUID
+	Name       string
+	Hint       string
 	CreatedAt  time.Time
+	LastUsedAt *time.Time
+	RevokedAt  *time.Time
 }
 
 // Membership is a user's role in an org.

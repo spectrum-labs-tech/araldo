@@ -25,6 +25,7 @@ func adminCommands() []command {
 		{name: "apikeys", summary: "API keys: create (prints only the key, for piping into a secret store)", run: runAPIKeys},
 		{name: "members", summary: "Org members, as the operator: list, add, role, remove", run: runAdminMembers},
 		{name: "org", summary: "Org settings, as the operator: update", run: runAdminOrg},
+		{name: "operator-keys", summary: "Keys for the operator API, which manages orgs from outside: create, list, revoke", run: runAdminOperatorKeys},
 		{name: "apps", summary: "Developer apps every org can connect through: list, add, rename, remove", run: runAdminApps},
 	}
 }
@@ -40,7 +41,7 @@ func runAdmin(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 		_, _ = fmt.Fprintln(w, "Run where the server's configuration is (a pod, the host). Changes are audited as the operator.")
 		_, _ = fmt.Fprintln(w)
 		for _, c := range adminCommands() {
-			_, _ = fmt.Fprintf(w, "  %-10s %s\n", c.name, c.summary)
+			_, _ = fmt.Fprintf(w, "  %-14s %s\n", c.name, c.summary)
 		}
 		if len(args) == 0 {
 			return usageErr("name a command")

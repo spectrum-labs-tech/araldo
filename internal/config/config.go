@@ -55,7 +55,19 @@ type Config struct {
 	// MaxVideoBytes is the largest video accepted (ARALDO_MAX_VIDEO_BYTES,
 	// default 1 GiB); video needs S3 (ADR 0027).
 	MaxVideoBytes int64
+	// SignupURL is where people create an account and org, on an install
+	// whose orgs come from the operator (ARALDO_SIGNUP_URL, ADR 0031).
+	SignupURL string
+	// BillingURL is where owners manage billing (ARALDO_BILLING_URL),
+	// reached with a hand-off signed with BillingLinkKey
+	// (ARALDO_BILLING_LINK_KEY, or read from ARALDO_BILLING_LINK_KEY_FILE;
+	// at least 32 characters).
+	BillingURL     string
+	BillingLinkKey string
 }
+
+// MinBillingLinkKey is the shortest billing link key accepted.
+const MinBillingLinkKey = 32
 
 // Transit reaches a Transit key (ARALDO_TRANSIT_*). Addr and Key turn it
 // on; it authenticates with Token, or logs in as Role with the pod's
@@ -96,6 +108,9 @@ func Load() (Config, error) {
 			JWTFile:  os.Getenv("ARALDO_TRANSIT_JWT_FILE"),
 		},
 		BaseURL:        strings.TrimRight(first(os.Getenv("ARALDO_BASE_URL"), "http://localhost:8080"), "/"),
+		SignupURL:      os.Getenv("ARALDO_SIGNUP_URL"),
+		BillingURL:     os.Getenv("ARALDO_BILLING_URL"),
+		BillingLinkKey: os.Getenv("ARALDO_BILLING_LINK_KEY"),
 		Listen:         first(os.Getenv("ARALDO_LISTEN"), ":8080"),
 		ClientIPHeader: os.Getenv("ARALDO_CLIENT_IP_HEADER"),
 		LogLevel:       first(os.Getenv("ARALDO_LOG_LEVEL"), "info"),
@@ -144,6 +159,21 @@ func Load() (Config, error) {
 			errs = append(errs, fmt.Errorf("ARALDO_TRANSIT_TOKEN_FILE: %w", err))
 		}
 		c.Transit.Token = strings.TrimSpace(string(b))
+	}
+	if f := os.Getenv("ARALDO_BILLING_LINK_KEY_FILE"); f != "" && c.BillingLinkKey == "" {
+		b, err := os.ReadFile(f) //nolint:gosec // G304: the operator chooses this path
+		if err != nil {
+			errs = append(errs, fmt.Errorf("ARALDO_BILLING_LINK_KEY_FILE: %w", err))
+		}
+		c.BillingLinkKey = strings.TrimSpace(string(b))
+	}
+	for name, v := range map[string]string{"ARALDO_SIGNUP_URL": c.SignupURL, "ARALDO_BILLING_URL": c.BillingURL} {
+		if u, err := url.Parse(v); v != "" && (err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "") {
+			errs = append(errs, fmt.Errorf("%s %q is not an absolute URL", name, v))
+		}
+	}
+	if c.BillingURL != "" && len(c.BillingLinkKey) < MinBillingLinkKey {
+		errs = append(errs, fmt.Errorf("ARALDO_BILLING_URL needs ARALDO_BILLING_LINK_KEY (or _FILE) of at least %d characters", MinBillingLinkKey))
 	}
 	if t := c.Transit; t.Addr != "" || t.Key != "" {
 		if t.Addr == "" || t.Key == "" {

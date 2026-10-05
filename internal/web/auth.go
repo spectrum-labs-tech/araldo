@@ -311,7 +311,7 @@ func (s *Server) onboarding(w http.ResponseWriter, r *http.Request) {
 			s.renderError(c, http.StatusForbidden, "This form expired. Reload and try again.")
 			return
 		}
-		o, err := s.svc.CreateOrg(r.Context(), c.user.ID, r.PostFormValue("name"))
+		o, err := s.svc.CreateOwnOrg(r.Context(), c.user.ID, r.PostFormValue("name"))
 		if err != nil {
 			v := s.view(c, "", "Create your org", nil)
 			v.Error = apperr.As(err).Message

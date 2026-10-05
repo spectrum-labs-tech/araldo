@@ -61,6 +61,11 @@ func (s *Service) ConnectChannel(ctx context.Context, a Actor, in ConnectInput) 
 	if !ok {
 		return nil, apperr.Invalid("provider_unsupported", "provider", "Araldo cannot connect to %q yet.", in.Provider)
 	}
+	if a.Livemode {
+		if err := s.checkLimit(ctx, a, limitChannels, 1, ""); err != nil {
+			return nil, err
+		}
+	}
 	settings, secrets, err := splitFields(adapter.Rules().Name+" channels", adapter.Fields(), in.Fields)
 	if err != nil {
 		return nil, err

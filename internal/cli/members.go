@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"text/tabwriter"
 
+	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
@@ -126,14 +127,23 @@ func runAdminOrg(ctx context.Context, args []string, _, stderr io.Writer) error 
 		return runAdminOrgDelete(ctx, args[1:], stderr)
 	}
 	if len(args) == 0 || args[0] != "update" {
-		return usageErr("org update [--org ORG] [--name NAME] [--require-mfa true|false] | delete --org ORG --confirm NAME")
+		return usageErr("org update [--org ORG] [--name NAME] [--require-mfa true|false] [--status S] [--status-note N] [--external-ref R] [--limits L] | delete --org ORG --confirm NAME")
 	}
-	var as, org, name, requireMFA string
+	var as, org, name, requireMFA, status, note, ref, limits string
+	set := map[string]bool{}
 	if err := flags("org update", stderr, args[1:], func(fs *flag.FlagSet) {
 		fs.StringVar(&org, "org", "", "the org, by ID or name (needed when the server has more than one)")
 		fs.StringVar(&as, "as", "", "no longer needed (picks that member's org if --org is not given)")
 		fs.StringVar(&name, "name", "", "a new name")
 		fs.StringVar(&requireMFA, "require-mfa", "", "true to require two-factor authentication of every member, false not to")
+		// Each records that it was given, so an empty value can clear.
+		given := func(name string, v *string) func(string) error {
+			return func(s string) error { *v, set[name] = s, true; return nil }
+		}
+		fs.Func("status", "active, read_only or suspended (ADR 0031)", given("status", &status))
+		fs.Func("status-note", "a note on the status, shown to the org", given("status-note", &note))
+		fs.Func("external-ref", "your reference for the org, unique on the server", given("external-ref", &ref))
+		fs.Func("limits", "brands=N,channels=N,members=N,posts_per_month=N, each N or none; any left out is none", given("limits", &limits))
 	}); err != nil {
 		return err
 	}
@@ -158,7 +168,29 @@ func runAdminOrg(ctx context.Context, args []string, _, stderr io.Writer) error 
 	if err := a.Svc.UpdateOrg(ctx, actor, nil, newName, mfa); err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(stderr, "Updated %s (two-factor required: %v).\n", newName, mfa)
+	var ch core.OrgChange
+	if set["status"] {
+		st := model.OrgStatus(status)
+		ch.Status = &st
+	}
+	if set["status-note"] {
+		ch.StatusNote = &note
+	}
+	if set["external-ref"] {
+		ch.ExternalRef = &ref
+	}
+	if set["limits"] {
+		l, err := parseLimits(limits)
+		if err != nil {
+			return err
+		}
+		ch.Limits = &l
+	}
+	o, err := a.Svc.ChangeOrg(ctx, actor, ch)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(stderr, "Updated %s (two-factor required: %v, status: %s).\n", newName, mfa, o.Status)
 	return nil
 }
 

@@ -17,29 +17,39 @@ func errorsIs(err, target error) bool { return errors.Is(err, target) }
 
 // Orgs and memberships.
 
+const orgCols = `id, name, require_mfa, status, status_note, COALESCE(external_ref, ''), limit_brands, limit_channels, limit_members,
+	limit_posts_month, created_at`
+
+func scanOrg(r pgx.Row) (*model.Org, error) {
+	var o model.Org
+	err := r.Scan(&o.ID, &o.Name, &o.RequireMFA, &o.Status, &o.StatusNote, &o.ExternalRef, &o.Limits.Brands, &o.Limits.Channels,
+		&o.Limits.Members, &o.Limits.PostsMonth, &o.CreatedAt)
+	return &o, mapErr(err)
+}
+
 func (s *Store) CreateOrg(ctx context.Context, o *model.Org) error {
-	_, err := s.q.Exec(ctx, `INSERT INTO orgs (id, name, require_mfa) VALUES ($1, $2, $3)`, o.ID, o.Name, o.RequireMFA)
+	if o.Status == "" {
+		o.Status = model.OrgActive
+	}
+	_, err := s.q.Exec(ctx, `INSERT INTO orgs (id, name, require_mfa, status, status_note, external_ref, limit_brands, limit_channels,
+		limit_members, limit_posts_month) VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10)`,
+		o.ID, o.Name, o.RequireMFA, o.Status, o.StatusNote, o.ExternalRef, o.Limits.Brands, o.Limits.Channels, o.Limits.Members, o.Limits.PostsMonth)
 	return mapErr(err)
 }
 
 func (s *Store) Org(ctx context.Context, id uuid.UUID) (*model.Org, error) {
-	var o model.Org
-	err := s.q.QueryRow(ctx, `SELECT id, name, require_mfa, created_at FROM orgs WHERE id = $1`, id).Scan(&o.ID, &o.Name, &o.RequireMFA, &o.CreatedAt)
-	return &o, mapErr(err)
+	return scanOrg(s.q.QueryRow(ctx, `SELECT `+orgCols+` FROM orgs WHERE id = $1`, id))
 }
 
 // FindOrgs returns up to limit orgs named name (ignoring case), or with an
 // empty name any orgs, oldest first.
 func (s *Store) FindOrgs(ctx context.Context, name string, limit int) ([]*model.Org, error) {
-	rows, err := s.q.Query(ctx, `SELECT id, name, require_mfa, created_at FROM orgs
+	rows, err := s.q.Query(ctx, `SELECT `+orgCols+` FROM orgs
 		WHERE $1 = '' OR lower(name) = lower($1) ORDER BY created_at LIMIT $2`, name, limit)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Org, error) {
-		var o model.Org
-		return &o, r.Scan(&o.ID, &o.Name, &o.RequireMFA, &o.CreatedAt)
-	})
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Org, error) { return scanOrg(r) })
 }
 
 func (s *Store) UpdateOrg(ctx context.Context, o *model.Org) error {

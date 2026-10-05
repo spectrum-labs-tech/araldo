@@ -56,8 +56,11 @@
     <div class="side-head">Settings</div>
     <a href="/org" {{if eq .Nav "org"}}class="active" aria-current="page"{{end}}>Organization</a>
     <a href="/account" {{if eq .Nav "account"}}class="active" aria-current="page"{{end}}>Your account</a>
+    {{if .BillingLink}}<a href="/org/billing">Billing</a>{{end}}
   </nav>
   <main id="main" class="{{if .Guide}}max-w-[1400px] {{else if not .Wide}}max-w-[1100px] {{end}}min-w-0 px-4 py-6 md:px-8">
+    {{if eq .OrgStatus "read_only"}}<div class="alert" role="status"><strong>This org is read-only:</strong> you can see everything, but not change it.
+      {{with .StatusNote}}{{.}}{{end}} {{if .BillingLink}}<a href="/org/billing">Go to billing</a>{{end}}</div>{{end}}
     {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
     {{if .Error}}<div class="alert" role="alert"><strong>{{.Error}}</strong>
       {{if .Problems}}<ul class="mt-1.5 list-disc pl-5">{{range .Problems}}<li>{{if .Param}}<code>{{.Param}}</code>: {{end}}{{.Message}}</li>{{end}}</ul>{{end}}</div>{{end}}

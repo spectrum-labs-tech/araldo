@@ -355,7 +355,8 @@ type ClaimedTarget struct {
 }
 
 // ClaimDueTargets leases up to limit queued targets that are due, one per
-// channel, skipping channels on hold or already publishing (ADR 0011).
+// channel, skipping channels on hold or already publishing (ADR 0011), and
+// suspended orgs (ADR 0031): their posts wait, and fail at their deadline.
 func (s *Store) ClaimDueTargets(ctx context.Context, owner string, now, leaseUntil time.Time, limit int) ([]ClaimedTarget, error) {
 	rows, err := s.q.Query(ctx, `
 		WITH due AS (
@@ -364,6 +365,7 @@ func (s *Store) ClaimDueTargets(ctx context.Context, owner string, now, leaseUnt
 			WHERE t.status = 'queued' AND t.next_attempt_at <= $2
 			  AND c.status = 'active' AND (c.hold_until IS NULL OR c.hold_until <= $2)
 			  AND NOT EXISTS (SELECT 1 FROM post_targets o WHERE o.channel_id = t.channel_id AND o.status = 'publishing')
+			  AND NOT EXISTS (SELECT 1 FROM orgs WHERE orgs.id = t.org_id AND orgs.status = 'suspended')
 			ORDER BY t.channel_id, t.next_attempt_at, t.id
 		), picked AS (
 			SELECT t.id FROM post_targets t JOIN due ON due.id = t.id

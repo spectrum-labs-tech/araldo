@@ -1,0 +1,9 @@
+{{define "content"}}
+<h1>This org is suspended</h1>
+<p class="mb-4">Nothing in it can be seen or changed, and nothing is published or sent, until it is active again.
+  Scheduled posts whose deadline passes meanwhile are not published.</p>
+{{with .StatusNote}}<p class="mb-4">{{.}}</p>{{end}}
+{{if .BillingLink}}<p><a class="btn btn-primary" href="/org/billing">Go to billing</a></p>
+{{else}}<p>An owner of the org can set this right.</p>{{end}}
+{{if gt (len .Orgs) 1}}<p class="mt-4 text-sm text-muted">You can switch to another of your orgs above.</p>{{end}}
+{{end}}

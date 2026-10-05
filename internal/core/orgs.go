@@ -206,6 +206,9 @@ func (s *Service) AddMember(ctx context.Context, a Actor, ss *model.Session, ema
 			return nil, err
 		}
 	}
+	if err := s.checkLimit(ctx, a, limitMembers, 1, ""); err != nil {
+		return nil, err
+	}
 	u, err := s.UserByEmail(ctx, email)
 	if errors.Is(err, apperr.ErrNotFound) {
 		if tempPassword == "" {
@@ -397,6 +400,9 @@ func (s *Service) CreateBrand(ctx context.Context, a Actor, in BrandInput) (*mod
 		return nil, apperr.Forbidden("This API key is limited to one brand.")
 	}
 	if err := in.check(); err != nil {
+		return nil, err
+	}
+	if err := s.checkLimit(ctx, a, limitBrands, 1, ""); err != nil {
 		return nil, err
 	}
 	b := &model.Brand{ID: id.New(), OrgID: a.OrgID, Name: in.Name, Slug: in.Slug, Timezone: in.Timezone, ApprovalPolicy: in.ApprovalPolicy,
@@ -637,7 +643,7 @@ func keyVisible(a Actor, k *model.APIKey) bool {
 
 // APIKeys lists the org's keys (a key sees those of its mode and brand).
 func (s *Service) APIKeys(ctx context.Context, a Actor) ([]*model.APIKey, error) {
-	if err := a.require(PermKeysWrite); err != nil {
+	if err := a.requireToRead(PermKeysWrite); err != nil {
 		return nil, err
 	}
 	all, err := s.store.APIKeys(ctx, a.OrgID)
@@ -657,7 +663,7 @@ func (s *Service) APIKeys(ctx context.Context, a Actor) ([]*model.APIKey, error)
 // look (it shows who or what made a post); a key needs keys:write.
 func (s *Service) APIKey(ctx context.Context, a Actor, keyID uuid.UUID) (*model.APIKey, error) {
 	if a.IsKey() {
-		if err := a.require(PermKeysWrite); err != nil {
+		if err := a.requireToRead(PermKeysWrite); err != nil {
 			return nil, err
 		}
 	}
@@ -721,6 +727,9 @@ func (s *Service) RollOwnKey(ctx context.Context, a Actor, overlap time.Duration
 	if !a.IsKey() {
 		return "", nil, apperr.Forbidden("Only an API key can roll itself.")
 	}
+	if err := a.statusAllows(PermKeysWrite); err != nil {
+		return "", nil, err
+	}
 	return s.rollKey(ctx, a, *a.KeyID, overlap, true)
 }
 
@@ -773,9 +782,16 @@ func (s *Service) AuthenticateKey(ctx context.Context, plain, requestID string) 
 	if !k.Active(now) {
 		return Actor{}, &apperr.Error{Kind: apperr.KindUnauthorized, Code: "api_key_expired", Message: "This API key was revoked or has expired."}
 	}
+	o, err := s.store.Org(ctx, k.OrgID)
+	if err != nil {
+		return Actor{}, err
+	}
+	if o.Status == model.OrgSuspended {
+		return Actor{}, errOrgSuspended
+	}
 	_ = s.store.TouchAPIKey(ctx, k.ID, now)
 	return Actor{OrgID: k.OrgID, Livemode: k.Livemode, KeyID: &k.ID, Scopes: k.Scopes, BrandID: k.BrandID, KeyExpiresAt: k.ExpiresAt,
-		RequestID: requestID}, nil
+		RequestID: requestID, OrgStatus: o.Status}, nil
 }
 
 // MeView is what a credential can learn about itself: the org and mode it

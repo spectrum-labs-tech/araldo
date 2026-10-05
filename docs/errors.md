@@ -13,6 +13,15 @@ every problem in `errors`, each with its own `code` and `param`.
   Administrative scopes (`keys:write`, `posts:approve`, `audit:read`) are
   held only when a key lists them.
 - **forbidden** (403): the caller may not do this.
+- **org_read_only** (403): the install's operator made the org read-only:
+  it can read, but not change anything. The dashboard says why.
+- **org_suspended** (403): the install's operator suspended the org; its
+  keys and tokens are refused until it is active again.
+- **limit_reached** (403): the org has reached one of its limits (the
+  `param` names it: `brands`, `channels`, `members` or `posts_per_month`).
+- **operator_key_invalid** (401), **operator_key_revoked** (401): the
+  operator API needs a valid operator key (`ald_op_…`).
+- **external_ref_taken** (409): another org has that external reference.
 - **rate_limited** (429): slow down; see `Retry-After`.
 
 ## Availability

@@ -131,3 +131,36 @@ func TestLoadPrivateNetworks(t *testing.T) {
 		t.Fatalf("a bad setting: %v", err)
 	}
 }
+
+func TestLoadSignupAndBilling(t *testing.T) {
+	t.Setenv("ARALDO_DATABASE_URL", "postgres://x")
+	t.Setenv("ARALDO_BASE_URL", "https://araldo.example")
+	tests := []struct {
+		name                 string
+		signup, billing, key string
+		wantErr              string
+	}{
+		{name: "neither"},
+		{name: "both", signup: "https://araldo.example/signup", billing: "https://billing.araldo.example", key: strings.Repeat("k", 32)},
+		{name: "a relative sign-up URL", signup: "/signup", wantErr: "ARALDO_SIGNUP_URL"},
+		{name: "billing without a key", billing: "https://billing.araldo.example", wantErr: "ARALDO_BILLING_LINK_KEY"},
+		{name: "billing with a short key", billing: "https://billing.araldo.example", key: "short", wantErr: "at least 32"},
+		{name: "a billing URL that is not one", billing: "billing", key: strings.Repeat("k", 32), wantErr: "ARALDO_BILLING_URL"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("ARALDO_SIGNUP_URL", tt.signup)
+			t.Setenv("ARALDO_BILLING_URL", tt.billing)
+			t.Setenv("ARALDO_BILLING_LINK_KEY", tt.key)
+			c, err := Load()
+			switch {
+			case tt.wantErr == "" && err != nil:
+				t.Fatal(err)
+			case tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)):
+				t.Fatalf("Load() = %v, want an error naming %s", err, tt.wantErr)
+			case tt.wantErr == "" && (c.SignupURL != tt.signup || c.BillingURL != tt.billing || c.BillingLinkKey != tt.key):
+				t.Fatalf("config %+v", c)
+			}
+		})
+	}
+}

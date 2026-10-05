@@ -26,6 +26,9 @@ Everything comes from environment variables.
 | `ARALDO_S3_REGION` | | Default `auto` (R2); AWS needs the bucket's region. |
 | `ARALDO_S3_PREFIX` | | Key prefix, default `media/`. |
 | `ARALDO_MAX_VIDEO_BYTES` | | The largest video accepted, in bytes; default 1073741824 (1 GiB). Video needs S3. |
+| `ARALDO_SIGNUP_URL` | | Where people create an account and org, on an install that hosts orgs for others (see Hosting orgs for others). The sign-in page links there, and members can no longer create orgs themselves. |
+| `ARALDO_BILLING_URL` | | Where owners manage billing; they get a Billing link that sends them there with a signed hand-off. |
+| `ARALDO_BILLING_LINK_KEY` | with a billing URL | The key that signs the hand-off, at least 32 characters, shared with the billing service. Or `ARALDO_BILLING_LINK_KEY_FILE`. |
 
 ## First run
 
@@ -438,6 +441,74 @@ still work for now, and say where they went; `--as` is no longer needed.
 
 `members add` prints a temporary password for someone without an account
 (or reads one with `--password-stdin`).
+
+## Hosting orgs for others
+
+An install that hosts orgs for other people (a hosted plan, an agency
+running Araldo for its clients) keeps accounts and billing in its own
+service, which drives Araldo from outside
+([ADR 0031](adr/0031-operator-api.md)). Araldo offers that service an
+**operator API**, limits and a status per org, and links out to sign up
+and to pay; it knows nothing of plans, prices or payment providers.
+
+**Operator keys** call the operator API, under `/v1/operator/`, and
+nothing else; org keys and user tokens cannot call it. Each key is shown
+once:
+
+```bash
+araldo admin operator-keys create --name "billing service"
+araldo admin operator-keys list
+araldo admin operator-keys revoke --key opkey_…
+```
+
+With one, the service creates an org with `POST /v1/operator/orgs` (a
+name, the first owner's email, an optional `external_ref` of its own,
+unique on the install, and limits) and sends the first owner the
+invitation link in the response; they set their own password and
+two-factor authentication in Araldo. It finds an org by `external_ref`,
+changes its name, status, note and limits, invites people, reads its
+usage for a month, and deletes it. Every change is audited with the key's
+ID. The API reference lists the operations under Operator.
+
+**Limits** cap brands, live channels, members (with open invitations) and
+live posts a calendar month (UTC); each is unlimited unless set, and
+lowering one removes nothing. A member who reaches one is refused with
+`limit_reached`, and owners and admins see usage against the limits on
+the org page.
+
+**Status** is `active`, `read_only` (members and keys read but change
+nothing; scheduled posts still go out) or `suspended` (keys and tokens
+are refused, members see only a notice, and nothing is published or
+sent; posts whose deadline passes meanwhile are not published). A note
+with the status is shown to the org.
+
+The operator can do the same from the command line:
+
+```bash
+araldo admin org update --org "Customer" --status read_only --status-note "Your card was declined."
+araldo admin org update --org "Customer" --limits brands=3,channels=10,members=5,posts_per_month=500 --external-ref cus_123
+```
+
+**Links out.** With `ARALDO_SIGNUP_URL`, the sign-in page offers *Create
+an account* there, and orgs come only from the operator. With
+`ARALDO_BILLING_URL` and `ARALDO_BILLING_LINK_KEY`, owners see *Billing*,
+which sends them to that URL with `token=` added: a hand-off naming the
+org (and its `external_ref`), the person and their role, valid for five
+minutes. Owners can follow it from a suspended org, which is how one pays
+to be restored. The billing service checks it as ADR 0031 describes:
+
+```text
+token     = "v1." + payload + "." + signature        (both base64url, unpadded)
+payload   = JSON {org, external_ref, user, email, role, iat, exp}
+signature = HMAC-SHA256(ARALDO_BILLING_LINK_KEY, "v1." + payload)
+```
+
+Compare the signature in constant time, refuse it once `exp` has passed,
+and accept each token once.
+
+**Developer apps for every org** ([ADR 0030](adr/0030-install-wide-apps.md),
+under Connecting platforms) spare a hosted install's customers registering
+their own.
 
 ## Media
 

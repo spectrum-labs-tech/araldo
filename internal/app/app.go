@@ -133,6 +133,7 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 		instagram.New(client),
 	)
 	ccfg := core.Config{BaseURL: cfg.BaseURL, PrivateWebhooks: cfg.PrivateWebhooks, MaxVideoBytes: cfg.MaxVideoBytes,
+		SignupURL: cfg.SignupURL, BillingURL: cfg.BillingURL, BillingLinkKey: []byte(cfg.BillingLinkKey),
 		AdNetworks: []ads.Reporter{reddit.New(client)}, AnalyticsSources: []analytics.Source{plausible.New(client), ga4.New(client)},
 		Mailers: []email.Mailer{brevo.New(client)}}
 	if s := cfg.S3; s.Bucket != "" {

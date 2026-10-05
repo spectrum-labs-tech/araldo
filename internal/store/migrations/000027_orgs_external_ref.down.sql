@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS orgs_external_ref_key;

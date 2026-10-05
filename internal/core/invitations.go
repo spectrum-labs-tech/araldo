@@ -51,20 +51,36 @@ func (s *Service) InviteMember(ctx context.Context, a Actor, ss *model.Session, 
 	if err != nil {
 		return "", nil, err
 	}
+	if err := s.checkLimit(ctx, a, limitMembers, 1, norm); err != nil {
+		return "", nil, err
+	}
 	o, err := s.store.Org(ctx, a.OrgID)
 	if err != nil {
 		return "", nil, err
 	}
-	token, hash := authn.NewToken()
-	inv := &model.Invitation{ID: id.New(), OrgID: a.OrgID, OrgName: o.Name, Email: strings.TrimSpace(email), Role: role,
-		InvitedBy: a.UserID, ExpiresAt: s.Now().Add(InvitationTTL)}
+	var link string
+	var inv *model.Invitation
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
-		if err := tx.CreateInvitation(ctx, inv, norm, hash); err != nil {
-			return err
-		}
-		return s.audit(ctx, tx, a, "member.invite", id.Format(id.Invitation, inv.ID), map[string]any{"email": norm, "role": role})
+		var err error
+		link, inv, err = s.newInvitation(ctx, tx, a, o.Name, email, norm, role)
+		return err
 	})
 	if err != nil {
+		return "", nil, err
+	}
+	return link, inv, nil
+}
+
+// newInvitation records an invitation to the actor's org, in tx, and
+// returns its link.
+func (s *Service) newInvitation(ctx context.Context, tx *store.Store, a Actor, orgName, email, norm string, role model.Role) (string, *model.Invitation, error) {
+	token, hash := authn.NewToken()
+	inv := &model.Invitation{ID: id.New(), OrgID: a.OrgID, OrgName: orgName, Email: strings.TrimSpace(email), Role: role,
+		InvitedBy: a.UserID, ExpiresAt: s.Now().Add(InvitationTTL), CreatedAt: s.Now()}
+	if err := tx.CreateInvitation(ctx, inv, norm, hash); err != nil {
+		return "", nil, err
+	}
+	if err := s.audit(ctx, tx, a, "member.invite", id.Format(id.Invitation, inv.ID), map[string]any{"email": norm, "role": role}); err != nil {
 		return "", nil, err
 	}
 	return s.cfg.BaseURL + "/invite/" + token, inv, nil
@@ -72,7 +88,7 @@ func (s *Service) InviteMember(ctx context.Context, a Actor, ss *model.Session, 
 
 // Invitations lists the org's open invitations, for those who manage members.
 func (s *Service) Invitations(ctx context.Context, a Actor) ([]*model.Invitation, error) {
-	if err := a.require(PermMembersWrite); err != nil {
+	if err := a.requireToRead(PermMembersWrite); err != nil {
 		return nil, err
 	}
 	return s.store.OpenInvitations(ctx, a.OrgID)

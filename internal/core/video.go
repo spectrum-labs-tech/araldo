@@ -113,6 +113,9 @@ func (s *Service) StageVideo(ctx context.Context, a Actor, r io.Reader, filename
 
 // CreateVideo makes a staged video one of a brand's media.
 func (s *Service) CreateVideo(ctx context.Context, a Actor, st *StagedVideo, brandID uuid.UUID, alt string) (*model.Media, error) {
+	if err := a.require(PermPostsWrite); err != nil {
+		return nil, err
+	}
 	b, err := s.Brand(ctx, a, brandID)
 	if err != nil {
 		return nil, err

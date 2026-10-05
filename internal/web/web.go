@@ -163,6 +163,13 @@ type view struct {
 	Guide bool
 	// Nonce allows the editor's style elements (Content-Security-Policy).
 	Nonce string
+	// OrgStatus and StatusNote are the org's, when not active (ADR 0031);
+	// BillingLink shows owners the way to billing, and SignupURL where
+	// accounts are made.
+	OrgStatus   string
+	StatusNote  string
+	BillingLink bool
+	SignupURL   string
 }
 
 // widePages use the full width of the window.
@@ -198,6 +205,12 @@ func (s *Server) app(nav string, fn pageFunc) http.HandlerFunc {
 		// An org that requires MFA shows nothing until the member enrolls.
 		if c.org.RequireMFA && !c.user.MFAEnabled() && nav != "account" {
 			http.Redirect(w, r, "/account?mfa_required=1", http.StatusSeeOther)
+			return
+		}
+		// A suspended org shows only why, and the way to billing; the
+		// person's own account and switching orgs still work (ADR 0031).
+		if c.org.Status == model.OrgSuspended && nav != "account" && nav != "billing" && nav != "" {
+			s.render(w, http.StatusForbidden, "suspended", s.view(c, "", "Suspended", nil))
 			return
 		}
 		if r.Method == http.MethodPost && strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
@@ -277,7 +290,7 @@ func (s *Server) checkCSRF(c *reqCtx) bool {
 }
 
 func (s *Server) view(c *reqCtx, nav, title string, data any) view {
-	v := view{Title: title, Nav: nav, Version: buildinfo.Version, Data: data}
+	v := view{Title: title, Nav: nav, Version: buildinfo.Version, Data: data, SignupURL: s.svc.SignupURL()}
 	if c != nil {
 		v.User, v.Session, v.Org, v.Orgs, v.CSRF = c.user, c.session, c.member, c.orgs, c.session.CSRFToken
 		v.Nonce = cspNonce(c.r)
@@ -285,7 +298,11 @@ func (s *Server) view(c *reqCtx, nav, title string, data any) view {
 		v.Notice = c.r.URL.Query().Get("notice")
 		if c.org != nil {
 			v.RequireMFA = c.org.RequireMFA
+			if c.org.Status != model.OrgActive {
+				v.OrgStatus, v.StatusNote = string(c.org.Status), c.org.StatusNote
+			}
 		}
+		v.BillingLink = s.svc.Billing() && c.member != nil && c.member.Role == model.RoleOwner
 	}
 	return v
 }

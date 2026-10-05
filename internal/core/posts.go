@@ -250,6 +250,11 @@ func (s *Service) CreatePost(ctx context.Context, a Actor, in PostInput) (*model
 	if err != nil {
 		return nil, err
 	}
+	if a.Livemode {
+		if err := s.checkLimit(ctx, a, limitPosts, 1, ""); err != nil {
+			return nil, err
+		}
+	}
 	now := s.Now()
 	p := &model.Post{ID: postID, OrgID: a.OrgID, BrandID: pl.brand.ID, Livemode: a.Livemode, Data: in.Data, Content: in.Content,
 		Metadata: in.Metadata, CreatedByUser: a.UserID, CreatedByKey: a.KeyID, Media: pl.media}

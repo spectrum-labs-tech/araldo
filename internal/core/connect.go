@@ -118,7 +118,7 @@ func (s *Service) ConnectRedirectURI(p platform.Provider) string {
 // ProviderApps lists the developer apps the org can sign in through (never
 // their secrets): its own, then the install's (ADR 0030), marked Install.
 func (s *Service) ProviderApps(ctx context.Context, a Actor) ([]*model.ProviderApp, error) {
-	if err := a.require(PermChannelsWrite); err != nil {
+	if err := a.requireToRead(PermChannelsWrite); err != nil {
 		return nil, err
 	}
 	apps, err := s.store.ProviderApps(ctx, a.OrgID)
@@ -299,6 +299,11 @@ func connectionsAAD(state []byte) string {
 // FinishConnect completes a sign-in with the code the platform sent back.
 // One account becomes a channel at once; several wait for ChooseConnections.
 func (s *Service) FinishConnect(ctx context.Context, a Actor, provider platform.Provider, state, code string) (*ConnectResult, error) {
+	// Checked again: the member's role, or the org's status, may have
+	// changed since the sign-in began.
+	if err := a.require(connectPermission(provider)); err != nil {
+		return nil, err
+	}
 	st, err := s.oauthState(ctx, a, provider, state)
 	if err != nil {
 		return nil, err
@@ -368,6 +373,9 @@ func (s *Service) connectChosen(ctx context.Context, a Actor, st *model.OAuthSta
 // ChooseConnections connects the accounts chosen (by external ID) from a
 // sign-in that returned several.
 func (s *Service) ChooseConnections(ctx context.Context, a Actor, provider platform.Provider, state string, externalIDs []string) (*ConnectResult, error) {
+	if err := a.require(connectPermission(provider)); err != nil {
+		return nil, err
+	}
 	st, err := s.oauthState(ctx, a, provider, state)
 	if err != nil || len(st.Connections) == 0 {
 		return nil, errConnectExpired
@@ -401,6 +409,17 @@ func (s *Service) ChooseConnections(ctx context.Context, a Actor, provider platf
 func (s *Service) connectAll(ctx context.Context, a Actor, st *model.OAuthState, conns []platform.Connection) ([]*model.Channel, error) {
 	existing, err := s.store.Channels(ctx, a.OrgID, true, &st.BrandID)
 	if err != nil {
+		return nil, err
+	}
+	added := 0
+	for _, c := range conns {
+		if !slices.ContainsFunc(existing, func(e *model.Channel) bool {
+			return e.Provider == st.Provider && e.ExternalID == c.Account.ExternalID
+		}) {
+			added++
+		}
+	}
+	if err := s.checkLimit(ctx, a, limitChannels, added, ""); err != nil {
 		return nil, err
 	}
 	var out []*model.Channel

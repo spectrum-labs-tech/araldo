@@ -206,8 +206,17 @@ func (s *Server) app(nav string, fn pageFunc) http.HandlerFunc {
 			http.Redirect(w, r, "/onboarding", http.StatusSeeOther)
 			return
 		}
-		// An org that requires MFA shows nothing until the member enrolls.
-		if c.org.RequireMFA && !c.user.SecondFactor() && nav != "account" {
+		// An org that requires single sign-on shows nothing to a session
+		// that did not come through it (ADR 0033); the person's own account
+		// and switching orgs still work.
+		if c.org.RequireSSO && !c.session.ThroughSSO(c.org.ID) && nav != "account" && nav != "" {
+			s.render(w, http.StatusForbidden, "sso_required", s.view(c, "", "Single sign-on required", nil))
+			return
+		}
+		// An org that requires MFA shows nothing until the member enrolls,
+		// unless they came through its single sign-on, whose provider
+		// applies its own policy.
+		if c.org.RequireMFA && !c.user.SecondFactor() && !c.session.ThroughSSO(c.org.ID) && nav != "account" {
 			http.Redirect(w, r, "/account?mfa_required=1", http.StatusSeeOther)
 			return
 		}

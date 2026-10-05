@@ -1,0 +1,10 @@
+{{define "content"}}
+<h1>Sign in with single sign-on</h1>
+<p class="mb-4">Enter your work email. If your organization signs in through its identity provider, you continue there.</p>
+<form method="post" action="/login/sso" class="flex max-w-xl flex-col gap-4">
+  <input type="hidden" name="next" value="{{.Data.Next}}">
+  <label>Work email <input type="email" name="email" value="{{.Data.Email}}" autocomplete="username" required autofocus></label>
+  <div><button class="btn-primary">Continue</button></div>
+</form>
+<p class="mt-4 text-sm"><a href="/login">Sign in with a password or passkey instead</a></p>
+{{end}}

@@ -88,6 +88,14 @@ To move an install from a local key to Transit:
   orgs that require it too ([ADR 0007](adr/0007-authentication-and-mfa.md)).
   Passkeys belong to the host of `ARALDO_BASE_URL`: moving the dashboard to
   another host means adding them again.
+- **Single sign-on**: an org's owners connect its OpenID Connect provider
+  and verify its email domains by DNS under **Org → Single sign-on**
+  ([ADR 0033](adr/0033-single-sign-on.md)). The redirect URI to register
+  is `<ARALDO_BASE_URL>/login/sso/callback`. Providers are reached like
+  webhooks, so one on a private network needs `ARALDO_ALLOW_PRIVATE_WEBHOOKS`.
+  If an org requires single sign-on and its provider is gone,
+  `araldo admin org update --org … --require-sso false` lets its members
+  in with a password again.
 
 ## Request log
 

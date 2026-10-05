@@ -24,6 +24,10 @@ every problem in `errors`, each with its own `code` and `param`.
 - **external_ref_taken** (409): another org has that external reference.
 - **user_token_invalid** (401): the CLI token was revoked, has not been
   used in a year, or does not exist; run `araldo auth login` again.
+- **sso_required** (403): the org requires single sign-on, and the CLI
+  token was not approved from a session that came through it: run
+  `araldo auth login` again and approve it after signing in with single
+  sign-on.
 - **org_required** (422), **org_ambiguous** (422): a person in several orgs
   names one in the `Araldo-Org` header, by ID when two share a name.
 - **org_unknown** (404): the person does not belong to the org named in
@@ -324,6 +328,30 @@ every problem in `errors`, each with its own `code` and `param`.
 - **last_owner** (409): an org keeps at least one owner.
 - **mfa_required_first**: turn on two-factor authentication for yourself
   before requiring it for the org.
+
+## Single sign-on (dashboard)
+
+- **issuer_invalid**, **issuer_unreachable**: the issuer is the provider's
+  `https://` URL, serving `/.well-known/openid-configuration`.
+- **client_id_invalid**, **client_secret_required**: the provider's client
+  ID and, the first time, its secret.
+- **default_role_invalid**: people who join get `admin`, `editor` or
+  `viewer`, never `owner`.
+- **domain_invalid**, **domain_exists**, **domains_limit**: a domain name
+  such as `araldo.dev`, once per org, 20 at most.
+- **domain_unverified**: the TXT record at `_araldo-verify.<domain>` does
+  not hold `araldo-verify=<token>` yet.
+- **domain_taken** (409): another org verified the domain.
+- **sso_not_connected**, **sso_no_domain**, **sso_session_required**:
+  requiring single sign-on needs a provider, a verified domain, and that
+  you signed in through it.
+- **sso_required** (409): while it is required, the provider and the last
+  verified domain stay.
+- **sso_unavailable**: no org signs in with that email's domain.
+- **sso_expired**, **sso_failed**, **sso_email_unverified**,
+  **sso_email_missing**, **sso_domain_mismatch**, **sso_provider_unavailable**:
+  the sign-in did not complete; start again, or ask the org's
+  administrator.
 
 ## Operator API
 

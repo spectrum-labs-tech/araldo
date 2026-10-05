@@ -1,0 +1,97 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Single sign-on</h1>
+<p class="mb-4">People sign in with your identity provider (Okta, Entra ID, Google Workspace, Keycloak, or any OpenID Connect provider).
+  Anyone it signs in at a verified domain joins {{.Org.OrgName}} with the default role the first time.</p>
+
+<section class="card">
+  <h2>Identity provider</h2>
+  <p class="mb-3">Register Araldo with your provider as a web application, with this redirect URI:</p>
+  <p class="mb-4 flex flex-wrap items-center gap-2"><code id="sso-redirect" class="copy-box">{{$d.CallbackURL}}</code>
+    <button type="button" data-copy="sso-redirect">Copy</button></p>
+  {{$c := $d.Connection}}
+  <form method="post" action="/org/sso" class="flex max-w-xl flex-col gap-4">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Issuer URL <input type="url" name="issuer" value="{{with $c}}{{.Issuer}}{{end}}" placeholder="https://idp.example/realms/acme" required></label>
+    <label>Client ID <input name="client_id" value="{{with $c}}{{.ClientID}}{{end}}" required maxlength="500" autocomplete="off"></label>
+    <label>Client secret <input type="password" name="client_secret" {{if not $c}}required{{end}} maxlength="2000" autocomplete="new-password"
+      {{if $c}}placeholder="Unchanged"{{end}}></label>
+    <label>Role for people who join <select name="default_role">{{$r := "viewer"}}{{with $c}}{{$r = printf "%s" .DefaultRole}}{{end}}
+      {{range $d.Roles}}<option value="{{.}}" {{if eq (printf "%s" .) $r}}selected{{end}}>{{.}}</option>{{end}}</select></label>
+    <div><button class="btn-primary">{{if $c}}Save{{else}}Connect{{end}}</button></div>
+  </form>
+  {{if $c}}
+  <form method="post" action="/org/sso/delete" class="mt-4" data-confirm="Disconnect the identity provider? People can no longer sign in through it.">
+    <input type="hidden" name="csrf" value="{{.CSRF}}"><button class="btn-danger">Disconnect</button>
+  </form>
+  {{end}}
+</section>
+
+<section class="card">
+  <h2>Domains</h2>
+  <p class="mb-3">People sign in through your provider with email at these domains, once you prove you hold each by publishing a DNS TXT record.</p>
+  {{if $d.Domains}}
+  <table>
+    <thead><tr><th>Domain</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {{range $d.Domains}}
+    <tr>
+      <td>{{.Domain}}</td>
+      <td>{{if .VerifiedAt}}<span class="pill good">verified</span>{{else}}<span class="pill neutral">waiting</span>
+        <p class="mt-1 text-sm">Publish a TXT record at <code>{{$d.VerifyName}}{{.Domain}}</code> with the value <code>araldo-verify={{.Token}}</code>.</p>{{end}}</td>
+      <td><div class="flex flex-wrap gap-2">
+        {{if not .VerifiedAt}}<form method="post" action="/org/sso/domains"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="domain" value="{{.Domain}}"><input type="hidden" name="action" value="verify">
+          <button aria-label="Verify {{.Domain}}">Verify</button></form>{{end}}
+        <form method="post" action="/org/sso/domains" data-confirm="Remove {{.Domain}}?"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="domain" value="{{.Domain}}"><input type="hidden" name="action" value="remove">
+          <button class="btn-danger" aria-label="Remove {{.Domain}}">Remove</button></form>
+      </div></td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  <form method="post" action="/org/sso/domains" class="mt-4 flex max-w-xl flex-col gap-4">
+    <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="add">
+    <label>Domain <input name="domain" placeholder="acme.example" required maxlength="253"></label>
+    <div><button>Add domain</button></div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Require single sign-on</h2>
+  {{if $d.Required}}
+  <p class="mb-3">Members reach {{.Org.OrgName}} only signed in through your provider, and CLI sign-ins only when approved from such a session. API keys are not affected.</p>
+  <form method="post" action="/org/sso/require" data-confirm="Stop requiring single sign-on?">
+    <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="require" value="0">
+    <button class="btn-danger">Stop requiring it</button>
+  </form>
+  {{else}}
+  <p class="mb-3">Then members reach {{.Org.OrgName}} only signed in through your provider, so leaving your provider ends their access here.
+    API keys are not affected.{{if not $d.ThroughSSO}} Sign in through single sign-on yourself first, so you know it works.{{end}}</p>
+  <form method="post" action="/org/sso/require">
+    <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="require" value="1">
+    <button {{if not $d.ThroughSSO}}disabled{{end}}>Require single sign-on</button>
+  </form>
+  {{end}}
+</section>
+{{end}}
+
+{{define "guide"}}
+{{$d := .Data}}
+<h2>Guide</h2>
+<ol class="guide-steps">
+  <li{{if $d.Connected}} class="done"{{end}}>{{template "guideMark" (list "1" (printf "%t" $d.Connected))}}<div><strong>Register Araldo</strong> with your provider, with the redirect URI shown, and <strong>connect it</strong> here with its issuer, client ID and secret.</div></li>
+  <li{{if $d.HasVerified}} class="done"{{end}}>{{template "guideMark" (list "2" (printf "%t" $d.HasVerified))}}<div><strong>Add your email domain</strong> and publish its TXT record, then verify it. DNS changes can take a while to appear.</div></li>
+  <li{{if $d.ThroughSSO}} class="done"{{end}}>{{template "guideMark" (list "3" (printf "%t" $d.ThroughSSO))}}<div><strong>Sign out and sign in</strong> with <a href="/login/sso">single sign-on</a> to check it works.</div></li>
+  <li{{if $d.Required}} class="done"{{end}}>{{template "guideMark" (list "4" (printf "%t" $d.Required))}}<div><strong>Require it</strong>, if you want everyone to come through your provider.</div></li>
+</ol>
+<h3>Tips</h3>
+<ul class="guide-tips">
+  <li>Roles are managed here after people join; your provider decides only who can sign in.</li>
+  <li>Removing someone here does not stop them signing in again through your provider: remove them there too.</li>
+  <li>Lost your provider? The server's operator can turn the requirement off.</li>
+</ul>
+{{end}}
+{{define "guideMark"}}<span class="guide-mark" aria-hidden="true">{{if eq (index . 1) "true"}}✓{{else}}{{index . 0}}{{end}}</span>{{if eq (index . 1) "true"}}<span class="sr-only">Done:</span>{{end}}{{end}}

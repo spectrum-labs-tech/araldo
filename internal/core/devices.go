@@ -217,7 +217,8 @@ func (s *Service) AuthenticateUserToken(ctx context.Context, token, org, request
 	if err != nil {
 		return Actor{}, err
 	}
-	if o.RequireMFA {
+	viaSSO := t.SSOOrg != nil && *t.SSOOrg == o.ID
+	if o.RequireMFA && !viaSSO { // the org's provider applies its own policy
 		u, err := s.store.User(ctx, t.UserID)
 		if err != nil {
 			return Actor{}, err
@@ -226,7 +227,7 @@ func (s *Service) AuthenticateUserToken(ctx context.Context, token, org, request
 			return Actor{}, apperr.Forbidden("%s requires two-factor authentication: turn it on in the dashboard, under your account.", o.Name)
 		}
 	}
-	if o.RequireSSO && (t.SSOOrg == nil || *t.SSOOrg != o.ID) {
+	if o.RequireSSO && !viaSSO {
 		return Actor{}, &apperr.Error{Kind: apperr.KindForbidden, Code: "sso_required",
 			Message: o.Name + " requires single sign-on: run araldo auth login again, and approve it signed in through single sign-on."}
 	}

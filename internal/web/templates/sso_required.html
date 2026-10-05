@@ -1,0 +1,9 @@
+{{define "content"}}
+<h1>Single sign-on required</h1>
+<p class="mb-4">{{.Org.OrgName}} is reached only by signing in through its identity provider.</p>
+<form method="post" action="/login/sso">
+  <input type="hidden" name="email" value="{{.User.Email}}">
+  <button class="btn-primary">Sign in with single sign-on</button>
+</form>
+{{if gt (len .Orgs) 1}}<p class="mt-4 text-sm text-muted">You can switch to another of your orgs above.</p>{{end}}
+{{end}}

@@ -131,7 +131,7 @@ func TestPagesAreAccessible(t *testing.T) {
 		"/brands", "/brands/new", "/brands/" + id.Format(id.Brand, d.brand.ID),
 		"/keys", "/keys/" + id.Format(id.APIKey, key.ID), "/cli?device=laptop", "/cli?device=laptop&mode=live", "/webhooks", "/webhooks/" + id.Format(id.WebhookEndpoint, ep.ID),
 		"/events", "/events/" + id.Format(id.Event, events[0].ID), "/logs", "/logs?status=4xx", "/api-reference",
-		"/org", "/org/members/" + id.Format(id.User, *d.owner.UserID), "/org/audit", "/org/tasks", "/account", "/confirm",
+		"/org", "/org/members/" + id.Format(id.User, *d.owner.UserID), "/org/audit", "/org/tasks", "/org/sso", "/account", "/confirm",
 	}
 	for _, path := range pages {
 		rec := d.send(httptest.NewRequest(http.MethodGet, path, nil))
@@ -161,7 +161,7 @@ func TestPagesAreAccessible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/login"} {
+	for _, path := range []string{"/login", "/login/sso"} {
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		for _, issue := range a11yIssues(rec.Body.String(), false) {

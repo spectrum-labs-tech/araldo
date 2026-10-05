@@ -6,7 +6,13 @@
   <p class="text-sm" data-passkey-error role="alert"></p>
 </div>
 {{end}}
-{{if or .User.MFAEnabled (not .User.HasPasskey)}}
+{{if .Session.SSOOrg}}
+<form method="post" action="/login/sso" class="mb-4">
+  <input type="hidden" name="email" value="{{.User.Email}}"><input type="hidden" name="next" value="{{.Data.Next}}">
+  <button class="btn-primary">Confirm with single sign-on</button>
+</form>
+{{end}}
+{{if and (or .User.MFAEnabled (not .User.HasPasskey)) (or .User.PasswordHash (not .Session.SSOOrg))}}
 <p class="mb-4">{{if .User.HasPasskey}}Or use your{{else}}This action needs your{{end}} password{{if .User.MFAEnabled}} and a code from your authenticator{{end}}. You won't be asked again for 10 minutes.</p>
 <form method="post" action="/confirm" class="flex max-w-xl flex-col gap-4">
   <input type="hidden" name="csrf" value="{{.CSRF}}">

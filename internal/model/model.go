@@ -98,6 +98,10 @@ type Session struct {
 	SSOOrg *uuid.UUID
 }
 
+// ThroughSSO reports whether the session came through the org's single
+// sign-on.
+func (ss *Session) ThroughSSO(orgID uuid.UUID) bool { return ss.SSOOrg != nil && *ss.SSOOrg == orgID }
+
 // Org is a tenant.
 type Org struct {
 	ID         uuid.UUID

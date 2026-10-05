@@ -2,7 +2,7 @@
 {{$d := .Data}}
 <div class="mb-2 flex flex-wrap items-start justify-between gap-4">
   <h1>{{$d.Org.Name}}</h1>
-  <div class="flex flex-wrap items-center gap-2"><a class="btn" href="/org/audit">Audit log</a>{{if $d.IsOwner}} <a class="btn" href="/org/tasks">Background tasks</a>{{end}}</div>
+  <div class="flex flex-wrap items-center gap-2"><a class="btn" href="/org/audit">Audit log</a>{{if $d.IsOwner}} <a class="btn" href="/org/sso">Single sign-on</a> <a class="btn" href="/org/tasks">Background tasks</a>{{end}}</div>
 </div>
 
 {{if $d.IsOwner}}

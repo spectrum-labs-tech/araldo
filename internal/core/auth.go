@@ -8,6 +8,7 @@ import (
 	"net/mail"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -528,11 +529,18 @@ func (s *Service) MemberActor(ctx context.Context, userID, orgID uuid.UUID, live
 	return Actor{OrgID: orgID, Livemode: livemode, UserID: &userID, Role: m.Role, RequestID: requestID, OrgStatus: o.Status}, m, nil
 }
 
+// truncate cuts s to at most n bytes without splitting a character:
+// Postgres refuses text that is not valid UTF-8, and a platform's error
+// text, stored on a target, can be in any language.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n]
+	s = s[:n]
+	for len(s) > 0 && !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
 }
 
 func upperFirst(s string) string {

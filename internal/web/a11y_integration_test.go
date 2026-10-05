@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/platform/threads"
+
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
@@ -38,7 +40,7 @@ import (
 // input.
 func TestPagesAreAccessible(t *testing.T) {
 	t.Parallel()
-	d := newDash(t)
+	d := newDash(t, threads.New(http.DefaultClient)) // an OAuth platform, so the apps page has its form
 	ctx := t.Context()
 
 	// One of everything a page can show.

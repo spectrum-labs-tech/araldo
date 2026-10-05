@@ -24,6 +24,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/platform/linkedin"
+	"github.com/spectrum-labs-tech/araldo/internal/platform/threads"
+
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/core"
@@ -384,6 +387,32 @@ func TestPostsListFiltersAndPages(t *testing.T) {
 
 // The page `araldo auth login` opens (ADR 0028): the password first, then a
 // short form, then the key alone.
+// TestAppsPageLinksPerPlatform checks that each platform's redirect URI
+// and developer site sit in a block shown only while that platform is
+// chosen, and that the select drives them, so the form shows one
+// platform's links at a time (all of them without JavaScript).
+func TestAppsPageLinksPerPlatform(t *testing.T) {
+	t.Parallel()
+	d := newDash(t, threads.New(http.DefaultClient), linkedin.New(http.DefaultClient))
+	rec := d.send(httptest.NewRequest(http.MethodGet, "/channels/apps", nil))
+	page := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(page, `<select name="provider" data-toggle>`) {
+		t.Fatalf("apps page: %d\n%s", rec.Code, page)
+	}
+	for _, p := range []string{"threads", "linkedin"} {
+		block := regexp.MustCompile(`(?s)<div data-when="provider=` + p + `"[^>]*>(.*?)</div>`).FindStringSubmatch(page)
+		if block == nil || !strings.Contains(block[1], `id="redirect-`+p+`"`) || !strings.Contains(block[1], "Register the app at") {
+			t.Errorf("no block of %s's links: %v", p, block)
+		}
+		if !strings.Contains(page, `<li data-when="provider=`+p+`">`) {
+			t.Errorf("the guide's developer site for %s is not tied to the choice", p)
+		}
+	}
+	if strings.Contains(page, "max-w-xl") {
+		t.Error("the form is still narrower than its card")
+	}
+}
+
 func TestConnectTheCLI(t *testing.T) {
 	t.Parallel()
 	d := newDash(t)

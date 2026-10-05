@@ -26,14 +26,19 @@ redirect URI below, and add its ID and secret here; then connect channels throug
 {{if $d.Providers}}
 <section class="card">
   <h2>Add an app</h2>
-  <form method="post" action="/channels/apps" class="flex max-w-xl flex-col gap-4">
+  <form method="post" action="/channels/apps" class="flex flex-col gap-4">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <label>Platform
-      <select name="provider">{{range $d.Providers}}<option value="{{.Provider}}" {{if eq (index $d.Form "provider") (printf "%s" .Provider)}}selected{{end}}>{{.Name}}</option>{{end}}</select></label>
-    <dl class="facts text-sm">
-      {{range $d.Providers}}<dt>{{.Name}} redirect URI</dt><dd><code id="redirect-{{.Provider}}" class="copy-box">{{index $d.Redirects .Provider}}</code>
-        <button type="button" data-copy="redirect-{{.Provider}}">Copy</button></dd>{{end}}
-    </dl>
+      <select name="provider" data-toggle>{{range $d.Providers}}<option value="{{.Provider}}" {{if eq (index $d.Form "provider") (printf "%s" .Provider)}}selected{{end}}>{{.Name}}</option>{{end}}</select></label>
+    {{/* Every platform's links without JavaScript; with it, only the chosen one's. */}}
+    {{range $d.Providers}}
+    <div data-when="provider={{.Provider}}" class="flex flex-col gap-1 text-sm">
+      <span class="text-muted">{{.Name}} redirect URI</span>
+      <span class="flex flex-wrap items-center gap-2"><code id="redirect-{{.Provider}}" class="copy-box">{{index $d.Redirects .Provider}}</code>
+        <button type="button" data-copy="redirect-{{.Provider}}" aria-label="Copy the {{.Name}} redirect URI">Copy</button></span>
+      {{with index $d.Sites .Provider}}<span>Register the app at <a href="{{.}}" rel="noopener" target="_blank">{{.}}</a></span>{{end}}
+    </div>
+    {{end}}
     <label>Name <input name="name" maxlength="100" value="{{index $d.Form "name"}}" placeholder="Threads app"></label>
     <label>Client ID (app ID) <input name="client_id" required maxlength="500" value="{{index $d.Form "client_id"}}" autocomplete="off"></label>
     <label>Client secret (app secret) <input name="client_secret" type="password" required maxlength="500" autocomplete="off"></label>
@@ -55,7 +60,7 @@ redirect URI below, and add its ID and secret here; then connect channels throug
 
 <h3>Developer sites</h3>
 <ul class="guide-tips">
-  {{range $d.Providers}}<li>{{with index $d.Sites .Provider}}<a href="{{.}}" rel="noopener" target="_blank">{{end}}{{.Name}}{{with index $d.Sites .Provider}}</a>{{end}}{{if index $d.Added .Provider}} <span class="tag">added</span>{{end}}</li>{{end}}
+  {{range $d.Providers}}<li data-when="provider={{.Provider}}">{{with index $d.Sites .Provider}}<a href="{{.}}" rel="noopener" target="_blank">{{end}}{{.Name}}{{with index $d.Sites .Provider}}</a>{{end}}{{if index $d.Added .Provider}} <span class="tag">added</span>{{end}}</li>{{end}}
 </ul>
 
 <h3>Good to know</h3>

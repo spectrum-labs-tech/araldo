@@ -9,23 +9,31 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
-// checkedPlatform stands in for Bluesky: each account's Verify works,
-// fails as revoked, or fails otherwise, as the test sets it.
+// checkedPlatform stands in for Bluesky (or, with provider set, another
+// platform): each account's Verify works, fails as revoked, or fails
+// otherwise, as the test sets it.
 type checkedPlatform struct {
-	mu      sync.Mutex
-	revoked map[string]bool
-	broken  map[string]bool
+	provider platform.Provider
+	mu       sync.Mutex
+	revoked  map[string]bool
+	broken   map[string]bool
 }
 
-func (*checkedPlatform) Provider() platform.Provider { return platform.Bluesky }
-func (*checkedPlatform) Rules() platform.Rules {
-	r, _ := platform.RulesFor(platform.Bluesky)
+func (f *checkedPlatform) Provider() platform.Provider {
+	if f.provider != "" {
+		return f.provider
+	}
+	return platform.Bluesky
+}
+func (f *checkedPlatform) Rules() platform.Rules {
+	r, _ := platform.RulesFor(f.Provider())
 	return r
 }
 func (*checkedPlatform) Fields() []platform.Field {
@@ -92,5 +100,41 @@ func TestDailyChannelChecks(t *testing.T) {
 	// Checked once a day.
 	if n, err := core.CheckChannelsOrg(w.s, w.org.ID); err != nil || n != 0 {
 		t.Fatalf("checking again at once: %d, %v", n, err)
+	}
+}
+
+// TestXChannelsAreCheckedWeekly checks X channels, whose checks X bills,
+// are checked weekly while others are checked daily.
+func TestXChannelsAreCheckedWeekly(t *testing.T) {
+	t.Parallel()
+	bsky := &checkedPlatform{revoked: map[string]bool{}, broken: map[string]bool{}}
+	x := &checkedPlatform{provider: platform.X, revoked: map[string]bool{}, broken: map[string]bool{}}
+	w := newWorld(t, func(_ *core.Config, adapters *[]platform.Adapter) { *adapters = append(*adapters, bsky, x) })
+	ctx := t.Context()
+	live := w.owner
+	live.Livemode = true
+	for _, p := range []platform.Provider{platform.Bluesky, platform.X} {
+		if _, err := w.s.ConnectChannel(ctx, live, core.ConnectInput{BrandID: w.brand.ID, Provider: p,
+			Fields: map[string]string{"identifier": string(p), "app_password": "x"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if core.CheckEvery(platform.X) != 7*24*time.Hour || core.CheckEvery(platform.Bluesky) != core.ChannelCheckEvery {
+		t.Fatalf("intervals: X %s, Bluesky %s", core.CheckEvery(platform.X), core.CheckEvery(platform.Bluesky))
+	}
+	start := time.Now()
+	for _, step := range []struct {
+		after time.Duration
+		want  int
+	}{
+		{0, 2},                  // both, never checked
+		{2 * 24 * time.Hour, 1}, // Bluesky again
+		{8 * 24 * time.Hour, 2}, // both again
+		{8*24*time.Hour + 1, 0}, // nothing due
+	} {
+		w.s.Now = func() time.Time { return start.Add(step.after) }
+		if n, err := core.CheckChannelsOrg(w.s, w.org.ID); err != nil || n != step.want {
+			t.Fatalf("after %s: %d checked, %v; want %d", step.after, n, err, step.want)
+		}
 	}
 }

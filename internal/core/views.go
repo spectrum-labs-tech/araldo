@@ -83,8 +83,8 @@ type ChannelView struct {
 	Settings   map[string]string `json:"settings"`
 	Status     string            `json:"status"`
 	StatusNote string            `json:"status_note,omitempty"`
-	// CheckedAt is the last daily check of its credentials, and
-	// CheckError what it found wrong.
+	// CheckedAt is the last check of its credentials (daily; weekly on X,
+	// which charges for it), and CheckError what it found wrong.
 	CheckedAt  *time.Time `json:"checked_at,omitempty"`
 	CheckError string     `json:"check_error,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`

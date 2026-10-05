@@ -41,6 +41,7 @@ func commands() []command {
 	return []command{
 		{name: "auth", group: groupClient, summary: "Sign in to a server: login, status, logout, token", run: runAuth},
 		{name: "posts", group: groupClient, summary: "Posts: list, get, preview, create, cancel", run: runPosts},
+		{name: "templates", group: groupClient, summary: "Templates: list, get (text and the data a post gives it)", run: runTemplates},
 		{name: "channels", group: groupClient, summary: "Channels: list, with their status and last check", run: runChannels},
 		{name: "members", group: groupClient, summary: "Members: list, invite, role, remove", run: runMembers},
 		{name: "org", group: groupClient, summary: "The org's settings: view, update", run: runOrg},

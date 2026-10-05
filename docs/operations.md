@@ -301,6 +301,7 @@ araldo auth login --hostname araldo.example.com --with-token < key.txt   # an AP
 araldo auth status                      # both modes on each server, and whether they still work
 araldo channels list                    # a table in a terminal; tab-separated when piped
 araldo channels list --live             # the same, in live mode
+araldo templates list --brand araldo     # and templates get release --brand araldo: text, data schema, an example
 araldo posts list --status needs_attention   # posts, newest first
 araldo posts get post_…                  # each channel's copy: status, link, error
 araldo posts preview --brand araldo --body "Shipped 1.0"   # every channel's text and problems; fails if any

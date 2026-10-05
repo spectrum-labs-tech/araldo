@@ -50,8 +50,8 @@ out of the box; single sign-on is an addition, not a requirement.
      not the email exists.
 7. **Email flows** (verification, password reset with a one-hour
    single-use token, "new sign-in" notices) need SMTP settings. Without them,
-   operators reset passwords with `araldo users reset-password`.
-8. **Bootstrap:** `araldo users create --email … --owner-of "Org name"`
+   operators reset passwords with `araldo admin users reset-password`.
+8. **Bootstrap:** `araldo admin users create --email … --owner-of "Org name"`
    creates the first account. There is no default admin password.
 9. **Single sign-on** (OIDC) and SCIM provisioning come later, each with its
    own ADR.

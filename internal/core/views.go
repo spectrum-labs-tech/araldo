@@ -424,12 +424,15 @@ type APIKeyView struct {
 // AuditEventView is one entry in the org's audit log: who (a member or an
 // API key) did what to which object.
 type AuditEventView struct {
-	ID        string         `json:"id"`
-	Object    string         `json:"object"`
-	Action    string         `json:"action"`
-	Target    string         `json:"target,omitempty"`
-	User      string         `json:"user,omitempty"`
-	APIKey    string         `json:"api_key,omitempty"`
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Action string `json:"action"`
+	Target string `json:"target,omitempty"`
+	User   string `json:"user,omitempty"`
+	APIKey string `json:"api_key,omitempty"`
+	// Operator is the `araldo admin` command the server's operator ran,
+	// when it was neither a member nor a key (ADR 0028).
+	Operator  string         `json:"operator,omitempty"`
 	Outcome   string         `json:"outcome,omitempty"`
 	RequestID string         `json:"request_id,omitempty"`
 	Detail    map[string]any `json:"detail,omitempty"`
@@ -446,6 +449,7 @@ func ViewAuditEvent(e *model.AuditEvent) AuditEventView {
 	if e.ActorKey != nil {
 		v.APIKey = id.Format(id.APIKey, *e.ActorKey)
 	}
+	v.Operator, _ = e.Detail["operator_command"].(string)
 	return v
 }
 

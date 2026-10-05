@@ -30,9 +30,9 @@ Everything comes from environment variables.
 ## First run
 
 ```sh
-araldo keys generate --id k1          # keep this safe, outside the database
+araldo admin keys generate --id k1          # keep this safe, outside the database
 export ARALDO_MASTER_KEYS=k1:…
-araldo bootstrap --email you@example.com --org "Your org" --brand "Your product"
+araldo admin bootstrap --email you@example.com --org "Your org" --brand "Your product"
 araldo server & araldo worker         # or: araldo all
 ```
 
@@ -44,9 +44,9 @@ two-factor authentication under **Your account**.
 - **Back up the master keys separately from the database.** Without them,
   connected channels must be reconnected (posts and history survive).
 - Rotate: generate a new key, put it first in `ARALDO_MASTER_KEYS` (keep the
-  old one after it), restart, run `araldo keys rotate`, then remove the old
-  key once `araldo keys status` says it wraps nothing.
-- `araldo keys status` lists each master key and how many data keys it
+  old one after it), restart, run `araldo admin keys rotate`, then remove the old
+  key once `araldo admin keys status` says it wraps nothing.
+- `araldo admin keys status` lists each master key and how many data keys it
   wraps, and fails if any are wrapped by a key that is not configured.
 - Signed media links survive both: they are signed with a key stored like a
   data key, not with the master key itself.
@@ -71,30 +71,30 @@ To move an install from a local key to Transit:
 
 1. Configure Transit and keep `ARALDO_MASTER_KEYS`: Transit becomes primary,
    and the local key still unwraps what it wrapped.
-2. Run `araldo keys rotate` to rewrap every data key under Transit.
-3. Check `araldo keys status`: the local key should wrap nothing.
+2. Run `araldo admin keys rotate` to rewrap every data key under Transit.
+3. Check `araldo admin keys status`: the local key should wrap nothing.
 4. Remove `ARALDO_MASTER_KEYS`, and keep the old key in offline escrow for
    database backups taken before step 2.
 
 ## Users
 
-- `araldo users create --email …` and `araldo users reset-password --email …`
+- `araldo admin users create --email …` and `araldo admin users reset-password --email …`
   print a generated password (or read one with `--password-stdin`).
 
 ## API keys for other services
 
-`araldo apikeys create` makes a key without the dashboard, for provisioning
+`araldo admin apikeys create` makes a key without the dashboard, for provisioning
 a service's key straight into its secret store. It prints only the key on
 stdout, so pipe it rather than copying it:
 
 ```bash
-araldo apikeys create --email you@example.com --brand your-product \
+araldo admin apikeys create --org "Your org" --brand your-product \
   --name "your-service staging" --scopes posts:write,templates:read,templates:write \
   | your-secret-store put …
 ```
 
-The key acts for the member named by `--email` and needs their permission to
-manage keys. Add `--live` for a live key and `--expires 8760h` to expire it.
+The operator makes it, in the org named by `--org`, and the audit log says
+so. Add `--live` for a live key and `--expires 8760h` to expire it.
 
 ### Administration by key
 
@@ -109,7 +109,7 @@ dashboard) can grant them ([ADR 0019](adr/0019-administration-api.md)):
 | `audit:read` | Read the audit log (`/v1/audit_events`). For exporting to a SIEM. |
 
 ```bash
-araldo apikeys create --email you@example.com --name "terraform" \
+araldo admin apikeys create --org "Your org" --name "terraform" \
   --scopes brands:read,brands:write,channels:read,channels:write,templates:read,templates:write,webhooks:read,webhooks:write,keys:write
 ```
 
@@ -334,16 +334,23 @@ an administrative scope.
 ## Members and org settings
 
 Members, their roles and the org's settings are for people, not API keys:
-the dashboard, or these commands, which act as the member named by `--as`
-and need that member's role to allow the change:
+the dashboard, or these server administration commands, run where the
+server's configuration is. They act as the operator, with an owner's
+permissions, in the org named by `--org` (an ID or name; not needed on a
+server with one org), and the audit log records the command, not a member
+([ADR 0028](adr/0028-cli-as-api-client.md)):
 
 ```bash
-araldo members list   --as you@example.com
-araldo members add    --as you@example.com --email them@example.com --role editor
-araldo members role   --as you@example.com --email them@example.com --role admin
-araldo members remove --as you@example.com --email them@example.com
-araldo org update     --as you@example.com --name "Spectrum Labs" --require-mfa true
+araldo admin members list   --org "Spectrum Labs"
+araldo admin members add    --org "Spectrum Labs" --email them@example.com --role editor
+araldo admin members role   --org "Spectrum Labs" --email them@example.com --role admin
+araldo admin members remove --org "Spectrum Labs" --email them@example.com
+araldo admin org update     --org "Spectrum Labs" --name "Spectrum Labs" --require-mfa true
 ```
+
+The rules still hold: an org keeps at least one owner. The old names
+(`araldo members`, `araldo org`, and the other commands now under `admin`)
+still work for now, and say where they went; `--as` is no longer needed.
 
 `members add` prints a temporary password for someone without an account
 (or reads one with `--password-stdin`).

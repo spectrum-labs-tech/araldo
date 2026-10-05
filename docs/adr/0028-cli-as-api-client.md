@@ -1,6 +1,6 @@
 # ADR 0028: The CLI is an API client, modeled on `gh`; only server administration touches the database
 
-- Status: accepted; step 1 built (sign-in through the dashboard, a test and a live key per server)
+- Status: accepted; steps 1 and 4 built (sign-in through the dashboard, a test and a live key per server; `araldo admin`, audited as the operator, which holds `members` and `org` until step 3)
 - Date: 2026-10-04
 - Supersedes: [ADR 0019](0019-administration-api.md) decision 1 ("the CLI takes operators with
   database access; there is no session-authenticated API") and decision 6's CLI half
@@ -116,7 +116,9 @@ which `gh` has no counterpart of, the model is the Stripe CLI.
    2. The device flow, user tokens, the `/device` page and the Devices list, when member-only
       commands come to the CLI.
    3. `/v1/members` and `/v1/org`; `members` and `org` become client commands; `--as` is removed.
-   4. Server administration moves under `araldo admin`, audited as the operator.
+   4. Server administration moves under `araldo admin`, audited as the operator. Done; until
+      step 3, `members` and `org` sit there too, acting as the operator in the org `--org`
+      names, and the old top-level names still work, pointing to the new ones.
 
 ## Alternatives considered
 

@@ -10,48 +10,12 @@ import (
 	"strconv"
 	"text/tabwriter"
 
-	"github.com/spectrum-labs-tech/araldo/internal/app"
-	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
-// Members and org settings are for members and operators, not API keys
-// (ADR 0019): these commands act as a member, named with --as, whose role
-// must allow the change.
-
-// actAs opens Araldo and returns the actor for member email in org, in test
-// mode unless live.
-func actAs(ctx context.Context, email, org string, live bool) (*app.App, core.Actor, model.Membership, error) {
-	if email == "" {
-		return nil, core.Actor{}, model.Membership{}, usageErr("--as (the member acting) is required")
-	}
-	a, err := open(ctx)
-	if err != nil {
-		return nil, core.Actor{}, model.Membership{}, err
-	}
-	u, err := a.Svc.UserByEmail(ctx, email)
-	if err != nil {
-		a.Close()
-		return nil, core.Actor{}, model.Membership{}, err
-	}
-	ms, err := a.Svc.UserOrgs(ctx, u.ID)
-	if err != nil {
-		a.Close()
-		return nil, core.Actor{}, model.Membership{}, err
-	}
-	m, err := pickOrg(ms, org)
-	if err != nil {
-		a.Close()
-		return nil, core.Actor{}, model.Membership{}, err
-	}
-	actor, _, err := a.Svc.MemberActor(ctx, u.ID, m.OrgID, live, "cli")
-	if err != nil {
-		a.Close()
-		return nil, core.Actor{}, model.Membership{}, err
-	}
-	actor.Operator = true
-	return a, actor, m, nil
-}
+// Members and org settings are for members and the operator, never API
+// keys (ADR 0019). These are server administration (ADR 0028): they act as
+// the operator, in the org named with --org.
 
 func runMembers(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
@@ -101,7 +65,7 @@ func runMembers(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if (cmd == "add" || cmd == "role") && !model.Role(role).Valid() {
 		return usageErr("--role is owner, admin, editor or viewer")
 	}
-	a, actor, m, err := actAs(ctx, as, org, false)
+	a, actor, o, err := adminActor(ctx, org, as, false, "araldo admin members "+cmd, stderr)
 	if err != nil {
 		return err
 	}
@@ -132,7 +96,7 @@ func runMembers(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		if _, err := a.Svc.AddMember(ctx, actor, nil, email, model.Role(role), temp); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(stderr, "Added %s to %s as %s.\n", email, m.OrgName, role)
+		_, _ = fmt.Fprintf(stderr, "Added %s to %s as %s.\n", email, o.Name, role)
 		if temp != "" && !pwStdin {
 			_, _ = fmt.Fprintf(stderr, "They had no account; their temporary password is:\n")
 			_, _ = fmt.Fprintln(stdout, temp)
@@ -147,30 +111,30 @@ func runMembers(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		if err := a.Svc.SetMemberRole(ctx, actor, nil, target.ID, model.Role(role)); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(stderr, "%s is now %s in %s.\n", email, role, m.OrgName)
+		_, _ = fmt.Fprintf(stderr, "%s is now %s in %s.\n", email, role, o.Name)
 		return nil
 	}
 	if err := a.Svc.RemoveMember(ctx, actor, nil, target.ID); err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(stderr, "Removed %s from %s.\n", email, m.OrgName)
+	_, _ = fmt.Fprintf(stderr, "Removed %s from %s.\n", email, o.Name)
 	return nil
 }
 
 func runOrg(ctx context.Context, args []string, _, stderr io.Writer) error {
 	if len(args) == 0 || args[0] != "update" {
-		return usageErr("org update --as EMAIL [--name NAME] [--require-mfa true|false]")
+		return usageErr("org update [--org ORG] [--name NAME] [--require-mfa true|false]")
 	}
 	var as, org, name, requireMFA string
 	if err := flags("org update", stderr, args[1:], func(fs *flag.FlagSet) {
-		fs.StringVar(&as, "as", "", "the owner acting, by email (required)")
-		fs.StringVar(&org, "org", "", "the org's name, when that member belongs to more than one")
+		fs.StringVar(&org, "org", "", "the org, by ID or name (needed when the server has more than one)")
+		fs.StringVar(&as, "as", "", "no longer needed (picks that member's org if --org is not given)")
 		fs.StringVar(&name, "name", "", "a new name")
 		fs.StringVar(&requireMFA, "require-mfa", "", "true to require two-factor authentication of every member, false not to")
 	}); err != nil {
 		return err
 	}
-	a, actor, _, err := actAs(ctx, as, org, false)
+	a, actor, _, err := adminActor(ctx, org, as, false, "araldo admin org update", stderr)
 	if err != nil {
 		return err
 	}

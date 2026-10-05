@@ -28,6 +28,20 @@ func (s *Store) Org(ctx context.Context, id uuid.UUID) (*model.Org, error) {
 	return &o, mapErr(err)
 }
 
+// FindOrgs returns up to limit orgs named name (ignoring case), or with an
+// empty name any orgs, oldest first.
+func (s *Store) FindOrgs(ctx context.Context, name string, limit int) ([]*model.Org, error) {
+	rows, err := s.q.Query(ctx, `SELECT id, name, require_mfa, created_at FROM orgs
+		WHERE $1 = '' OR lower(name) = lower($1) ORDER BY created_at LIMIT $2`, name, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Org, error) {
+		var o model.Org
+		return &o, r.Scan(&o.ID, &o.Name, &o.RequireMFA, &o.CreatedAt)
+	})
+}
+
 func (s *Store) UpdateOrg(ctx context.Context, o *model.Org) error {
 	return s.execOne(ctx, `UPDATE orgs SET name = $2, require_mfa = $3, updated_at = now() WHERE id = $1`, o.ID, o.Name, o.RequireMFA)
 }

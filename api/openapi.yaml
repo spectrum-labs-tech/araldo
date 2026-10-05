@@ -17,7 +17,7 @@ info:
     one with scopes holds those it lists. The administrative scopes
     `keys:write`, `posts:approve`, `audit:read` and `ads:write` are held
     only when listed by name, and only a member (the dashboard, or
-    `araldo apikeys create`) can create a key with them.
+    `araldo admin apikeys create`) can create a key with them.
 
     **Idempotency.** Every `POST` accepts an `Idempotency-Key` header. A
     retry with the same key and body returns the first response (with
@@ -2404,6 +2404,7 @@ components:
         target: { type: string, description: The object acted on. }
         user: { type: string, description: The member who acted. }
         api_key: { type: string, description: The API key that acted. }
+        operator: { type: string, description: "The command the server's operator ran (araldo admin …), when neither a member nor a key acted." }
         outcome: { type: string }
         request_id: { type: string }
         detail: { type: object, additionalProperties: true }

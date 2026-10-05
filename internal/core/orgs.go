@@ -48,6 +48,39 @@ func (s *Service) Org(ctx context.Context, a Actor) (*model.Org, error) {
 	return o, notFound(err, "org")
 }
 
+// OperatorRequestID marks what the operator does through `araldo admin`.
+const OperatorRequestID = "admin-cli"
+
+// OperatorActor is the server's operator acting in an org through
+// `araldo admin` (ADR 0028): with an owner's permissions, as no member.
+// The org is an ID, a name, or empty when the install has only one.
+func (s *Service) OperatorActor(ctx context.Context, org string, livemode bool, command string) (Actor, *model.Org, error) {
+	var o *model.Org
+	if u, err := id.Parse(id.Org, org); err == nil {
+		if o, err = s.store.Org(ctx, u); err != nil {
+			return Actor{}, nil, notFound(err, "org")
+		}
+	} else {
+		found, err := s.store.FindOrgs(ctx, strings.TrimSpace(org), 10)
+		switch {
+		case err != nil:
+			return Actor{}, nil, err
+		case len(found) == 0 && org == "":
+			return Actor{}, nil, apperr.NotFound("org")
+		case len(found) == 0:
+			return Actor{}, nil, apperr.Invalid("org_not_found", "org", "No org is named %q.", org)
+		case len(found) > 1 && org == "":
+			return Actor{}, nil, apperr.Invalid("org_required", "org", "This server has more than one org: name one with --org.")
+		case len(found) > 1:
+			return Actor{}, nil, apperr.Invalid("org_ambiguous", "org", "More than one org is named %q: give its ID (%s, %s, …).",
+				org, id.Format(id.Org, found[0].ID), id.Format(id.Org, found[1].ID))
+		}
+		o = found[0]
+	}
+	return Actor{OrgID: o.ID, Livemode: livemode, Role: model.RoleOwner, Operator: true, OperatorCommand: command,
+		RequestID: OperatorRequestID}, o, nil
+}
+
 // UserOrgs lists the orgs a user belongs to.
 func (s *Service) UserOrgs(ctx context.Context, userID uuid.UUID) ([]model.Membership, error) {
 	return s.store.UserMemberships(ctx, userID)
@@ -467,7 +500,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, a Actor, ss *model.Session, 
 	return s.createAPIKey(ctx, a, in)
 }
 
-// CreateOperatorAPIKey makes a key for the `araldo apikeys create`
+// CreateOperatorAPIKey makes a key for the `araldo admin apikeys create`
 // command. Whoever runs it already holds the database URL and master keys,
 // so the dashboard's re-authentication adds nothing; the member still needs
 // permission to manage keys.

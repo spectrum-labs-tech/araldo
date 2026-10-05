@@ -53,7 +53,7 @@ Two facts constrain the answer:
    (`brands:read`/`brands:write`), a target's attempt history
    (`posts:read`).
 6. **Members and org settings stay with members and operators** for now: the
-   dashboard, and `araldo members` / `araldo org` in the CLI. A key scope
+   dashboard, and `araldo admin members` / `araldo admin org` in the CLI. A key scope
    comes when a declarative tool needs it.
 7. **Declarative clients are first-class.** For every resource:
    - a read returns everything a write set, except secrets, which are

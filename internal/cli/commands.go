@@ -310,7 +310,7 @@ func runKeys(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		if err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(stdout, "Rewrapped %d data keys under the primary master key. Run araldo keys status to see which master keys can be retired.\n", n)
+		_, _ = fmt.Fprintf(stdout, "Rewrapped %d data keys under the primary master key. Run araldo admin keys status to see which master keys can be retired.\n", n)
 		return nil
 	case "status":
 		if err := flags("keys status", stderr, args[1:], func(*flag.FlagSet) {}); err != nil {
@@ -345,7 +345,7 @@ func printKeyUsage(w io.Writer, use []keyring.KeyUse) error {
 		case u.DataKeys == 0:
 			note = "wraps nothing: can be removed"
 		default:
-			note = "still in use: run araldo keys rotate"
+			note = "still in use: run araldo admin keys rotate"
 		}
 		if _, err := fmt.Fprintf(w, "%-40s %5d data keys  %s\n", u.ID, u.DataKeys, note); err != nil {
 			return err
@@ -368,8 +368,8 @@ func runAPIKeys(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	var live bool
 	var expires time.Duration
 	if err := flags("apikeys create", stderr, args[1:], func(fs *flag.FlagSet) {
-		fs.StringVar(&email, "email", "", "the member the key acts for (required)")
-		fs.StringVar(&org, "org", "", "the org's name, when the member belongs to more than one")
+		fs.StringVar(&org, "org", "", "the org, by ID or name (needed when the server has more than one)")
+		fs.StringVar(&email, "email", "", "no longer needed (picks that member's org if --org is not given)")
 		fs.StringVar(&brand, "brand", "", "limit the key to this brand (slug or ID)")
 		fs.StringVar(&name, "name", "", "the key's name (required)")
 		fs.StringVar(&scopes, "scopes", "", "comma-separated scopes, e.g. posts:write,templates:write (default full access)")
@@ -378,30 +378,14 @@ func runAPIKeys(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	}); err != nil {
 		return err
 	}
-	if email == "" || name == "" {
-		return usageErr("--email and --name are required")
+	if name == "" {
+		return usageErr("--name is required")
 	}
-	a, err := open(ctx)
+	a, actor, o, err := adminActor(ctx, org, email, live, "araldo admin apikeys create", stderr)
 	if err != nil {
 		return err
 	}
 	defer a.Close()
-	u, err := a.Svc.UserByEmail(ctx, email)
-	if err != nil {
-		return err
-	}
-	ms, err := a.Svc.UserOrgs(ctx, u.ID)
-	if err != nil {
-		return err
-	}
-	m, err := pickOrg(ms, org)
-	if err != nil {
-		return err
-	}
-	actor, _, err := a.Svc.MemberActor(ctx, u.ID, m.OrgID, live, "cli")
-	if err != nil {
-		return err
-	}
 	in := core.APIKeyInput{Name: name, Livemode: live, Scopes: splitList(scopes)}
 	if brand != "" {
 		b, err := a.Svc.ResolveBrand(ctx, actor, brand)
@@ -418,7 +402,7 @@ func runAPIKeys(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(stderr, "Created API key %q (%s) in %s.\n", k.Name, k.Hint, m.OrgName)
+	_, _ = fmt.Fprintf(stderr, "Created API key %q (%s) in %s.\n", k.Name, k.Hint, o.Name)
 	_, _ = fmt.Fprintln(stdout, plain)
 	return nil
 }

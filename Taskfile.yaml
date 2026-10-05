@@ -39,7 +39,7 @@ tasks:
     env:
       ARALDO_DATABASE_URL: "{{.DEV_DSN}}"
       ARALDO_MASTER_KEYS: "{{.DEV_MASTER_KEY}}"
-    cmd: go run ./cmd/araldo bootstrap {{.CLI_ARGS}}
+    cmd: go run ./cmd/araldo admin bootstrap {{.CLI_ARGS}}
 
   check:
     desc: Everything CI checks that runs without Docker (fmt, vet, lint, tests, tidy, SPDX headers)

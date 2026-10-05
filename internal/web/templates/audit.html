@@ -10,7 +10,7 @@
     <td>{{fmtTime .CreatedAt}}</td>
     <td><code>{{.Action}}</code>{{if ne .Outcome "ok"}} <span class="pill bad">{{.Outcome}}</span>{{end}}</td>
     <td><code>{{.Target}}</code></td>
-    <td>{{if .ActorUser}}<code>{{userID (derefUUID .ActorUser)}}</code>{{else if .ActorKey}}API key <code>{{keyID (derefUUID .ActorKey)}}</code>{{else}}system{{end}}</td>
+    <td>{{if .ActorUser}}<code>{{userID (derefUUID .ActorUser)}}</code>{{else if .ActorKey}}API key <code>{{keyID (derefUUID .ActorKey)}}</code>{{else if index .Detail "operator_command"}}operator: <code>{{index .Detail "operator_command"}}</code>{{else}}system{{end}}</td>
     <td class="text-muted"><code>{{.RequestID}}</code></td>
   </tr>
   {{end}}

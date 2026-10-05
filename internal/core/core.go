@@ -167,10 +167,12 @@ type Actor struct {
 	KeyExpiresAt *time.Time
 	// RequestID ties events and audit entries to a request.
 	RequestID string
-	// Operator marks a member acted as by the server's operator through
-	// the CLI, who already holds the database and master keys, so the
-	// dashboard's re-authentication (sudo mode) adds nothing.
-	Operator bool
+	// Operator marks the server's operator acting through `araldo admin`
+	// (ADR 0028), who already holds the database and master keys: an
+	// owner's permissions, no member, and no sudo mode, which would add
+	// nothing. OperatorCommand is the command, for the audit log.
+	Operator        bool
+	OperatorCommand string
 }
 
 // IsKey reports whether the actor is an API key.
@@ -233,10 +235,17 @@ func (s *Service) audit(ctx context.Context, tx *store.Store, a Actor, action, t
 	if org != uuid.Nil {
 		orgp = &org
 	}
-	return tx.RecordAudit(ctx, &model.AuditEvent{
-		ID: id.New(), OrgID: orgp, ActorUser: a.UserID, ActorKey: a.KeyID, Action: action, Target: target,
-		RequestID: a.RequestID, Detail: detail,
-	})
+	e := &model.AuditEvent{ID: id.New(), OrgID: orgp, ActorUser: a.UserID, ActorKey: a.KeyID, Action: action, Target: target,
+		RequestID: a.RequestID, Detail: detail}
+	if a.Operator {
+		// The operator, not a member: what they ran is the record.
+		e.ActorUser, e.ActorKey = nil, nil
+		e.Detail = map[string]any{"operator_command": a.OperatorCommand}
+		for k, v := range detail {
+			e.Detail[k] = v
+		}
+	}
+	return tx.RecordAudit(ctx, e)
 }
 
 func ptr[T any](v T) *T { return &v }

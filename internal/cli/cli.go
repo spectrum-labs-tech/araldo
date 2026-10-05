@@ -47,14 +47,19 @@ func commands() []command {
 		{name: "worker", group: groupServer, summary: "Publish posts, deliver webhooks and run background tasks", run: runWorker},
 		{name: "all", group: groupServer, summary: "Run server and worker in one process (small installs, development)", run: runAll},
 		{name: "migrate", group: groupServer, summary: "Bring the database schema up to date", run: runMigrate},
-		{name: "bootstrap", group: groupServer, summary: "Create the first user, org and brand", run: runBootstrap},
-		{name: "users", group: groupServer, summary: "Manage users: create, reset-password", run: runUsers},
-		{name: "keys", group: groupServer, summary: "Master keys: generate, rotate, status", run: runKeys},
-		{name: "apikeys", group: groupServer, summary: "API keys: create (prints only the key, for piping into a secret store)", run: runAPIKeys},
-		{name: "members", group: groupServer, summary: "Org members: list, add, role, remove (acting as a member)", run: runMembers},
-		{name: "org", group: groupServer, summary: "Org settings: update (acting as an owner)", run: runOrg},
+		{name: "admin", group: groupServer, summary: "Administer the server: bootstrap, users, keys, apikeys, members, org", run: runAdmin},
 		{name: "version", summary: "Print the araldo version", run: runVersion},
 	}
+}
+
+// allCommands is commands, plus the server administration commands under
+// their old top-level names, which the help no longer lists.
+func allCommands() []command {
+	cs := commands()
+	for _, c := range adminCommands() {
+		cs = append(cs, command{name: c.name, run: movedToAdmin(c.name, c.run)})
+	}
+	return cs
 }
 
 // errUsage marks a usage mistake (exit code 2).
@@ -76,7 +81,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		usage(stdout)
 		return ExitOK
 	}
-	for _, c := range commands() {
+	for _, c := range allCommands() {
 		if c.name != args[0] {
 			continue
 		}

@@ -30,13 +30,18 @@ func TestRun(t *testing.T) {
 		{name: "version", args: []string{"version"}, wantCode: ExitOK, wantStdout: "araldo dev\n"},
 		{name: "version rejects arguments", args: []string{"version", "extra"}, wantCode: ExitUsage, wantStderr: "takes no arguments"},
 		{name: "unknown command", args: []string{"frobnicate"}, wantCode: ExitUsage, wantStderr: `unknown command "frobnicate"`},
-		{name: "apikeys needs a subcommand", args: []string{"apikeys"}, wantCode: ExitUsage, wantStderr: "apikeys create"},
-		{name: "apikeys unknown subcommand", args: []string{"apikeys", "list"}, wantCode: ExitUsage, wantStderr: `unknown apikeys command "list"`},
-		{name: "apikeys create needs email and name", args: []string{"apikeys", "create", "--email", "a@example.com"}, wantCode: ExitUsage, wantStderr: "--email and --name are required"},
-		{name: "members needs a subcommand", args: []string{"members"}, wantCode: ExitUsage, wantStderr: "members list | add | role | remove"},
-		{name: "members add needs a target", args: []string{"members", "add", "--as", "a@example.com", "--role", "editor"}, wantCode: ExitUsage, wantStderr: "--email"},
-		{name: "members role needs a real role", args: []string{"members", "role", "--as", "a@example.com", "--email", "b@example.com", "--role", "boss"}, wantCode: ExitUsage, wantStderr: "--role is owner, admin, editor or viewer"},
-		{name: "org needs update", args: []string{"org"}, wantCode: ExitUsage, wantStderr: "org update"},
+		{name: "admin lists its commands", args: []string{"admin"}, wantCode: ExitUsage, wantStderr: "Usage: araldo admin"},
+		{name: "admin help", args: []string{"admin", "help"}, wantCode: ExitOK, wantStdout: "members"},
+		{name: "admin unknown command", args: []string{"admin", "frobnicate"}, wantCode: ExitUsage, wantStderr: `unknown admin command "frobnicate"`},
+		{name: "apikeys needs a subcommand", args: []string{"admin", "apikeys"}, wantCode: ExitUsage, wantStderr: "apikeys create"},
+		{name: "apikeys unknown subcommand", args: []string{"admin", "apikeys", "list"}, wantCode: ExitUsage, wantStderr: `unknown apikeys command "list"`},
+		{name: "apikeys create needs a name", args: []string{"admin", "apikeys", "create", "--org", "Araldo"}, wantCode: ExitUsage, wantStderr: "--name is required"},
+		{name: "members needs a subcommand", args: []string{"admin", "members"}, wantCode: ExitUsage, wantStderr: "members list | add | role | remove"},
+		{name: "members add needs a target", args: []string{"admin", "members", "add", "--role", "editor"}, wantCode: ExitUsage, wantStderr: "--email"},
+		{name: "members role needs a real role", args: []string{"admin", "members", "role", "--email", "b@example.com", "--role", "boss"}, wantCode: ExitUsage, wantStderr: "--role is owner, admin, editor or viewer"},
+		{name: "org needs update", args: []string{"admin", "org"}, wantCode: ExitUsage, wantStderr: "org update"},
+		{name: "an old name still works and says where it went", args: []string{"members"}, wantCode: ExitUsage,
+			wantStderr: "! araldo members is now araldo admin members"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -130,7 +135,7 @@ func TestPrintKeyUsage(t *testing.T) {
 				{ID: "transit:transit/araldo", Configured: true, Primary: true, DataKeys: 1},
 				{ID: "k1", Configured: true, DataKeys: 3},
 			},
-			want: []string{"still in use: run araldo keys rotate"},
+			want: []string{"still in use: run araldo admin keys rotate"},
 		},
 		"a key removed too early": {
 			use: []keyring.KeyUse{
@@ -170,5 +175,23 @@ func TestMCPNeedsACredential(t *testing.T) {
 	if code := Run(t.Context(), []string{"mcp"}, &stdout, &stderr); code != ExitUsage ||
 		!strings.Contains(stderr.String(), "araldo auth login") || !strings.Contains(stderr.String(), "ARALDO_API_KEY") {
 		t.Fatalf("exit %d, stderr %q", code, stderr.String())
+	}
+}
+
+// TestHelpListsAdminOnce checks that the commands moved under admin are
+// listed there, not at the top level as well.
+func TestHelpListsAdminOnce(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr bytes.Buffer
+	if code := Run(t.Context(), []string{"help"}, &stdout, &stderr); code != ExitOK {
+		t.Fatalf("help: exit %d", code)
+	}
+	for _, line := range strings.Split(stdout.String(), "\n") {
+		if f := strings.Fields(line); len(f) > 0 && (f[0] == "bootstrap" || f[0] == "members" || f[0] == "apikeys") {
+			t.Errorf("help lists %s at the top level: %q", f[0], line)
+		}
+	}
+	if !strings.Contains(stdout.String(), "admin") {
+		t.Error("help does not list admin")
 	}
 }

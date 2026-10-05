@@ -55,7 +55,7 @@ task run              # server + worker on http://localhost:8080
 task bootstrap -- --email you@example.com --org "Your org"   # first owner
 ```
 
-`araldo keys generate` prints a master key for production; see
+`araldo admin keys generate` prints a master key for production; see
 [docs/operations.md](docs/operations.md).
 
 ## Test

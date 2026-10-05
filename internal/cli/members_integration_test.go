@@ -11,10 +11,13 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
-// TestMembersAndOrg drives the commands end to end. It sets environment
-// variables, which the commands read, so it cannot run in parallel.
+// TestMembersAndOrg drives the admin commands end to end. It sets
+// environment variables, which the commands read, so it cannot run in
+// parallel.
 func TestMembersAndOrg(t *testing.T) {
 	dsn := os.Getenv("ARALDO_TEST_DSN")
 	if dsn == "" {
@@ -26,6 +29,7 @@ func TestMembersAndOrg(t *testing.T) {
 	suffix := uuid.NewString()[:8]
 	owner := "owner-" + suffix + "@example.com"
 	newcomer := "new-" + suffix + "@example.com"
+	org := "Org " + suffix
 	run := func(args ...string) (string, string) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
@@ -34,40 +38,66 @@ func TestMembersAndOrg(t *testing.T) {
 		}
 		return stdout.String(), stderr.String()
 	}
-	run("bootstrap", "--email", owner, "--org", "Org "+suffix, "--brand", "Brand "+suffix)
+	run("admin", "bootstrap", "--email", owner, "--org", org, "--brand", "Brand "+suffix)
 
-	out, errOut := run("members", "add", "--as", owner, "--email", newcomer, "--role", "editor")
+	out, errOut := run("admin", "members", "add", "--org", org, "--email", newcomer, "--role", "editor")
 	if strings.TrimSpace(out) == "" || !strings.Contains(errOut, "temporary password") {
 		t.Fatalf("add printed %q / %q, want a temporary password", out, errOut)
 	}
-	run("members", "role", "--as", owner, "--email", newcomer, "--role", "admin")
-	out, _ = run("members", "list", "--as", owner)
+	run("admin", "members", "role", "--org", org, "--email", newcomer, "--role", "admin")
+	out, _ = run("admin", "members", "list", "--org", org)
 	if !hasRow(out, newcomer, "admin") || !hasRow(out, owner, "owner") {
 		t.Fatalf("list after the role change:\n%s", out)
 	}
-	run("members", "remove", "--as", owner, "--email", newcomer)
-	out, _ = run("members", "list", "--as", owner)
+	run("admin", "members", "remove", "--org", org, "--email", newcomer)
+	out, _ = run("admin", "members", "list", "--org", org)
 	if strings.Contains(out, newcomer) {
 		t.Fatalf("list after removing:\n%s", out)
 	}
 
+	// The old names and --as still work, and say what replaced them.
 	_, errOut = run("org", "update", "--as", owner, "--name", "Renamed "+suffix, "--require-mfa", "false")
-	if !strings.Contains(errOut, "Renamed "+suffix) || !strings.Contains(errOut, "two-factor required: false") {
-		t.Fatalf("org update: %q", errOut)
+	for _, want := range []string{"araldo org is now araldo admin org", "--as is no longer needed", "Renamed " + suffix, "two-factor required: false"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("org update under its old name: %q, want %q", errOut, want)
+		}
 	}
-	// The core's rules still apply: an owner without two-factor cannot
-	// require it.
-	var mfaOut, mfaErr bytes.Buffer
-	if code := Run(t.Context(), []string{"org", "update", "--as", owner, "--require-mfa", "true"}, &mfaOut, &mfaErr); code == ExitOK ||
-		!strings.Contains(mfaErr.String(), "two-factor authentication for yourself") {
-		t.Fatalf("requiring MFA without it: exit %d, %q", code, mfaErr.String())
+	org = "Renamed " + suffix
+
+	// The core's rules still apply: the last owner cannot be demoted.
+	var stdout, stderr bytes.Buffer
+	if code := Run(t.Context(), []string{"admin", "members", "role", "--org", org, "--email", owner, "--role", "viewer"}, &stdout, &stderr); code == ExitOK {
+		t.Fatalf("demoted the only owner: %s", stderr.String())
 	}
 
-	// The acting member's role still decides: an editor cannot add members.
-	run("members", "add", "--as", owner, "--email", newcomer, "--role", "editor")
-	var stdout, stderr bytes.Buffer
-	if code := Run(t.Context(), []string{"members", "add", "--as", newcomer, "--email", "x-" + suffix + "@example.com", "--role", "viewer"}, &stdout, &stderr); code == ExitOK {
-		t.Fatalf("an editor added a member: %s", stderr.String())
+	// The audit log names the operator and the command, not a member.
+	st, err := store.Open(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	var withUser int
+	var commands []string
+	rows, err := st.Pool().Query(t.Context(), `SELECT a.actor_user IS NOT NULL, a.detail->>'operator_command' FROM audit_events a
+		JOIN orgs o ON o.id = a.org_id WHERE o.name = $1 AND a.action LIKE 'member.%'`, org)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var hasUser bool
+		var cmd *string
+		if err := rows.Scan(&hasUser, &cmd); err != nil {
+			t.Fatal(err)
+		}
+		if hasUser {
+			withUser++
+		}
+		if cmd != nil {
+			commands = append(commands, *cmd)
+		}
+	}
+	if withUser != 0 || !strings.Contains(strings.Join(commands, ";"), "araldo admin members add") {
+		t.Fatalf("member changes audited with a member %d times; commands %v", withUser, commands)
 	}
 }
 

@@ -48,9 +48,9 @@ to another row, where it would decrypt without error.
    | posts, templates, media, names, emails | not encrypted by Araldo; disk encryption and TLS to Postgres are the operator's job |
 
 4. **Rotation:**
-   - `araldo keys rotate` adds a new primary master key and rewraps every
+   - `araldo admin keys rotate` adds a new primary master key and rewraps every
      data key. The secrets themselves are untouched, so it is fast.
-   - `araldo keys rotate-org <org>` issues a new data key and re-encrypts
+   - `araldo admin keys rotate-org <org>` issues a new data key and re-encrypts
      that org's secrets.
    - An old master key can be removed once nothing references its ID.
 5. **Crypto-shredding.** Deleting an org deletes its data key, so the org's
@@ -63,7 +63,7 @@ to another row, where it would decrypt without error.
    key, so their links stay valid too.
 7. **Master keys are never written to the database, backups, logs or
    telemetry.** Losing them means every connected channel must reconnect,
-   but posts, templates and history survive. `araldo keys export` prints
+   but posts, templates and history survive. `araldo admin keys export` prints
    them for offline escrow, and the operations guide says so prominently.
 8. **Implementation** uses only the standard library (`crypto/aes`,
    `crypto/cipher`, `crypto/rand`) in `internal/keyring`. Decrypted data

@@ -3,6 +3,8 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,8 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
 // The event stream (ADR 0012): the org's events in the credential's mode,
@@ -25,7 +30,58 @@ const (
 	streamHeartbeat = 15 * time.Second
 	// streamBatch bounds the events read at a time.
 	streamBatch = 100
+	// streamLookback is how far behind the newest event sent the stream
+	// reads again. An event's ID is made when it is emitted, not when its
+	// transaction commits, so an event can appear after a later one was
+	// sent; re-reading the last seconds, skipping what was sent, finds it.
+	streamLookback = 10 * time.Second
 )
+
+// streamReader reads the events a stream has not sent, in ID order.
+type streamReader struct {
+	h *Handler
+	// floor is where the stream started: nothing at or before it is sent.
+	floor, cursor uuid.UUID
+	sent          map[uuid.UUID]bool
+}
+
+func (sr *streamReader) next(ctx context.Context, a core.Actor) ([]*model.Event, error) {
+	low := id.Before(id.Time(sr.cursor).Add(-streamLookback))
+	if bytes.Compare(low[:], sr.floor[:]) < 0 {
+		low = sr.floor
+	}
+	var out []*model.Event
+	for {
+		page, err := sr.h.svc.EventsSince(ctx, a, low, streamBatch)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range page {
+			if !sr.sent[e.ID] {
+				out = append(out, e)
+			}
+		}
+		if len(page) < streamBatch {
+			break
+		}
+		low = page[len(page)-1].ID
+	}
+	return out, nil
+}
+
+// mark records e as sent, and forgets what fell out of the lookback.
+func (sr *streamReader) mark(e *model.Event) {
+	sr.sent[e.ID] = true
+	if bytes.Compare(e.ID[:], sr.cursor[:]) > 0 {
+		sr.cursor = e.ID
+		edge := id.Time(sr.cursor).Add(-2 * streamLookback)
+		for u := range sr.sent {
+			if id.Time(u).Before(edge) {
+				delete(sr.sent, u)
+			}
+		}
+	}
+}
 
 func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) error {
 	a := actor(r)
@@ -51,7 +107,8 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) error {
 	}
 	// The first read also checks the credential may read events, while a
 	// refusal can still be a problem response.
-	evs, err := h.svc.EventsSince(r.Context(), a, cursor, streamBatch)
+	sr := &streamReader{h: h, floor: cursor, cursor: cursor, sent: map[uuid.UUID]bool{}}
+	evs, err := sr.next(r.Context(), a)
 	if err != nil {
 		return err
 	}
@@ -70,7 +127,7 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) error {
 	defer ticker.Stop()
 	for {
 		for _, e := range evs {
-			cursor = e.ID
+			sr.mark(e)
 			if len(types) > 0 && !slices.Contains(types, e.Type) {
 				continue
 			}
@@ -100,7 +157,7 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) error {
 			}
 			checked = time.Now()
 		}
-		if evs, err = h.svc.EventsSince(r.Context(), a, cursor, streamBatch); err != nil {
+		if evs, err = sr.next(r.Context(), a); err != nil {
 			return nil //nolint:nilerr // headers are sent: ending the stream is the answer; the client reconnects
 		}
 	}

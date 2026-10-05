@@ -166,3 +166,38 @@ func TestEventStreamEndsWithItsCredential(t *testing.T) {
 		t.Fatal("the stream outlived its revoked key")
 	}
 }
+
+// TestEventStreamSendsLateCommits checks an event committed after a later
+// one was sent, with an earlier ID (it was emitted first), still arrives.
+func TestEventStreamSendsLateCommits(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	srv := httptest.NewServer(c.h)
+	defer srv.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	events := stream(t, ctx, srv, c.key, "", "")
+	b, err := id.Parse(id.Brand, c.brand)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(500 * time.Millisecond) // the late event is emitted after the stream starts
+	if _, err := c.s.CreatePost(ctx, c.owner, core.PostInput{BrandID: b, Content: &model.Content{Body: "first"},
+		PublishAt: time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)}); err != nil {
+		t.Fatal(err)
+	}
+	sent := next(t, events, "post.created")
+	sentID, err := id.Parse(id.Event, sent.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An event emitted just before it, whose transaction commits now.
+	lateID := id.Before(id.Time(sentID).Add(-200 * time.Millisecond))
+	if _, err := shared.Pool().Exec(ctx, `INSERT INTO events (id, org_id, livemode, type, data) VALUES ($1, $2, false, 'post.canceled', '{}')`,
+		lateID, c.owner.OrgID); err != nil {
+		t.Fatal(err)
+	}
+	if e := next(t, events, "post.canceled"); e.id != id.Format(id.Event, lateID) {
+		t.Fatalf("got %s, want the late event %s", e.id, id.Format(id.Event, lateID))
+	}
+}

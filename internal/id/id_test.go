@@ -115,3 +115,14 @@ func TestBefore(t *testing.T) {
 		t.Error("Before is not ordered by time")
 	}
 }
+
+func TestTimeOfAnID(t *testing.T) {
+	t.Parallel()
+	at := time.UnixMilli(1_800_000_000_123)
+	if got := Time(Before(at)); !got.Equal(at) {
+		t.Fatalf("Time(Before(t)) = %s, want %s", got, at)
+	}
+	if got := Time(New()); time.Since(got) > time.Minute || time.Since(got) < 0 {
+		t.Fatalf("Time(New()) = %s", got)
+	}
+}

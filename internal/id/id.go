@@ -69,6 +69,13 @@ func New() uuid.UUID {
 	return uuid.Must(uuid.NewV7())
 }
 
+// Time is when a version 7 UUID was made, to the millisecond.
+func Time(u uuid.UUID) time.Time {
+	var ms [8]byte
+	copy(ms[2:], u[:6])
+	return time.UnixMilli(int64(binary.BigEndian.Uint64(ms[:]))) //nolint:gosec // G115: 48 bits fit
+}
+
 // Before returns the smallest version 7 UUID made at t: every ID New made
 // before t sorts below it, so a primary key index finds rows older than t.
 func Before(t time.Time) uuid.UUID {

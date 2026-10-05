@@ -8,8 +8,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -125,8 +127,8 @@ func printTemplate(w io.Writer, tp map[string]any) error {
 	fmt.Fprintf(&b, "%s  %s  v%d  approval: %s  [%s]\n\n", str(tp, "key"), str(tp, "name"), int(v), str(tp, "approval"), str(tp, "id"))
 	fmt.Fprintf(&b, "%s\n", str(latest, "body"))
 	if ov, ok := latest["overrides"].(map[string]any); ok {
-		for p, text := range ov {
-			fmt.Fprintf(&b, "\nfor %s:\n%v\n", p, text)
+		for _, p := range slices.Sorted(maps.Keys(ov)) {
+			fmt.Fprintf(&b, "\nfor %s:\n%v\n", p, ov[p])
 		}
 	}
 	if vars, ok := latest["variables"]; ok && vars != nil {

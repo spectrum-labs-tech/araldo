@@ -147,19 +147,30 @@ type ClaimedDelivery struct {
 	Endpoint model.WebhookEndpoint
 }
 
-// ClaimDeliveries leases due deliveries to enabled endpoints, but not a
-// suspended org's (ADR 0031): theirs wait until it is active again.
+// PerEndpoint is how many deliveries to one endpoint are sent at once, so
+// an endpoint that answers slowly, or not at all, holds back only its own.
+const PerEndpoint = 2
+
+// ClaimDeliveries leases due deliveries to enabled endpoints, at most
+// PerEndpoint under way to each, but not a suspended org's (ADR 0031):
+// theirs wait until it is active again.
 func (s *Store) ClaimDeliveries(ctx context.Context, owner string, now, leaseUntil time.Time, limit int) ([]ClaimedDelivery, error) {
 	rows, err := s.q.Query(ctx, `
-		WITH picked AS (
-			SELECT d.id FROM webhook_deliveries d JOIN webhook_endpoints w ON w.id = d.endpoint_id
+		WITH due AS (
+			SELECT d.id, d.next_attempt_at,
+				row_number() OVER (PARTITION BY d.endpoint_id ORDER BY d.next_attempt_at, d.id)
+				+ (SELECT count(*) FROM webhook_deliveries x WHERE x.endpoint_id = d.endpoint_id AND x.status = 'delivering') AS place
+			FROM webhook_deliveries d JOIN webhook_endpoints w ON w.id = d.endpoint_id
 			WHERE d.status = 'pending' AND d.next_attempt_at <= $2 AND w.status = 'enabled'
 			  AND NOT EXISTS (SELECT 1 FROM orgs WHERE orgs.id = d.org_id AND orgs.status = 'suspended')
-			ORDER BY d.next_attempt_at LIMIT $4 FOR UPDATE OF d SKIP LOCKED
+		), picked AS (
+			SELECT d.id FROM webhook_deliveries d JOIN due ON due.id = d.id
+			WHERE due.place <= $5
+			ORDER BY due.next_attempt_at LIMIT $4 FOR UPDATE OF d SKIP LOCKED
 		)
 		UPDATE webhook_deliveries d SET status = 'delivering', lease_owner = $1, lease_until = $3, attempts = d.attempts + 1
-		FROM picked WHERE d.id = picked.id
-		RETURNING d.id`, owner, now, leaseUntil, limit)
+		FROM picked WHERE d.id = picked.id AND d.status = 'pending'
+		RETURNING d.id`, owner, now, leaseUntil, limit, PerEndpoint)
 	if err != nil {
 		return nil, err
 	}

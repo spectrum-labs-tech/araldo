@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1389,5 +1390,58 @@ func TestPastDeadlineIsNotPublished(t *testing.T) {
 	}
 	if st := got.Targets[0].Status; st == model.TargetPublished || st == model.TargetPublishing {
 		t.Fatalf("a target past its deadline was published: %s", st)
+	}
+}
+
+// TestSlowEndpointHoldsOnlyItsOwnDeliveries checks an endpoint that
+// answers slowly gets at most a couple of deliveries at once, and another
+// org's webhooks go out meanwhile.
+func TestSlowEndpointHoldsOnlyItsOwnDeliveries(t *testing.T) {
+	t.Parallel()
+	slowOrg, quickOrg := newWorld(t), newWorld(t)
+	ctx, stop := context.WithCancel(t.Context())
+	defer stop()
+	var now, most atomic.Int32
+	slow := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		n := now.Add(1)
+		defer now.Add(-1)
+		for m := most.Load(); n > m && !most.CompareAndSwap(m, n); m = most.Load() {
+		}
+		time.Sleep(700 * time.Millisecond)
+	}))
+	defer slow.Close()
+	quick := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer quick.Close()
+	if _, _, err := slowOrg.s.CreateEndpoint(ctx, slowOrg.owner, core.EndpointInput{URL: slow.URL, EventTypes: []string{"post.created"}}); err != nil {
+		t.Fatal(err)
+	}
+	quickEP, _, err := quickOrg.s.CreateEndpoint(ctx, quickOrg.owner, core.EndpointInput{URL: quick.URL, EventTypes: []string{"post.created"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	for range 6 {
+		if _, err := slowOrg.s.CreatePost(ctx, slowOrg.owner, core.PostInput{BrandID: slowOrg.brand.ID, Content: &model.Content{Body: "slow"}, PublishAt: later}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := quickOrg.s.CreatePost(ctx, quickOrg.owner, core.PostInput{BrandID: quickOrg.brand.ID, Content: &model.Content{Body: "quick"}, PublishAt: later}); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = slowOrg.s.RunDeliverer(ctx, "fair-"+uuid.NewString()[:8]) }()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		ds, _, err := quickOrg.s.Deliveries(ctx, quickOrg.owner, quickEP.ID, store.Page{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(ds) == 1 && ds[0].Status == "succeeded" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the other org's delivery: %+v", ds)
+		}
+	}
+	if m := most.Load(); m > store.PerEndpoint {
+		t.Fatalf("%d deliveries at once to one endpoint, want at most %d", m, store.PerEndpoint)
 	}
 }

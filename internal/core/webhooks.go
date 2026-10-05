@@ -382,12 +382,36 @@ func (s *Service) wakeDeliveries(ctx context.Context) {
 func (s *Service) RunDeliverer(ctx context.Context, owner string) error {
 	wake := make(chan struct{}, 1)
 	go s.listen(ctx, "araldo_webhooks", wake)
+	// Up to deliveryBatch deliveries under way, more claimed as each one
+	// finishes, so a slow endpoint holds its own slots, not the rest.
+	busy := make(chan struct{}, deliveryBatch)
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	for {
-		n, err := s.DeliverDue(ctx, owner)
-		if err != nil && ctx.Err() == nil {
-			s.log.ErrorContext(ctx, "webhook round failed", "err", err)
+		free := deliveryBatch - len(busy)
+		claimed := 0
+		if free > 0 && ctx.Err() == nil {
+			now := s.Now()
+			ds, err := s.store.ClaimDeliveries(ctx, owner, now, now.Add(deliveryLease), free)
+			if err != nil && ctx.Err() == nil {
+				s.log.ErrorContext(ctx, "claiming webhook deliveries failed", "err", err)
+			}
+			for _, d := range ds {
+				busy <- struct{}{}
+				wg.Go(func() {
+					defer func() {
+						<-busy
+						select {
+						case wake <- struct{}{}:
+						default:
+						}
+					}()
+					s.deliverOne(ctx, owner, d)
+				})
+			}
+			claimed = len(ds)
 		}
-		if n == deliveryBatch {
+		if free > 0 && claimed == free {
 			continue
 		}
 		select {
@@ -408,14 +432,17 @@ func (s *Service) DeliverDue(ctx context.Context, owner string) (int, error) {
 	}
 	var wg sync.WaitGroup
 	for _, d := range claimed {
-		wg.Go(func() {
-			if err := s.deliver(ctx, owner, d); err != nil {
-				s.log.ErrorContext(ctx, "recording webhook delivery failed", "delivery", id.Format(id.Delivery, d.ID), "err", err)
-			}
-		})
+		wg.Go(func() { s.deliverOne(ctx, owner, d) })
 	}
 	wg.Wait()
 	return len(claimed), nil
+}
+
+// deliverOne sends a claimed delivery, logging what cannot be recorded.
+func (s *Service) deliverOne(ctx context.Context, owner string, d store.ClaimedDelivery) {
+	if err := s.deliver(ctx, owner, d); err != nil {
+		s.log.ErrorContext(ctx, "recording webhook delivery failed", "delivery", id.Format(id.Delivery, d.ID), "err", err)
+	}
 }
 
 func (s *Service) deliver(ctx context.Context, owner string, d store.ClaimedDelivery) error {

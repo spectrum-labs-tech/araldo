@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/spectrum-labs-tech/araldo/internal/blob"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 )
@@ -135,5 +137,36 @@ func TestVideoUploadOverTheAPI(t *testing.T) {
 	}
 	if blobs.count() != before {
 		t.Fatal("a video whose upload failed was kept")
+	}
+}
+
+// TestLargeVideoUploadWithIdempotencyKey checks that a video bigger than an
+// image may be is streamed under an Idempotency-Key, not refused for being
+// too big to hold in memory, and that a retry replays the first answer.
+func TestLargeVideoUploadWithIdempotencyKey(t *testing.T) {
+	t.Parallel()
+	blobs := &streamBlobs{objects: map[string][]byte{}}
+	c := newClient(t, func(cfg *core.Config) { cfg.Blobs = blobs })
+	// The clip, then a free box padding it past the 16 MiB image limit.
+	clip := mp4()
+	pad := make([]byte, 17<<20)
+	binary.BigEndian.PutUint32(pad, uint32(len(pad)))
+	copy(pad[4:], "free")
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	_ = w.WriteField("brand", c.brand)
+	fw, _ := w.CreateFormFile("file", "clip.mp4")
+	_, _ = fw.Write(clip)
+	_, _ = fw.Write(pad)
+	_ = w.Close()
+	key := map[string]string{"Idempotency-Key": uuid.NewString()}
+	status, first := c.do(http.MethodPost, "/v1/media", w.FormDataContentType(), buf.Bytes(), key)
+	if status != http.StatusCreated || first["type"] != "video/mp4" {
+		t.Fatalf("a %d MiB video with an Idempotency-Key: %d %v", buf.Len()>>20, status, first)
+	}
+	stored := blobs.count()
+	status, again := c.do(http.MethodPost, "/v1/media", w.FormDataContentType(), buf.Bytes(), key)
+	if status != http.StatusCreated || again["id"] != first["id"] || blobs.count() != stored {
+		t.Fatalf("the retry: %d %v (want the first answer, nothing stored)", status, again)
 	}
 }

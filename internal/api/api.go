@@ -194,10 +194,16 @@ func (h *Handler) authenticate(r *http.Request) (core.Actor, error) {
 
 // idempotent runs a POST at most once per Idempotency-Key (ADR 0005).
 func (h *Handler) idempotent(w http.ResponseWriter, r *http.Request, a core.Actor, key string) {
-	body, err := readBody(r, bodyLimit(r))
-	if err != nil {
-		h.fail(w, r, err)
-		return
+	// A streamed upload (up to a video's size) is not held in memory to
+	// fingerprint, so its key covers the route alone: a retry with the key
+	// replays the first upload's answer, whatever file it carries.
+	var body []byte
+	if !streamedUpload(r) {
+		var err error
+		if body, err = readBody(r, bodyLimit(r)); err != nil {
+			h.fail(w, r, err)
+			return
+		}
 	}
 	sum := sha256.Sum256(append([]byte(r.Method+" "+r.URL.Path+"\n"), body...))
 	replay, err := h.svc.BeginIdempotent(r.Context(), a, key, sum[:])
@@ -213,7 +219,9 @@ func (h *Handler) idempotent(w http.ResponseWriter, r *http.Request, a core.Acto
 		return
 	}
 	rec := &recorder{ResponseWriter: w, status: http.StatusOK}
-	r.Body = readCloser{bytes.NewReader(body)}
+	if body != nil {
+		r.Body = readCloser{bytes.NewReader(body)}
+	}
 	finished := false
 	defer func() {
 		if !finished {
@@ -251,6 +259,10 @@ type recorder struct {
 	status int
 	buf    bytes.Buffer
 }
+
+// Unwrap lets http.ResponseController reach the connection (an upload
+// extends its deadlines).
+func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func (r *recorder) WriteHeader(status int) {
 	r.status = status

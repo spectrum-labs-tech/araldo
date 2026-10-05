@@ -44,7 +44,9 @@ set the bar most developers now expect.
      request that crashed, releases the key so a corrected retry runs. A key
      left in progress for 5 minutes (its process died) is taken over by a
      retry of the same request. If that process had already committed, the
-     retry runs again: the key and the work are not one transaction.
+     retry runs again: the key and the work are not one transaction;
+   - a file upload (`POST /v1/media`, multipart) is streamed rather than held
+     in memory, so its fingerprint is the route alone, not the file.
 6. **Pagination** is by cursor: `limit` (1–100, default 20),
    `starting_after` or `ending_before` (an object ID). A list is
    `{ "object": "list", "data": [...], "has_more": true }`. There are no

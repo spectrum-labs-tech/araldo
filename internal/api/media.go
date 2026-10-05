@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
@@ -25,6 +26,18 @@ const maxUploadBody = media.MaxBytes + 64<<10
 // maxFormField bounds the text fields of an upload form.
 const maxFormField = 4 << 10
 
+// uploadTimeout is how long a media upload may take to arrive and be
+// answered: a video of up to a gigabyte over a slow uplink, far past the
+// server's one-minute timeouts for other requests.
+const uploadTimeout = 30 * time.Minute
+
+// streamedUpload reports whether r uploads a file, which is streamed, not
+// read into memory first.
+func streamedUpload(r *http.Request) bool {
+	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return r.Method == http.MethodPost && r.URL.Path == "/v1/media" && ct == "multipart/form-data"
+}
+
 // bodyLimit is how large r's body may be.
 func bodyLimit(r *http.Request) int64 {
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/media" {
@@ -38,6 +51,11 @@ func (h *Handler) createMedia(w http.ResponseWriter, r *http.Request) error {
 	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	var m *model.Media
 	if ct == "multipart/form-data" {
+		rc := http.NewResponseController(w)
+		deadline := time.Now().Add(uploadTimeout)
+		if err := errors.Join(rc.SetReadDeadline(deadline), rc.SetWriteDeadline(deadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			return err
+		}
 		limit := int64(maxUploadBody)
 		if v := h.svc.MaxVideoBytes(); v+64<<10 > limit {
 			limit = v + 64<<10

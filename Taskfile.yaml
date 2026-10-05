@@ -117,12 +117,18 @@ tasks:
     cmd: npm run js
 
   web:check:
-    desc: Check the committed app.css and editor.js match their sources, as CI does
+    desc: Check app.css and editor.js are current with their sources, as CI does
     deps: [web:deps]
     cmds:
-      - npm run css
-      - npm run js
-      - git diff --exit-code -- internal/web/static/app.css internal/web/static/editor.js
+      - |
+        set -e
+        tmp=bin/web-check
+        mkdir -p "$tmp"
+        cp internal/web/static/app.css internal/web/static/editor.js "$tmp"/
+        npm run css >/dev/null && npm run js >/dev/null
+        cmp -s "$tmp/app.css" internal/web/static/app.css && cmp -s "$tmp/editor.js" internal/web/static/editor.js || {
+          echo "app.css or editor.js was not current with its sources: rebuilt it; commit the result"; rm -rf "$tmp"; exit 1; }
+        rm -rf "$tmp"
 
   web:icons:
     desc: Regenerate the platform icon sprite (internal/web/templates/_icons.html) from Simple Icons

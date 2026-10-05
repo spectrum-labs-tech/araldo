@@ -147,12 +147,14 @@ type ClaimedDelivery struct {
 	Endpoint model.WebhookEndpoint
 }
 
-// ClaimDeliveries leases due deliveries to enabled endpoints.
+// ClaimDeliveries leases due deliveries to enabled endpoints, but not a
+// suspended org's (ADR 0031): theirs wait until it is active again.
 func (s *Store) ClaimDeliveries(ctx context.Context, owner string, now, leaseUntil time.Time, limit int) ([]ClaimedDelivery, error) {
 	rows, err := s.q.Query(ctx, `
 		WITH picked AS (
 			SELECT d.id FROM webhook_deliveries d JOIN webhook_endpoints w ON w.id = d.endpoint_id
 			WHERE d.status = 'pending' AND d.next_attempt_at <= $2 AND w.status = 'enabled'
+			  AND NOT EXISTS (SELECT 1 FROM orgs WHERE orgs.id = d.org_id AND orgs.status = 'suspended')
 			ORDER BY d.next_attempt_at LIMIT $4 FOR UPDATE OF d SKIP LOCKED
 		)
 		UPDATE webhook_deliveries d SET status = 'delivering', lease_owner = $1, lease_until = $3, attempts = d.attempts + 1
@@ -263,10 +265,11 @@ func (s *Store) Deliveries(ctx context.Context, orgID, endpointID uuid.UUID, pag
 	return ds, more, nil
 }
 
-// ResendDelivery queues a delivery again now.
-func (s *Store) ResendDelivery(ctx context.Context, orgID, id uuid.UUID, now time.Time) error {
-	return s.execOne(ctx, `UPDATE webhook_deliveries SET status = 'pending', next_attempt_at = $3
-		WHERE org_id = $1 AND id = $2 AND status IN ('succeeded', 'failed', 'pending')`, orgID, id, now)
+// ResendDelivery queues a delivery of an event in livemode again now.
+func (s *Store) ResendDelivery(ctx context.Context, orgID, id uuid.UUID, livemode bool, now time.Time) error {
+	return s.execOne(ctx, `UPDATE webhook_deliveries d SET status = 'pending', next_attempt_at = $4
+		FROM events e WHERE e.id = d.event_id AND e.livemode = $3
+		AND d.org_id = $1 AND d.id = $2 AND d.status IN ('succeeded', 'failed', 'pending')`, orgID, id, livemode, now)
 }
 
 // Idempotency keys (ADR 0005).

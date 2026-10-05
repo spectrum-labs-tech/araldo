@@ -257,7 +257,7 @@ func (s *Service) ResendDelivery(ctx context.Context, a Actor, deliveryID uuid.U
 	if err := a.require(PermWebhooksWrite); err != nil {
 		return err
 	}
-	if err := s.store.ResendDelivery(ctx, a.OrgID, deliveryID, s.Now()); err != nil {
+	if err := s.store.ResendDelivery(ctx, a.OrgID, deliveryID, a.Livemode, s.Now()); err != nil {
 		return notFound(err, "webhook delivery")
 	}
 	s.wakeDeliveries(ctx)

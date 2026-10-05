@@ -6,7 +6,10 @@ package core_test
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -400,5 +403,70 @@ func TestOrgsFromSignup(t *testing.T) {
 	}
 	if _, err := service(t).CreateOwnOrg(ctx, u.ID, "Mine "+uuid.NewString()[:8]); err != nil {
 		t.Fatalf("creating an org where members may: %v", err)
+	}
+}
+
+// TestSuspendedOrgsGetNoWebhooks checks a suspended org's webhook
+// deliveries wait until it is active again (ADR 0031), and a delivery is
+// resent only in its own mode.
+func TestSuspendedOrgsGetNoWebhooks(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
+	defer srv.Close()
+	ep, _, err := w.s.CreateEndpoint(ctx, w.owner, core.EndpointInput{URL: srv.URL, EventTypes: []string{"post.created"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, op := operatorKey(t, w.s)
+	in, _, err := w.s.InOrg(ctx, op, w.org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Livemode = false
+	suspended, active := model.OrgSuspended, model.OrgActive
+	if _, err := w.s.ChangeOrg(ctx, in, core.OrgChange{Status: &suspended}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.s.CreatePost(ctx, in, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "quiet"},
+		PublishAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339)}); err != nil {
+		t.Fatal(err)
+	}
+	delivery := func() model.Delivery {
+		t.Helper()
+		ds, _, err := w.s.Deliveries(ctx, in, ep.ID, store.Page{})
+		if err != nil || len(ds) != 1 {
+			t.Fatalf("deliveries: %v, %v", ds, err)
+		}
+		return ds[0]
+	}
+	for range 3 {
+		if _, err := w.s.DeliverDue(ctx, "test-worker"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if d := delivery(); d.Status != "pending" || hits.Load() != 0 {
+		t.Fatalf("a suspended org's delivery: %+v, %d requests", d, hits.Load())
+	}
+	if _, err := w.s.ChangeOrg(ctx, in, core.OrgChange{Status: &active}); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(15 * time.Second); delivery().Status != "succeeded"; time.Sleep(20 * time.Millisecond) {
+		if _, err := w.s.DeliverDue(ctx, "test-worker"); err != nil {
+			t.Fatal(err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the delivery once active: %+v", delivery())
+		}
+	}
+	live := w.owner
+	live.Livemode = true
+	if err := w.s.ResendDelivery(ctx, live, delivery().ID); kind(err) != apperr.KindNotFound {
+		t.Fatalf("resending a test-mode delivery in live mode: %v", err)
+	}
+	if err := w.s.ResendDelivery(ctx, w.owner, delivery().ID); err != nil {
+		t.Fatalf("resending it in its own mode: %v", err)
 	}
 }

@@ -645,6 +645,12 @@ func TestRenameAnApp(t *testing.T) {
 	if rec := rename("  "); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("an empty name: %d", rec.Code)
 	}
+	// The audit log names the app by its prefixed ID, like every other object.
+	var target string
+	if err := d.st.Pool().QueryRow(t.Context(), `SELECT target FROM audit_events WHERE action = 'provider_app.rename' AND org_id = $1`, d.owner.OrgID).Scan(&target); err != nil ||
+		target != id.Format(id.ProviderApp, app.ID) {
+		t.Fatalf("the rename's audit target: %q, %v", target, err)
+	}
 }
 
 func TestConnectTheCLI(t *testing.T) {

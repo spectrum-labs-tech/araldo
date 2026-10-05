@@ -161,7 +161,7 @@ func (s *Service) CreateProviderApp(ctx context.Context, a Actor, in ProviderApp
 			}
 			return err
 		}
-		return s.audit(ctx, tx, a, "provider_app.create", app.ID.String(), map[string]any{"provider": in.Provider})
+		return s.audit(ctx, tx, a, "provider_app.create", id.Format(id.ProviderApp, app.ID), map[string]any{"provider": in.Provider})
 	})
 	return app, err
 }
@@ -186,7 +186,7 @@ func (s *Service) RenameProviderApp(ctx context.Context, a Actor, appID uuid.UUI
 		if err := tx.RenameProviderApp(ctx, a.OrgID, appID, name); err != nil {
 			return notFound(err, "app")
 		}
-		return s.audit(ctx, tx, a, "provider_app.rename", appID.String(), map[string]any{"name": name})
+		return s.audit(ctx, tx, a, "provider_app.rename", id.Format(id.ProviderApp, appID), map[string]any{"name": name})
 	})
 	app.Name = name
 	return app, err
@@ -204,7 +204,7 @@ func (s *Service) DeleteProviderApp(ctx context.Context, a Actor, appID uuid.UUI
 		if err := tx.DeleteProviderApp(ctx, a.OrgID, appID); err != nil {
 			return notFound(err, "app")
 		}
-		return s.audit(ctx, tx, a, "provider_app.delete", appID.String(), nil)
+		return s.audit(ctx, tx, a, "provider_app.delete", id.Format(id.ProviderApp, appID), nil)
 	})
 }
 

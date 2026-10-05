@@ -45,6 +45,7 @@ const (
 	Invitation      Prefix = "inv"
 	UserToken       Prefix = "utok"
 	Device          Prefix = "dev"
+	ProviderApp     Prefix = "app"
 )
 
 // ErrInvalid is returned for a malformed ID or one of another type.

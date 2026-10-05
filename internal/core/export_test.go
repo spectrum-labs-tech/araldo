@@ -83,3 +83,14 @@ func ReadNewsletterResultsOrg(s *Service, org uuid.UUID) (int, error) {
 func MediaLinkFor(ctx context.Context, s *Service, m *model.Media, p platform.Provider) string {
 	return s.mediaLinkFor(ctx, m, p)
 }
+
+// RunPublisherOrg is RunPublisher for one org, so a test's publisher takes
+// no other test's posts.
+func RunPublisherOrg(ctx context.Context, s *Service, owner string, org uuid.UUID) error {
+	return s.runPublisher(ctx, owner, &org)
+}
+
+// RunDelivererOrg is RunDeliverer for one org.
+func RunDelivererOrg(ctx context.Context, s *Service, owner string, org uuid.UUID) error {
+	return s.runDeliverer(ctx, owner, &org)
+}

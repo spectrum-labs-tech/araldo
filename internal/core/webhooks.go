@@ -380,6 +380,11 @@ func (s *Service) wakeDeliveries(ctx context.Context) {
 
 // RunDeliverer delivers webhooks until ctx ends.
 func (s *Service) RunDeliverer(ctx context.Context, owner string) error {
+	return s.runDeliverer(ctx, owner, nil)
+}
+
+// runDeliverer is RunDeliverer for one org, or (orgID nil) every org.
+func (s *Service) runDeliverer(ctx context.Context, owner string, orgID *uuid.UUID) error {
 	wake := make(chan struct{}, 1)
 	go s.listen(ctx, "araldo_webhooks", wake)
 	// Up to deliveryBatch deliveries under way, more claimed as each one
@@ -392,7 +397,7 @@ func (s *Service) RunDeliverer(ctx context.Context, owner string) error {
 		claimed := 0
 		if free > 0 && ctx.Err() == nil {
 			now := s.Now()
-			ds, err := s.store.ClaimDeliveries(ctx, owner, now, now.Add(deliveryLease), free)
+			ds, err := s.store.ClaimDeliveries(ctx, orgID, owner, now, now.Add(deliveryLease), free)
 			if err != nil && ctx.Err() == nil {
 				s.log.ErrorContext(ctx, "claiming webhook deliveries failed", "err", err)
 			}
@@ -426,7 +431,7 @@ func (s *Service) RunDeliverer(ctx context.Context, owner string) error {
 // DeliverDue sends one batch of due deliveries in parallel.
 func (s *Service) DeliverDue(ctx context.Context, owner string) (int, error) {
 	now := s.Now()
-	claimed, err := s.store.ClaimDeliveries(ctx, owner, now, now.Add(deliveryLease), deliveryBatch)
+	claimed, err := s.store.ClaimDeliveries(ctx, nil, owner, now, now.Add(deliveryLease), deliveryBatch)
 	if err != nil {
 		return 0, err
 	}

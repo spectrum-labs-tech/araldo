@@ -154,7 +154,8 @@ const PerEndpoint = 2
 // ClaimDeliveries leases due deliveries to enabled endpoints, at most
 // PerEndpoint under way to each, but not a suspended org's (ADR 0031):
 // theirs wait until it is active again.
-func (s *Store) ClaimDeliveries(ctx context.Context, owner string, now, leaseUntil time.Time, limit int) ([]ClaimedDelivery, error) {
+// orgID limits it to one org (nil: every org).
+func (s *Store) ClaimDeliveries(ctx context.Context, orgID *uuid.UUID, owner string, now, leaseUntil time.Time, limit int) ([]ClaimedDelivery, error) {
 	rows, err := s.q.Query(ctx, `
 		WITH due AS (
 			SELECT d.id, d.next_attempt_at,
@@ -163,6 +164,7 @@ func (s *Store) ClaimDeliveries(ctx context.Context, owner string, now, leaseUnt
 			FROM webhook_deliveries d JOIN webhook_endpoints w ON w.id = d.endpoint_id
 			WHERE d.status = 'pending' AND d.next_attempt_at <= $2 AND w.status = 'enabled'
 			  AND NOT EXISTS (SELECT 1 FROM orgs WHERE orgs.id = d.org_id AND orgs.status = 'suspended')
+			  AND ($6::uuid IS NULL OR d.org_id = $6)
 		), picked AS (
 			SELECT d.id FROM webhook_deliveries d JOIN due ON due.id = d.id
 			WHERE due.place <= $5
@@ -170,7 +172,7 @@ func (s *Store) ClaimDeliveries(ctx context.Context, owner string, now, leaseUnt
 		)
 		UPDATE webhook_deliveries d SET status = 'delivering', lease_owner = $1, lease_until = $3, attempts = d.attempts + 1
 		FROM picked WHERE d.id = picked.id AND d.status = 'pending'
-		RETURNING d.id`, owner, now, leaseUntil, limit, PerEndpoint)
+		RETURNING d.id`, owner, now, leaseUntil, limit, PerEndpoint, orgID)
 	if err != nil {
 		return nil, err
 	}

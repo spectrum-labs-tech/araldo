@@ -42,6 +42,11 @@ const (
 // claims nothing more, and gives the publishes under way publishDrain to
 // finish.
 func (s *Service) RunPublisher(ctx context.Context, owner string) error {
+	return s.runPublisher(ctx, owner, nil)
+}
+
+// runPublisher is RunPublisher for one org, or (orgID nil) every org.
+func (s *Service) runPublisher(ctx context.Context, owner string, orgID *uuid.UUID) error {
 	wake := make(chan struct{}, 1)
 	go s.listen(ctx, "araldo_publish", wake)
 	work, stop := drain(ctx, publishDrain)
@@ -53,7 +58,7 @@ func (s *Service) RunPublisher(ctx context.Context, owner string) error {
 		free := publishBatch - len(busy)
 		claimed := 0
 		if free > 0 && ctx.Err() == nil {
-			cts, err := s.claimDue(ctx, owner, free)
+			cts, err := s.claimDue(ctx, orgID, owner, free)
 			if err != nil && ctx.Err() == nil {
 				s.log.ErrorContext(ctx, "claiming due targets failed", "err", err)
 			}
@@ -143,7 +148,7 @@ func (s *Service) publishDue(ctx, work context.Context, owner string) (int, erro
 		return 0, nil // stopping: claim nothing more
 	default:
 	}
-	claimed, err := s.claimDue(ctx, owner, publishBatch)
+	claimed, err := s.claimDue(ctx, nil, owner, publishBatch)
 	if err != nil {
 		return 0, err
 	}
@@ -155,10 +160,10 @@ func (s *Service) publishDue(ctx, work context.Context, owner string) (int, erro
 	return len(claimed), nil
 }
 
-// claimDue leases up to n due targets.
-func (s *Service) claimDue(ctx context.Context, owner string, n int) ([]store.ClaimedTarget, error) {
+// claimDue leases up to n due targets, of one org or (orgID nil) any.
+func (s *Service) claimDue(ctx context.Context, orgID *uuid.UUID, owner string, n int) ([]store.ClaimedTarget, error) {
 	now := s.Now()
-	return s.store.ClaimDueTargets(ctx, owner, now, now.Add(publishLease), n)
+	return s.store.ClaimDueTargets(ctx, orgID, owner, now, now.Add(publishLease), n)
 }
 
 // publishOne publishes a claimed target, logging what cannot be recorded.

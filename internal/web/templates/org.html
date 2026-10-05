@@ -44,15 +44,36 @@
 
 {{if $d.IsAdmin}}
 <section class="card">
-  <h2>Add a member</h2>
-  <form method="post" action="/org/members" class="flex max-w-xl flex-col gap-4">
+  <h2>Invite a member</h2>
+  {{with $d.InviteLink}}
+  <div class="mb-4 flex flex-col gap-1">
+    <p>Send this link to <strong>{{$d.Invited.Email}}</strong>, privately. It works once, for a week, and is not shown again.</p>
+    <span class="flex flex-wrap items-center gap-2"><code id="invite-link" class="copy-box">{{.}}</code>
+      <button type="button" data-copy="invite-link">Copy</button></span>
+  </div>
+  {{end}}
+  <form method="post" action="/org/invitations" class="flex flex-col gap-4">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <label>Email <input type="email" name="email" required></label>
     <label>Role <select name="role"><option>editor</option><option>viewer</option><option>admin</option>{{if $d.IsOwner}}<option>owner</option>{{end}}</select></label>
-    <label>Temporary password <span class="text-sm font-normal text-muted">only for people without an account; share it with them privately</span>
-      <input type="password" name="password" autocomplete="new-password" minlength="12"></label>
-    <div><button class="btn-primary">Add</button></div>
+    <p class="text-sm text-muted">You get a link to share. They join when they open it and sign in, or create their account with their own password.</p>
+    <div><button class="btn-primary">Create invitation</button></div>
   </form>
+  {{if $d.Invitations}}
+  <h3 class="mt-4">Open invitations</h3>
+  <table>
+    <thead><tr><th>Email</th><th>Role</th><th>Expires</th><th></th></tr></thead>
+    <tbody>
+    {{range $d.Invitations}}
+    <tr>
+      <td>{{.Email}}</td><td>{{.Role}}</td><td>{{fmtTime .ExpiresAt}}</td>
+      <td><form method="post" action="/org/invitations/{{invitationID .ID}}/revoke" data-confirm="Withdraw the invitation to {{.Email}}?">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger" aria-label="Withdraw the invitation to {{.Email}}">Withdraw</button></form></td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{end}}
 </section>
 {{end}}
 {{end}}

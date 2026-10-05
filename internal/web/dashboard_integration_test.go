@@ -56,6 +56,8 @@ type dash struct {
 	owner core.Actor
 	brand *model.Brand
 	send  func(*http.Request) *httptest.ResponseRecorder
+	// srv serves requests with no session.
+	srv http.Handler
 }
 
 // newDash is a dashboard signed in as a new org's owner, in test mode, with
@@ -119,7 +121,7 @@ func newDash(t *testing.T, extra ...platform.Adapter) *dash {
 		srv.ServeHTTP(rec, r)
 		return rec
 	}
-	return &dash{s: s, st: st, login: login, owner: owner, brand: b, send: send}
+	return &dash{s: s, st: st, login: login, owner: owner, brand: b, send: send, srv: srv}
 }
 
 // TestPostFormCarriesImages drives the new-post form as a browser would: an
@@ -410,6 +412,68 @@ func TestAppsPageLinksPerPlatform(t *testing.T) {
 	}
 	if strings.Contains(page, "max-w-xl") {
 		t.Error("the form is still narrower than its card")
+	}
+}
+
+// TestInviteSomeone drives an invitation through the dashboard: the owner
+// invites, gets the link once, and the invitee, with no account, opens it,
+// creates one and lands in the org; the link then stops working.
+func TestInviteSomeone(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	post := func(send func(*http.Request) *httptest.ResponseRecorder, path string, form url.Values) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return send(r)
+	}
+	anon := func(r *http.Request) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		d.srv.ServeHTTP(rec, r)
+		return rec
+	}
+	invitee := fmt.Sprintf("invitee-%s@example.com", uuid.NewString()[:8])
+	rec := post(d.send, "/org/invitations", url.Values{"csrf": {d.login.Session.CSRFToken}, "email": {invitee}, "role": {"editor"}})
+	page := rec.Body.String()
+	m := regexp.MustCompile(`id="invite-link" class="copy-box">https://araldo\.test(/invite/[^<]+)<`).FindStringSubmatch(page)
+	if rec.Code != http.StatusOK || m == nil || !strings.Contains(page, "Open invitations") {
+		t.Fatalf("inviting: %d\n%s", rec.Code, page)
+	}
+	for _, issue := range a11yIssues(page, true) {
+		t.Errorf("/org with an invitation: %s", issue)
+	}
+	link := m[1]
+
+	// The owner, signed in as someone else, is told whose invitation it is.
+	if page = d.send(httptest.NewRequest(http.MethodGet, link, nil)).Body.String(); !strings.Contains(page, "Sign in as them") &&
+		!strings.Contains(page, "sign in as "+invitee) {
+		t.Fatalf("the invitation, signed in as someone else:\n%s", page)
+	}
+
+	// The invitee has no account: the page offers one.
+	rec = anon(httptest.NewRequest(http.MethodGet, link, nil))
+	if page = rec.Body.String(); rec.Code != http.StatusOK || !strings.Contains(page, "Create account and join") || !strings.Contains(page, invitee) {
+		t.Fatalf("the invitation page: %d\n%s", rec.Code, page)
+	}
+	for _, issue := range a11yIssues(page, false) {
+		t.Errorf("%s: %s", link, issue)
+	}
+	rec = post(anon, link, url.Values{"name": {"Invitee"}, "password": {"a long enough password"}, "confirm": {"not the same password"}})
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "do not match") {
+		t.Fatalf("mismatched passwords: %d", rec.Code)
+	}
+	rec = post(anon, link, url.Values{"name": {"Invitee"}, "password": {"a long enough password"}, "confirm": {"a long enough password"}})
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.Contains(loc, "notice=Welcome") || len(rec.Result().Cookies()) == 0 {
+		t.Fatalf("creating the account: %d %q", rec.Code, loc)
+	}
+	u, err := d.s.UserByEmail(t.Context(), invitee)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mem, err := d.s.Member(t.Context(), d.owner, u.ID); err != nil || mem.Role != model.RoleEditor {
+		t.Fatalf("the invitee's membership: %+v, %v", mem, err)
+	}
+	if rec = anon(httptest.NewRequest(http.MethodGet, link, nil)); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "not valid") {
+		t.Fatalf("the used link: %d", rec.Code)
 	}
 }
 

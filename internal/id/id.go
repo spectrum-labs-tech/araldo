@@ -42,6 +42,7 @@ const (
 	MailAccount     Prefix = "mailacct"
 	Issue           Prefix = "nl"
 	IssueDelivery   Prefix = "nldel"
+	Invitation      Prefix = "inv"
 )
 
 // ErrInvalid is returned for a malformed ID or one of another type.

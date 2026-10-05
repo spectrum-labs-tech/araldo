@@ -31,6 +31,14 @@ on another customer's account.
    | viewer | read everything except secrets |
 
    Restricting a member to some brands is a later addition.
+
+   People join an org by **invitation**: an admin enters an email and a
+   role and gets a one-time link, valid for a week, to share. The invitee
+   opens it and accepts, signed in with that email, or creates their
+   account with their own password. Inviting says nothing about whether
+   the email has an account, and nobody is added to an org, or made to see
+   it, without accepting (as GitHub and GitLab do). Only the server's
+   operator adds someone directly (`araldo admin members add`).
 4. **Approvals** are a brand setting: `none`, `required_for_editors_and_keys`
    or `required_for_all`. A post that needs approval waits in
    `pending_approval` until an admin or owner approves or rejects it.

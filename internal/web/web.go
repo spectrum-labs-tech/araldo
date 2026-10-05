@@ -459,6 +459,7 @@ var funcs = template.FuncMap{
 	"endpointID":        func(u uuid.UUID) string { return id.Format(id.WebhookEndpoint, u) },
 	"keyID":             func(u uuid.UUID) string { return id.Format(id.APIKey, u) },
 	"userID":            func(u uuid.UUID) string { return id.Format(id.User, u) },
+	"invitationID":      func(u uuid.UUID) string { return id.Format(id.Invitation, u) },
 	"deliveryID":        func(u uuid.UUID) string { return id.Format(id.Delivery, u) },
 	"mediaID":           func(u uuid.UUID) string { return id.Format(id.Media, u) },
 	"adAccountID":       func(u uuid.UUID) string { return id.Format(id.AdAccount, u) },

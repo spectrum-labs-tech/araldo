@@ -1,0 +1,33 @@
+{{define "content"}}
+{{$d := .Data}}
+{{if not $d}}
+<h1>Invitation</h1>
+<p><a href="/login">Sign in</a></p>
+{{else}}
+{{$i := $d.Invitation}}
+<h1>Join {{$i.OrgName}}</h1>
+<p class="mb-4">You are invited to join <strong>{{$i.OrgName}}</strong> on Araldo as {{if eq (printf "%s" $i.Role) "admin"}}an{{else}}a{{end}} <strong>{{$i.Role}}</strong>.
+  The invitation is for <strong>{{$i.Email}}</strong>.</p>
+{{if $d.SignedIn}}
+  {{if $d.Matches}}
+  <form method="post" action="/invite/{{$d.Token}}" class="flex flex-col gap-4">
+    <input type="hidden" name="csrf" value="{{$d.CSRF}}">
+    <div><button class="btn-primary">Join {{$i.OrgName}}</button></div>
+  </form>
+  {{else}}
+  <p>You are signed in as <strong>{{$d.SignedIn.Email}}</strong>. Sign out, then open this link again and sign in as {{$i.Email}}.</p>
+  {{end}}
+{{else}}
+  <p class="mb-4">Have an account for {{$i.Email}}? <a href="/login?next={{printf "/invite/%s" $d.Token | urlquery}}">Sign in to accept</a>.</p>
+  <h2>Or create your account</h2>
+  <form method="post" action="/invite/{{$d.Token}}" class="flex flex-col gap-4">
+    <label>Email <input type="email" value="{{$i.Email}}" autocomplete="username" readonly></label>
+    <label>Your name <input name="name" value="{{$d.Name}}" maxlength="100" autocomplete="name"></label>
+    <label>Password <span class="text-sm font-normal text-muted">at least 12 characters</span>
+      <input type="password" name="password" minlength="12" autocomplete="new-password" required></label>
+    <label>Password again <input type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
+    <div><button class="btn-primary">Create account and join</button></div>
+  </form>
+{{end}}
+{{end}}
+{{end}}

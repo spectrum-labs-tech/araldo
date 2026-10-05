@@ -681,6 +681,20 @@ type Event struct {
 	CreatedAt time.Time
 }
 
+// Invitation asks a person to join an org with a role (ADR 0004). Its
+// token is shown once, in the link the inviter shares.
+type Invitation struct {
+	ID         uuid.UUID
+	OrgID      uuid.UUID
+	OrgName    string
+	Email      string
+	Role       Role
+	InvitedBy  *uuid.UUID
+	ExpiresAt  time.Time
+	AcceptedAt *time.Time
+	CreatedAt  time.Time
+}
+
 // WebhookEndpoint receives events.
 type WebhookEndpoint struct {
 	ID          uuid.UUID

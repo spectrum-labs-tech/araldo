@@ -393,12 +393,15 @@ func (s *Server) eventDetail(c *reqCtx) error {
 // Org.
 
 type orgData struct {
-	Org     *model.Org
-	Members []model.Membership
-	Roles   []model.Role
-	TempPW  string
-	IsOwner bool
-	IsAdmin bool
+	Org         *model.Org
+	Members     []model.Membership
+	Roles       []model.Role
+	Invitations []*model.Invitation
+	// InviteLink is shown once, after inviting Invited.
+	InviteLink string
+	Invited    *model.Invitation
+	IsOwner    bool
+	IsAdmin    bool
 }
 
 func (s *Server) orgPage(c *reqCtx) error {
@@ -414,8 +417,14 @@ func (s *Server) orgData(c *reqCtx) (*orgData, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &orgData{Org: c.org, Members: ms, Roles: []model.Role{model.RoleOwner, model.RoleAdmin, model.RoleEditor, model.RoleViewer},
-		IsOwner: c.actor.Can(core.PermOrgWrite), IsAdmin: c.actor.Can(core.PermMembersWrite)}, nil
+	d := &orgData{Org: c.org, Members: ms, Roles: []model.Role{model.RoleOwner, model.RoleAdmin, model.RoleEditor, model.RoleViewer},
+		IsOwner: c.actor.Can(core.PermOrgWrite), IsAdmin: c.actor.Can(core.PermMembersWrite)}
+	if d.IsAdmin {
+		if d.Invitations, err = s.svc.Invitations(c.ctx(), c.actor); err != nil {
+			return nil, err
+		}
+	}
+	return d, nil
 }
 
 func (s *Server) saveOrg(c *reqCtx) error {
@@ -430,22 +439,6 @@ func (s *Server) saveOrg(c *reqCtx) error {
 		return s.formErr(c, "org", "org", "Organization", d, err)
 	}
 	return redirect(c, "/org", "Saved.")
-}
-
-func (s *Server) addMember(c *reqCtx) error {
-	d, err := s.orgData(c)
-	if err != nil {
-		return err
-	}
-	pw := c.r.PostFormValue("password")
-	u, err := s.svc.AddMember(c.ctx(), c.actor, c.session, c.r.PostFormValue("email"), model.Role(c.r.PostFormValue("role")), pw)
-	if err != nil {
-		if apperr.As(err).Code == "reauthentication_required" {
-			return redirect(c, "/confirm?next=/org", "Confirm your password to add an owner.")
-		}
-		return s.formErr(c, "org", "org", "Organization", d, err)
-	}
-	return redirect(c, "/org", "Added "+u.Email+".")
 }
 
 func (s *Server) changeMember(c *reqCtx) error {

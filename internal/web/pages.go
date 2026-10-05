@@ -36,6 +36,8 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", cacheStatic(http.FileServerFS(static))))
 
 	s.mux.HandleFunc("GET /login", s.loginPage)
+	s.mux.HandleFunc("GET /invite/{token}", s.invitePage)
+	s.mux.HandleFunc("POST /invite/{token}", s.inviteSubmit)
 	s.mux.HandleFunc("POST /login", s.loginSubmit)
 	s.mux.HandleFunc("GET /login/mfa", s.mfaPage)
 	s.mux.HandleFunc("POST /login/mfa", s.mfaSubmit)
@@ -111,7 +113,8 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /org", s.app("org", s.orgPage))
 	s.mux.HandleFunc("POST /org", s.app("org", s.saveOrg))
-	s.mux.HandleFunc("POST /org/members", s.app("org", s.addMember))
+	s.mux.HandleFunc("POST /org/invitations", s.app("org", s.inviteMember))
+	s.mux.HandleFunc("POST /org/invitations/{id}/revoke", s.app("org", s.revokeInvitation))
 	s.mux.HandleFunc("GET /org/members/{id}", s.app("org", s.memberDetail))
 	s.mux.HandleFunc("POST /org/members/{id}", s.app("org", s.changeMember))
 	s.mux.HandleFunc("GET /org/audit", s.app("org", s.audit))

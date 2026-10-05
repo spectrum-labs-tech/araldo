@@ -2822,6 +2822,9 @@ components:
         object: { type: string, enum: [org] }
         name: { type: string }
         require_mfa: { type: boolean }
+        require_sso:
+          type: boolean
+          description: Members reach the org only signed in through its single sign-on; owners set it in the dashboard.
         status:
           type: string
           enum: [active, read_only, suspended]

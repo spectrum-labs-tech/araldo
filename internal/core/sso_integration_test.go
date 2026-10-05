@@ -314,6 +314,9 @@ func TestRequireSSO(t *testing.T) {
 	if err := w.s.SetRequireSSO(ctx, ada, res.Session, true); err != nil {
 		t.Fatalf("turning it on through SSO: %v", err)
 	}
+	if o, err := w.s.Org(ctx, w.owner); err != nil || !core.ViewOrg(o).RequireSSO {
+		t.Fatalf("the org once it is required: %v", err)
+	}
 
 	// CLI tokens: one approved from the password session is refused, one
 	// from the SSO session works.

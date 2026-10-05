@@ -208,5 +208,8 @@ func runOrg(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		mfa = "required"
 	}
 	_, _ = fmt.Fprintf(stdout, "%s\n  ID: %s\n  Two-factor authentication: %s\n", str(o, "name"), str(o, "id"), mfa)
+	if v, _ := o["require_sso"].(bool); v {
+		_, _ = fmt.Fprintln(stdout, "  Single sign-on: required")
+	}
 	return nil
 }

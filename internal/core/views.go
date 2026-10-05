@@ -489,6 +489,8 @@ type OrgView struct {
 	Object     string `json:"object"`
 	Name       string `json:"name"`
 	RequireMFA bool   `json:"require_mfa"`
+	// RequireSSO is set by owners in the dashboard (ADR 0033).
+	RequireSSO bool `json:"require_sso"`
 	// Status, its note and the limits are the operator's (ADR 0031).
 	Status     model.OrgStatus `json:"status"`
 	StatusNote string          `json:"status_note"`
@@ -498,7 +500,7 @@ type OrgView struct {
 
 // ViewOrg renders an org.
 func ViewOrg(o *model.Org) OrgView {
-	return OrgView{ID: id.Format(id.Org, o.ID), Object: "org", Name: o.Name, RequireMFA: o.RequireMFA, Status: o.Status,
+	return OrgView{ID: id.Format(id.Org, o.ID), Object: "org", Name: o.Name, RequireMFA: o.RequireMFA, RequireSSO: o.RequireSSO, Status: o.Status,
 		StatusNote: o.StatusNote, Limits: o.Limits, CreatedAt: o.CreatedAt.UTC()}
 }
 

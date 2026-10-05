@@ -313,7 +313,7 @@ func (s *Server) rollWebhook(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	secret, err := s.svc.RollEndpointSecret(c.ctx(), c.actor, eid)
+	secret, err := s.svc.RollEndpointSecret(c.ctx(), c.actor, eid, RollOverlap)
 	if err != nil {
 		return err
 	}

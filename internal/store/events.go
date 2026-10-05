@@ -125,8 +125,12 @@ func (s *Store) UpdateEndpoint(ctx context.Context, w *model.WebhookEndpoint) er
 		w.OrgID, w.ID, w.URL, w.Description, w.EventTypes, w.Status, w.DisabledReason)
 }
 
-func (s *Store) SetEndpointSecret(ctx context.Context, orgID, id uuid.UUID, secret []byte) error {
-	return s.execOne(ctx, `UPDATE webhook_endpoints SET secret = $3, updated_at = now() WHERE org_id = $1 AND id = $2`, orgID, id, secret)
+// SetEndpointSecret replaces an endpoint's secret. With keepUntil, the old
+// one becomes its previous secret until then; without, it is forgotten.
+func (s *Store) SetEndpointSecret(ctx context.Context, orgID, id uuid.UUID, secret []byte, keepUntil *time.Time) error {
+	return s.execOne(ctx, `UPDATE webhook_endpoints SET secret = $3,
+		previous_secret = CASE WHEN $4::timestamptz IS NULL THEN NULL ELSE secret END, previous_secret_until = $4, updated_at = now()
+		WHERE org_id = $1 AND id = $2`, orgID, id, secret, keepUntil)
 }
 
 func (s *Store) DeleteEndpoint(ctx context.Context, orgID, id uuid.UUID) error {
@@ -163,7 +167,7 @@ func (s *Store) ClaimDeliveries(ctx context.Context, owner string, now, leaseUnt
 	}
 	rows, err = s.q.Query(ctx, `SELECT d.id, d.org_id, d.endpoint_id, d.event_id, d.status, d.attempts, d.next_attempt_at, d.created_at,
 		e.id, e.org_id, e.livemode, e.type, e.data, e.request_id, e.created_at,
-		w.id, w.org_id, w.livemode, w.url, w.secret, w.status, w.failing_since
+		w.id, w.org_id, w.livemode, w.url, w.secret, w.previous_secret, w.previous_secret_until, w.status, w.failing_since
 		FROM webhook_deliveries d JOIN events e ON e.id = d.event_id JOIN webhook_endpoints w ON w.id = d.endpoint_id
 		WHERE d.id = ANY($1)`, ids)
 	if err != nil {
@@ -174,7 +178,8 @@ func (s *Store) ClaimDeliveries(ctx context.Context, owner string, now, leaseUnt
 		var data []byte
 		err := r.Scan(&c.ID, &c.OrgID, &c.EndpointID, &c.EventID, &c.Status, &c.Attempts, &c.NextAttemptAt, &c.CreatedAt,
 			&c.Event.ID, &c.Event.OrgID, &c.Event.Livemode, &c.Event.Type, &data, &c.Event.RequestID, &c.Event.CreatedAt,
-			&c.Endpoint.ID, &c.Endpoint.OrgID, &c.Endpoint.Livemode, &c.Endpoint.URL, &c.Endpoint.Secret, &c.Endpoint.Status, &c.Endpoint.FailingSince)
+			&c.Endpoint.ID, &c.Endpoint.OrgID, &c.Endpoint.Livemode, &c.Endpoint.URL, &c.Endpoint.Secret, &c.Endpoint.PreviousSecret,
+			&c.Endpoint.PreviousSecretUntil, &c.Endpoint.Status, &c.Endpoint.FailingSince)
 		c.Event.Data = data
 		return c, err
 	})

@@ -1,6 +1,6 @@
 # ADR 0012: Events are written in the same transaction; webhooks are signed and retried
 
-- Status: accepted; built, except the overlap when rolling a secret, notice of a disabled endpoint, and the event stream for `araldo listen`
+- Status: accepted; built, except notice of a disabled endpoint and the event stream for `araldo listen`
 - Date: 2026-09-28
 
 ## Context
@@ -36,7 +36,8 @@ verified, and can be replayed.
 4. **Signatures** follow Stripe's scheme:
    `Araldo-Signature: t=<unix time>,v1=<hex HMAC-SHA256(secret, t + "." + body)>`.
    Receivers reject timestamps more than 5 minutes old. Rolling a secret
-   keeps the old one signing (a second `v1`) for up to 24 hours. Each
+   keeps the old one signing (a second `v1`) for `overlap_hours` (default
+   24, at most a week). Each
    request also carries `Araldo-Event-Id` and `Araldo-Delivery-Id`.
 5. **Order is not guaranteed and delivery is at least once.** Receivers
    deduplicate on the event ID; the docs and SDKs say so and ship a

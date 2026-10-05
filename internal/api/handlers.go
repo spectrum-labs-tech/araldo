@@ -960,7 +960,15 @@ func (h *Handler) rollSecret(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	secret, err := h.svc.RollEndpointSecret(r.Context(), actor(r), eid)
+	var body rollBody
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	overlap, err := body.overlap()
+	if err != nil {
+		return err
+	}
+	secret, err := h.svc.RollEndpointSecret(r.Context(), actor(r), eid, overlap)
 	if err != nil {
 		return err
 	}

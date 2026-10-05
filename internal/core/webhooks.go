@@ -173,8 +173,10 @@ func (s *Service) UpdateEndpoint(ctx context.Context, a Actor, endpointID uuid.U
 	return w, err
 }
 
-// RollEndpointSecret replaces an endpoint's signing secret.
-func (s *Service) RollEndpointSecret(ctx context.Context, a Actor, endpointID uuid.UUID) (string, error) {
+// RollEndpointSecret replaces an endpoint's signing secret. For overlap
+// (at most a week) deliveries are signed with both, so the receiver can
+// switch to the new one without rejecting any (ADR 0012).
+func (s *Service) RollEndpointSecret(ctx context.Context, a Actor, endpointID uuid.UUID, overlap time.Duration) (string, error) {
 	if err := a.require(PermWebhooksWrite); err != nil {
 		return "", err
 	}
@@ -188,7 +190,11 @@ func (s *Service) RollEndpointSecret(ctx context.Context, a Actor, endpointID uu
 		return "", err
 	}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
-		if err := tx.SetEndpointSecret(ctx, a.OrgID, w.ID, sealed); err != nil {
+		var keepUntil *time.Time
+		if overlap = min(overlap, 7*24*time.Hour); overlap > 0 {
+			keepUntil = ptr(s.Now().Add(overlap))
+		}
+		if err := tx.SetEndpointSecret(ctx, a.OrgID, w.ID, sealed, keepUntil); err != nil {
 			return err
 		}
 		return s.audit(ctx, tx, a, "webhook_endpoint.roll_secret", id.Format(id.WebhookEndpoint, w.ID), nil)
@@ -264,6 +270,35 @@ func (s *Service) EventsSince(ctx context.Context, a Actor, after uuid.UUID, lim
 }
 
 // Delivery.
+
+// signingSecrets are the secrets an endpoint's deliveries are signed with
+// at now: its secret, and its previous one while that still overlaps.
+func (s *Service) signingSecrets(ctx context.Context, w *model.WebhookEndpoint, now time.Time) ([]string, error) {
+	cur, err := s.keys.Decrypt(ctx, w.OrgID, secretAAD(w.ID), w.Secret)
+	if err != nil {
+		return nil, err
+	}
+	secrets := []string{string(cur)}
+	if w.PreviousSecret != nil && w.PreviousSecretUntil != nil && now.Before(*w.PreviousSecretUntil) {
+		prev, err := s.keys.Decrypt(ctx, w.OrgID, secretAAD(w.ID), w.PreviousSecret)
+		if err != nil {
+			return nil, err
+		}
+		secrets = append(secrets, string(prev))
+	}
+	return secrets, nil
+}
+
+// otherSignatures adds a v1 signature for each further secret to a
+// signature header, as Stripe does while an old secret overlaps a new one.
+func otherSignatures(secrets []string, t time.Time, body []byte) string {
+	var b strings.Builder
+	for _, sec := range secrets {
+		_, v1, _ := strings.Cut(Sign(sec, t, body), ",v1=")
+		b.WriteString(",v1=" + v1)
+	}
+	return b.String()
+}
 
 // Sign computes the Araldo-Signature header for body at t (Stripe's
 // scheme: HMAC-SHA256 over "<unix time>.<body>").
@@ -355,7 +390,7 @@ func (s *Service) deliver(ctx context.Context, owner string, d store.ClaimedDeli
 		return err
 	}
 	res := store.DeliveryResult{At: s.Now()}
-	secret, err := s.keys.Decrypt(ctx, d.OrgID, secretAAD(d.EndpointID), d.Endpoint.Secret)
+	secrets, err := s.signingSecrets(ctx, &d.Endpoint, res.At)
 	if err != nil {
 		res.Error = "could not decrypt the endpoint's signing secret"
 	} else {
@@ -365,7 +400,7 @@ func (s *Service) deliver(ctx context.Context, owner string, d store.ClaimedDeli
 		} else {
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("User-Agent", "Araldo-Webhooks/1 (+https://github.com/spectrum-labs-tech/araldo)")
-			req.Header.Set(signatureHeader, Sign(string(secret), res.At, body))
+			req.Header.Set(signatureHeader, Sign(secrets[0], res.At, body)+otherSignatures(secrets[1:], res.At, body))
 			req.Header.Set("Araldo-Event-Id", id.Format(id.Event, d.EventID))
 			req.Header.Set("Araldo-Delivery-Id", id.Format(id.Delivery, d.ID))
 			start := time.Now()

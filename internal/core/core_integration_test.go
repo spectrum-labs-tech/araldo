@@ -948,6 +948,75 @@ func TestWebhookDelivery(t *testing.T) {
 	}
 }
 
+// TestRollingAWebhookSecretOverlaps checks that after a roll, deliveries
+// are signed with the old secret as well as the new one until the overlap
+// ends, so a receiver can switch without rejecting any (ADR 0012).
+func TestRollingAWebhookSecretOverlaps(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	var mu sync.Mutex
+	var headers []string
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		headers = append(headers, r.Header.Get("Araldo-Signature")+"\n"+string(body))
+		mu.Unlock()
+	}))
+	defer srv.Close()
+	ep, first, err := w.s.CreateEndpoint(ctx, w.owner, core.EndpointInput{URL: srv.URL, EventTypes: []string{"post.created"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// deliver creates a post and returns the signature its event arrived with.
+	deliver := func() (header string, body []byte) {
+		t.Helper()
+		mu.Lock()
+		before := len(headers)
+		mu.Unlock()
+		if _, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "signed"}}); err != nil {
+			t.Fatal(err)
+		}
+		// Other tests' workers may deliver it; wait for it to arrive.
+		for deadline := time.Now().Add(15 * time.Second); ; {
+			if _, err := w.s.DeliverDue(ctx, "test-worker"); err != nil {
+				t.Fatal(err)
+			}
+			mu.Lock()
+			if len(headers) > before {
+				h, b, _ := strings.Cut(headers[before], "\n")
+				mu.Unlock()
+				return h, []byte(b)
+			}
+			mu.Unlock()
+			if time.Now().After(deadline) {
+				t.Fatal("the delivery did not arrive")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	verifies := func(secret, header string, body []byte) bool {
+		return core.VerifySignature(secret, header, body, time.Now(), 5*time.Minute) == nil
+	}
+
+	second, err := w.s.RollEndpointSecret(ctx, w.owner, ep.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, body := deliver()
+	if !verifies(second, h, body) || !verifies(first, h, body) {
+		t.Fatalf("during the overlap: new %t, old %t (want both)", verifies(second, h, body), verifies(first, h, body))
+	}
+	third, err := w.s.RollEndpointSecret(ctx, w.owner, ep.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, body = deliver()
+	if !verifies(third, h, body) || verifies(second, h, body) || verifies(first, h, body) {
+		t.Fatalf("rolled with no overlap: header %q", h)
+	}
+}
+
 func TestTemplateApprovalOverride(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

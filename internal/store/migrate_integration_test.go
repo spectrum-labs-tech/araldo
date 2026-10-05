@@ -76,9 +76,17 @@ func TestMigrateRetriesAFailedMigration(t *testing.T) {
 	t.Run("a migration in one transaction", func(t *testing.T) {
 		t.Parallel()
 		st := scratchStore(t)
-		clean(st)
-		// As if the last migration had failed and rolled back.
-		if _, err := st.pool.Exec(ctx, `UPDATE schema_migrations SET dirty = true`); err != nil {
+		m, err := st.migrator()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := m.Migrate(latest - 1); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = m.Close()
+		// As if the last migration had failed: its transaction rolled back,
+		// and golang-migrate left the schema dirty at its version.
+		if _, err := st.pool.Exec(ctx, `UPDATE schema_migrations SET version = $1, dirty = true`, latest); err != nil {
 			t.Fatal(err)
 		}
 		clean(st)

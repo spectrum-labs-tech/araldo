@@ -690,10 +690,14 @@ type WebhookEndpoint struct {
 	Description    string
 	EventTypes     []string
 	Secret         []byte // encrypted
-	Status         string
-	DisabledReason string
-	FailingSince   *time.Time
-	CreatedAt      time.Time
+	// PreviousSecret (encrypted) signs deliveries beside Secret until
+	// PreviousSecretUntil, after the secret is rolled.
+	PreviousSecret      []byte
+	PreviousSecretUntil *time.Time
+	Status              string
+	DisabledReason      string
+	FailingSince        *time.Time
+	CreatedAt           time.Time
 }
 
 // Wants reports whether the endpoint subscribes to event type t.

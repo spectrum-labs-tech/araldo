@@ -1818,8 +1818,18 @@ paths:
     parameters: [{ $ref: "#/components/parameters/ID" }]
     post:
       summary: Replace an endpoint's signing secret
+      description: |
+        Makes a new signing secret. For `overlap_hours` (default 24) each
+        delivery's `Araldo-Signature` carries a `v1` signature with the old
+        secret as well as the new one, so the receiver can switch without
+        rejecting a delivery.
       tags: [Webhooks]
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RollInput" }
       responses:
         "200":
           description: The endpoint, with its new secret.

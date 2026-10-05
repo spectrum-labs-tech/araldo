@@ -27,7 +27,7 @@
     <div><button class="btn-primary">Save</button></div>
   </form>
   <div class="mt-4 flex flex-wrap items-center gap-2">
-    <form method="post" action="/webhooks/{{endpointID $e.ID}}/roll" data-confirm="Replace the signing secret? The old one stops working now.">
+    <form method="post" action="/webhooks/{{endpointID $e.ID}}/roll" data-confirm="Replace the signing secret? Deliveries are signed with both for 24 hours, then only the new one.">
       <input type="hidden" name="csrf" value="{{.CSRF}}"><button>Roll secret</button></form>
     <form method="post" action="/webhooks/{{endpointID $e.ID}}/delete" data-confirm="Delete this endpoint and its delivery log?">
       <input type="hidden" name="csrf" value="{{.CSRF}}"><button class="btn-danger">Delete</button></form>

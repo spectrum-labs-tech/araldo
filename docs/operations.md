@@ -84,6 +84,15 @@ To move an install from a local key to Transit:
 - `araldo admin users create --email …` and `araldo admin users reset-password --email …`
   print a generated password (or read one with `--password-stdin`).
 
+## Request log
+
+Under **Developers → Request log**, admins and owners see every API
+request made with the org's keys and CLI sign-ins, in the mode they are
+in, for 14 days ([ADR 0032](adr/0032-request-log.md)): method and path,
+status and problem code, duration, which key, and the request ID that
+ties it to the caller's own logs and to the server's. Bodies are not
+kept. The `requests.prune` task deletes what is older.
+
 ## API keys for other services
 
 `araldo admin apikeys create` makes a key without the dashboard, for provisioning

@@ -378,6 +378,58 @@ func (s *Server) events(c *reqCtx) error {
 	return s.page(c, "events", "developers", "Events", d)
 }
 
+// requestsData is the request log page (ADR 0032).
+type requestsData struct {
+	Requests []model.APIRequest
+	// Keys names the org's API keys by ID.
+	Keys    map[uuid.UUID]string
+	Class   string
+	HasMore bool
+	Next    string
+}
+
+// By says who made a request: the API key's name, or a CLI sign-in.
+func (d requestsData) By(r model.APIRequest) string {
+	if r.KeyID == nil {
+		return "CLI sign-in"
+	}
+	if name, ok := d.Keys[*r.KeyID]; ok {
+		return name
+	}
+	return "a revoked key"
+}
+
+func (s *Server) requests(c *reqCtx) error {
+	q := c.r.URL.Query()
+	pg := store.Page{Limit: 50}
+	if u, err := uuid.Parse(q.Get("after")); err == nil {
+		pg.StartingAfter = u
+	}
+	d := requestsData{Keys: map[uuid.UUID]string{}, Class: q.Get("status")}
+	var f store.RequestFilter
+	switch d.Class {
+	case "2xx", "4xx", "5xx":
+		f.StatusClass = int(d.Class[0] - '0')
+	default:
+		d.Class = ""
+	}
+	var err error
+	if d.Requests, d.HasMore, err = s.svc.APIRequests(c.ctx(), c.actor, f, pg); err != nil {
+		return err
+	}
+	if d.HasMore && len(d.Requests) > 0 {
+		d.Next = d.Requests[len(d.Requests)-1].ID.String()
+	}
+	keys, err := s.svc.APIKeys(c.ctx(), c.actor)
+	if err != nil {
+		return err
+	}
+	for _, k := range keys {
+		d.Keys[k.ID] = k.Name
+	}
+	return s.page(c, "requests", "requests", "Request log", d)
+}
+
 func (s *Server) eventDetail(c *reqCtx) error {
 	eid, err := pathUUID(c, id.Event, "event")
 	if err != nil {

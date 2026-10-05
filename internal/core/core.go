@@ -91,6 +91,8 @@ type Service struct {
 	schemaSeen atomic.Bool
 	// denied paces the recording of denials.
 	denied denials
+	// requests buffers the request log on its way to the database (ADR 0032).
+	requests requestLog
 }
 
 // New returns the application.

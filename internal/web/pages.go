@@ -110,6 +110,7 @@ func (s *Server) routes() {
 		}{s.doc, baseURL(c)})
 	}))
 	s.mux.HandleFunc("GET /events", s.app("developers", s.events))
+	s.mux.HandleFunc("GET /logs", s.app("requests", s.requests))
 	s.mux.HandleFunc("GET /events/{id}", s.app("developers", s.eventDetail))
 
 	s.mux.HandleFunc("GET /org", s.app("org", s.orgPage))

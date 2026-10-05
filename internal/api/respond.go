@@ -69,6 +69,9 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 			h.svc.RecordDenial(r.Context(), a, first(r.Pattern, r.Method+" "+r.URL.Path), ae.Code)
 		}
 	}
+	if logged, ok := r.Context().Value(loggedKey).(*loggedRequest); ok {
+		logged.code = ae.Code
+	}
 	p := problem{Type: "about:blank", Title: http.StatusText(status), Status: status, Detail: ae.Message, Code: ae.Code, Param: ae.Param,
 		RequestID: RequestID(r.Context()), Errors: ae.Problems}
 	if p.Code != "" {

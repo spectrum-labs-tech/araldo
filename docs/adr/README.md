@@ -37,3 +37,4 @@ open a pull request.
 | [0029](0029-backward-compatible-migrations.md) | Migrations work with the release still running, and a test enforces it | accepted; built |
 | [0030](0030-install-wide-apps.md) | Install-wide developer apps, managed by the operator, offered to every org beside its own | accepted; built |
 | [0031](0031-operator-api.md) | An operator API, org limits and status, and links out for sign-up and billing | accepted; built |
+| [0032](0032-request-log.md) | A request log of every authenticated API request, for the org's developers | accepted; built |

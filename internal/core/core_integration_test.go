@@ -1268,7 +1268,6 @@ func TestTemplatesCannotLiftApproval(t *testing.T) {
 func TestPublisherSlotsAreIndependent(t *testing.T) {
 	t.Parallel()
 	release := make(chan struct{})
-	defer close(release)
 	w := newWorld(t, func(_ *core.Config, adapters *[]platform.Adapter) {
 		sb := sandbox.New("https://araldo.test")
 		sb.Sleep = func(ctx context.Context, _ time.Duration) error {
@@ -1282,13 +1281,16 @@ func TestPublisherSlotsAreIndependent(t *testing.T) {
 		(*adapters)[0] = sb
 	})
 	ctx, stop := context.WithCancel(t.Context())
-	defer stop()
 	other, err := w.s.ConnectChannel(ctx, w.owner, core.ConnectInput{BrandID: w.brand.ID, Provider: platform.Sandbox,
 		Fields: map[string]string{"emulates": "mastodon"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = w.s.RunPublisher(ctx, "slots-"+uuid.NewString()[:8]) }()
+	// The publisher works for this org only, leaving other tests' posts be,
+	// and is stopped, with what it took finished, before the test ends.
+	done := make(chan struct{})
+	go func() { _ = core.RunPublisherOrg(ctx, w.s, "slots-"+uuid.NewString()[:8], w.org.ID); close(done) }()
+	defer func() { stop(); close(release); <-done }()
 
 	status := func(postID uuid.UUID) model.TargetStatus {
 		t.Helper()
@@ -1353,13 +1355,15 @@ func TestLostLeasesBeforeTheCall(t *testing.T) {
 	if _, err := w.s.ReclaimLostTargets(ctx); err != nil {
 		t.Fatal(err)
 	}
-	for postID, want := range map[uuid.UUID]model.TargetStatus{before: model.TargetQueued, after: model.TargetNeedsAttention} {
+	// Requeued, another test's publisher may take it at once: what matters
+	// is that it is back in the queue, not waiting for a person.
+	for postID, wantAttention := range map[uuid.UUID]bool{before: false, after: true} {
 		p, err := w.s.Post(ctx, w.owner, postID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := p.Targets[0].Status; got != want {
-			t.Errorf("post %s: %s, want %s (%s)", postID, got, want, p.Targets[0].ErrorMessage)
+		if got := p.Targets[0].Status; (got == model.TargetNeedsAttention) != wantAttention {
+			t.Errorf("post %s: %s (%s), want needs attention: %t", postID, got, p.Targets[0].ErrorMessage, wantAttention)
 		}
 	}
 }
@@ -1376,8 +1380,9 @@ func TestPastDeadlineIsNotPublished(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Due now, but its deadline has passed (the channel was held, say).
-	if _, err := open(t).Pool().Exec(ctx, `UPDATE post_targets SET next_attempt_at = now() - interval '1 minute',
-		publish_by = now() - interval '1 second' WHERE id = $1`, p.Targets[0].ID); err != nil {
+	// Well past, against a clock that may differ from the database's.
+	if _, err := open(t).Pool().Exec(ctx, `UPDATE post_targets SET next_attempt_at = now() - interval '1 hour',
+		publish_by = now() - interval '30 minutes' WHERE id = $1`, p.Targets[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	for range 3 {
@@ -1429,8 +1434,19 @@ func TestSlowEndpointHoldsOnlyItsOwnDeliveries(t *testing.T) {
 	if _, err := quickOrg.s.CreatePost(ctx, quickOrg.owner, core.PostInput{BrandID: quickOrg.brand.ID, Content: &model.Content{Body: "quick"}, PublishAt: later}); err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = slowOrg.s.RunDeliverer(ctx, "fair-"+uuid.NewString()[:8]) }()
+	// The slow org's deliverer works for it alone, leaving other tests'
+	// webhooks be, and is stopped before the test ends; the other org's
+	// delivery goes out through the rounds below, as other tests' do.
+	done := make(chan struct{})
+	go func() {
+		_ = core.RunDelivererOrg(ctx, slowOrg.s, "fair-"+uuid.NewString()[:8], slowOrg.org.ID)
+		close(done)
+	}()
+	defer func() { stop(); <-done }()
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := quickOrg.s.DeliverDue(ctx, "test-worker"); err != nil {
+			t.Fatal(err)
+		}
 		ds, _, err := quickOrg.s.Deliveries(ctx, quickOrg.owner, quickEP.ID, store.Page{})
 		if err != nil {
 			t.Fatal(err)
@@ -1580,5 +1596,31 @@ func TestSlotChangesAreAuditedAlike(t *testing.T) {
 	counts, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil || len(counts) != 2 || counts[0] != "2" || counts[1] != "1" {
 		t.Fatalf("brand.slots entries: %v, %v", counts, err)
+	}
+}
+
+// TestRequestLogIsPruned checks requests older than the retention are
+// deleted, and newer ones kept.
+func TestRequestLogIsPruned(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	st := open(t)
+	old := time.Now().Add(-core.RequestLogRetention - time.Hour)
+	entry := func(at time.Time) model.APIRequest {
+		u := id.Before(at)
+		u[15] = byte(time.Now().UnixNano()) // apart from other tests' entries at the same millisecond
+		return model.APIRequest{ID: u, OrgID: w.org.ID, Method: "GET", Route: "GET /v1/brands", Path: "/v1/brands", Status: 200, CreatedAt: at}
+	}
+	if err := st.InsertAPIRequests(ctx, []model.APIRequest{entry(old), entry(time.Now())}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.s.PruneAPIRequests(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner := memberActor(t, w, false)
+	left, _, err := w.s.APIRequests(ctx, owner, store.RequestFilter{}, store.Page{})
+	if err != nil || len(left) != 1 || left[0].CreatedAt.Before(time.Now().Add(-time.Hour)) {
+		t.Fatalf("after pruning: %+v, %v", left, err)
 	}
 }

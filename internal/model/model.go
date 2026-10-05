@@ -858,3 +858,21 @@ type AuditEvent struct {
 	Detail    map[string]any
 	CreatedAt time.Time
 }
+
+// APIRequest is one authenticated API request, for the org's request log
+// (ADR 0032). It holds no body or query string.
+type APIRequest struct {
+	ID          uuid.UUID
+	OrgID       uuid.UUID
+	Livemode    bool
+	Method      string
+	Route       string // the route's pattern, such as POST /v1/posts/{id}/cancel
+	Path        string
+	Status      int
+	ErrorCode   string
+	DurationMS  int
+	KeyID       *uuid.UUID
+	UserTokenID *uuid.UUID
+	RequestID   string
+	CreatedAt   time.Time
+}

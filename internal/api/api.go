@@ -26,6 +26,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/authn"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
 type ctxKey int
@@ -33,6 +34,7 @@ type ctxKey int
 const (
 	requestIDKey ctxKey = iota
 	actorKey
+	loggedKey
 )
 
 // WithRequestID stores the request's ID.
@@ -145,6 +147,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	if a.OrgID != uuid.Nil {
+		// The org's request log (ADR 0032): what was asked, and answered.
+		started, logged := time.Now(), &loggedRequest{}
+		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		w, r = sw, r.WithContext(context.WithValue(r.Context(), loggedKey, logged))
+		defer h.logRequest(r, a, pattern, sw, logged, started)
+	}
 	limit, remaining, reset, allowed := h.limiter.take(rateKey(a), time.Now())
 	w.Header().Set("RateLimit-Limit", strconv.Itoa(limit))
 	w.Header().Set("RateLimit-Remaining", strconv.Itoa(remaining))
@@ -187,6 +196,39 @@ func (h *Handler) noRoute(w http.ResponseWriter, r *http.Request) {
 
 // authenticate reads the request's credential: on the operator API an
 // operator key, anywhere else an API key or user token.
+// logRequest puts a finished request in its org's request log.
+func (h *Handler) logRequest(r *http.Request, a core.Actor, pattern string, sw *statusWriter, logged *loggedRequest, started time.Time) {
+	h.svc.LogRequest(r.Context(), model.APIRequest{ID: id.New(), OrgID: a.OrgID, Livemode: a.Livemode, Method: r.Method, Route: pattern,
+		Path: r.URL.Path, Status: sw.status, ErrorCode: logged.code, DurationMS: int(time.Since(started).Milliseconds()),
+		KeyID: a.KeyID, UserTokenID: a.TokenID, RequestID: RequestID(r.Context()), CreatedAt: started})
+}
+
+// loggedRequest collects, as a request is handled, what its log entry
+// needs beyond the status: the problem's code.
+type loggedRequest struct{ code string }
+
+// statusWriter notes the status a response is sent with.
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+	wrote  bool
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	if !w.wrote {
+		w.status, w.wrote = status, true
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusWriter) Write(b []byte) (int, error) {
+	w.wrote = true
+	return w.ResponseWriter.Write(b)
+}
+
+// Unwrap lets http.ResponseController reach the connection, for streams.
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 func (h *Handler) authenticate(r *http.Request, operator bool) (core.Actor, error) {
 	auth := r.Header.Get("Authorization")
 	token, ok := strings.CutPrefix(auth, "Bearer ")

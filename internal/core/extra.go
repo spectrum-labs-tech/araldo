@@ -124,6 +124,7 @@ func (s *Service) Tasks() []opsched.Task {
 		}},
 		{Name: "webhooks.disable_failing", Interval: 10 * time.Minute, Run: s.DisableFailingEndpoints},
 		{Name: "events.prune", Interval: time.Hour, Timeout: 10 * time.Minute, Run: s.PruneEvents},
+		{Name: "requests.prune", Interval: time.Hour, Timeout: 10 * time.Minute, Run: s.PruneAPIRequests},
 		{Name: "idempotency.prune", Interval: time.Hour, Run: func(ctx context.Context) (int, error) {
 			return s.store.PruneIdempotencyKeys(ctx, s.Now().Add(-IdempotencyWindow))
 		}},

@@ -630,6 +630,12 @@ replica (a PodDisruptionBudget, `podDisruptionBudget.enabled`). With one
 replica there is no budget, since it would block the drain: run two servers
 if a drain must not interrupt the API.
 
+**Rate limits are per server pod.** The API's limit per key (25 requests a
+second, bursts of 100) and the sign-in limit per IP are kept in each pod's
+memory, so with N server pods a client that spreads its requests can get up
+to N times as many, and the `RateLimit-*` headers describe one pod. The
+per-account sign-in lockout is in the database and counts across all pods.
+
 **Migrations run before the rollout.** A `pre-install`/`pre-upgrade` hook Job
 runs `araldo migrate`; only when it succeeds does Helm update the Deployments.
 If it fails, the upgrade stops, the running pods keep serving the previous

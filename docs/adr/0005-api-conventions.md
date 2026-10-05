@@ -67,7 +67,9 @@ set the bar most developers now expect.
    dashboard calls services directly ([ADR 0015](0015-dashboard.md)).
 10. **Rate limits** are per API key, advertised with `RateLimit-Limit`,
     `RateLimit-Remaining` and `RateLimit-Reset`; exceeding them returns 429
-    with `Retry-After`.
+    with `Retry-After`. Each server process keeps its own counts, so with
+    several replicas the limit is per replica; a shared limiter (in
+    Postgres) waits until an install needs exact limits across replicas.
 11. **Times** are RFC 3339. Responses are in UTC; requests may carry any
     offset. Schedules that mention local times ("9am") use the brand's IANA
     time zone.

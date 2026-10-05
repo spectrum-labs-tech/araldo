@@ -5,6 +5,7 @@
 package core_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1248,4 +1249,62 @@ func TestTemplatesCannotLiftApproval(t *testing.T) {
 	if _, _, err := w.s.AddTemplateVersion(ctx, w.owner, exempt.ID, "", tmpl.Source{Body: "Shipped, reviewed"}); err != nil {
 		t.Fatalf("an owner rewriting it: %v", err)
 	}
+}
+
+// TestPublisherSlotsAreIndependent checks a publish that takes long holds
+// one of the publisher's slots, not the others: a post due later, on
+// another channel, goes out while it is still running.
+func TestPublisherSlotsAreIndependent(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	defer close(release)
+	w := newWorld(t, func(_ *core.Config, adapters *[]platform.Adapter) {
+		sb := sandbox.New("https://araldo.test")
+		sb.Sleep = func(ctx context.Context, _ time.Duration) error {
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		(*adapters)[0] = sb
+	})
+	ctx, stop := context.WithCancel(t.Context())
+	defer stop()
+	other, err := w.s.ConnectChannel(ctx, w.owner, core.ConnectInput{BrandID: w.brand.ID, Provider: platform.Sandbox,
+		Fields: map[string]string{"emulates": "mastodon"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = w.s.RunPublisher(ctx, "slots-"+uuid.NewString()[:8]) }()
+
+	status := func(postID uuid.UUID) model.TargetStatus {
+		t.Helper()
+		p, err := w.s.Post(ctx, w.owner, postID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p.Targets[0].Status
+	}
+	wait := func(postID uuid.UUID, want model.TargetStatus) {
+		t.Helper()
+		for deadline := time.Now().Add(10 * time.Second); status(postID) != want; time.Sleep(20 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("post %s stayed %s, want %s", postID, status(postID), want)
+			}
+		}
+	}
+	slow, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Channels: []uuid.UUID{w.channel.ID},
+		Content: &model.Content{Body: "slow"}, PublishAt: "now", Metadata: map[string]string{"araldo_simulate": sandbox.SimSlow}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait(slow.ID, model.TargetPublishing)
+	quick, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Channels: []uuid.UUID{other.ID},
+		Content: &model.Content{Body: "quick"}, PublishAt: "now"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait(quick.ID, model.TargetPublished)
 }

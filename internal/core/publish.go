@@ -36,19 +36,43 @@ const (
 )
 
 // RunPublisher publishes due targets until ctx ends: it polls every few
-// seconds and wakes early on NOTIFY araldo_publish. Once ctx ends it claims
-// nothing more, and gives the publishes under way publishDrain to finish.
+// seconds and wakes early on NOTIFY araldo_publish. It keeps up to
+// publishBatch publishes under way, claiming more as each finishes, so a
+// video taking minutes holds one slot, not the rest. Once ctx ends it
+// claims nothing more, and gives the publishes under way publishDrain to
+// finish.
 func (s *Service) RunPublisher(ctx context.Context, owner string) error {
 	wake := make(chan struct{}, 1)
 	go s.listen(ctx, "araldo_publish", wake)
 	work, stop := drain(ctx, publishDrain)
 	defer stop()
+	busy := make(chan struct{}, publishBatch) // one per publish under way
+	var wg sync.WaitGroup
+	defer wg.Wait() // before stop: let them finish within the drain
 	for {
-		n, err := s.publishDue(ctx, work, owner)
-		if err != nil && ctx.Err() == nil {
-			s.log.ErrorContext(ctx, "publishing round failed", "err", err)
+		free := publishBatch - len(busy)
+		claimed := 0
+		if free > 0 && ctx.Err() == nil {
+			cts, err := s.claimDue(ctx, owner, free)
+			if err != nil && ctx.Err() == nil {
+				s.log.ErrorContext(ctx, "claiming due targets failed", "err", err)
+			}
+			for _, ct := range cts {
+				busy <- struct{}{}
+				wg.Go(func() {
+					defer func() {
+						<-busy
+						select { // a slot is free: look for more
+						case wake <- struct{}{}:
+						default:
+						}
+					}()
+					s.publishOne(work, owner, ct)
+				})
+			}
+			claimed = len(cts)
 		}
-		if n == publishBatch {
+		if free > 0 && claimed == free {
 			continue // more may be waiting
 		}
 		select {
@@ -119,21 +143,29 @@ func (s *Service) publishDue(ctx, work context.Context, owner string) (int, erro
 		return 0, nil // stopping: claim nothing more
 	default:
 	}
-	now := s.Now()
-	claimed, err := s.store.ClaimDueTargets(ctx, owner, now, now.Add(publishLease), publishBatch)
+	claimed, err := s.claimDue(ctx, owner, publishBatch)
 	if err != nil {
 		return 0, err
 	}
 	var wg sync.WaitGroup
 	for _, ct := range claimed {
-		wg.Go(func() {
-			if err := s.publishTarget(work, owner, ct); err != nil {
-				s.log.ErrorContext(work, "recording publish outcome failed", "target", id.Format(id.Target, ct.ID), "err", err)
-			}
-		})
+		wg.Go(func() { s.publishOne(work, owner, ct) })
 	}
 	wg.Wait()
 	return len(claimed), nil
+}
+
+// claimDue leases up to n due targets.
+func (s *Service) claimDue(ctx context.Context, owner string, n int) ([]store.ClaimedTarget, error) {
+	now := s.Now()
+	return s.store.ClaimDueTargets(ctx, owner, now, now.Add(publishLease), n)
+}
+
+// publishOne publishes a claimed target, logging what cannot be recorded.
+func (s *Service) publishOne(work context.Context, owner string, ct store.ClaimedTarget) {
+	if err := s.publishTarget(work, owner, ct); err != nil {
+		s.log.ErrorContext(work, "recording publish outcome failed", "target", id.Format(id.Target, ct.ID), "err", err)
+	}
 }
 
 func (s *Service) publishTarget(ctx context.Context, owner string, ct store.ClaimedTarget) error {

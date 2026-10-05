@@ -3,6 +3,7 @@
 package netguard
 
 import (
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -111,5 +112,51 @@ func TestClientDoesNotFollowRedirects(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("status %d: the redirect was followed", resp.StatusCode)
+	}
+}
+
+// slowReader yields its bytes a few at a time, sleeping between reads.
+type slowReader struct {
+	left  int
+	pause time.Duration
+}
+
+func (r *slowReader) Read(p []byte) (int, error) {
+	if r.left == 0 {
+		return 0, io.EOF
+	}
+	time.Sleep(r.pause)
+	n := min(len(p), r.left, 4)
+	r.left -= n
+	return n, nil
+}
+
+// TestUploadClient checks an upload may take longer than the wait for an
+// answer, and a server that never answers is still given up on.
+func TestUploadClient(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		if r.URL.Path == "/hang" {
+			time.Sleep(time.Second)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	c := UploadClient(Policy{All: true}, 200*time.Millisecond)
+
+	// About 400ms to send, twice the wait: fine, the wait starts once sent.
+	resp, err := c.Post(srv.URL+"/upload", "video/mp4", &slowReader{left: 40, pause: 40 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("a slow upload: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	resp, err = c.Post(srv.URL+"/hang", "video/mp4", strings.NewReader("x"))
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("a server that never answered was waited on")
 	}
 }

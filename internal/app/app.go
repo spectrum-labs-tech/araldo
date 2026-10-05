@@ -114,7 +114,9 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 			a.migrate = true
 		}
 	}
-	client := netguard.Client(cfg.PrivateNetworks, 60*time.Second)
+	// No limit on a whole request: a video upload takes as long as it
+	// takes, within the publish attempt's deadline (ADR 0027).
+	client := netguard.UploadClient(cfg.PrivateNetworks, 60*time.Second)
 	reg := platform.NewRegistry(
 		sandbox.New(cfg.BaseURL),
 		bluesky.New(client),

@@ -92,6 +92,18 @@ func isSharedOrReserved(ip net.IP) bool {
 	return false
 }
 
+// UploadClient is Client for requests whose bodies may take long to send,
+// such as a video uploaded to a platform: no limit on a whole request,
+// which each caller sets with its context, but a server that does not
+// start answering within wait of the request being sent is given up on.
+func UploadClient(p Policy, wait time.Duration) *http.Client {
+	c := Client(p, 0)
+	if t, ok := c.Transport.(*http.Transport); ok {
+		t.ResponseHeaderTimeout = wait
+	}
+	return c
+}
+
 // Client returns an HTTP client with timeout. It never follows redirects,
 // and connects only to the addresses p allows.
 func Client(p Policy, timeout time.Duration) *http.Client {

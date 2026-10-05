@@ -28,15 +28,23 @@ const (
 	leaseRenewEvery     = time.Minute
 	publishBatch        = 10
 	maxRetryDelay       = 30 * time.Minute
+	// publishDrain is how long a stopping worker lets publishes already
+	// under way finish. Cutting one off mid-request leaves it uncertain,
+	// and on most platforms that means a person checks it by hand. It is
+	// under the chart's terminationGracePeriodSeconds (60).
+	publishDrain = 45 * time.Second
 )
 
 // RunPublisher publishes due targets until ctx ends: it polls every few
-// seconds and wakes early on NOTIFY araldo_publish.
+// seconds and wakes early on NOTIFY araldo_publish. Once ctx ends it claims
+// nothing more, and gives the publishes under way publishDrain to finish.
 func (s *Service) RunPublisher(ctx context.Context, owner string) error {
 	wake := make(chan struct{}, 1)
 	go s.listen(ctx, "araldo_publish", wake)
+	work, stop := drain(ctx, publishDrain)
+	defer stop()
 	for {
-		n, err := s.PublishDue(ctx, owner)
+		n, err := s.publishDue(ctx, work, owner)
 		if err != nil && ctx.Err() == nil {
 			s.log.ErrorContext(ctx, "publishing round failed", "err", err)
 		}
@@ -84,9 +92,33 @@ func sleepCtx(ctx context.Context, d time.Duration) {
 	}
 }
 
+// drain returns a context with ctx's values that ends grace after ctx
+// does, so work under way when ctx ends can finish.
+func drain(ctx context.Context, grace time.Duration) (context.Context, context.CancelFunc) {
+	work, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	stop := context.AfterFunc(ctx, func() {
+		select {
+		case <-time.After(grace):
+			cancel()
+		case <-work.Done():
+		}
+	})
+	return work, func() { stop(); cancel() }
+}
+
 // PublishDue claims and publishes one batch of due targets, one per
 // channel, in parallel, and returns how many it claimed.
 func (s *Service) PublishDue(ctx context.Context, owner string) (int, error) {
+	return s.publishDue(ctx, ctx, owner)
+}
+
+// publishDue claims while ctx lasts and publishes while work does.
+func (s *Service) publishDue(ctx, work context.Context, owner string) (int, error) {
+	select {
+	case <-ctx.Done():
+		return 0, nil // stopping: claim nothing more
+	default:
+	}
 	now := s.Now()
 	claimed, err := s.store.ClaimDueTargets(ctx, owner, now, now.Add(publishLease), publishBatch)
 	if err != nil {
@@ -95,8 +127,8 @@ func (s *Service) PublishDue(ctx context.Context, owner string) (int, error) {
 	var wg sync.WaitGroup
 	for _, ct := range claimed {
 		wg.Go(func() {
-			if err := s.publishTarget(ctx, owner, ct); err != nil {
-				s.log.ErrorContext(ctx, "recording publish outcome failed", "target", id.Format(id.Target, ct.ID), "err", err)
+			if err := s.publishTarget(work, owner, ct); err != nil {
+				s.log.ErrorContext(work, "recording publish outcome failed", "target", id.Format(id.Target, ct.ID), "err", err)
 			}
 		})
 	}

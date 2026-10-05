@@ -25,6 +25,7 @@ spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets: {{ toYaml . | nindent 8 }}
       {{- end }}
+      # Longer than the worker's 45 seconds for publishes under way to finish.
       terminationGracePeriodSeconds: 60
       containers:
         - name: worker

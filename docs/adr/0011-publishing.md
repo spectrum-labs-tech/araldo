@@ -37,7 +37,9 @@ and a crashed worker's claim simply expires.
    lease, polling every 5 seconds and woken early by `LISTEN/NOTIFY` when a
    post is due now. It never runs two targets on the same channel at once,
    and after a rate limit it holds that channel until the time the platform
-   gave.
+   gave. A stopping worker (a deploy, a drained node) claims nothing more
+   and gives the publishes under way 45 seconds to finish, since one cut
+   off mid-request becomes uncertain.
 4. **Delivery is at most once unless we know otherwise.** A target moves
    through:
 

@@ -62,8 +62,9 @@ func enum(desc string, values ...string) map[string]any {
 }
 
 const (
-	brandDesc = "Brand ID (brand_…) or slug, from list_brands."
-	postDesc  = "Post ID (post_…)."
+	brandDesc  = "Brand ID (brand_…) or slug, from list_brands."
+	postDesc   = "Post ID (post_…)."
+	targetDesc = "One channel's copy of a post (ptgt_…), from get_post's targets."
 )
 
 // postProps are the arguments a post takes, for preview and create.
@@ -326,6 +327,40 @@ func tools(api *Client) []Tool {
 					}
 				}
 				return api.Do(ctx, http.MethodPost, "/v1/posts/"+url.PathEscape(id)+"/reschedule", nil, body, "")
+			},
+		},
+		{
+			Name: "retry_target", Title: "Publish one channel's copy again",
+			Description: "Publishes again one channel's copy of a post (a target, ptgt_…, from get_post) that failed or needs " +
+				"attention. A copy needs attention when the platform may or may not have posted it: look at the account first, " +
+				"and if it is there, use mark_target_published instead, or it will appear twice.",
+			Input: object([]string{"target"}, map[string]any{"target": str(targetDesc)}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				id, err := required(args, "target")
+				if err != nil {
+					return nil, err
+				}
+				return api.Do(ctx, http.MethodPost, "/v1/post_targets/"+url.PathEscape(id)+"/retry", nil, map[string]any{}, "")
+			},
+		},
+		{
+			Name: "mark_target_published", Title: "Record that a copy did publish", Idempotent: true,
+			Description: "Records that one channel's copy of a post (a target, ptgt_…, from get_post) that needs attention was " +
+				"published after all, as someone saw on the account. Give its link if known.",
+			Input: object([]string{"target"}, map[string]any{
+				"target":    str(targetDesc),
+				"permalink": str("The post's address on the platform, if known."),
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				id, err := required(args, "target")
+				if err != nil {
+					return nil, err
+				}
+				body := map[string]any{}
+				if v := argString(args, "permalink"); v != "" {
+					body["permalink"] = v
+				}
+				return api.Do(ctx, http.MethodPost, "/v1/post_targets/"+url.PathEscape(id)+"/mark_published", nil, body, "")
 			},
 		},
 		{

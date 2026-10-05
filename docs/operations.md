@@ -371,6 +371,7 @@ person in several orgs).
 | `create_post` | Schedule it (with an idempotency key, so a retry does not post twice). |
 | `list_posts`, `get_post` | Follow up: status, links, errors, engagement (read-only). |
 | `cancel_post` | Stop what has not published yet (marked destructive). |
+| `retry_target`, `mark_target_published` | Resolve one channel's copy that failed or needs attention: publish it again, or record that it did go out. |
 | `reschedule_post` | Move a post to another time or slot, or swap it with another. |
 | `engagement_summary` | What did best, by post, channel or template (read-only). |
 | `ads_summary` | Ad spend and results, by brand, account, campaign or day (read-only). |

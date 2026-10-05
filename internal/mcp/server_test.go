@@ -137,8 +137,8 @@ func TestToolsList(t *testing.T) {
 	t.Parallel()
 	out, _, _ := session(t, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	list, _ := result(t, out["1"])["tools"].([]any)
-	if len(list) != 19 {
-		t.Fatalf("%d tools, want 19", len(list))
+	if len(list) != 21 {
+		t.Fatalf("%d tools, want 21", len(list))
 	}
 	names := map[string]map[string]any{}
 	for _, raw := range list {
@@ -173,8 +173,10 @@ func TestToolsCallTheAPI(t *testing.T) {
 		call(12, "draft_newsletter", `{"brand":"araldo","subject":"October","body":"# Hi"}`),
 		call(13, "preview_newsletter", `{"brand":"araldo","subject":"October","preview_text":"What shipped","body":"# Hi"}`),
 		call(14, "list_newsletters", `{"status":"sent"}`),
+		call(15, "retry_target", `{"target":"ptgt_1"}`),
+		call(16, "mark_target_published", `{"target":"ptgt_2","permalink":"https://bsky.app/profile/araldo.dev/post/1"}`),
 	)
-	for i := 1; i <= 14; i++ {
+	for i := 1; i <= 16; i++ {
 		if text, isErr := toolText(t, out[itoa(i)]); isErr {
 			t.Fatalf("call %d failed: %s", i, text)
 		}
@@ -217,6 +219,12 @@ func TestToolsCallTheAPI(t *testing.T) {
 	}
 	if move := byPath["POST /v1/posts/post_1/reschedule"]; len(move.Body) != 1 || move.Body["swap_with"] != "post_2" {
 		t.Fatalf("reschedule_post body %v", move.Body)
+	}
+	if _, ok := byPath["POST /v1/post_targets/ptgt_1/retry"]; !ok {
+		t.Fatal("retry_target did not call the API")
+	}
+	if mark := byPath["POST /v1/post_targets/ptgt_2/mark_published"]; mark.Body["permalink"] != "https://bsky.app/profile/araldo.dev/post/1" {
+		t.Fatalf("mark_target_published body %v", mark.Body)
 	}
 	if q := byPath["GET /v1/ads/summary"].Query; !strings.Contains(q, "group_by=day") || !strings.Contains(q, "since=") {
 		t.Fatalf("ads_summary query %q", q)

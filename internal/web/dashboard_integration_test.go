@@ -612,6 +612,41 @@ func TestDeleteTheOrg(t *testing.T) {
 	}
 }
 
+// TestRenameAnApp renames a developer app from the apps page, and refuses
+// an empty name.
+func TestRenameAnApp(t *testing.T) {
+	t.Parallel()
+	d := newDash(t, threads.New(http.DefaultClient))
+	live := d.owner
+	live.Livemode = true
+	app, err := d.s.CreateProviderApp(t.Context(), live, core.ProviderAppInput{Provider: platform.Threads, ClientID: "c", ClientSecret: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rename := func(name string) *httptest.ResponseRecorder {
+		form := url.Values{"csrf": {d.login.Session.CSRFToken}, "name": {name}}
+		r := httptest.NewRequest(http.MethodPost, "/channels/apps/"+app.ID.String()+"/rename", strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return d.send(r)
+	}
+	page := d.send(httptest.NewRequest(http.MethodGet, "/channels/apps", nil)).Body.String()
+	if !strings.Contains(page, `action="/channels/apps/`+app.ID.String()+`/rename"`) {
+		t.Fatalf("no way to rename the app:\n%s", page)
+	}
+	for _, issue := range a11yIssues(page, true) {
+		t.Errorf("/channels/apps with an app: %s", issue)
+	}
+	if rec := rename("Posting and ads"); rec.Code != http.StatusSeeOther {
+		t.Fatalf("renaming: %d", rec.Code)
+	}
+	if page = d.send(httptest.NewRequest(http.MethodGet, "/channels/apps", nil)).Body.String(); !strings.Contains(page, `value="Posting and ads"`) {
+		t.Fatalf("the new name is not shown:\n%s", page)
+	}
+	if rec := rename("  "); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("an empty name: %d", rec.Code)
+	}
+}
+
 func TestConnectTheCLI(t *testing.T) {
 	t.Parallel()
 	d := newDash(t)

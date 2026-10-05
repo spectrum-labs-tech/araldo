@@ -48,6 +48,11 @@ func (s *Store) ProviderApps(ctx context.Context, orgID uuid.UUID) ([]*model.Pro
 
 // DeleteProviderApp deletes an app; channels connected through it keep
 // working until their tokens need refreshing.
+// RenameProviderApp changes an app's name.
+func (s *Store) RenameProviderApp(ctx context.Context, orgID, id uuid.UUID, name string) error {
+	return s.execOne(ctx, `UPDATE provider_apps SET name = $3 WHERE org_id = $1 AND id = $2`, orgID, id, name)
+}
+
 func (s *Store) DeleteProviderApp(ctx context.Context, orgID, id uuid.UUID) error {
 	return s.execOne(ctx, `DELETE FROM provider_apps WHERE org_id = $1 AND id = $2`, orgID, id)
 }

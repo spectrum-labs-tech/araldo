@@ -72,6 +72,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /channels/new", s.app("channels", s.newChannel))
 	s.mux.HandleFunc("GET /channels/apps", s.app("channels", s.apps))
 	s.mux.HandleFunc("POST /channels/apps", s.app("channels", s.createApp))
+	s.mux.HandleFunc("POST /channels/apps/{id}/rename", s.app("channels", s.renameApp))
 	s.mux.HandleFunc("POST /channels/apps/{id}/delete", s.app("channels", s.deleteApp))
 	s.mux.HandleFunc("GET /connect/{provider}/start", s.app("channels", s.startConnect))
 	s.mux.HandleFunc("GET /connect/{provider}/callback", s.app("channels", s.connectCallback))

@@ -92,6 +92,22 @@ func (s *Server) createApp(c *reqCtx) error {
 	return redirect(c, "/channels/apps", "App added. Connect channels through it from Channels.")
 }
 
+func (s *Server) renameApp(c *reqCtx) error {
+	appID, err := uuid.Parse(c.r.PathValue("id"))
+	if err != nil {
+		return apperr.NotFound("app")
+	}
+	app, err := s.svc.RenameProviderApp(c.ctx(), c.actor, appID, c.r.PostFormValue("name"))
+	if err != nil {
+		d, derr := s.appsData(c)
+		if derr != nil {
+			return derr
+		}
+		return s.formErr(c, "apps", "channels", "Developer apps", d, err)
+	}
+	return redirect(c, "/channels/apps", "Renamed to "+app.Name+".")
+}
+
 func (s *Server) deleteApp(c *reqCtx) error {
 	appID, err := uuid.Parse(c.r.PathValue("id"))
 	if err != nil {

@@ -168,6 +168,30 @@ func (s *Service) CreateProviderApp(ctx context.Context, a Actor, in ProviderApp
 
 // DeleteProviderApp removes an app. Its channels keep working until their
 // tokens need refreshing, then need reconnecting through another app.
+// RenameProviderApp changes an app's name, which is only Araldo's label
+// for it (one app may post for some accounts and read ads for others).
+func (s *Service) RenameProviderApp(ctx context.Context, a Actor, appID uuid.UUID, name string) (*model.ProviderApp, error) {
+	app, err := s.store.ProviderApp(ctx, a.OrgID, appID)
+	if err != nil {
+		return nil, notFound(err, "app")
+	}
+	if err := a.require(connectPermission(app.Provider)); err != nil {
+		return nil, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 100 {
+		return nil, apperr.Invalid("name_invalid", "name", "An app needs a name of 1 to 100 characters.")
+	}
+	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.RenameProviderApp(ctx, a.OrgID, appID, name); err != nil {
+			return notFound(err, "app")
+		}
+		return s.audit(ctx, tx, a, "provider_app.rename", appID.String(), map[string]any{"name": name})
+	})
+	app.Name = name
+	return app, err
+}
+
 func (s *Service) DeleteProviderApp(ctx context.Context, a Actor, appID uuid.UUID) error {
 	app, err := s.store.ProviderApp(ctx, a.OrgID, appID)
 	if err != nil {

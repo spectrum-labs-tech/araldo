@@ -159,6 +159,9 @@ type Actor struct {
 	KeyID   *uuid.UUID
 	Scopes  []string // empty: full access
 	BrandID *uuid.UUID
+	// KeyExpiresAt is when the key stops working; nil if never. The keys it
+	// creates or rolls never outlive it.
+	KeyExpiresAt *time.Time
 	// RequestID ties events and audit entries to a request.
 	RequestID string
 	// Operator marks a member acted as by the server's operator through

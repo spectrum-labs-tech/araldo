@@ -518,8 +518,12 @@ func (s *Service) createAPIKey(ctx context.Context, a Actor, in APIKeyInput) (st
 
 // checkGrant applies ADR 0019's rule to a key creating a key: only in its
 // own mode, for its own brand if it has one, with scopes it holds itself,
-// and never an admin scope.
+// never an admin scope, and expiring no later than itself.
 func checkGrant(a Actor, in APIKeyInput, ps *apperr.Problems) {
+	if a.KeyExpiresAt != nil && (in.Expires == nil || in.Expires.After(*a.KeyExpiresAt)) {
+		ps.Add("expires_too_late", "expires_at", "This key expires at %s, so the keys it creates must expire by then.",
+			a.KeyExpiresAt.UTC().Format(time.RFC3339))
+	}
 	if in.Livemode != a.Livemode {
 		ps.Add("livemode_mismatch", "livemode", "A key can only create keys in its own mode.")
 	}
@@ -656,6 +660,12 @@ func (s *Service) rollKey(ctx context.Context, a Actor, keyID uuid.UUID, overlap
 		// The new key lasts as long as the old one was meant to.
 		in.Expires = ptr(s.Now().Add(old.ExpiresAt.Sub(old.CreatedAt)))
 	}
+	if a.KeyExpiresAt != nil && (in.Expires == nil || in.Expires.After(*a.KeyExpiresAt)) {
+		// But a key never makes one that outlives it, so a key rolling
+		// itself keeps its expiry: rolling cannot keep a leaked key alive.
+		// Extending a key's life is for a member, in the dashboard.
+		in.Expires = a.KeyExpiresAt
+	}
 	plain, k, err := s.createAPIKey(ctx, a, in)
 	if err != nil {
 		return "", nil, err
@@ -684,7 +694,8 @@ func (s *Service) AuthenticateKey(ctx context.Context, plain, requestID string) 
 		return Actor{}, &apperr.Error{Kind: apperr.KindUnauthorized, Code: "api_key_expired", Message: "This API key was revoked or has expired."}
 	}
 	_ = s.store.TouchAPIKey(ctx, k.ID, now)
-	return Actor{OrgID: k.OrgID, Livemode: k.Livemode, KeyID: &k.ID, Scopes: k.Scopes, BrandID: k.BrandID, RequestID: requestID}, nil
+	return Actor{OrgID: k.OrgID, Livemode: k.Livemode, KeyID: &k.ID, Scopes: k.Scopes, BrandID: k.BrandID, KeyExpiresAt: k.ExpiresAt,
+		RequestID: requestID}, nil
 }
 
 // MeView is what a credential can learn about itself: the org and mode it

@@ -587,6 +587,55 @@ func TestOwnerChangesNeedSudo(t *testing.T) {
 	}
 }
 
+// TestKeysNeverOutliveTheirMaker checks that a key cannot keep itself, or
+// a key it makes, alive past its own expiry (ADR 0019).
+func TestKeysNeverOutliveTheirMaker(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	expires := time.Now().Add(48 * time.Hour).Truncate(time.Second)
+	plain, k, err := w.s.CreateAPIKey(ctx, w.owner, w.session, core.APIKeyInput{Name: "short-lived", Scopes: []string{"keys:write", "posts:read"},
+		Expires: &expires})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := w.s.AuthenticateKey(ctx, plain, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name    string
+		expires *time.Time
+		ok      bool
+	}{
+		{"never expiring", nil, false},
+		{"expiring later", ptr(expires.Add(time.Hour)), false},
+		{"expiring first", ptr(expires.Add(-time.Hour)), true},
+	} {
+		_, _, err := w.s.CreateKeyWithKey(ctx, a, core.APIKeyInput{Name: tt.name, Scopes: []string{"posts:read"}, Expires: tt.expires})
+		if got := err == nil; got != tt.ok {
+			t.Errorf("a key creating a key %s: %v", tt.name, err)
+		}
+	}
+	// A day later, rolling itself does not restart its 48 hours.
+	w.s.Now = func() time.Time { return time.Now().Add(24 * time.Hour) }
+	_, rolled, err := w.s.RollOwnKey(ctx, a, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rolled.ExpiresAt == nil || !rolled.ExpiresAt.Equal(*k.ExpiresAt) {
+		t.Fatalf("the rolled key expires at %v, want %v", rolled.ExpiresAt, k.ExpiresAt)
+	}
+	// A member rolling it in the dashboard gives it a fresh lifetime.
+	_, byMember, err := w.s.RollAPIKey(ctx, w.owner, &model.Session{SudoUntil: ptr(time.Now().Add(48 * time.Hour))}, rolled.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byMember.ExpiresAt == nil || !byMember.ExpiresAt.After(expires) {
+		t.Fatalf("rolled by a member, it expires at %v (want after %v)", byMember.ExpiresAt, expires)
+	}
+}
+
 func TestOperatorAPIKeys(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

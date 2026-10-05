@@ -39,9 +39,11 @@ Two facts constrain the answer:
    a key can never grant one.
 3. **Keys managing keys** (`keys:write`): list, create, roll and revoke keys
    in the key's own org and mode, only with scopes that are a subset of its
-   own, and a brand restriction at least as narrow. Any key may roll itself;
-   the old secret keeps working for an overlap (default 24 hours) so
-   rotation needs no downtime. The first key always comes from a member.
+   own, a brand restriction at least as narrow, and an expiry no later than
+   its own. Any key may roll itself; the old secret keeps working for an
+   overlap (default 24 hours) so rotation needs no downtime. A key never
+   makes or rolls a key that outlives it, so a leaked key cannot keep itself
+   alive by rolling; extending a key's life is for a member. The first key always comes from a member.
 4. **Approval by API** (`posts:approve`): approve or reject a post waiting
    for review. A key can never approve a post it created; the reviewer
    (member or key) is recorded.

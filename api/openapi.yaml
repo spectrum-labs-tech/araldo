@@ -1661,7 +1661,10 @@ paths:
                 name: { type: string, maxLength: 100 }
                 scopes: { type: array, items: { type: string }, description: Empty means every scope the caller can grant. }
                 brand: { type: string, description: Brand ID or slug to limit the key to. }
-                expires_at: { type: string, format: date-time }
+                expires_at:
+                  type: string
+                  format: date-time
+                  description: Required, and no later than the calling key's own expiry, when the calling key expires.
       responses:
         "201":
           description: The key, with its secret.
@@ -1674,7 +1677,9 @@ paths:
       description: |
         Replaces the calling key's secret with a new key holding the same
         scopes; the old secret keeps working for `overlap_hours` (default
-        24), so rotation needs no downtime. Any key may roll itself.
+        24), so rotation needs no downtime. Any key may roll itself. The new
+        key expires when the old one would have: rolling never extends a
+        key's life (a member can, in the dashboard).
       tags: [API keys]
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:

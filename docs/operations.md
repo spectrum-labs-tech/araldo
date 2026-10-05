@@ -172,7 +172,14 @@ an app may post and read depends on its X API access tier.
 LinkedIn using OpenID Connect* and *Share on LinkedIn* to your app, and
 add Araldo's redirect URI (`{ARALDO_BASE_URL}/connect/linkedin/callback`)
 under Auth → Authorized redirect URLs. Add the app's client ID and secret
-under Developer apps, then connect. Tokens last 60 days. LinkedIn gives
+under Developer apps, then connect. Araldo needs both products: OpenID
+Connect says who signed in, Share on LinkedIn lets it post. It posts to the
+personal feed of the member who signs in, never to a company Page: posting
+as a Page needs LinkedIn's Community Management API, which LinkedIn reviews
+and grants only to an app with no other products (so a second app, verified
+by a Page admin), and Araldo does not post to Pages yet. Asked for a use
+case, your own Pages and ad accounts are *Direct Advertiser*. Araldo does
+not use the Advertising API yet. Tokens last 60 days. LinkedIn gives
 refresh tokens only to apps it has approved for them; without one, the
 channel says a week ahead when to sign in again, and needs it once the
 token expires.

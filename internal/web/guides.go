@@ -43,15 +43,17 @@ var appGuides = map[platform.Provider]appGuide{
 	},
 	platform.LinkedIn: {
 		Steps: []template.HTML{
-			`Create an app at linkedin.com/developers/apps. LinkedIn asks for a LinkedIn Page it belongs to.`,
-			`<strong>Products</strong>: add <strong>Sign In with LinkedIn using OpenID Connect</strong> and <strong>Share on LinkedIn</strong>.`,
+			`Create an app at linkedin.com/developers/apps. LinkedIn asks for a LinkedIn Page it belongs to, and a Page admin <strong>verifies</strong> it (<strong>Settings → Verify</strong>).`,
+			`<strong>Products</strong>: add <strong>Sign In with LinkedIn using OpenID Connect</strong> and <strong>Share on LinkedIn</strong>. Both are granted at once. Araldo needs both: the first says who signed in, the second lets it post.`,
 			`<strong>Auth</strong>: add the redirect URI under <strong>Authorized redirect URLs</strong>.`,
 			`Copy the <strong>Client ID</strong> and <strong>Primary Client Secret</strong> from the Auth tab.`,
 		},
 		ClientID:     `the Client ID`,
 		Confidential: `the Primary Client Secret`,
 		Notes: []template.HTML{
-			`Araldo posts to the feed of the member who signs in.`,
+			`Araldo posts to the <strong>personal feed of the member who signs in</strong>, never to a company Page. Posting as a Page needs LinkedIn's <strong>Community Management API</strong>, which LinkedIn reviews and grants only to an app with no other products, so it takes a second app; Araldo does not post to Pages yet.`,
+			`Asked for a use case when requesting access? For your own Pages and ad accounts it is <strong>Direct Advertiser</strong>; <em>Platform</em> is for a service other companies connect their accounts to.`,
+			`Araldo does not use the <strong>Advertising API</strong> yet: ad results come from Reddit Ads so far.`,
 			`Tokens last 60 days. LinkedIn gives refresh tokens only to apps it has approved for them, so otherwise the channel says a week ahead when to sign in again.`,
 		},
 	},

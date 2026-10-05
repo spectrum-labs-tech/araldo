@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 )
 
 // scratchStore opens a new, empty database of its own, since these tests
@@ -121,4 +122,37 @@ func TestMigrateRetriesAFailedMigration(t *testing.T) {
 			t.Fatalf("the index after retrying: valid %t, %v", valid, err)
 		}
 	})
+}
+
+// TestConcurrentMigrations checks that processes migrating one empty
+// database at once all finish. A CREATE INDEX CONCURRENTLY waits for every
+// open query, so a migrator blocked in a lock wait would hang it forever,
+// as several pods starting together, or test packages, would.
+func TestConcurrentMigrations(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	first := scratchStore(ctx, t)
+	second, err := Open(ctx, first.pool.Config().ConnString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	latest, err := LatestVersion()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	errs := make(chan error, 3)
+	for _, st := range []*Store{first, second, first} {
+		go func() { errs <- st.Migrate(ctx) }()
+	}
+	for range 3 {
+		if err := <-errs; err != nil {
+			t.Fatalf("a migration: %v", err)
+		}
+	}
+	if v, dirty, err := first.SchemaVersion(); err != nil || v != latest || dirty {
+		t.Fatalf("after migrating at once: version %d, dirty %t, %v", v, dirty, err)
+	}
 }

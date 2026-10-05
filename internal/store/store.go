@@ -13,6 +13,7 @@ import (
 	"net"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	migratepgx "github.com/golang-migrate/migrate/v4/database/pgx/v5"
@@ -95,8 +96,23 @@ func (s *Store) Migrate(ctx context.Context) error {
 		return fmt.Errorf("store: migrate: %w", err)
 	}
 	defer conn.Release()
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrateLock); err != nil {
-		return fmt.Errorf("store: migrate lock: %w", err)
+	// Wait for the lock by trying again and again, never in one blocking
+	// call: a CREATE INDEX CONCURRENTLY under way waits for every open query
+	// to end, and a waiting pg_advisory_lock would never end, so the two
+	// would wait on each other forever.
+	for {
+		var got bool
+		if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, migrateLock).Scan(&got); err != nil {
+			return fmt.Errorf("store: migrate lock: %w", err)
+		}
+		if got {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("store: migrate lock: %w", ctx.Err())
+		case <-time.After(time.Second):
+		}
 	}
 	defer func() { _, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, migrateLock) }()
 	m, err := s.migrator()

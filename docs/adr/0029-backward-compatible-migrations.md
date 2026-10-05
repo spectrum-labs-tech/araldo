@@ -79,6 +79,8 @@ GitHub, GitLab and Stripe treat this as a rule with tooling behind it
   treats a dirty schema as that migration not having run: each migration is
   one transaction, and the invalid index a failed `CONCURRENTLY` leaves is
   dropped first. Migrations from several processes take turns on an
-  advisory lock.
+  advisory lock, waited for with short `pg_try_advisory_lock` attempts:
+  a `CREATE INDEX CONCURRENTLY` waits for every open query, so a migrator
+  blocked in `pg_advisory_lock` would hang it, and itself, forever.
 - Reviewers check rule 1 by reading; the test only catches the mechanical
   parts.

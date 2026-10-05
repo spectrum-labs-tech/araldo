@@ -78,7 +78,7 @@ which `gh` has no counterpart of, the model is the Stripe CLI.
      leaks, as with keys), shown once to the CLI, stored only as a SHA-256 hash.
    - **A token is the person, like a `gh` token**, not bound to an org: each request names the org
      (`Araldo-Org`, an ID or name), as Stripe's `Stripe-Account` header names an account. The CLI
-     sends it from `--org`, or the default set with `araldo config set org …`, as `gh` remembers a
+     sends it from `--org`, `ARALDO_ORG`, or the default saved with `araldo auth login --org …`, as `gh` remembers a
      default repository.
    - **A token is bound to one mode, like a key**: the device flow issues a test token, or a live
      one with `--live`, kept in the same two places as keys. One rule for every credential keeps

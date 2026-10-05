@@ -40,7 +40,8 @@ approve a developer app. A mistake here is public and embarrassing.
      for display. The full key is shown once, when it is created.
    - A key is either **full access** or **restricted** to a list of scopes
      (`posts:write`, `posts:read`, `templates:write`, …) and optionally to
-     one brand.
+     one brand. A key limited to one brand cannot read events or manage
+     webhook endpoints, which span every brand.
    - Keys record when they were last used. **Rolling** a key issues a new
      one and keeps the old one working for a chosen overlap (up to 7 days).
    - Creating or rolling a key requires recent re-authentication

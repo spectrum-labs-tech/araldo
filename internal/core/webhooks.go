@@ -96,6 +96,9 @@ func newWebhookSecret() string {
 // CreateEndpoint adds a webhook endpoint and returns its signing secret,
 // shown only now.
 func (s *Service) CreateEndpoint(ctx context.Context, a Actor, in EndpointInput) (*model.WebhookEndpoint, string, error) {
+	if err := a.orgWide("webhooks"); err != nil {
+		return nil, "", err
+	}
 	if err := a.require(PermWebhooksWrite); err != nil {
 		return nil, "", err
 	}
@@ -121,6 +124,9 @@ func (s *Service) CreateEndpoint(ctx context.Context, a Actor, in EndpointInput)
 
 // Endpoint returns one of the actor's endpoints.
 func (s *Service) Endpoint(ctx context.Context, a Actor, endpointID uuid.UUID) (*model.WebhookEndpoint, error) {
+	if err := a.orgWide("webhooks"); err != nil {
+		return nil, err
+	}
 	if err := a.require(PermWebhooksRead); err != nil {
 		return nil, err
 	}
@@ -133,6 +139,9 @@ func (s *Service) Endpoint(ctx context.Context, a Actor, endpointID uuid.UUID) (
 
 // Endpoints lists endpoints in the actor's mode.
 func (s *Service) Endpoints(ctx context.Context, a Actor) ([]*model.WebhookEndpoint, error) {
+	if err := a.orgWide("webhooks"); err != nil {
+		return nil, err
+	}
 	if err := a.require(PermWebhooksRead); err != nil {
 		return nil, err
 	}
@@ -142,6 +151,9 @@ func (s *Service) Endpoints(ctx context.Context, a Actor) ([]*model.WebhookEndpo
 // UpdateEndpoint changes an endpoint; enabling it clears its failure
 // streak.
 func (s *Service) UpdateEndpoint(ctx context.Context, a Actor, endpointID uuid.UUID, in EndpointInput) (*model.WebhookEndpoint, error) {
+	if err := a.orgWide("webhooks"); err != nil {
+		return nil, err
+	}
 	if err := a.require(PermWebhooksWrite); err != nil {
 		return nil, err
 	}
@@ -178,6 +190,9 @@ func (s *Service) UpdateEndpoint(ctx context.Context, a Actor, endpointID uuid.U
 // (at most a week) deliveries are signed with both, so the receiver can
 // switch to the new one without rejecting any (ADR 0012).
 func (s *Service) RollEndpointSecret(ctx context.Context, a Actor, endpointID uuid.UUID, overlap time.Duration) (string, error) {
+	if err := a.orgWide("webhooks"); err != nil {
+		return "", err
+	}
 	if err := a.require(PermWebhooksWrite); err != nil {
 		return "", err
 	}
@@ -205,6 +220,9 @@ func (s *Service) RollEndpointSecret(ctx context.Context, a Actor, endpointID uu
 
 // DeleteEndpoint removes an endpoint and its delivery log.
 func (s *Service) DeleteEndpoint(ctx context.Context, a Actor, endpointID uuid.UUID) error {
+	if err := a.orgWide("webhooks"); err != nil {
+		return err
+	}
 	if err := a.require(PermWebhooksWrite); err != nil {
 		return err
 	}
@@ -222,6 +240,9 @@ func (s *Service) DeleteEndpoint(ctx context.Context, a Actor, endpointID uuid.U
 
 // Deliveries lists an endpoint's deliveries, newest first.
 func (s *Service) Deliveries(ctx context.Context, a Actor, endpointID uuid.UUID, page store.Page) ([]model.Delivery, bool, error) {
+	if err := a.orgWide("webhooks"); err != nil {
+		return nil, false, err
+	}
 	if _, err := s.Endpoint(ctx, a, endpointID); err != nil {
 		return nil, false, err
 	}
@@ -230,6 +251,9 @@ func (s *Service) Deliveries(ctx context.Context, a Actor, endpointID uuid.UUID,
 
 // ResendDelivery queues a delivery again now.
 func (s *Service) ResendDelivery(ctx context.Context, a Actor, deliveryID uuid.UUID) error {
+	if err := a.orgWide("webhooks"); err != nil {
+		return err
+	}
 	if err := a.require(PermWebhooksWrite); err != nil {
 		return err
 	}
@@ -244,6 +268,9 @@ func (s *Service) ResendDelivery(ctx context.Context, a Actor, deliveryID uuid.U
 
 // Event returns one event in the actor's mode.
 func (s *Service) Event(ctx context.Context, a Actor, eventID uuid.UUID) (*model.Event, error) {
+	if err := a.orgWide("events"); err != nil {
+		return nil, err
+	}
 	if err := a.require(PermEventsRead); err != nil {
 		return nil, err
 	}
@@ -256,6 +283,9 @@ func (s *Service) Event(ctx context.Context, a Actor, eventID uuid.UUID) (*model
 
 // Events lists events newest first.
 func (s *Service) Events(ctx context.Context, a Actor, typ string, page store.Page) ([]*model.Event, bool, error) {
+	if err := a.orgWide("events"); err != nil {
+		return nil, false, err
+	}
 	if err := a.require(PermEventsRead); err != nil {
 		return nil, false, err
 	}
@@ -264,6 +294,9 @@ func (s *Service) Events(ctx context.Context, a Actor, typ string, page store.Pa
 
 // EventsSince returns events after one, oldest first (for streaming).
 func (s *Service) EventsSince(ctx context.Context, a Actor, after uuid.UUID, limit int) ([]*model.Event, error) {
+	if err := a.orgWide("events"); err != nil {
+		return nil, err
+	}
 	if err := a.require(PermEventsRead); err != nil {
 		return nil, err
 	}

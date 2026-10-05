@@ -256,6 +256,15 @@ func (a Actor) statusAllows(p Permission) error {
 var errOrgSuspended = &apperr.Error{Kind: apperr.KindForbidden, Code: "org_suspended",
 	Message: "This org is suspended. An owner can find out why by signing in to the dashboard."}
 
+// orgWide refuses a key limited to one brand what spans the whole org:
+// events and webhook endpoints carry every brand's activity.
+func (a Actor) orgWide(what string) error {
+	if a.BrandID != nil {
+		return apperr.Forbidden("This API key is limited to one brand, and %s cover the whole org: use a key for every brand.", what)
+	}
+	return nil
+}
+
 // brandAllowed checks a key restricted to one brand.
 func (a Actor) brandAllowed(brandID uuid.UUID) error {
 	if a.BrandID != nil && *a.BrandID != brandID {

@@ -352,8 +352,17 @@ func TestOpenDoesNotWaitLongForAMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = holder.Close(context.Background()) }()
-	if _, err := holder.Exec(t.Context(), `SELECT pg_advisory_lock($1)`, int64(0x61726c646f6d67)); err != nil {
-		t.Fatal(err)
+	// Polled, never waited for in one statement: a statement waiting for
+	// the lock is an open transaction, which another package's migration,
+	// building an index concurrently, would wait for in turn (see
+	// store.Migrate).
+	for got := false; !got; {
+		if err := holder.QueryRow(t.Context(), `SELECT pg_try_advisory_lock($1)`, int64(0x61726c646f6d67)).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if !got {
+			time.Sleep(50 * time.Millisecond)
+		}
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()

@@ -1361,3 +1361,33 @@ func TestLostLeasesBeforeTheCall(t *testing.T) {
 		}
 	}
 }
+
+// TestPastDeadlineIsNotPublished checks a target past its publish_by is
+// not claimed, even before the expire task fails it (ADR 0011).
+func TestPastDeadlineIsNotPublished(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	p, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "too late"},
+		PublishAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Due now, but its deadline has passed (the channel was held, say).
+	if _, err := open(t).Pool().Exec(ctx, `UPDATE post_targets SET next_attempt_at = now() - interval '1 minute',
+		publish_by = now() - interval '1 second' WHERE id = $1`, p.Targets[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if _, err := w.s.PublishDue(ctx, "test-worker"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := w.s.Post(ctx, w.owner, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := got.Targets[0].Status; st == model.TargetPublished || st == model.TargetPublishing {
+		t.Fatalf("a target past its deadline was published: %s", st)
+	}
+}

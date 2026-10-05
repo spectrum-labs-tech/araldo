@@ -109,6 +109,11 @@ func (s *Service) AddTemplateVersion(ctx context.Context, a Actor, templateID uu
 		if err := a.brandAllowed(t.BrandID); err != nil {
 			return err
 		}
+		// An approver exempted this template's posts from review, trusting
+		// its text; new text needs one too (ADR 0004).
+		if t.Approval == model.TemplateApprovalNotRequired && !a.Can(PermPostsApprove) {
+			return apperr.Forbidden("This template's posts skip approval, so only admins and owners can change its text.")
+		}
 		if name = strings.TrimSpace(name); name != "" && name != t.Name {
 			if err := tx.SetTemplateName(ctx, a.OrgID, t.ID, name); err != nil {
 				return err
@@ -224,7 +229,13 @@ func (s *Service) TemplateByRef(ctx context.Context, a Actor, brandID uuid.UUID,
 		if err != nil {
 			return nil, nil, err
 		}
-		return s.Template(ctx, a, tid, 0)
+		t, v, err := s.Template(ctx, a, tid, 0)
+		// A template is its brand's: another brand's, with its own approval
+		// rule, cannot render this brand's posts.
+		if err == nil && t.BrandID != brandID {
+			return nil, nil, apperr.Invalid("template_missing", "template", "This brand has no template %s.", ref)
+		}
+		return t, v, err
 	}
 	key, ver, _ := strings.Cut(ref, "@")
 	version := 0

@@ -1210,3 +1210,42 @@ func TestPreviewTemplateNeedsData(t *testing.T) {
 		t.Fatalf("with example: %+v, %v", rs, err)
 	}
 }
+
+// TestTemplatesCannotLiftApproval checks a template exempt from approval
+// exempts only its own brand's posts, and only with text an approver saw
+// (ADR 0004).
+func TestTemplatesCannotLiftApproval(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	strict, err := w.s.CreateBrand(ctx, w.owner, core.BrandInput{Name: "Strict", Timezone: "UTC", ApprovalPolicy: model.ApprovalAll})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exempt, _, err := w.s.CreateTemplate(ctx, w.owner, core.TemplateInput{BrandID: w.brand.ID, Key: "release", Name: "Release",
+		Approval: model.TemplateApprovalNotRequired, Source: tmpl.Source{Body: "Shipped"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	editorUser, err := w.s.AddMember(ctx, w.owner, w.session, fmt.Sprintf("editor-%s@example.com", uuid.NewString()[:8]), model.RoleEditor, "temporary password 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	editor, _, err := w.s.MemberActor(ctx, editorUser.ID, w.org.ID, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := w.s.CreatePost(ctx, editor, core.PostInput{BrandID: strict.ID, Template: id.Format(id.Template, exempt.ID)}); kind(err) != apperr.KindInvalid {
+		t.Fatalf("another brand's exempt template, by ID: %v", err)
+	}
+	if p, err := w.s.CreatePost(ctx, editor, core.PostInput{BrandID: w.brand.ID, Template: id.Format(id.Template, exempt.ID)}); err != nil || p.ApprovalNeeded {
+		t.Fatalf("its own brand's template, by ID: %+v, %v", p, err)
+	}
+	if _, _, err := w.s.AddTemplateVersion(ctx, editor, exempt.ID, "", tmpl.Source{Body: "Anything at all"}); kind(err) != apperr.KindForbidden {
+		t.Fatalf("an editor rewriting an exempt template: %v", err)
+	}
+	if _, _, err := w.s.AddTemplateVersion(ctx, w.owner, exempt.ID, "", tmpl.Source{Body: "Shipped, reviewed"}); err != nil {
+		t.Fatalf("an owner rewriting it: %v", err)
+	}
+}

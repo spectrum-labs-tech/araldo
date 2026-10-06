@@ -79,14 +79,26 @@ jobs:
   integration:
     name: Integration (Postgres)
     runs-on: ubuntu-latest
+    # The oldest and newest Postgres an install of ours runs: 16 in
+    # production, 18 on the newer database host. One job, so the required
+    # check keeps its name.
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: araldo
           POSTGRES_PASSWORD: araldo
           POSTGRES_DB: araldo
         ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U araldo" --health-interval 2s --health-timeout 3s --health-retries 30
+      postgres18:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: araldo
+          POSTGRES_PASSWORD: araldo
+          POSTGRES_DB: araldo
+        ports: ["5433:5432"]
         options: >-
           --health-cmd "pg_isready -U araldo" --health-interval 2s --health-timeout 3s --health-retries 30
     env:
@@ -96,12 +108,16 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: go test -tags=integration
+      - name: go test -tags=integration (Postgres 16)
         run: go test -tags=integration -race -count=1 ./...
       # Tests never clean up; a second run proves they pass on a database
       # full of earlier runs' data.
-      - name: go test -tags=integration (again, on the now-dirty database)
+      - name: go test -tags=integration (Postgres 16 again, on the now-dirty database)
         run: go test -tags=integration -count=1 ./...
+      - name: go test -tags=integration (Postgres 18)
+        env:
+          ARALDO_TEST_DSN: postgres://araldo:araldo@localhost:5433/araldo?sslmode=disable&pool_max_conns=4
+        run: go test -tags=integration -race -count=1 ./...
 
   helm:
     name: Helm chart

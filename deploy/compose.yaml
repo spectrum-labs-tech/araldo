@@ -5,13 +5,15 @@ name: araldo
 
 services:
   postgres:
-    image: postgres:17-alpine
+    # The version production runs. Each major version has its own volume:
+    # a data directory never moves between them.
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: araldo
       POSTGRES_PASSWORD: araldo
       POSTGRES_DB: araldo
     ports: ["55433:5432"]
-    volumes: [postgres:/var/lib/postgresql/data]
+    volumes: [postgres16:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "araldo"]
       interval: 2s
@@ -33,4 +35,4 @@ services:
     ports: ["8080:8080"]
 
 volumes:
-  postgres: {}
+  postgres16: {}

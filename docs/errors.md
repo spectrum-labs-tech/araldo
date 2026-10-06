@@ -329,6 +329,11 @@ every problem in `errors`, each with its own `code` and `param`.
 - **mfa_required_first**: turn on two-factor authentication for yourself
   before requiring it for the org.
 
+## Monthly report email (dashboard)
+
+- **recipient_exists** (409): the address already gets the brand's report.
+- **recipients_limit**: a brand's report goes to at most 20 addresses.
+
 ## Notifications (dashboard)
 
 - **notification_type_invalid**: the type is not one an org's

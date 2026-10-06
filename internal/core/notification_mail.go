@@ -123,38 +123,49 @@ func (s *Service) sendNotificationEmail(ctx context.Context, d store.Notificatio
 	return s.cfg.Mail.Send(ctx, m)
 }
 
-// Unsubscribe links: the person, org and type, signed, so they work
-// without signing in and cannot be made for anyone else.
+// Unsubscribe links, signed so they work without signing in and cannot be
+// made for anyone else: a notification type for a person in an org
+// ("user|org|type"), or a brand's monthly report for an address
+// ("report|org|brand|email", ADR 0026).
 
 const unsubscribeLabel = "araldo notification unsubscribe v1"
 
 var errUnsubscribeInvalid = &apperr.Error{Kind: apperr.KindNotFound, Code: "unsubscribe_link_invalid",
 	Message: "This link is not valid. Change your email settings under Notifications in Araldo."}
 
-func (s *Service) unsubscribeToken(ctx context.Context, userID, orgID uuid.UUID, typ string) (string, error) {
+func (s *Service) signUnsubscribe(ctx context.Context, payload string) (string, error) {
 	key, err := s.keys.Derive(ctx, unsubscribeLabel)
 	if err != nil {
 		return "", err
 	}
-	payload := userID.String() + "|" + orgID.String() + "|" + typ
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(payload))
-	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+	return s.cfg.BaseURL + "/unsubscribe/" + base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." +
+		base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
 // UnsubscribeURL is the link a notification email carries to stop that
 // type's email for the person in the org.
 func (s *Service) UnsubscribeURL(ctx context.Context, userID, orgID uuid.UUID, typ string) (string, error) {
-	token, err := s.unsubscribeToken(ctx, userID, orgID, typ)
-	return s.cfg.BaseURL + "/unsubscribe/" + token, err
+	return s.signUnsubscribe(ctx, userID.String()+"|"+orgID.String()+"|"+typ)
 }
 
-// UnsubscribeTarget is what an unsubscribe link turns off.
+// reportUnsubscribeURL is the link a monthly report email carries to stop
+// it for that address.
+func (s *Service) reportUnsubscribeURL(ctx context.Context, orgID, brandID uuid.UUID, email string) (string, error) {
+	return s.signUnsubscribe(ctx, "report|"+orgID.String()+"|"+brandID.String()+"|"+email)
+}
+
+// UnsubscribeTarget is what an unsubscribe link turns off: a notification
+// type (Type) for a person, or a brand's monthly report (Brand) for an
+// address.
 type UnsubscribeTarget struct {
-	UserID  uuid.UUID
 	OrgID   uuid.UUID
 	OrgName string
+	UserID  uuid.UUID
 	Type    NotificationType
+	Brand   *model.Brand
+	Email   string
 }
 
 // CheckUnsubscribe reads an unsubscribe link.
@@ -175,31 +186,57 @@ func (s *Service) CheckUnsubscribe(ctx context.Context, token string) (*Unsubscr
 		return nil, errUnsubscribeInvalid
 	}
 	parts := strings.Split(string(payload), "|")
-	if len(parts) != 3 {
+	var u UnsubscribeTarget
+	switch {
+	case len(parts) == 4 && parts[0] == "report":
+		orgID, err1 := uuid.Parse(parts[1])
+		brandID, err2 := uuid.Parse(parts[2])
+		if err1 != nil || err2 != nil {
+			return nil, errUnsubscribeInvalid
+		}
+		b, err := s.store.Brand(ctx, orgID, brandID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, errUnsubscribeInvalid
+		}
+		if err != nil {
+			return nil, err
+		}
+		u = UnsubscribeTarget{OrgID: orgID, Brand: b, Email: parts[3]}
+	case len(parts) == 3:
+		userID, err1 := uuid.Parse(parts[0])
+		orgID, err2 := uuid.Parse(parts[1])
+		t, known := notificationType(parts[2])
+		if err1 != nil || err2 != nil || !known || t.Account {
+			return nil, errUnsubscribeInvalid
+		}
+		u = UnsubscribeTarget{OrgID: orgID, UserID: userID, Type: t}
+	default:
 		return nil, errUnsubscribeInvalid
 	}
-	userID, err1 := uuid.Parse(parts[0])
-	orgID, err2 := uuid.Parse(parts[1])
-	t, known := notificationType(parts[2])
-	if err1 != nil || err2 != nil || !known || t.Account {
-		return nil, errUnsubscribeInvalid
-	}
-	o, err := s.store.Org(ctx, orgID)
+	o, err := s.store.Org(ctx, u.OrgID)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, errUnsubscribeInvalid
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &UnsubscribeTarget{UserID: userID, OrgID: orgID, OrgName: o.Name, Type: t}, nil
+	u.OrgName = o.Name
+	return &u, nil
 }
 
-// Unsubscribe turns off a type's email for the person in the org an
-// unsubscribe link names; the dashboard keeps showing it as before.
+// Unsubscribe does what an unsubscribe link says: turns off a type's email
+// for the person in the org (the dashboard keeps showing it as before), or
+// takes the address off the brand's monthly report.
 func (s *Service) Unsubscribe(ctx context.Context, token string) (*UnsubscribeTarget, error) {
 	u, err := s.CheckUnsubscribe(ctx, token)
 	if err != nil {
 		return nil, err
+	}
+	if u.Brand != nil {
+		if err := s.store.RemoveReportRecipient(ctx, u.OrgID, u.Brand.ID, u.Email); err != nil && !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
+		return u, nil
 	}
 	prefs, err := s.store.UserNotificationPrefs(ctx, u.UserID, u.OrgID)
 	if err != nil {

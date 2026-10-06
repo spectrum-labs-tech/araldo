@@ -792,6 +792,15 @@ working when withdrawn from the report page, when it expires, or while the
 org is suspended. Each link is audited (`report.share`, `report.unshare`);
 it is shown once, and only its hash is stored.
 
+**Monthly email.** On the Reports page, admins and owners choose the
+addresses a brand's report goes to, members or not (20 at most). Early
+each month, in the brand's time zone (the first 7 days), the
+`reports.mail` task makes a share link to the month before and emails
+each address a short summary with it, once per month, in live mode only.
+Failures are retried as notification emails are; every email carries a
+one-click unsubscribe that takes the address off. An address added after
+the 7th gets the next month's. It needs `ARALDO_SMTP_HOST`.
+
 ## Backups
 
 Araldo has no backup command: back it up the way you back up any Postgres

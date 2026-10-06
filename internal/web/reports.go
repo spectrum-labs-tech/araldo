@@ -30,6 +30,10 @@ type reportData struct {
 	CanShare  bool
 	Shares    []*model.ReportShare
 	ShareLink string
+	// Recipients get the brand's report by email each month (ADR 0026),
+	// for those who share.
+	Recipients  []model.ReportRecipient
+	MailEnabled bool
 }
 
 // reportView is the report partial's data.
@@ -71,8 +75,35 @@ func (s *Server) reportsPage(c *reqCtx) error {
 		if d.Shares, err = s.svc.ReportShares(c.ctx(), c.actor, d.Brand.ID); err != nil {
 			return err
 		}
+		if d.Recipients, err = s.svc.ReportRecipients(c.ctx(), c.actor, d.Brand.ID); err != nil {
+			return err
+		}
 	}
+	d.MailEnabled = s.svc.MailEnabled()
 	return s.page(c, "reports", "reports", "Report: "+d.Brand.Name, d)
+}
+
+// reportRecipients adds or removes an address the brand's monthly report
+// goes to.
+func (s *Server) reportRecipients(c *reqCtx) error {
+	b, err := s.svc.ResolveBrand(c.ctx(), c.actor, c.r.PostFormValue("brand"))
+	if err != nil {
+		return err
+	}
+	email, notice := c.r.PostFormValue("email"), ""
+	back := "/reports?" + url.Values{"brand": {id.Format(id.Brand, b.ID)}}.Encode()
+	if c.r.PostFormValue("action") == "remove" {
+		err, notice = s.svc.RemoveReportRecipient(c.ctx(), c.actor, b.ID, email), email+" no longer gets the monthly report."
+	} else {
+		err, notice = s.svc.AddReportRecipient(c.ctx(), c.actor, b.ID, email), email+" gets the report early each month."
+	}
+	if err != nil {
+		if ae := apperr.As(err); ae.Kind == apperr.KindInvalid || ae.Kind == apperr.KindConflict {
+			return redirect(c, back, ae.Message)
+		}
+		return err
+	}
+	return redirect(c, back, notice)
 }
 
 // shareReport makes a link to the brand's month and shows it once, on the

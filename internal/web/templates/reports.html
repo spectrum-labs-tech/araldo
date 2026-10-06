@@ -17,6 +17,26 @@
   <button>Show</button>
 </form>
 
+{{if $d.CanShare}}
+<section class="card no-print">
+  <h2>Monthly email</h2>
+  <p class="mb-3">Early each month, the report for the month before goes to these addresses, members or not, with a link that works for 30 days. Live mode only.{{if not $d.MailEnabled}} This server sends no email yet, so nothing goes out until its operator sets it up.{{end}}</p>
+  {{if $d.Recipients}}
+  <ul class="mb-3 flex flex-col gap-2">
+    {{range $d.Recipients}}<li class="flex flex-wrap items-center gap-2">{{.Email}}
+      <form method="post" action="/reports/recipients" data-confirm="Stop sending the report to {{.Email}}?"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <input type="hidden" name="brand" value="{{brandID $d.Brand.ID}}"><input type="hidden" name="action" value="remove"><input type="hidden" name="email" value="{{.Email}}">
+        <button class="btn-danger" aria-label="Stop sending to {{.Email}}">Remove</button></form></li>{{end}}
+  </ul>
+  {{end}}
+  <form method="post" action="/reports/recipients" class="flex flex-wrap items-end gap-2">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="brand" value="{{brandID $d.Brand.ID}}">
+    <label>Email <input type="email" name="email" required></label>
+    <button>Add</button>
+  </form>
+</section>
+{{end}}
+
 {{if and $d.CanShare $d.Month}}
 <section class="card no-print">
   <h2>Share this report</h2>

@@ -45,6 +45,12 @@ func SendNotificationEmailsTo(s *Service, userID uuid.UUID) (int, error) {
 	return s.sendNotificationEmails(context.Background(), &userID)
 }
 
+// MailReportsOrg is MailReports for one org, so a test mails only its
+// own.
+func MailReportsOrg(s *Service, orgID uuid.UUID) (int, error) {
+	return s.mailReports(context.Background(), &orgID)
+}
+
 // CollectEngagementOrg is CollectEngagement for one org, so a test reads
 // only its own targets.
 func CollectEngagementOrg(s *Service, org uuid.UUID) (int, error) {

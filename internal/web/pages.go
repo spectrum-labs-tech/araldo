@@ -173,6 +173,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /ads/accounts/{id}/delete", s.app("ads", s.deleteAdAccount))
 	s.mux.HandleFunc("GET /reports", s.app("reports", s.reportsPage))
 	s.mux.HandleFunc("POST /reports/shares", s.app("reports", s.shareReport))
+	s.mux.HandleFunc("POST /reports/recipients", s.app("reports", s.reportRecipients))
 	s.mux.HandleFunc("POST /reports/shares/{id}/revoke", s.app("reports", s.unshareReport))
 	s.mux.HandleFunc("GET /newsletters", s.app("newsletters", s.newslettersPage))
 	s.mux.HandleFunc("POST /mail-accounts", s.app("newsletters", s.connectMailAccount))

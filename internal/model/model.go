@@ -934,6 +934,13 @@ type ReportShare struct {
 	CreatedAt time.Time
 }
 
+// ReportRecipient is an address a brand's monthly report goes to (ADR
+// 0026).
+type ReportRecipient struct {
+	Email     string
+	CreatedAt time.Time
+}
+
 // Passkey is a user's WebAuthn credential (ADR 0007).
 type Passkey struct {
 	ID         uuid.UUID

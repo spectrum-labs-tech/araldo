@@ -48,6 +48,7 @@ const (
 	ProviderApp     Prefix = "app"
 	OperatorKey     Prefix = "opkey"
 	ReportShare     Prefix = "rshare"
+	Notification    Prefix = "ntf"
 )
 
 // ErrInvalid is returned for a malformed ID or one of another type.

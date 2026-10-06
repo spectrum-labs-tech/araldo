@@ -92,15 +92,34 @@ func scanNotification(r pgx.Row) (*model.Notification, error) {
 	return &n, mapErr(err)
 }
 
+// NotificationCursor is where a page of notifications ends: the last one's
+// time and ID.
+type NotificationCursor struct {
+	At time.Time
+	ID uuid.UUID
+}
+
 // Notifications lists a person's notifications the dashboard shows, newest
-// first, before a time (nil for the newest).
-func (s *Store) Notifications(ctx context.Context, userID uuid.UUID, before *time.Time, limit int) ([]*model.Notification, error) {
+// first, after a cursor (nil for the newest), unread ones only if asked.
+func (s *Store) Notifications(ctx context.Context, userID uuid.UUID, after *NotificationCursor, unreadOnly bool, limit int) ([]*model.Notification, error) {
+	var at *time.Time
+	var nid *uuid.UUID
+	if after != nil {
+		at, nid = &after.At, &after.ID
+	}
 	rows, err := s.q.Query(ctx, `SELECT `+notificationCols+` FROM notifications n LEFT JOIN orgs o ON o.id = n.org_id
-		WHERE n.user_id = $1 AND n.shown AND ($2::timestamptz IS NULL OR n.created_at < $2) ORDER BY n.created_at DESC LIMIT $3`, userID, before, limit)
+		WHERE n.user_id = $1 AND n.shown AND ($2::timestamptz IS NULL OR (n.created_at, n.id) < ($2, $5)) AND (NOT $4 OR n.read_at IS NULL)
+		ORDER BY n.created_at DESC, n.id DESC LIMIT $3`, userID, at, limit, unreadOnly, nid)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Notification, error) { return scanNotification(r) })
+}
+
+// Notification returns one of a person's notifications.
+func (s *Store) Notification(ctx context.Context, userID, id uuid.UUID) (*model.Notification, error) {
+	return scanNotification(s.q.QueryRow(ctx, `SELECT `+notificationCols+` FROM notifications n LEFT JOIN orgs o ON o.id = n.org_id
+		WHERE n.user_id = $1 AND n.id = $2`, userID, id))
 }
 
 // UnreadNotifications counts a person's unread notifications.

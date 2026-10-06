@@ -134,6 +134,8 @@ func query(args map[string]any, keys ...string) url.Values {
 			}
 		case float64:
 			q.Set(k, strconv.FormatFloat(v, 'f', -1, 64))
+		case bool:
+			q.Set(k, strconv.FormatBool(v))
 		}
 	}
 	return q
@@ -453,6 +455,19 @@ func tools(api *Client) []Tool {
 			}),
 			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
 				return get("/v1/newsletters", query(args, "brand", "status", "limit"))(ctx)
+			},
+		},
+		{
+			Name: "list_notifications", Title: "List my notifications", ReadOnly: true, Idempotent: true,
+			Description: "What Araldo told the person signed in (araldo auth login), newest first, in all their orgs: posts and " +
+				"newsletters waiting for approval, posts that need attention or failed, channels to reconnect, new members, and " +
+				"changes to their account. Each has a link to its page in the dashboard. Not available to API keys.",
+			Input: object(nil, map[string]any{
+				"unread": map[string]any{"type": "boolean", "description": "Only unread ones."},
+				"limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "How many (default 20)."},
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				return get("/v1/notifications", query(args, "unread", "limit"))(ctx)
 			},
 		},
 		{

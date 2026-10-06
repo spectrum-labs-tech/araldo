@@ -572,6 +572,35 @@ type InvitationView struct {
 	Emailed *bool `json:"emailed,omitempty"`
 }
 
+// NotificationView is a notification (ADR 0034); link is the dashboard
+// page it is about.
+type NotificationView struct {
+	ID        string     `json:"id"`
+	Object    string     `json:"object"`
+	Type      string     `json:"type"`
+	Org       *string    `json:"org"`
+	OrgName   string     `json:"org_name,omitempty"`
+	Subject   string     `json:"subject"`
+	Body      string     `json:"body"`
+	Link      string     `json:"link"`
+	ReadAt    *time.Time `json:"read_at"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+// ViewNotification renders a notification, its link absolute on baseURL.
+func ViewNotification(n *model.Notification, baseURL string) NotificationView {
+	v := NotificationView{ID: id.Format(id.Notification, n.ID), Object: "notification", Type: n.Type, OrgName: n.OrgName,
+		Subject: n.Subject, Body: n.Body, ReadAt: utc(n.ReadAt), CreatedAt: n.CreatedAt.UTC()}
+	if n.OrgID != nil {
+		o := id.Format(id.Org, *n.OrgID)
+		v.Org = &o
+	}
+	if n.Link != "" {
+		v.Link = baseURL + n.Link
+	}
+	return v
+}
+
 // ViewInvitation renders an invitation.
 func ViewInvitation(inv *model.Invitation) InvitationView {
 	return InvitationView{ID: id.Format(id.Invitation, inv.ID), Object: "invitation", Email: inv.Email, Role: inv.Role,

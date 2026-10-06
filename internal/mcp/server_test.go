@@ -137,8 +137,8 @@ func TestToolsList(t *testing.T) {
 	t.Parallel()
 	out, _, _ := session(t, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	list, _ := result(t, out["1"])["tools"].([]any)
-	if len(list) != 21 {
-		t.Fatalf("%d tools, want 21", len(list))
+	if len(list) != 22 {
+		t.Fatalf("%d tools, want 22", len(list))
 	}
 	names := map[string]map[string]any{}
 	for _, raw := range list {

@@ -61,6 +61,8 @@ tags:
     description: How the araldo CLI signs a person in (device sign-in and user tokens).
   - name: Members
     description: The org's members and settings. A person's user token only; never an API key.
+  - name: Notifications
+    description: What Araldo tells a person, in the dashboard and by email. A person's user token only; never an API key.
   - name: Audit
   - name: Platforms
   - name: MCP
@@ -1886,6 +1888,58 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/notifications:
+    get:
+      summary: List your notifications
+      description: |
+        What Araldo told the person the user token acts for, in every org of
+        theirs and about their account, newest first: the same as the
+        dashboard's inbox. A user token only.
+      tags: [Notifications]
+      parameters:
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/StartingAfter" }
+        - { name: unread, in: query, schema: { type: boolean }, description: "Only unread ones." }
+      responses:
+        "200":
+          description: Notifications.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Notification" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/notifications/read_all:
+    post:
+      summary: Mark all your notifications read
+      tags: [Notifications]
+      responses:
+        "200":
+          description: Done.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object: { type: string, enum: [notifications.read_all] }
+                  unread: { type: integer }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/notifications/{id}/read:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Mark a notification read
+      tags: [Notifications]
+      responses:
+        "200":
+          description: The notification.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Notification" } } }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/operator/orgs:
     get:
       summary: List orgs
@@ -2879,6 +2933,20 @@ components:
         role: { type: string, enum: [owner, admin, editor, viewer] }
         mfa: { type: boolean, description: Whether they use two-factor authentication. }
         joined_at: { type: string, format: date-time }
+
+    Notification:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [notification] }
+        type: { type: string, description: "What it is about, such as post.approval_requested or account.password_changed." }
+        org: { type: string, nullable: true, description: "The org it is about; null for an account notice." }
+        org_name: { type: string }
+        subject: { type: string }
+        body: { type: string }
+        link: { type: string, description: "The dashboard page it is about." }
+        read_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
 
     Invitation:
       type: object

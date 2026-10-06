@@ -244,13 +244,59 @@ func (s *Service) notifyJoined(ctx context.Context, tx *store.Store, orgID, user
 
 // The dashboard's inbox.
 
+// BaseURL is the server's public URL.
+func (s *Service) BaseURL() string { return s.cfg.BaseURL }
+
 // NotificationsPage is how many notifications a page of the inbox lists.
 const NotificationsPage = 50
 
 // Notifications lists a person's notifications, newest first, before a
 // time (nil for the newest).
 func (s *Service) Notifications(ctx context.Context, userID uuid.UUID, before *time.Time) ([]*model.Notification, error) {
-	return s.store.Notifications(ctx, userID, before, NotificationsPage)
+	var after *store.NotificationCursor
+	if before != nil {
+		after = &store.NotificationCursor{At: *before, ID: uuid.Nil} // strictly before: as the dashboard pages by time
+	}
+	return s.store.Notifications(ctx, userID, after, false, NotificationsPage)
+}
+
+// ListNotifications lists the actor's notifications for the API: a
+// person's, from a user token, newest first, after the one named (for the
+// next page), unread ones only if asked. It reports whether there are
+// more.
+func (s *Service) ListNotifications(ctx context.Context, a Actor, after *uuid.UUID, unreadOnly bool, limit int) ([]*model.Notification, bool, error) {
+	if a.UserID == nil {
+		return nil, false, apperr.Forbidden("Notifications are a person's: use a user token (araldo auth login), not an API key.")
+	}
+	var cursor *store.NotificationCursor
+	if after != nil {
+		n, err := s.store.Notification(ctx, *a.UserID, *after)
+		if err != nil {
+			return nil, false, notFound(err, "notification")
+		}
+		cursor = &store.NotificationCursor{At: n.CreatedAt, ID: n.ID}
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	out, err := s.store.Notifications(ctx, *a.UserID, cursor, unreadOnly, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	more := len(out) > limit
+	if more {
+		out = out[:limit]
+	}
+	return out, more, nil
+}
+
+// ReadNotification marks one of the actor's notifications read, for the
+// API.
+func (s *Service) ReadNotification(ctx context.Context, a Actor, notificationID uuid.UUID) (*model.Notification, error) {
+	if a.UserID == nil {
+		return nil, apperr.Forbidden("Notifications are a person's: use a user token (araldo auth login), not an API key.")
+	}
+	return s.OpenNotification(ctx, *a.UserID, notificationID)
 }
 
 // UnreadNotifications counts a person's unread notifications.

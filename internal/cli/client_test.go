@@ -134,7 +134,11 @@ func fakeAraldo(t *testing.T) (*httptest.Server, *map[string]any) {
 				`{"id":"user_2","email":"them@example.com","name":"Them","role":"editor","mfa":false}]}`)
 		case "POST /v1/invitations":
 			w.WriteHeader(http.StatusCreated)
-			_, _ = io.WriteString(w, `{"id":"inv_1","object":"invitation","email":"new@example.com","role":"viewer","url":"https://araldo.example/invite/tok"}`)
+			emailed := ""
+			if send, _ := lastBody["send_email"].(bool); send {
+				emailed = `,"emailed":true`
+			}
+			_, _ = io.WriteString(w, `{"id":"inv_1","object":"invitation","email":"new@example.com","role":"viewer","url":"https://araldo.example/invite/tok"`+emailed+`}`)
 		case "POST /v1/members/user_2":
 			_, _ = io.WriteString(w, `{"id":"user_2","object":"member","role":"admin"}`)
 		case "DELETE /v1/members/user_2":
@@ -365,8 +369,13 @@ func TestMembersAndOrgCommands(t *testing.T) {
 		t.Fatalf("members list: exit %d %q %q", code, out, errOut)
 	}
 	if code, out, errOut = runCLI(t, "", "members", "invite", "--email", "new@example.com", "--role", "viewer"); code != ExitOK ||
-		out != "https://araldo.example/invite/tok\n" || (*lastBody)["email"] != "new@example.com" || !strings.Contains(errOut, "works once") {
+		out != "https://araldo.example/invite/tok\n" || (*lastBody)["email"] != "new@example.com" || (*lastBody)["send_email"] != true ||
+		!strings.Contains(errOut, "emailed them the link") {
 		t.Fatalf("invite: exit %d %q %q", code, out, errOut)
+	}
+	if code, out, errOut = runCLI(t, "", "members", "invite", "--email", "new@example.com", "--role", "viewer", "--no-email"); code != ExitOK ||
+		out != "https://araldo.example/invite/tok\n" || (*lastBody)["send_email"] != false || strings.Contains(errOut, "emailed") {
+		t.Fatalf("invite --no-email: exit %d %q %q", code, out, errOut)
 	}
 	if code, _, errOut = runCLI(t, "", "members", "role", "--email", "THEM@example.com", "--role", "admin"); code != ExitOK || (*lastBody)["role"] != "admin" {
 		t.Fatalf("role: exit %d %q", code, errOut)

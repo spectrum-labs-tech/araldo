@@ -36,13 +36,14 @@ func runMembers(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if err := movedToClient("members", args); err != nil {
 		return err
 	}
-	usage := usageErr("usage: araldo members list | invite --email E --role R | role --email E --role R | remove --email E  [--org ORG] [--live] [--hostname H]")
+	usage := usageErr("usage: araldo members list | invite --email E --role R [--no-email] | role --email E --role R | remove --email E  [--org ORG] [--live] [--hostname H]")
 	if len(args) == 0 {
 		return usage
 	}
 	cmd := args[0]
 	var t target
 	var email, role, jsonFields, jq string
+	var noEmail bool
 	define := func(fs *flag.FlagSet) {
 		clientFlags(fs, &t)
 		switch cmd {
@@ -52,6 +53,9 @@ func runMembers(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		case "invite", "role":
 			fs.StringVar(&email, "email", "", "their email (required)")
 			fs.StringVar(&role, "role", "", "owner, admin, editor or viewer (required)")
+			if cmd == "invite" {
+				fs.BoolVar(&noEmail, "no-email", false, "only print the link; by default the server also emails it, if it sends email")
+			}
 		case "remove":
 			fs.StringVar(&email, "email", "", "their email (required)")
 		}
@@ -79,17 +83,22 @@ func runMembers(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	}
 	switch cmd {
 	case "invite":
-		raw, err := c.Do(ctx, http.MethodPost, "/v1/invitations", nil, map[string]string{"email": email, "role": role}, "")
+		raw, err := c.Do(ctx, http.MethodPost, "/v1/invitations", nil, map[string]any{"email": email, "role": role, "send_email": !noEmail}, "")
 		if err != nil {
 			return err
 		}
 		var inv struct {
-			URL string `json:"url"`
+			URL     string `json:"url"`
+			Emailed *bool  `json:"emailed"`
 		}
 		if err := json.Unmarshal(raw, &inv); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(stderr, "Invited %s as %s. Send them this link, privately; it works once, for a week:\n", email, role)
+		if inv.Emailed != nil && *inv.Emailed {
+			_, _ = fmt.Fprintf(stderr, "Invited %s as %s and emailed them the link. Here it is too, to send privately; it works once, for a week:\n", email, role)
+		} else {
+			_, _ = fmt.Fprintf(stderr, "Invited %s as %s. Send them this link, privately; it works once, for a week:\n", email, role)
+		}
 		_, _ = fmt.Fprintln(stdout, inv.URL)
 		return nil
 	case "list":

@@ -3,7 +3,9 @@
 package api
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
@@ -160,8 +162,9 @@ func (h *Handler) createInvitation(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	var body struct {
-		Email string     `json:"email"`
-		Role  model.Role `json:"role"`
+		Email     string     `json:"email"`
+		Role      model.Role `json:"role"`
+		SendEmail bool       `json:"send_email"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -170,10 +173,28 @@ func (h *Handler) createInvitation(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
+	ok(w, http.StatusCreated, h.invitationView(r, a, inv, link, body.SendEmail))
+	return nil
+}
+
+// invitationView is a new invitation with its link, emailed to the
+// person first when the request asks (ADR 0034). The invitation stands
+// either way: emailed says whether the email went, and the link is there
+// to share when it did not.
+func (h *Handler) invitationView(r *http.Request, a core.Actor, inv *model.Invitation, link string, send bool) core.InvitationView {
 	v := core.ViewInvitation(inv)
 	v.URL = link
-	ok(w, http.StatusCreated, v)
-	return nil
+	if send {
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+		err := h.svc.EmailInvitation(ctx, a, inv, link)
+		if err != nil {
+			h.log.WarnContext(r.Context(), "emailing an invitation", "err", err)
+		}
+		sent := err == nil
+		v.Emailed = &sent
+	}
+	return v
 }
 
 func (h *Handler) revokeInvitation(w http.ResponseWriter, r *http.Request) error {

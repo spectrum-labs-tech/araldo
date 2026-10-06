@@ -567,6 +567,9 @@ type InvitationView struct {
 	ExpiresAt time.Time  `json:"expires_at"`
 	CreatedAt time.Time  `json:"created_at"`
 	URL       string     `json:"url,omitempty"`
+	// Emailed, when the request asked to email the link, says whether it
+	// was sent (ADR 0034).
+	Emailed *bool `json:"emailed,omitempty"`
 }
 
 // ViewInvitation renders an invitation.

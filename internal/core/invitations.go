@@ -36,19 +36,20 @@ func (s *Service) EmailInvitation(ctx context.Context, a Actor, inv *model.Invit
 	if s.cfg.Mail == nil {
 		return errMailOff
 	}
-	from := "Someone"
+	invited := "You are invited to join " + inv.OrgName + " on Araldo as " + string(inv.Role) + "."
 	if a.UserID != nil {
 		u, err := s.store.User(ctx, *a.UserID)
 		if err != nil {
 			return err
 		}
-		from = u.Email
+		from := u.Email
 		if u.Name != "" {
 			from = u.Name + " (" + u.Email + ")"
 		}
+		invited = from + " invited you to join " + inv.OrgName + " on Araldo as " + string(inv.Role) + "."
 	}
 	return s.sendMail(ctx, mailContent{To: inv.Email, Subject: "Join " + inv.OrgName + " on Araldo",
-		Paragraphs: []string{from + " invited you to join " + inv.OrgName + " on Araldo as " + string(inv.Role) + ".",
+		Paragraphs: []string{invited,
 			"Accept with this link within 7 days. If you have no Araldo account yet, you make one as you accept."},
 		ButtonLabel: "Accept the invitation", ButtonURL: link,
 		Footer: "If you did not expect this, you can ignore this email: nothing happens unless you accept."})

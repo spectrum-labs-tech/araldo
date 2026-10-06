@@ -62,6 +62,7 @@ func (h *Handler) createOperatedOrg(w http.ResponseWriter, r *http.Request) erro
 		OwnerEmail  string          `json:"owner_email"`
 		ExternalRef string          `json:"external_ref"`
 		Limits      model.OrgLimits `json:"limits"`
+		SendEmail   bool            `json:"send_email"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -72,8 +73,11 @@ func (h *Handler) createOperatedOrg(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	v := core.ViewOperatedOrg(o)
-	iv := core.ViewInvitation(inv)
-	iv.URL = link
+	ia, _, err := h.svc.InOrg(r.Context(), actor(r), o.ID)
+	if err != nil {
+		return err
+	}
+	iv := h.invitationView(r, ia, inv, link, body.SendEmail)
 	v.OwnerInvitation = &iv
 	ok(w, http.StatusCreated, v)
 	return nil
@@ -130,8 +134,9 @@ func (h *Handler) operatorInvite(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var body struct {
-		Email string     `json:"email"`
-		Role  model.Role `json:"role"`
+		Email     string     `json:"email"`
+		Role      model.Role `json:"role"`
+		SendEmail bool       `json:"send_email"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -140,9 +145,7 @@ func (h *Handler) operatorInvite(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	v := core.ViewInvitation(inv)
-	v.URL = link
-	ok(w, http.StatusCreated, v)
+	ok(w, http.StatusCreated, h.invitationView(r, a, inv, link, body.SendEmail))
 	return nil
 }
 

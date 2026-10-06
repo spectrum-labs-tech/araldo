@@ -333,6 +333,8 @@ every problem in `errors`, each with its own `code` and `param`.
 
 - **notification_type_invalid**: the type is not one an org's
   notifications can be set for; account notices cannot be turned off.
+- **unsubscribe_link_invalid** (404): the link was altered, or its org is
+  gone; change email settings under Notifications instead.
 
 ## Password reset (dashboard)
 

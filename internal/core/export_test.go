@@ -39,6 +39,12 @@ func NotifyOrg(s *Service, orgID uuid.UUID, livemode bool, typ, subject, dedupe 
 	})
 }
 
+// SendNotificationEmailsTo is SendNotificationEmails for one person, so a
+// test sends only its own.
+func SendNotificationEmailsTo(s *Service, userID uuid.UUID) (int, error) {
+	return s.sendNotificationEmails(context.Background(), &userID)
+}
+
 // CollectEngagementOrg is CollectEngagement for one org, so a test reads
 // only its own targets.
 func CollectEngagementOrg(s *Service, org uuid.UUID) (int, error) {

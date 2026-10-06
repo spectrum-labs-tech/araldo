@@ -124,8 +124,19 @@ Araldo tells people what needs them, in the dashboard (the header's
 | Your password was changed or reset, a passkey added, two-factor turned off, a CLI signed in as you | You | Always, and cannot be turned off |
 
 Each person chooses, per org, under *Notifications → Settings*. Org
-notifications are raised in live mode only. The `notifications.prune`
-task deletes read notifications after 90 days and the rest after a year.
+notifications are raised in live mode only.
+
+The `notifications.send` task sends the queued emails every minute. A
+failure is retried after 1, 5 and 30 minutes, then 2, 6 and 12 hours,
+then given up on; a refusal the SMTP server says is permanent (a 5xx
+reply, such as an unknown address) is given up on at once. A person gets
+at most 30 notification emails an hour; past that they are suppressed,
+and the dashboard still has them. Every org notification email carries a
+one-click unsubscribe (`List-Unsubscribe` and `List-Unsubscribe-Post`,
+RFC 8058) and a footer link that turn off that type's email for that
+person in that org, signed so they work without signing in. The
+`notifications.prune` task deletes read notifications after 90 days and
+the rest after a year.
 
 ## Request log
 

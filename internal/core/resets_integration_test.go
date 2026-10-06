@@ -46,7 +46,7 @@ func (o *outbox) to(addr string) []smtpmail.Message {
 	return out
 }
 
-func withMail(o *outbox) option {
+func withMail(o smtpmail.Sender) option {
 	return func(cfg *core.Config, _ *[]platform.Adapter) { cfg.Mail = o }
 }
 

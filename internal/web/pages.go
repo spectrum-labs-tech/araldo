@@ -42,6 +42,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /login", s.loginSubmit)
 	s.mux.HandleFunc("GET /login/mfa", s.mfaPage)
 	s.mux.HandleFunc("POST /login/mfa", s.mfaSubmit)
+	s.mux.HandleFunc("GET /unsubscribe/{token}", s.unsubscribePage)
+	s.mux.HandleFunc("POST /unsubscribe/{token}", s.unsubscribeSubmit)
 	s.mux.HandleFunc("GET /login/forgot", s.forgotPage)
 	s.mux.HandleFunc("POST /login/forgot", s.forgotSubmit)
 	s.mux.HandleFunc("GET /login/reset/{token}", s.resetPage)

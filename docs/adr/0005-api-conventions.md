@@ -1,6 +1,6 @@
 # ADR 0005: A contract-first API with Stripe-style conventions
 
-- Status: accepted; built, except SDKs and the dashboard's request log; amended by [ADR 0019](0019-administration-api.md) and [ADR 0028](0028-cli-as-api-client.md)
+- Status: accepted; built (SDKs left to users, see 1); amended by [ADR 0019](0019-administration-api.md) and [ADR 0028](0028-cli-as-api-client.md)
 - Date: 2026-09-28
 
 ## Context
@@ -13,7 +13,9 @@ set the bar most developers now expect.
 ## Decision
 
 1. **Contract first.** `api/openapi.yaml` (OpenAPI 3.0.3) is the source of
-   truth, and SDKs are generated from it. Handlers are written by hand on
+   truth. Araldo publishes it rather than SDKs: users generate a client
+   in their language with the generator they prefer (amended 2026-10-05).
+   Handlers are written by hand on
    the standard library router and return `core`'s view types; a test
    fails if a route exists in the server but not in the contract, or the
    other way round. The contract is served at `/v1/openapi.yaml`.

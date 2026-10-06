@@ -86,5 +86,5 @@ task db:up && task test:integration
 Copyright © 2026 Spectrum Labs LLC.
 
 The server is [AGPL-3.0-or-later](LICENSE). The API contract is
-[Apache-2.0](LICENSE-APACHE), as client SDKs will be when they are
-published ([ADR 0003](docs/adr/0003-license.md)).
+[Apache-2.0](LICENSE-APACHE), so clients generated from it can be
+licensed as their authors choose ([ADR 0003](docs/adr/0003-license.md)).

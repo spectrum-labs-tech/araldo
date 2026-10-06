@@ -18,6 +18,8 @@ import (
 
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/ads/reddit"
@@ -68,8 +70,10 @@ type App struct {
 	// started (Serve, RunWorker).
 	DB        *store.HealthMonitor
 	KeyHealth *keyring.HealthMonitor
-	// meters is where instruments go: a no-op until StartTelemetry.
-	meters metric.MeterProvider
+	// meters and tracers are where instruments and spans go: no-ops until
+	// StartTelemetry.
+	meters  metric.MeterProvider
+	tracers trace.TracerProvider
 	// migrate is true while a startup migration has yet to succeed.
 	migrate bool
 	started sync.Once
@@ -86,7 +90,8 @@ func Logger(level string) *slog.Logger {
 	if err := l.UnmarshalText([]byte(level)); err != nil {
 		l = slog.LevelInfo
 	}
-	return slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: l}))
+	// Records made inside a span carry its trace and span IDs (ADR 0014).
+	return slog.New(telemetry.LogHandler(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: l})))
 }
 
 // Open builds the application. It degrades rather than fails: it does not
@@ -109,7 +114,7 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 	if mk == nil {
 		log.WarnContext(ctx, "no master keys are configured (ARALDO_MASTER_KEYS or ARALDO_TRANSIT_ADDR): channels and other stored credentials cannot be used")
 	}
-	a := &App{Cfg: cfg, Log: log, Store: st, meters: noop.NewMeterProvider(), Keys: keyring.New(mk, st),
+	a := &App{Cfg: cfg, Log: log, Store: st, meters: noop.NewMeterProvider(), tracers: tracenoop.NewTracerProvider(), Keys: keyring.New(mk, st),
 		DB: store.NewHealthMonitor(st, log, 0)}
 	a.KeyHealth = keyring.NewHealthMonitor(a.Keys, log, 0)
 	if cfg.AutoMigrate {
@@ -233,8 +238,8 @@ func masterKeys(cfg config.Config) (*keyring.MasterKeys, error) {
 	return local.Prepend(transit)
 }
 
-// StartTelemetry starts metric export as the OTEL_* variables configure it
-// (ADR 0014) and instruments the use cases. The worker started afterwards
+// StartTelemetry starts metric and trace export as the OTEL_* variables
+// configure it (ADR 0014) and instruments the use cases. The worker started afterwards
 // is instrumented too. Call stop, which flushes the exporter, when done.
 func (a *App) StartTelemetry(ctx context.Context) (stop func(), err error) {
 	t, err := telemetry.Start(ctx, a.Log, "araldo", buildinfo.Version)
@@ -252,7 +257,8 @@ func (a *App) StartTelemetry(ctx context.Context) (stop func(), err error) {
 		stop()
 		return nil, fmt.Errorf("telemetry: %w", err)
 	}
-	a.meters = t.MeterProvider()
+	a.meters, a.tracers = t.MeterProvider(), t.TracerProvider()
+	a.Svc.Trace(a.tracers)
 	return stop, nil
 }
 
@@ -262,7 +268,7 @@ func (a *App) Handler() (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return server.Handler(api.New(a.Svc, a.Log), dash, a.Svc.Ready, a.DB, a.Log), nil
+	return server.Handler(api.New(a.Svc, a.Log), dash, a.Svc.Ready, a.DB, a.Log, a.tracers), nil
 }
 
 // Serve runs the HTTP server until ctx ends.
@@ -289,6 +295,7 @@ func (a *App) RunWorker(ctx context.Context) error {
 	if err := sched.Instrument(a.meters); err != nil {
 		return err
 	}
+	sched.Trace(a.tracers)
 	var wg sync.WaitGroup
 	errs := make(chan error, 3)
 	run := func(name string, fn func(context.Context) error) {

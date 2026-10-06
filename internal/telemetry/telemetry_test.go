@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/metric/noop"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/spectrum-labs-tech/araldo/internal/telemetry"
 )
@@ -108,5 +109,47 @@ func TestStartServesPrometheus(t *testing.T) {
 	if resp, err := client.Get("http://127.0.0.1:" + port + "/metrics"); err == nil {
 		_ = resp.Body.Close()
 		t.Fatal("the scrape endpoint outlived Shutdown")
+	}
+}
+
+func TestTracesEnabled(t *testing.T) {
+	t.Parallel()
+	for name, tt := range map[string]struct {
+		env  map[string]string
+		want bool
+	}{
+		"nothing configured": {nil, false},
+		"otlp exporter":      {map[string]string{"OTEL_TRACES_EXPORTER": "otlp"}, true},
+		"none":               {map[string]string{"OTEL_TRACES_EXPORTER": "none", "OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318"}, false},
+		"endpoint":           {map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318"}, true},
+		"traces endpoint":    {map[string]string{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://collector:4318/v1/traces"}, true},
+		"metrics only":       {map[string]string{"OTEL_METRICS_EXPORTER": "prometheus"}, false},
+		"disabled wins":      {map[string]string{"OTEL_TRACES_EXPORTER": "otlp", "OTEL_SDK_DISABLED": "true"}, false},
+	} {
+		if got := telemetry.TracesEnabled(func(k string) string { return tt.env[k] }); got != tt.want {
+			t.Errorf("%s: TracesEnabled = %v, want %v", name, got, tt.want)
+		}
+	}
+}
+
+// TestLogHandlerAddsTraceIDs checks a record made inside a span carries
+// its trace and span IDs, and one made outside carries none.
+func TestLogHandlerAddsTraceIDs(t *testing.T) {
+	t.Parallel()
+	var buf strings.Builder
+	log := slog.New(telemetry.LogHandler(slog.NewJSONHandler(&buf, nil))).With("component", "test")
+	tp := sdktrace.NewTracerProvider()
+	ctx, span := tp.Tracer("test").Start(context.Background(), "op")
+	log.InfoContext(ctx, "inside")
+	span.End()
+	log.InfoContext(context.Background(), "outside")
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	sc := span.SpanContext()
+	if len(lines) != 2 || !strings.Contains(lines[0], `"trace_id":"`+sc.TraceID().String()+`"`) ||
+		!strings.Contains(lines[0], `"span_id":"`+sc.SpanID().String()+`"`) || !strings.Contains(lines[0], `"component":"test"`) {
+		t.Fatalf("inside the span: %s", lines[0])
+	}
+	if strings.Contains(lines[1], "trace_id") {
+		t.Fatalf("outside any span: %s", lines[1])
 	}
 }

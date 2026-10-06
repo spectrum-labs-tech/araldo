@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -176,6 +179,10 @@ func (s *Service) publishOne(work context.Context, owner string, ct store.Claime
 func (s *Service) publishTarget(ctx context.Context, owner string, ct store.ClaimedTarget) error {
 	t := ct.Target
 	started := s.Now()
+	s.metrics.recordLateness(ctx, &t, started)
+	ctx, span := s.tracer.Start(ctx, "publish", trace.WithAttributes(attribute.String("araldo.provider", string(t.Provider)),
+		attribute.String("araldo.mode", modeName(t.Livemode)), attribute.Int("araldo.attempt", t.Attempts)))
+	defer span.End()
 	attempt := &model.Attempt{ID: id.New(), OrgID: t.OrgID, TargetID: t.ID, Attempt: t.Attempts, StartedAt: started}
 	ch, err := s.store.Channel(ctx, t.OrgID, t.ChannelID)
 	if err != nil {
@@ -274,6 +281,11 @@ func (s *Service) finishPublish(ctx context.Context, owner string, t *model.Targ
 		o.Status, o.ErrorCode, o.ErrorMessage, event = model.TargetNeedsAttention, "unknown", truncate(pubErr.Error(), 1000), "post_target.needs_attention"
 	}
 	s.metrics.recordAttempt(ctx, t, ch.Provider, adapter != nil, o.Status, pubErr)
+	kind, span := errorKind(pubErr), trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("araldo.outcome", attemptOutcome(o.Status, kind)), attribute.String("araldo.error_kind", kind))
+	if pubErr != nil {
+		span.SetStatus(codes.Error, kind) // the kind, never the message: platforms echo content
+	}
 	return s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.FinishTarget(ctx, t.ID, owner, o); err != nil {
 			if errors.Is(err, store.ErrNotFound) {

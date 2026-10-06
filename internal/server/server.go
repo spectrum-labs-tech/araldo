@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package server puts the API and the dashboard behind one HTTP handler
-// with request IDs, access logs, panic recovery, security headers and
-// health checks.
+// with request IDs, access logs, traces, panic recovery, security headers
+// and health checks.
 package server
 
 import (
@@ -14,8 +14,13 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/spectrum-labs-tech/araldo/internal/api"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/telemetry"
 	"github.com/spectrum-labs-tech/araldo/internal/web"
 )
 
@@ -25,10 +30,17 @@ type Readiness func(ctx context.Context) error
 // Health is the database's last known state (store.HealthMonitor).
 type Health interface{ Healthy() bool }
 
+// Router is a handler that can name the route a request matches.
+type Router interface {
+	http.Handler
+	Route(r *http.Request) string
+}
+
 // Handler routes /v1/ to the API, health checks, and everything else to
 // the dashboard. While db is unhealthy, everything but the health checks
-// and static files gets a 503 at once.
-func Handler(apiH, webH http.Handler, ready Readiness, db Health, log *slog.Logger) http.Handler {
+// and static files gets a 503 at once. Each request is a span from tp
+// (ADR 0014), named by its route, never its path or query.
+func Handler(apiH, webH Router, ready Readiness, db Health, log *slog.Logger, tp trace.TracerProvider) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
@@ -46,7 +58,16 @@ func Handler(apiH, webH http.Handler, ready Readiness, db Health, log *slog.Logg
 	})
 	mux.Handle("/v1/", dbGuard(db, apiH, true))
 	mux.Handle("/", dbGuard(db, webH, false))
-	return middleware(mux, log)
+	route := func(r *http.Request) string {
+		switch {
+		case r.URL.Path == "/healthz" || r.URL.Path == "/readyz":
+			return r.Method + " " + r.URL.Path
+		case strings.HasPrefix(r.URL.Path, "/v1/"):
+			return apiH.Route(r)
+		}
+		return webH.Route(r)
+	}
+	return middleware(mux, log, tp.Tracer(telemetry.Scope), route)
 }
 
 // dbGuard answers 503 while the database is down, as an API problem or a
@@ -69,6 +90,17 @@ func dbGuard(db Health, next http.Handler, isAPI bool) http.Handler {
 		}
 		http.Error(w, "Araldo cannot reach its database right now. Try again in a minute.", http.StatusServiceUnavailable)
 	})
+}
+
+// endSpan records the response status on a request's span.
+func endSpan(span trace.Span, sw *statusWriter) {
+	if sw.status == 0 {
+		return
+	}
+	span.SetAttributes(attribute.Int("http.response.status_code", sw.status))
+	if sw.status >= 500 {
+		span.SetStatus(codes.Error, http.StatusText(sw.status))
+	}
 }
 
 type statusWriter struct {
@@ -101,9 +133,31 @@ func (w *statusWriter) Flush() {
 	}
 }
 
-func middleware(next http.Handler, log *slog.Logger) http.Handler {
+// traced reports whether a request gets a span: not health checks or
+// static files, which would drown the rest.
+func traced(path string) bool {
+	return path != "/healthz" && path != "/readyz" && !strings.HasPrefix(path, "/static/")
+}
+
+func middleware(next http.Handler, log *slog.Logger, tracer trace.Tracer, route func(*http.Request) string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w}
+		if traced(r.URL.Path) {
+			// A new trace per request: a traceparent header from the
+			// internet is not trusted to choose sampling. The attributes
+			// are the method, the route pattern and the status: never the
+			// path (it holds IDs), the query, headers or bodies.
+			name := route(r)
+			if name == "" {
+				name = r.Method
+			}
+			ctx, span := tracer.Start(r.Context(), name, trace.WithNewRoot(), trace.WithSpanKind(trace.SpanKindServer),
+				trace.WithAttributes(attribute.String("http.request.method", r.Method), attribute.String("http.route", name)))
+			defer span.End()
+			r = r.WithContext(ctx)
+			defer func() { endSpan(span, sw) }()
+		}
 		rid := id.Make(id.Request)
 		w.Header().Set("Request-Id", rid)
 		h := w.Header()
@@ -118,7 +172,6 @@ func middleware(next http.Handler, log *slog.Logger) http.Handler {
 			}
 			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
-		sw := &statusWriter{ResponseWriter: w}
 		r = r.WithContext(api.WithRequestID(r.Context(), rid))
 		defer func() { //nolint:contextcheck // logs with the request's own context
 			if p := recover(); p != nil {

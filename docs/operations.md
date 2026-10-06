@@ -851,17 +851,19 @@ or down, and recovers on its own:
 - The dashboard's **Organization → Background tasks** shows every periodic
   task, its last success and failures.
 
-## Metrics
+## Metrics and traces
 
 `araldo server`, `araldo worker` and `araldo all` export OpenTelemetry
-metrics, configured only through the standard `OTEL_*` variables
+metrics and traces, configured only through the standard `OTEL_*` variables
 ([ADR 0014](adr/0014-telemetry.md)). Nothing is exported until one is set.
 
 | Variable | Meaning |
 |---|---|
 | `OTEL_METRICS_EXPORTER` | `prometheus` serves a scrape endpoint; `otlp` pushes to a collector; `console`; `none`. |
 | `OTEL_EXPORTER_PROMETHEUS_HOST`, `OTEL_EXPORTER_PROMETHEUS_PORT` | Where `/metrics` listens, default `localhost:9464`. Use `0.0.0.0` for scrapes from other hosts. It is a separate listener: the public port never serves metrics. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` (or `…_METRICS_ENDPOINT`), `OTEL_EXPORTER_OTLP_PROTOCOL` | The collector for `otlp`; setting an endpoint alone also turns OTLP export on. |
+| `OTEL_TRACES_EXPORTER` | `otlp` pushes spans to a collector; `console`; `none`. |
+| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | Which traces are kept, for example `traceidratio` and `0.1`; default all. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (or `…_METRICS_ENDPOINT`, `…_TRACES_ENDPOINT`), `OTEL_EXPORTER_OTLP_PROTOCOL` | The collector for `otlp`; setting an endpoint alone turns OTLP export of both on. |
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | Resource attributes (default `service.name=araldo`). |
 | `OTEL_SDK_DISABLED=true` | Turns everything off. |
 
@@ -881,6 +883,7 @@ never by message. `mode` is `live` or `test`.
 | `araldo_publish_attempts_total` | counter | `provider`, `mode`, `outcome`, `error_kind` | Publish attempts. `outcome` is what the publisher did: `published`, `retry`, `rate_limited`, `needs_attention`, `failed`. `error_kind` is the platform's classification: `none`, `rate_limited`, `auth_revoked`, `transient`, `uncertain`, `rejected`, `unknown`. |
 | `araldo_webhook_delivery_attempts_total` | counter | `mode`, `outcome` | Webhook delivery attempts: `succeeded`, `retry`, `failed` (gave up after three days). |
 | `araldo_task_failures_total` | counter | `task` | Failed background task runs (errors, panics, timeouts). |
+| `araldo_publish_lateness_seconds` | histogram | `provider`, `mode` | How long after a target was due its publish attempt started: the publisher's lag (buckets from 1 second to an hour). |
 
 The gauges are read from the database when metrics are collected (one
 grouped count of targets and the task table, at most every 10 seconds per
@@ -888,6 +891,19 @@ process) and cover every org. Every process reports the same values, so
 aggregate them with `max`, not `sum`. The counters count what each process
 did: publishing and deliveries happen in workers, task failures in whichever
 worker holds the task's lease, so `sum` them.
+
+### Traces
+
+Each span is one of: an HTTP request (named by its route, such as
+`GET /v1/posts/{id}`, with the method and status), a background task run
+(`task <name>`, with how much it did), a publish attempt (`publish`, with
+the provider, mode, attempt and outcome) or a webhook delivery
+(`webhook.deliver`, with the response status). Like the metrics, spans
+never carry IDs from paths, query strings, headers, bodies, post text,
+endpoint URLs or error messages. Every request and task run starts its own
+trace: a `traceparent` header from outside is not followed. Log records
+written inside a span carry its `trace_id` and `span_id`, so a log line
+leads to its trace.
 
 ### Helm chart
 

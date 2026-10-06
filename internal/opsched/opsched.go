@@ -22,8 +22,11 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/spectrum-labs-tech/araldo/internal/telemetry"
 )
@@ -99,6 +102,8 @@ type Scheduler struct {
 	// failures counts failed runs per task (ADR 0014); a no-op until
 	// Instrument.
 	failures metric.Int64Counter
+	// tracer makes a span per run; a no-op until Trace.
+	tracer trace.Tracer
 }
 
 // New returns a scheduler for tasks, which must have unique names,
@@ -119,7 +124,8 @@ func New(st Store, log *slog.Logger, tasks ...Task) (*Scheduler, error) {
 		seen[t.Name] = true
 	}
 	host, _ := os.Hostname()
-	s := &Scheduler{store: st, tasks: tasks, log: log, Owner: host + "/" + strconv.Itoa(os.Getpid()), Tick: 30 * time.Second, Now: time.Now}
+	s := &Scheduler{store: st, tasks: tasks, log: log, Owner: host + "/" + strconv.Itoa(os.Getpid()), Tick: 30 * time.Second, Now: time.Now,
+		tracer: tracenoop.NewTracerProvider().Tracer("")}
 	if err := s.Instrument(noop.NewMeterProvider()); err != nil {
 		return nil, err
 	}
@@ -137,6 +143,10 @@ func (s *Scheduler) Instrument(mp metric.MeterProvider) error {
 	s.failures = c
 	return nil
 }
+
+// Trace makes a span for each task run with tp: its name, what it did and
+// whether it failed, never the error's text.
+func (s *Scheduler) Trace(tp trace.TracerProvider) { s.tracer = tp.Tracer(telemetry.Scope) }
 
 // Run registers the tasks, then runs each whenever it is due until ctx
 // ends, and waits for in-flight runs. While the database is unreachable it
@@ -239,6 +249,14 @@ func (s *Scheduler) Attempt(ctx context.Context, t Task) (time.Time, error) {
 
 // execute calls t.Run under the timeout; a panic is a failure.
 func (s *Scheduler) execute(ctx context.Context, t Task, timeout time.Duration) (affected int, err error) {
+	ctx, span := s.tracer.Start(ctx, "task "+t.Name, trace.WithNewRoot(), trace.WithAttributes(attribute.String("araldo.task", t.Name)))
+	defer func() {
+		span.SetAttributes(attribute.Int("araldo.task.affected", affected))
+		if err != nil {
+			span.SetStatus(codes.Error, "failed")
+		}
+		span.End()
+	}()
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	defer func() {

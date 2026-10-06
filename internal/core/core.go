@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/analytics"
@@ -98,6 +100,8 @@ type Service struct {
 	denied denials
 	// requests buffers the request log on its way to the database (ADR 0032).
 	requests requestLog
+	// tracer makes spans (ADR 0014); a no-op until Trace.
+	tracer trace.Tracer
 	// engagementResumed is set once posts on newly readable platforms were
 	// scheduled (resumeEngagement).
 	engagementResumed atomic.Bool
@@ -117,7 +121,7 @@ func New(st *store.Store, keys *keyring.Keyring, platforms *platform.Registry, l
 		MediaHTTP:  mediaClient(netguard.Client(cfg.PrivateWebhooks, mediaFetchTimeout)),
 		SSOHTTP:    netguard.Client(cfg.PrivateWebhooks, ssoHTTPTimeout),
 		LookupTXT:  net.DefaultResolver.LookupTXT,
-		blobs:      cfg.Blobs, metrics: noopMetrics()}
+		blobs:      cfg.Blobs, metrics: noopMetrics(), tracer: tracenoop.NewTracerProvider().Tracer("")}
 }
 
 // Store exposes the store to the composition root (health checks).

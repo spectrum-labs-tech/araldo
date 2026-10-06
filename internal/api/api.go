@@ -131,6 +131,13 @@ func (h *Handler) public(pattern string, fn handlerFunc, query ...string) {
 
 // ServeHTTP authenticates, rate limits and applies idempotency, then
 // routes.
+// Route is the pattern a request matches, such as "GET /v1/posts/{id}",
+// without serving it; "" when none does.
+func (h *Handler) Route(r *http.Request) string {
+	_, pattern := h.mux.Handler(r)
+	return pattern
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, pattern := h.mux.Handler(r)
 	if pattern == "" {

@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/opsched"
@@ -57,6 +58,7 @@ type gaugeSource interface {
 type metrics struct {
 	attempts   metric.Int64Counter
 	deliveries metric.Int64Counter
+	lateness   metric.Float64Histogram
 
 	src   gaugeSource
 	org   *uuid.UUID // nil: every org; tests narrow it to their own
@@ -79,6 +81,10 @@ func newMetrics(mp metric.MeterProvider, src gaugeSource, org *uuid.UUID, tasks 
 	var err error
 	m.attempts, err = meter.Int64Counter("araldo.publish.attempts", metric.WithUnit("{attempt}"),
 		metric.WithDescription("Publish attempts by provider, mode, what the publisher did (outcome) and the platform's error kind."))
+	add(err)
+	m.lateness, err = meter.Float64Histogram("araldo.publish.lateness", metric.WithUnit("s"),
+		metric.WithDescription("How long after a target was due its publish attempt started, by provider and mode."),
+		metric.WithExplicitBucketBoundaries(1, 5, 15, 30, 60, 120, 300, 600, 1800, 3600))
 	add(err)
 	m.deliveries, err = meter.Int64Counter("araldo.webhook.delivery.attempts", metric.WithUnit("{attempt}"),
 		metric.WithDescription("Webhook delivery attempts by mode and outcome (succeeded, retry, failed: gave up)."))
@@ -212,6 +218,16 @@ func (m *metrics) recordAttempt(ctx context.Context, t *model.Target, provider p
 	))
 }
 
+// recordLateness records how late a publish attempt started: started
+// minus when the target was due.
+func (m *metrics) recordLateness(ctx context.Context, t *model.Target, started time.Time) {
+	if t.NextAttemptAt == nil {
+		return
+	}
+	m.lateness.Record(ctx, max(started.Sub(*t.NextAttemptAt).Seconds(), 0), metric.WithAttributes(
+		attrProvider.String(string(t.Provider)), attrMode.String(modeName(t.Livemode))))
+}
+
 // recordDelivery counts one webhook delivery attempt.
 func (m *metrics) recordDelivery(ctx context.Context, d *store.ClaimedDelivery, res *store.DeliveryResult) {
 	outcome := "retry"
@@ -273,6 +289,10 @@ func attemptOutcome(status model.TargetStatus, kind string) string {
 func (s *Service) Instrument(mp metric.MeterProvider) error {
 	return s.instrument(mp, nil)
 }
+
+// Trace makes the use cases' spans with tp (ADR 0014): publish attempts
+// and webhook deliveries, with bounded attributes only.
+func (s *Service) Trace(tp trace.TracerProvider) { s.tracer = tp.Tracer(telemetry.Scope) }
 
 func (s *Service) instrument(mp metric.MeterProvider, org *uuid.UUID) error {
 	var names []string

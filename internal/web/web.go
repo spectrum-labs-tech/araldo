@@ -86,6 +86,13 @@ func New(svc *core.Service, log *slog.Logger, cfg Config) (*Server, error) {
 
 // ServeHTTP sets a strict Content-Security-Policy with a fresh nonce for
 // the style elements the template editor adds, then routes.
+// Route is the pattern a request matches, such as "GET /posts/{id}",
+// without serving it; "" when none does.
+func (s *Server) Route(r *http.Request) string {
+	_, pattern := s.mux.Handler(r)
+	return pattern
+}
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	nonce, _ := authn.NewToken()
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'nonce-"+nonce+"'; "+

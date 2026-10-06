@@ -87,6 +87,10 @@ func collect(t *testing.T, reader *sdkmetric.ManualReader) map[string][]point {
 				for _, dp := range d.DataPoints {
 					out[m.Name] = append(out[m.Name], point{attrString(dp.Attributes), dp.Value})
 				}
+			case metricdata.Histogram[float64]: // the sum of what was recorded
+				for _, dp := range d.DataPoints {
+					out[m.Name] = append(out[m.Name], point{attrString(dp.Attributes), dp.Sum})
+				}
 			default:
 				t.Fatalf("%s: unexpected data %T", m.Name, m.Data)
 			}
@@ -437,4 +441,29 @@ func TestMetricsLeakNothing(t *testing.T) {
 func isProvider(v string) bool {
 	return v == "other" || slices.Contains([]platform.Provider{platform.Sandbox, platform.Bluesky, platform.Mastodon, platform.Discord,
 		platform.Telegram, platform.X, platform.Facebook, platform.Instagram, platform.Threads, platform.LinkedIn}, platform.Provider(v))
+}
+
+// TestPublishLateness checks how late each attempt started is recorded by
+// provider and mode, a target not yet due counts as on time, and one with
+// no due time (held for a slot) is not recorded.
+func TestPublishLateness(t *testing.T) {
+	t.Parallel()
+	m, reader := testMetrics(t, &fakeSource{})
+	ctx := context.Background()
+	now := time.Unix(10_000, 0)
+	at := func(d time.Duration) *time.Time { v := now.Add(d); return &v }
+	m.recordLateness(ctx, &model.Target{Livemode: true, Provider: platform.Bluesky, NextAttemptAt: at(-90 * time.Second)}, now)
+	m.recordLateness(ctx, &model.Target{Livemode: true, Provider: platform.Bluesky, NextAttemptAt: at(-10 * time.Second)}, now)
+	m.recordLateness(ctx, &model.Target{Provider: platform.Sandbox, NextAttemptAt: at(time.Minute)}, now)
+	m.recordLateness(ctx, &model.Target{Livemode: true, Provider: platform.X}, now)
+	got := collect(t, reader)["araldo.publish.lateness"]
+	want := map[string]float64{"mode=live,provider=bluesky": 100, "mode=test,provider=sandbox": 0}
+	if len(got) != len(want) {
+		t.Fatalf("lateness series: %+v", got)
+	}
+	for _, p := range got {
+		if w, ok := want[p.attrs]; !ok || p.value != w {
+			t.Errorf("%s: %v, want %v", p.attrs, p.value, w)
+		}
+	}
 }

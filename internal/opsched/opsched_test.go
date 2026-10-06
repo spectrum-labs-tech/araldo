@@ -16,8 +16,11 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel/codes"
 	promexporter "go.opentelemetry.io/otel/exporters/prometheus"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 // memStore is an in-memory Store with the same lease rules as Postgres.
@@ -254,5 +257,47 @@ func TestFailuresAreCounted(t *testing.T) {
 	}
 	if len(got) != 2 || got["fails"] != 2 || got["panics"] != 2 {
 		t.Fatalf("araldo_task_failures_total = %v, want fails=2 panics=2 and nothing for works", got)
+	}
+}
+
+// TestRunsAreSpans checks each run is a span named by its task, with what
+// it did and whether it failed, never the error's text (ADR 0014).
+func TestRunsAreSpans(t *testing.T) {
+	t.Parallel()
+	rec := tracetest.NewSpanRecorder()
+	const secret = "password authentication failed for tok_live_5ecr3t"
+	tasks := []Task{
+		{Name: "fails", Interval: time.Minute, Run: func(context.Context) (int, error) { return 0, errors.New(secret) }},
+		{Name: "works", Interval: time.Minute, Run: func(context.Context) (int, error) { return 3, nil }},
+	}
+	st := newMem()
+	s := sched(t, st, tasks...)
+	s.Trace(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec)))
+	s.Now = func() time.Time { return time.Unix(1000, 0) }
+	_ = st.EnsureTasks(t.Context(), []TaskDef{{Name: "fails", Enabled: true, Interval: time.Minute}, {Name: "works", Enabled: true, Interval: time.Minute}})
+	for _, task := range tasks {
+		if _, err := s.Attempt(t.Context(), task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := map[string]sdktrace.ReadOnlySpan{}
+	for _, sp := range rec.Ended() {
+		got[sp.Name()] = sp
+		if strings.Contains(sp.Status().Description, "tok_live") {
+			t.Errorf("%s: the error text in its status", sp.Name())
+		}
+		for _, kv := range sp.Attributes() {
+			if strings.Contains(kv.Value.String(), "tok_live") {
+				t.Errorf("%s: the error text in %s", sp.Name(), kv.Key)
+			}
+		}
+	}
+	if f, w := got["task fails"], got["task works"]; f == nil || w == nil || f.Status().Code != codes.Error || w.Status().Code == codes.Error {
+		t.Fatalf("spans: %v", got)
+	}
+	for _, kv := range got["task works"].Attributes() {
+		if kv.Key == "araldo.task.affected" && kv.Value.AsInt64() != 3 {
+			t.Errorf("affected: %v", kv.Value.AsInt64())
+		}
 	}
 }

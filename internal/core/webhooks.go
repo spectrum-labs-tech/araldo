@@ -22,6 +22,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
@@ -451,6 +454,11 @@ func (s *Service) deliverOne(ctx context.Context, owner string, d store.ClaimedD
 }
 
 func (s *Service) deliver(ctx context.Context, owner string, d store.ClaimedDelivery) error {
+	// The endpoint's URL is the org's and may carry a secret: never an
+	// attribute.
+	ctx, span := s.tracer.Start(ctx, "webhook.deliver", trace.WithAttributes(attribute.String("araldo.mode", modeName(d.Event.Livemode)),
+		attribute.Int("araldo.attempt", d.Attempts)))
+	defer span.End()
 	body, err := json.Marshal(ViewEvent(&d.Event))
 	if err != nil {
 		return err
@@ -490,6 +498,12 @@ func (s *Service) deliver(ctx context.Context, owner string, d store.ClaimedDeli
 		res.GiveUp = res.NextAttemptAt.After(d.CreatedAt.Add(deliveryWindow))
 	}
 	s.metrics.recordDelivery(ctx, &d, &res)
+	if res.ResponseStatus != nil {
+		span.SetAttributes(attribute.Int("http.response.status_code", *res.ResponseStatus))
+	}
+	if !res.Succeeded {
+		span.SetStatus(codes.Error, "delivery failed")
+	}
 	return s.store.FinishDelivery(context.WithoutCancel(ctx), d, owner, res)
 }
 

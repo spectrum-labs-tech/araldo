@@ -1,6 +1,6 @@
 # ADR 0014: OpenTelemetry and slog, with no secrets or unpublished content
 
-- Status: accepted; slog and metrics built; traces, logs through OpenTelemetry and publish lateness not yet
+- Status: accepted; built (logs stay on stderr, see 7)
 - Date: 2026-09-28
 
 ## Context
@@ -42,6 +42,17 @@ token in a log line, an unannounced product launch in a trace attribute.
    in-memory exporters from `tracetest` and `sdkmetric`).
 6. **Health endpoints:** `/healthz` (the process is alive) and `/readyz`
    (database reachable, migrations current, keyring loaded).
+
+7. **Logs stay JSON on stderr** (amended 2026-10-06), where every
+   platform collects them, rather than going through OpenTelemetry's log
+   exporter; records written inside a span carry its `trace_id` and
+   `span_id`, which is what joining logs to traces needs.
+8. **Spans are made by hand** at the request, task run, publish attempt
+   and webhook delivery, with the same bounded attributes as metrics, not
+   by generic HTTP or database instrumentation, which records URLs (some
+   platforms put tokens in them) and SQL. Each request and task run starts
+   a new trace; an inbound `traceparent` is not followed, since anyone on
+   the internet could set it.
 
 ## Consequences
 

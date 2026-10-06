@@ -149,6 +149,9 @@ func (s *Service) AcceptInvitation(ctx context.Context, token string, u *model.U
 		case err != nil:
 			return err
 		}
+		if err := s.notifyJoined(ctx, tx, inv.OrgID, u.ID, u.Email, inv.Role, &u.ID); err != nil {
+			return err
+		}
 		detail := map[string]any{"role": inv.Role, "invitation": id.Format(id.Invitation, inv.ID)}
 		if inv.InvitedBy != nil {
 			detail["invited_by"] = id.Format(id.User, *inv.InvitedBy)

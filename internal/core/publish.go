@@ -304,6 +304,9 @@ func (s *Service) finishPublish(ctx context.Context, owner string, t *model.Targ
 					if err := s.emit(ctx, tx, ch.OrgID, ch.Livemode, "", "channel.needs_reauth", ViewChannel(ch)); err != nil {
 						return err
 					}
+					if err := s.notifyReauth(ctx, tx, ch); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -313,6 +316,9 @@ func (s *Service) finishPublish(ctx context.Context, owner string, t *model.Targ
 				return err
 			}
 			if err := s.emit(ctx, tx, t.OrgID, t.Livemode, "", event, ViewTarget(stored)); err != nil {
+				return err
+			}
+			if err := s.notifyTarget(ctx, tx, stored, event); err != nil {
 				return err
 			}
 		}
@@ -379,6 +385,9 @@ func (s *Service) ReclaimLostTargets(ctx context.Context) (int, error) {
 				if err := s.emit(ctx, tx, t.OrgID, t.Livemode, "", event, ViewTarget(stored)); err != nil {
 					return err
 				}
+				if err := s.notifyTarget(ctx, tx, stored, event); err != nil {
+					return err
+				}
 			}
 			_, err := s.refreshPost(ctx, tx, t.OrgID, t.PostID, "", "")
 			return err
@@ -406,6 +415,9 @@ func (s *Service) ExpireOverdue(ctx context.Context) (int, error) {
 		for i := range expired {
 			t := &expired[i]
 			if err := s.emit(ctx, tx, t.OrgID, t.Livemode, "", "post_target.failed", ViewTarget(t)); err != nil {
+				return err
+			}
+			if err := s.notifyTarget(ctx, tx, t, "post_target.failed"); err != nil {
 				return err
 			}
 			if _, err := s.refreshPost(ctx, tx, t.OrgID, t.PostID, "", ""); err != nil {

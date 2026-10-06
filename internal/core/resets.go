@@ -125,6 +125,10 @@ func (s *Service) ResetPasswordWithLink(ctx context.Context, token, password str
 		if err := tx.DeleteOtherSessions(ctx, userID, uuid.Nil); err != nil {
 			return err
 		}
+		if err := s.notifyAccount(ctx, tx, userID, notice{Type: NotifyPasswordChanged, Subject: "Your Araldo password was changed",
+			Body: "It was reset with a link sent to this address, which signed you out everywhere. If it was not you, reset it at once and tell your org's owner.", Link: "/account"}); err != nil {
+			return err
+		}
 		return s.audit(ctx, tx, Actor{UserID: &userID, RequestID: "password-reset"}, "user.password_reset", id.Format(id.User, userID), nil)
 	})
 }

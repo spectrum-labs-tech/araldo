@@ -1,0 +1,26 @@
+{{define "content"}}
+{{$d := .Data}}
+<h1>Notification settings</h1>
+<p class="mb-4">What Araldo tells you about {{with .Org}}{{.OrgName}}{{end}}: here in the dashboard, and by email{{if not .MailEnabled}} (this server sends no email yet){{end}}. Each org has its own settings.</p>
+<form method="post" action="/notifications/settings" class="card">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <table>
+    <thead><tr><th>Notification</th><th>Dashboard</th><th>Email</th></tr></thead>
+    <tbody>
+    {{range $d.Choices}}
+    <tr>
+      <td><strong>{{.Name}}</strong><p class="text-sm text-muted">{{.Description}}</p></td>
+      <td><input type="checkbox" name="in_app:{{.Key}}" value="1" aria-label="{{.Name}} in the dashboard" {{if .InApp}}checked{{end}}></td>
+      <td><input type="checkbox" name="email:{{.Key}}" value="1" aria-label="{{.Name}} by email" {{if .Email}}checked{{end}}></td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  <div class="mt-4"><button class="btn-primary">Save</button></div>
+</form>
+<section class="card">
+  <h2>About your account</h2>
+  <p class="mb-3">These always reach you, here and by email, so a change you did not make cannot go unnoticed.</p>
+  <ul class="list-disc pl-5">{{range $d.Account}}<li>{{.Name}}</li>{{end}}</ul>
+</section>
+{{end}}

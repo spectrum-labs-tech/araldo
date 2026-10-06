@@ -165,6 +165,15 @@ func (s *Service) PollDevice(ctx context.Context, deviceCode string) (string, *m
 		if err := tx.CreateUserToken(ctx, tok, authn.HashToken(plain)); err != nil {
 			return err
 		}
+		mode := "test"
+		if d.Livemode {
+			mode = "live"
+		}
+		if err := s.notifyAccount(ctx, tx, *d.UserID, notice{Type: NotifyCLISignedIn, Subject: "The araldo CLI was signed in as you",
+			Body: d.DeviceName + " (" + d.ClientIP + ") can now act as you in " + mode + " mode. If it was not you, sign it out under Your account.",
+			Link: "/account"}); err != nil {
+			return err
+		}
 		return s.audit(ctx, tx, Actor{UserID: d.UserID, RequestID: "device"}, "user_token.create", id.Format(id.UserToken, tok.ID),
 			map[string]any{"device_name": d.DeviceName, "livemode": d.Livemode})
 	})

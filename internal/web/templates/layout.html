@@ -33,6 +33,7 @@
   </form>
   {{end}}
   <div class="ml-auto flex items-center gap-3 text-sm">
+    <a href="/notifications">Notifications{{if .Unread}} <span class="pill warn">{{.Unread}}<span class="sr-only"> unread</span></span>{{end}}</a>
     <a href="/account">{{.User.Email}}</a>
     <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="btn-link">Sign out</button></form>
   </div>

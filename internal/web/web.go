@@ -177,6 +177,8 @@ type view struct {
 	// MailEnabled: the server sends email, so passwords can be reset by
 	// email (ADR 0034).
 	MailEnabled bool
+	// Unread counts the person's unread notifications.
+	Unread int
 }
 
 // widePages use the full width of the window.
@@ -192,6 +194,8 @@ type reqCtx struct {
 	orgs    []model.Membership
 	actor   core.Actor
 	org     *model.Org
+	// unread counts the person's unread notifications, for the header.
+	unread int
 }
 
 func (c *reqCtx) ctx() context.Context { return c.r.Context() }
@@ -267,6 +271,9 @@ func (s *Server) signedIn(w http.ResponseWriter, r *http.Request) (*reqCtx, bool
 		return nil, false
 	}
 	c := &reqCtx{w: w, r: r, user: u, session: ss}
+	if n, err := s.svc.UnreadNotifications(r.Context(), u.ID); err == nil {
+		c.unread = n
+	}
 	c.orgs, err = s.svc.UserOrgs(r.Context(), u.ID)
 	if err != nil {
 		s.log.ErrorContext(r.Context(), "loading orgs", "err", err)
@@ -322,6 +329,7 @@ func (s *Server) view(c *reqCtx, nav, title string, data any) view {
 			}
 		}
 		v.BillingLink = s.svc.Billing() && c.member != nil && c.member.Role == model.RoleOwner
+		v.Unread = c.unread
 	}
 	return v
 }

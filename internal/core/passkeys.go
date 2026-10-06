@@ -191,6 +191,11 @@ func (s *Service) FinishPasskeyRegistration(ctx context.Context, ss *model.Sessi
 			}
 			return err
 		}
+		if err := s.notifyAccount(ctx, tx, ss.UserID, notice{Type: NotifyPasskeyAdded, Subject: "A passkey was added to your Araldo account",
+			Body: "The passkey " + name + " can now sign in as you. If it was not you, remove it under Your account and reset your password.",
+			Link: "/account"}); err != nil {
+			return err
+		}
 		return s.audit(ctx, tx, Actor{UserID: &ss.UserID, RequestID: "dashboard"}, "passkey.add", p.ID.String(), map[string]any{"name": name})
 	})
 	return p, err

@@ -942,3 +942,27 @@ type Passkey struct {
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
 }
+
+// Notification is one thing a person is told (ADR 0034). OrgID is nil for
+// an account notice; OrgName is filled by listings.
+type Notification struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	OrgID     *uuid.UUID
+	OrgName   string
+	Type      string
+	Subject   string
+	Body      string
+	Link      string
+	Shown     bool
+	DedupeKey string
+	ReadAt    *time.Time
+	CreatedAt time.Time
+}
+
+// NotificationPref is what a person chose for a type in an org.
+type NotificationPref struct {
+	Type  string
+	InApp bool
+	Email bool
+}

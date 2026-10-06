@@ -131,7 +131,7 @@ func TestPagesAreAccessible(t *testing.T) {
 		"/brands", "/brands/new", "/brands/" + id.Format(id.Brand, d.brand.ID),
 		"/keys", "/keys/" + id.Format(id.APIKey, key.ID), "/cli?device=laptop", "/cli?device=laptop&mode=live", "/webhooks", "/webhooks/" + id.Format(id.WebhookEndpoint, ep.ID),
 		"/events", "/events/" + id.Format(id.Event, events[0].ID), "/logs", "/logs?status=4xx", "/api-reference",
-		"/org", "/org/members/" + id.Format(id.User, *d.owner.UserID), "/org/audit", "/org/tasks", "/org/sso", "/account", "/confirm",
+		"/org", "/org/members/" + id.Format(id.User, *d.owner.UserID), "/org/audit", "/org/tasks", "/org/sso", "/account", "/confirm", "/notifications", "/notifications/settings",
 	}
 	for _, path := range pages {
 		rec := d.send(httptest.NewRequest(http.MethodGet, path, nil))

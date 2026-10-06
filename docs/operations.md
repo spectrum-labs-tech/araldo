@@ -108,6 +108,25 @@ To move an install from a local key to Transit:
   `araldo admin org update --org … --require-sso false` lets its members
   in with a password again.
 
+## Notifications
+
+Araldo tells people what needs them, in the dashboard (the header's
+*Notifications*) and by email when `ARALDO_SMTP_HOST` is set
+([ADR 0034](adr/0034-notifications-and-email.md)):
+
+| Notification | Who | Email by default |
+|---|---|---|
+| A post waits for approval; a newsletter waits for approval | Admins and owners, not who asked | Yes |
+| A post needs attention (Araldo cannot tell whether it went out) | Its author, admins and owners | Yes |
+| A post failed on a channel | Its author | No |
+| A channel must be connected again (once a day at most) | Admins and owners | Yes |
+| Someone joined | Owners, not who added them | No |
+| Your password was changed or reset, a passkey added, two-factor turned off, a CLI signed in as you | You | Always, and cannot be turned off |
+
+Each person chooses, per org, under *Notifications → Settings*. Org
+notifications are raised in live mode only. The `notifications.prune`
+task deletes read notifications after 90 days and the rest after a year.
+
 ## Request log
 
 Under **Developers → Request log**, admins and owners see every API

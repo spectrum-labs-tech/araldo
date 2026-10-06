@@ -589,6 +589,9 @@ func (s *Service) needsReauth(ctx context.Context, ch *model.Channel, note strin
 			return err
 		}
 		ch.Status, ch.StatusNote = model.ChannelNeedsReauth, note
-		return s.emit(ctx, tx, ch.OrgID, ch.Livemode, "", "channel.needs_reauth", ViewChannel(ch))
+		if err := s.emit(ctx, tx, ch.OrgID, ch.Livemode, "", "channel.needs_reauth", ViewChannel(ch)); err != nil {
+			return err
+		}
+		return s.notifyReauth(ctx, tx, ch)
 	})
 }

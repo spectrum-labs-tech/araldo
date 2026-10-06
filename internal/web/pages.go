@@ -145,6 +145,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /org/sso/domains", s.app("org", s.ssoDomain))
 	s.mux.HandleFunc("POST /org/sso/require", s.app("org", s.requireSSO))
 
+	s.mux.HandleFunc("GET /notifications", s.app("account", s.notificationsPage))
+	s.mux.HandleFunc("POST /notifications/read", s.app("account", s.readAllNotifications))
+	s.mux.HandleFunc("GET /notifications/settings", s.app("account", s.notificationSettings))
+	s.mux.HandleFunc("POST /notifications/settings", s.app("account", s.saveNotificationSettings))
+	s.mux.HandleFunc("GET /notifications/{id}", s.app("account", s.openNotification))
 	s.mux.HandleFunc("GET /account", s.app("account", s.accountPage))
 	s.mux.HandleFunc("GET /device", s.app("account", s.devicePage))
 	s.mux.HandleFunc("POST /device", s.app("account", s.deviceSubmit))

@@ -520,6 +520,9 @@ func (s *Service) ssoUser(ctx context.Context, conn *model.SSOConnection, email,
 		case err != nil:
 			return err
 		}
+		if err := s.notifyJoined(ctx, tx, conn.OrgID, u.ID, u.Email, conn.DefaultRole, &u.ID); err != nil {
+			return err
+		}
 		return s.audit(ctx, tx, a, "member.add", id.Format(id.User, u.ID), map[string]any{"role": conn.DefaultRole, "via": "sso"})
 	})
 	return u, err

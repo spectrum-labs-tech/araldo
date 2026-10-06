@@ -226,6 +226,9 @@ func (s *Service) AddMember(ctx context.Context, a Actor, ss *model.Session, ema
 			}
 			return err
 		}
+		if err := s.notifyJoined(ctx, tx, a.OrgID, u.ID, u.Email, role, a.UserID); err != nil {
+			return err
+		}
 		return s.audit(ctx, tx, a, "member.add", id.Format(id.User, u.ID), map[string]any{"role": role})
 	})
 	return u, err

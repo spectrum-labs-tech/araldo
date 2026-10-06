@@ -473,7 +473,11 @@ func (s *Service) DisableTOTP(ctx context.Context, ss *model.Session) error {
 		if err := tx.SetTOTP(ctx, ss.UserID, nil, nil); err != nil {
 			return err
 		}
-		return tx.ReplaceRecoveryCodes(ctx, ss.UserID, nil)
+		if err := tx.ReplaceRecoveryCodes(ctx, ss.UserID, nil); err != nil {
+			return err
+		}
+		return s.notifyAccount(ctx, tx, ss.UserID, notice{Type: NotifyMFADisabled, Subject: "Two-factor authentication was turned off",
+			Body: "The authenticator app was removed from your Araldo account. If it was not you, reset your password at once.", Link: "/account"})
 	})
 }
 
@@ -511,6 +515,10 @@ func (s *Service) ChangePassword(ctx context.Context, ss *model.Session, current
 		if err := tx.RevokeAllUserTokens(ctx, u.ID, s.Now()); err != nil {
 			return err
 		}
+		if err := s.notifyAccount(ctx, tx, u.ID, notice{Type: NotifyPasswordChanged, Subject: "Your Araldo password was changed",
+			Body: "It was changed from a signed-in session, which signed you out everywhere else. If it was not you, reset it at once and tell your org's owner.", Link: "/account"}); err != nil {
+			return err
+		}
 		return tx.DeleteOtherSessions(ctx, u.ID, ss.ID)
 	})
 }
@@ -538,6 +546,10 @@ func (s *Service) ResetPassword(ctx context.Context, email, password string) err
 			return err
 		}
 		if err := tx.RevokeAllUserTokens(ctx, u.ID, s.Now()); err != nil {
+			return err
+		}
+		if err := s.notifyAccount(ctx, tx, u.ID, notice{Type: NotifyPasswordChanged, Subject: "Your Araldo password was changed",
+			Body: "The server's operator reset it, which signed you out everywhere. If it was not you, reset it at once and tell your org's owner.", Link: "/account"}); err != nil {
 			return err
 		}
 		return tx.DeleteOtherSessions(ctx, u.ID, uuid.Nil)

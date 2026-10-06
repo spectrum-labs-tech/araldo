@@ -53,7 +53,9 @@ from the install to its own users.
      passkey added, two-factor authentication turned off, a CLI signed in
      as them. These cannot be turned off, and always go by email when
      email is configured.
-   The person who caused a change is not notified of it.
+   The person who caused a change is not notified of it, and org
+   notifications are raised in live mode only, so trying things in test
+   mode tells no one.
 5. **Channels are the dashboard and email.** The dashboard shows an
    unread count in the header and an inbox, marked read when opened or
    all at once, with no JavaScript needed. Browser push can come later as

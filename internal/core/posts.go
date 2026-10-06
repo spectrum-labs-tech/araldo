@@ -318,7 +318,10 @@ func (s *Service) CreatePost(ctx context.Context, a Actor, in PostInput) (*model
 				return err
 			}
 			if p.ApprovalNeeded {
-				return s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, "post.approval_requested", ViewPost(stored))
+				if err := s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, "post.approval_requested", ViewPost(stored)); err != nil {
+					return err
+				}
+				return s.notifyApproval(ctx, tx, a, NotifyPostApproval, "A post waits for your approval", "/posts/"+id.Format(id.Post, p.ID))
 			}
 			return nil
 		})

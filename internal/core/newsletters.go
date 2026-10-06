@@ -846,6 +846,12 @@ func (s *Service) ScheduleIssue(ctx context.Context, a Actor, issueID uuid.UUID,
 		if err := s.audit(ctx, tx, a, "newsletter.schedule", id.Format(id.Issue, is.ID), map[string]any{"send_at": sendAt}); err != nil {
 			return err
 		}
+		if needs {
+			if err := s.notifyApproval(ctx, tx, a, NotifyNewsletterApproval, "A newsletter waits for your approval: "+out.Subject,
+				"/newsletters/"+id.Format(id.Issue, out.ID)); err != nil {
+				return err
+			}
+		}
 		return s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, event, ViewIssue(out))
 	})
 	return out, err

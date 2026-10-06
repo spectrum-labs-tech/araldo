@@ -10,6 +10,7 @@ import (
 
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
+	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
 // InstrumentOrg is Instrument with the database gauges narrowed to one
@@ -27,6 +28,15 @@ func InstrumentOrg(s *Service, mp metric.MeterProvider, org uuid.UUID) error {
 // only media it created.
 func PruneUnusedMediaOrg(s *Service, org uuid.UUID) (int, error) {
 	return s.pruneUnusedMedia(context.Background(), &org)
+}
+
+// NotifyOrg tells recipients in orgID of a notification of type typ, as
+// the code that raises one does.
+func NotifyOrg(s *Service, orgID uuid.UUID, livemode bool, typ, subject, dedupe string, recipients []uuid.UUID, except *uuid.UUID) error {
+	return s.store.InTx(context.Background(), func(tx *store.Store) error {
+		return s.notifyOrg(context.Background(), tx, orgID, livemode, notice{Type: typ, Subject: subject, Link: "/posts", DedupeKey: dedupe},
+			recipients, except)
+	})
 }
 
 // CollectEngagementOrg is CollectEngagement for one org, so a test reads

@@ -329,6 +329,11 @@ every problem in `errors`, each with its own `code` and `param`.
 - **mfa_required_first**: turn on two-factor authentication for yourself
   before requiring it for the org.
 
+## Notifications (dashboard)
+
+- **notification_type_invalid**: the type is not one an org's
+  notifications can be set for; account notices cannot be turned off.
+
 ## Password reset (dashboard)
 
 - **mail_unavailable** (503): the server sends no email; an owner or the

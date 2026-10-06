@@ -15,9 +15,10 @@ import (
 // Notifications (ADR 0034).
 
 // CreateNotification stores a notification and, unless emailStatus is
-// empty, its email with that status and reason. It reports false, storing
-// nothing, when the person already has one with the same dedupe key.
-func (s *Store) CreateNotification(ctx context.Context, n *model.Notification, emailStatus, reason string, at time.Time) (bool, error) {
+// empty, its email with that status and reason, queued for emailAt. It
+// reports false, storing nothing, when the person already has one with
+// the same dedupe key.
+func (s *Store) CreateNotification(ctx context.Context, n *model.Notification, emailStatus, reason string, at, emailAt time.Time) (bool, error) {
 	tag, err := s.q.Exec(ctx, `INSERT INTO notifications (id, user_id, org_id, type, subject, body, link, shown, dedupe_key, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''), $10) ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
 		n.ID, n.UserID, n.OrgID, n.Type, n.Subject, n.Body, n.Link, n.Shown, n.DedupeKey, at)
@@ -27,7 +28,7 @@ func (s *Store) CreateNotification(ctx context.Context, n *model.Notification, e
 	if emailStatus != "" {
 		var next *time.Time
 		if emailStatus == "queued" {
-			next = &at
+			next = &emailAt
 		}
 		if _, err := s.q.Exec(ctx, `INSERT INTO notification_emails (notification_id, status, reason, next_attempt_at, created_at)
 			VALUES ($1, $2, $3, $4, $5)`, n.ID, emailStatus, reason, next, at); err != nil {
@@ -159,10 +160,63 @@ func (s *Store) NotificationEmail(ctx context.Context, notificationID uuid.UUID)
 }
 
 // NotificationEmailDue is a notification email claimed for sending.
+// Digest is set when its person takes a daily summary.
 type NotificationEmailDue struct {
 	model.Notification
 	To       string
 	Attempts int
+	Digest   bool
+}
+
+// DigestSetting is a person's notification email setting: a daily summary
+// (Digest) at 8:00 in Timezone, or as things happen.
+type DigestSetting struct {
+	Digest   bool
+	Timezone string
+}
+
+// DigestSettings returns people's settings, by person; those who chose
+// nothing are missing.
+func (s *Store) DigestSettings(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]DigestSetting, error) {
+	rows, err := s.q.Query(ctx, `SELECT user_id, digest, timezone FROM notification_settings WHERE user_id = ANY($1)`, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]DigestSetting{}
+	for rows.Next() {
+		var u uuid.UUID
+		var d DigestSetting
+		if err := rows.Scan(&u, &d.Digest, &d.Timezone); err != nil {
+			return nil, err
+		}
+		out[u] = d
+	}
+	return out, rows.Err()
+}
+
+// SetDigestSetting records a person's setting.
+func (s *Store) SetDigestSetting(ctx context.Context, userID uuid.UUID, d DigestSetting) error {
+	_, err := s.q.Exec(ctx, `INSERT INTO notification_settings (user_id, digest, timezone) VALUES ($1, $2, $3)
+		ON CONFLICT (user_id) DO UPDATE SET digest = $2, timezone = $3, updated_at = now()`, userID, d.Digest, d.Timezone)
+	return mapErr(err)
+}
+
+// ReleaseQueuedEmails makes a person's queued notification emails due at
+// at: after they stop taking a daily summary.
+func (s *Store) ReleaseQueuedEmails(ctx context.Context, userID uuid.UUID, at time.Time) error {
+	_, err := s.q.Exec(ctx, `UPDATE notification_emails e SET next_attempt_at = $2 FROM notifications n
+		WHERE n.id = e.notification_id AND n.user_id = $1 AND e.status = 'queued' AND e.next_attempt_at > $2`, userID, at)
+	return err
+}
+
+// TurnOffOrgEmails turns off a person's email for every org notification
+// type in every org of theirs, keeping the dashboard as it was.
+func (s *Store) TurnOffOrgEmails(ctx context.Context, userID uuid.UUID, types []string) error {
+	_, err := s.q.Exec(ctx, `INSERT INTO notification_preferences (user_id, org_id, type, in_app, email)
+		SELECT $1, m.org_id, t.type, true, false FROM memberships m CROSS JOIN unnest($2::text[]) AS t(type) WHERE m.user_id = $1
+		ON CONFLICT (user_id, org_id, type) DO UPDATE SET email = false, updated_at = now()`, userID, types)
+	return mapErr(err)
 }
 
 // ClaimNotificationEmails claims queued emails due at now, for a person
@@ -175,14 +229,15 @@ func (s *Store) ClaimNotificationEmails(ctx context.Context, userID *uuid.UUID, 
 			SELECT x.notification_id FROM notification_emails x JOIN notifications y ON y.id = x.notification_id
 			WHERE x.status = 'queued' AND x.next_attempt_at <= $1 AND ($4::uuid IS NULL OR y.user_id = $4)
 			ORDER BY x.next_attempt_at LIMIT $3 FOR UPDATE OF x SKIP LOCKED)
-		RETURNING n.id, n.user_id, n.org_id, COALESCE(o.name, ''), n.type, n.subject, n.body, n.link, n.created_at, u.email, e.attempts`,
+		RETURNING n.id, n.user_id, n.org_id, COALESCE(o.name, ''), n.type, n.subject, n.body, n.link, n.created_at, u.email, e.attempts,
+			COALESCE((SELECT digest FROM notification_settings ns WHERE ns.user_id = n.user_id), false)`,
 		now, lease, limit, userID)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (NotificationEmailDue, error) {
 		var d NotificationEmailDue
-		err := r.Scan(&d.ID, &d.UserID, &d.OrgID, &d.OrgName, &d.Type, &d.Subject, &d.Body, &d.Link, &d.CreatedAt, &d.To, &d.Attempts)
+		err := r.Scan(&d.ID, &d.UserID, &d.OrgID, &d.OrgName, &d.Type, &d.Subject, &d.Body, &d.Link, &d.CreatedAt, &d.To, &d.Attempts, &d.Digest)
 		return d, err
 	})
 }

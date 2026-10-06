@@ -88,5 +88,7 @@ from the install to its own users.
 - Email depends on the operator's SMTP service and its sender reputation;
   Araldo sends only what people asked for, with unsubscribe in every
   notification email, which bulk-sender rules require.
-- A daily digest for busy types is left for later; the hourly cap keeps
-  the volume sane meanwhile.
+- A person can take their org notifications in one daily summary instead,
+  at 8:00 in a time zone they set (amended 2026-10-06); account notices
+  still go at once. A summary's one-click unsubscribe turns off their org
+  notification email in every org, since it mixes types.

@@ -78,10 +78,29 @@ func (s *Server) notificationSettings(c *reqCtx) error {
 			account = append(account, t)
 		}
 	}
+	email, err := s.svc.NotificationEmailSetting(c.ctx(), c.user.ID)
+	if err != nil {
+		return err
+	}
 	return s.page(c, "notification_settings", "account", "Notification settings", struct {
 		Choices []core.NotificationChoice
 		Account []core.NotificationType
-	}{choices, account})
+		Email   core.EmailSetting
+	}{choices, account, email})
+}
+
+// saveEmailSetting records whether the person's notification email comes
+// as things happen or in a daily summary.
+func (s *Server) saveEmailSetting(c *reqCtx) error {
+	err := s.svc.SetNotificationEmailSetting(c.ctx(), c.user.ID, core.EmailSetting{Digest: c.r.PostFormValue("digest") == "1",
+		Timezone: c.r.PostFormValue("timezone")})
+	if err != nil {
+		if ae := apperr.As(err); ae.Kind == apperr.KindInvalid {
+			return redirect(c, "/notifications/settings", ae.Message)
+		}
+		return err
+	}
+	return redirect(c, "/notifications/settings", "Saved.")
 }
 
 // saveNotificationSettings records every type's boxes: a box left

@@ -123,8 +123,10 @@ Araldo tells people what needs them, in the dashboard (the header's
 | Someone joined | Owners, not who added them | No |
 | Your password was changed or reset, a passkey added, two-factor turned off, a CLI signed in as you | You | Always, and cannot be turned off |
 
-Each person chooses, per org, under *Notifications → Settings*. Org
-notifications are raised in live mode only.
+Each person chooses, per org, under *Notifications → Settings*, and, for
+all their orgs, whether email comes as things happen or in one summary a
+day at 8:00 in their time zone (account notices always come at once).
+Org notifications are raised in live mode only.
 
 The `notifications.send` task sends the queued emails every minute. A
 failure is retried after 1, 5 and 30 minutes, then 2, 6 and 12 hours,

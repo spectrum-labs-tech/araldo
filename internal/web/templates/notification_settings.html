@@ -19,6 +19,20 @@
   <div class="mt-4"><button class="btn-primary">Save</button></div>
 </form>
 <section class="card">
+  <h2>When email comes</h2>
+  <form method="post" action="/notifications/email" class="flex max-w-xl flex-col gap-3">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <fieldset class="flex flex-col gap-2">
+      <legend class="sr-only">When email comes</legend>
+      <label class="flex-row items-center gap-1.5 font-normal"><input type="radio" name="digest" value="0" {{if not $d.Email.Digest}}checked{{end}}> As things happen</label>
+      <label class="flex-row items-center gap-1.5 font-normal"><input type="radio" name="digest" value="1" {{if $d.Email.Digest}}checked{{end}}> In one summary each day at 8:00</label>
+    </fieldset>
+    <label>Your time zone <input name="timezone" value="{{$d.Email.Timezone}}" placeholder="America/Denver" maxlength="64"></label>
+    <p class="text-sm text-muted">Applies to every org. Notices about your account always come at once.</p>
+    <div><button>Save</button></div>
+  </form>
+</section>
+<section class="card">
   <h2>About your account</h2>
   <p class="mb-3">These always reach you, here and by email, so a change you did not make cannot go unnoticed.</p>
   <ul class="list-disc pl-5">{{range $d.Account}}<li>{{.Name}}</li>{{end}}</ul>

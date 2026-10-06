@@ -1,6 +1,12 @@
 {{define "content"}}
 <h1>Email settings</h1>
 {{with .Data.Target}}
+{{if .All}}
+{{if $.Data.Done}}<p class="mb-4">Done: Araldo no longer emails you about your orgs. You still see everything in the dashboard, and notices about your account still come.</p>
+{{else}}<p class="mb-4">Stop all of Araldo's emails about your orgs? You will still see everything in the dashboard, and notices about your account still come.</p>
+<form method="post" action="/unsubscribe/{{$.Data.Token}}"><button class="btn-primary">Stop these emails</button></form>{{end}}
+<p class="mt-4 text-sm"><a href="/notifications/settings">All your notification settings</a> (sign in first)</p>
+{{else}}
 {{$what := ""}}{{if .Brand}}{{$what = printf "%s's monthly report" .Brand.Name}}{{else}}{{$what = printf "“%s” in %s" .Type.Name .OrgName}}{{end}}
 {{if $.Data.Done}}
 <p class="mb-4">Done: {{if .Brand}}{{.Email}} no longer gets {{$what}} from {{.OrgName}}.{{else}}Araldo no longer emails you about {{$what}}. You still see them in the dashboard.{{end}}</p>
@@ -9,5 +15,6 @@
 <form method="post" action="/unsubscribe/{{$.Data.Token}}"><button class="btn-primary">Stop these emails</button></form>
 {{end}}
 {{if not .Brand}}<p class="mt-4 text-sm"><a href="/notifications/settings">All your notification settings</a> (sign in first)</p>{{end}}
+{{end}}
 {{end}}
 {{end}}

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -52,7 +53,16 @@ func (s *Service) sendNotificationEmails(ctx context.Context, userID *uuid.UUID)
 		return 0, err
 	}
 	n := 0
+	digests := map[uuid.UUID][]store.NotificationEmailDue{} // org notifications for a daily summary, by person
+	var order []uuid.UUID
 	for _, d := range due {
+		if d.Digest && d.OrgID != nil {
+			if digests[d.UserID] == nil {
+				order = append(order, d.UserID)
+			}
+			digests[d.UserID] = append(digests[d.UserID], d)
+			continue
+		}
 		status, reason, next, err := s.deliverNotificationEmail(ctx, now, d)
 		if err != nil {
 			return n, err
@@ -64,7 +74,68 @@ func (s *Service) sendNotificationEmails(ctx context.Context, userID *uuid.UUID)
 			return n, err
 		}
 	}
+	for _, u := range order {
+		group := digests[u]
+		status, reason, next, err := s.deliverDigest(ctx, now, group)
+		if err != nil {
+			return n, err
+		}
+		if status == "sent" {
+			n++
+		}
+		for _, d := range group {
+			if err := s.store.FinishNotificationEmail(ctx, d.ID, status, reason, s.Now(), next); err != nil {
+				return n, err
+			}
+		}
+	}
 	return n, nil
+}
+
+// deliverDigest sends a person's daily summary: their org notifications
+// due, in one email, as deliverNotificationEmail sends one.
+func (s *Service) deliverDigest(ctx context.Context, now time.Time, group []store.NotificationEmailDue) (status, reason string, next *time.Time,
+	err error) {
+	if s.cfg.Mail == nil {
+		return "suppressed", "the server sends no email", nil, nil
+	}
+	first := group[0]
+	c := mailContent{To: first.To, ButtonLabel: "Open your notifications", ButtonURL: s.cfg.BaseURL + "/notifications",
+		Subject: fmt.Sprintf("Araldo: %d things since yesterday", len(group))}
+	if len(group) == 1 {
+		c.Subject = "Araldo: " + first.Subject
+	}
+	for _, d := range group {
+		line := d.OrgName + ": " + d.Subject
+		if d.Body != "" {
+			line += ". " + d.Body
+		}
+		c.Paragraphs = append(c.Paragraphs, line)
+	}
+	unsub, err := s.signUnsubscribe(ctx, "all|"+first.UserID.String())
+	if err != nil {
+		return "", "", nil, err
+	}
+	c.Footer = "Your daily summary of Araldo notifications. Change what you get, or have them as they happen: " + s.cfg.BaseURL +
+		"/notifications/settings · Stop all of these emails: " + unsub
+	m, err := c.message()
+	if err != nil {
+		return "", "", nil, err
+	}
+	m.Headers = map[string]string{"List-Unsubscribe": "<" + unsub + ">", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}
+	attempts := 0
+	for _, d := range group {
+		attempts = max(attempts, d.Attempts)
+	}
+	if err := s.cfg.Mail.Send(ctx, m); err != nil {
+		s.log.WarnContext(ctx, "sending a daily summary failed", "attempt", attempts, "err", err)
+		reason = truncate(err.Error(), 500)
+		if smtpmail.IsPermanent(err) || attempts >= notificationEmailAttempts {
+			return "failed", reason, nil, nil
+		}
+		return "queued", reason, ptr(now.Add(notificationEmailRetry[min(attempts, len(notificationEmailRetry))-1])), nil
+	}
+	return "sent", "", nil, nil
 }
 
 // deliverNotificationEmail sends one claimed email, unless the server sends
@@ -166,6 +237,9 @@ type UnsubscribeTarget struct {
 	Type    NotificationType
 	Brand   *model.Brand
 	Email   string
+	// All turns off email for every org notification type, in every org of
+	// the person's (a daily summary's link).
+	All bool
 }
 
 // CheckUnsubscribe reads an unsubscribe link.
@@ -188,6 +262,15 @@ func (s *Service) CheckUnsubscribe(ctx context.Context, token string) (*Unsubscr
 	parts := strings.Split(string(payload), "|")
 	var u UnsubscribeTarget
 	switch {
+	case len(parts) == 2 && parts[0] == "all":
+		userID, err := uuid.Parse(parts[1])
+		if err != nil {
+			return nil, errUnsubscribeInvalid
+		}
+		if _, err := s.store.User(ctx, userID); err != nil {
+			return nil, errUnsubscribeInvalid
+		}
+		return &UnsubscribeTarget{UserID: userID, All: true}, nil
 	case len(parts) == 4 && parts[0] == "report":
 		orgID, err1 := uuid.Parse(parts[1])
 		brandID, err2 := uuid.Parse(parts[2])
@@ -231,6 +314,15 @@ func (s *Service) Unsubscribe(ctx context.Context, token string) (*UnsubscribeTa
 	u, err := s.CheckUnsubscribe(ctx, token)
 	if err != nil {
 		return nil, err
+	}
+	if u.All {
+		var types []string
+		for _, t := range NotificationTypes {
+			if !t.Account {
+				types = append(types, t.Key)
+			}
+		}
+		return u, s.store.TurnOffOrgEmails(ctx, u.UserID, types)
 	}
 	if u.Brand != nil {
 		if err := s.store.RemoveReportRecipient(ctx, u.OrgID, u.Brand.ID, u.Email); err != nil && !errors.Is(err, store.ErrNotFound) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -122,6 +123,10 @@ func (s *Service) notifyOrg(ctx context.Context, tx *store.Store, orgID uuid.UUI
 	if err != nil {
 		return err
 	}
+	digests, err := tx.DigestSettings(ctx, to)
+	if err != nil {
+		return err
+	}
 	now := s.Now()
 	for _, u := range to {
 		inApp, email := true, t.Email
@@ -132,8 +137,12 @@ func (s *Service) notifyOrg(ctx context.Context, tx *store.Store, orgID uuid.UUI
 			continue
 		}
 		status, reason := s.emailStatus(email)
+		emailAt := now
+		if d, ok := digests[u]; ok && d.Digest {
+			emailAt = nextDigest(now, d.Timezone)
+		}
 		if _, err := tx.CreateNotification(ctx, &model.Notification{ID: id.New(), UserID: u, OrgID: &orgID, Type: n.Type, Subject: n.Subject,
-			Body: n.Body, Link: n.Link, Shown: inApp, DedupeKey: n.DedupeKey}, status, reason, now); err != nil {
+			Body: n.Body, Link: n.Link, Shown: inApp, DedupeKey: n.DedupeKey}, status, reason, now, emailAt); err != nil {
 			return err
 		}
 	}
@@ -148,8 +157,63 @@ func (s *Service) notifyAccount(ctx context.Context, tx *store.Store, userID uui
 	}
 	status, reason := s.emailStatus(true)
 	_, err := tx.CreateNotification(ctx, &model.Notification{ID: id.New(), UserID: userID, Type: n.Type, Subject: n.Subject, Body: n.Body,
-		Link: n.Link, Shown: true, DedupeKey: n.DedupeKey}, status, reason, s.Now())
+		Link: n.Link, Shown: true, DedupeKey: n.DedupeKey}, status, reason, s.Now(), s.Now())
 	return err
+}
+
+// digestHour is when a daily summary goes, in the person's time zone.
+const digestHour = 8
+
+// nextDigest is the next daily summary's time after now in tz.
+func nextDigest(now time.Time, tz string) time.Time {
+	local := now.In(location(tz))
+	at := time.Date(local.Year(), local.Month(), local.Day(), digestHour, 0, 0, 0, local.Location())
+	if !at.After(local) {
+		at = at.AddDate(0, 0, 1)
+	}
+	return at
+}
+
+// EmailSetting is how a person takes notification email: as things
+// happen, or in one summary a day at 8:00 in Timezone.
+type EmailSetting struct {
+	Digest   bool
+	Timezone string
+}
+
+// NotificationEmailSetting returns a person's setting.
+func (s *Service) NotificationEmailSetting(ctx context.Context, userID uuid.UUID) (EmailSetting, error) {
+	ds, err := s.store.DigestSettings(ctx, []uuid.UUID{userID})
+	if err != nil {
+		return EmailSetting{}, err
+	}
+	d, ok := ds[userID]
+	if !ok {
+		return EmailSetting{Timezone: "UTC"}, nil
+	}
+	return EmailSetting{Digest: d.Digest, Timezone: d.Timezone}, nil
+}
+
+// SetNotificationEmailSetting records a person's setting. Turning the
+// daily summary off sends what waited for it at once; account notices
+// never wait.
+func (s *Service) SetNotificationEmailSetting(ctx context.Context, userID uuid.UUID, e EmailSetting) error {
+	tz := strings.TrimSpace(e.Timezone)
+	if tz == "" {
+		tz = "UTC"
+	}
+	if _, err := time.LoadLocation(tz); err != nil {
+		return apperr.Invalid("timezone_invalid", "timezone", "%q is not a time zone such as Europe/Rome or America/Denver.", tz)
+	}
+	return s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.SetDigestSetting(ctx, userID, store.DigestSetting{Digest: e.Digest, Timezone: tz}); err != nil {
+			return err
+		}
+		if !e.Digest {
+			return tx.ReleaseQueuedEmails(ctx, userID, s.Now())
+		}
+		return nil
+	})
 }
 
 // membersAtLeast lists an org's members with at least a role.

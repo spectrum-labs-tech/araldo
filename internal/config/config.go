@@ -64,6 +64,18 @@ type Config struct {
 	// at least 32 characters).
 	BillingURL     string
 	BillingLinkKey string
+	// SMTP sends the install's own email (ADR 0034); none without a host.
+	SMTP SMTP
+}
+
+// SMTP is the server the install's email goes through (ARALDO_SMTP_*).
+type SMTP struct {
+	Host     string // ARALDO_SMTP_HOST; empty sends no email
+	Port     int    // ARALDO_SMTP_PORT (default 587, or 465 with TLS tls)
+	Username string // ARALDO_SMTP_USERNAME
+	Password string // ARALDO_SMTP_PASSWORD, or read from ARALDO_SMTP_PASSWORD_FILE
+	From     string // ARALDO_SMTP_FROM, as "Araldo <noreply@example.com>"
+	TLS      string // ARALDO_SMTP_TLS: starttls (default), tls, or none for a local relay
 }
 
 // MinBillingLinkKey is the shortest billing link key accepted.
@@ -123,6 +135,13 @@ func Load() (Config, error) {
 			SecretAccessKey: os.Getenv("ARALDO_S3_SECRET_ACCESS_KEY"),
 			Prefix:          first(os.Getenv("ARALDO_S3_PREFIX"), "media/"),
 		},
+		SMTP: SMTP{
+			Host:     os.Getenv("ARALDO_SMTP_HOST"),
+			Username: os.Getenv("ARALDO_SMTP_USERNAME"),
+			Password: os.Getenv("ARALDO_SMTP_PASSWORD"),
+			From:     os.Getenv("ARALDO_SMTP_FROM"),
+			TLS:      strings.ToLower(os.Getenv("ARALDO_SMTP_TLS")),
+		},
 	}
 	var errs []error
 	var err error
@@ -159,6 +178,23 @@ func Load() (Config, error) {
 			errs = append(errs, fmt.Errorf("ARALDO_TRANSIT_TOKEN_FILE: %w", err))
 		}
 		c.Transit.Token = strings.TrimSpace(string(b))
+	}
+	if v := os.Getenv("ARALDO_SMTP_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err != nil || n < 1 || n > 65535 {
+			errs = append(errs, fmt.Errorf("ARALDO_SMTP_PORT %q is not a port", v))
+		} else {
+			c.SMTP.Port = n
+		}
+	}
+	if f := os.Getenv("ARALDO_SMTP_PASSWORD_FILE"); f != "" && c.SMTP.Password == "" {
+		b, err := os.ReadFile(f) //nolint:gosec // G304: the operator chooses this path
+		if err != nil {
+			errs = append(errs, fmt.Errorf("ARALDO_SMTP_PASSWORD_FILE: %w", err))
+		}
+		c.SMTP.Password = strings.TrimSpace(string(b))
+	}
+	if s := c.SMTP; s.Host != "" && s.From == "" {
+		errs = append(errs, errors.New("ARALDO_SMTP_HOST needs ARALDO_SMTP_FROM, the address mail comes from"))
 	}
 	if f := os.Getenv("ARALDO_BILLING_LINK_KEY_FILE"); f != "" && c.BillingLinkKey == "" {
 		b, err := os.ReadFile(f) //nolint:gosec // G304: the operator chooses this path

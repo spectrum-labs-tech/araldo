@@ -174,6 +174,9 @@ type view struct {
 	StatusNote  string
 	BillingLink bool
 	SignupURL   string
+	// MailEnabled: the server sends email, so passwords can be reset by
+	// email (ADR 0034).
+	MailEnabled bool
 }
 
 // widePages use the full width of the window.
@@ -306,7 +309,7 @@ func (s *Server) checkCSRF(c *reqCtx) bool {
 }
 
 func (s *Server) view(c *reqCtx, nav, title string, data any) view {
-	v := view{Title: title, Nav: nav, Version: buildinfo.Version, Data: data, SignupURL: s.svc.SignupURL()}
+	v := view{Title: title, Nav: nav, Version: buildinfo.Version, Data: data, SignupURL: s.svc.SignupURL(), MailEnabled: s.svc.MailEnabled()}
 	if c != nil {
 		v.User, v.Session, v.Org, v.Orgs, v.CSRF = c.user, c.session, c.member, c.orgs, c.session.CSRFToken
 		v.Nonce = cspNonce(c.r)

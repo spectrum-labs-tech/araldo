@@ -51,6 +51,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform/x"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/youtube"
 	"github.com/spectrum-labs-tech/araldo/internal/server"
+	"github.com/spectrum-labs-tech/araldo/internal/smtpmail"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
 	"github.com/spectrum-labs-tech/araldo/internal/telemetry"
 	"github.com/spectrum-labs-tech/araldo/internal/web"
@@ -160,6 +161,14 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 			return nil, err
 		}
 		ccfg.Blobs = b
+	}
+	if s := cfg.SMTP; s.Host != "" {
+		m, err := smtpmail.New(smtpmail.Config{Host: s.Host, Port: s.Port, Username: s.Username, Password: s.Password, From: s.From, TLS: s.TLS})
+		if err != nil {
+			st.Close()
+			return nil, fmt.Errorf("ARALDO_SMTP_*: %w", err)
+		}
+		ccfg.Mail = m
 	}
 	a.Svc = core.New(st, a.Keys, reg, log, ccfg)
 	return a, nil

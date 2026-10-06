@@ -1,0 +1,15 @@
+{{define "content"}}
+{{if .Data.Sent}}
+<h1>Check your email</h1>
+<p class="mb-4">If an account uses {{.Data.Email}}, we sent it a link to choose a new password. It works for 30 minutes.</p>
+<p class="text-sm text-muted">Nothing after a few minutes? Check your spam folder, or <a href="/login/forgot">try again</a>.</p>
+{{else}}
+<h1>Reset your password</h1>
+<p class="mb-4">Enter your email and we will send you a link to choose a new password.</p>
+<form method="post" action="/login/forgot" class="flex max-w-xl flex-col gap-4">
+  <label>Email <input type="email" name="email" value="{{.Data.Email}}" autocomplete="username" required autofocus></label>
+  <div><button class="btn-primary">Send the link</button></div>
+</form>
+{{end}}
+<p class="mt-4 text-sm"><a href="/login">Back to sign in</a></p>
+{{end}}

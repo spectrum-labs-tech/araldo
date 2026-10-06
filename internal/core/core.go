@@ -31,6 +31,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/netguard"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
+	"github.com/spectrum-labs-tech/araldo/internal/smtpmail"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
@@ -64,6 +65,9 @@ type Config struct {
 	// signed with BillingLinkKey, to manage billing (ADR 0031).
 	BillingURL     string
 	BillingLinkKey []byte
+	// Mail, when set, sends the install's own email to its users (ADR
+	// 0034); without it, none is sent.
+	Mail smtpmail.Sender
 }
 
 // Service is the application.

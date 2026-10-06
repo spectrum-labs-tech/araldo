@@ -1,0 +1,14 @@
+{{define "content"}}
+<h1>Choose a new password</h1>
+{{if .Data.Valid}}
+<p class="mb-4 text-sm text-muted">Setting it signs you out everywhere, the araldo CLI included.</p>
+<form method="post" action="/login/reset/{{.Data.Token}}" class="flex max-w-xl flex-col gap-4">
+  <label>New password <span class="text-sm font-normal text-muted">at least 12 characters</span><input type="password" name="password" autocomplete="new-password" minlength="12" required autofocus></label>
+  <label>Confirm new password <input type="password" name="confirm_password" autocomplete="new-password" minlength="12" required></label>
+  <div><button class="btn-primary">Set the password</button></div>
+</form>
+{{else}}
+<p class="mb-4">This link has expired or was used already.</p>
+<p><a class="btn btn-primary" href="/login/forgot">Ask for a new link</a></p>
+{{end}}
+{{end}}

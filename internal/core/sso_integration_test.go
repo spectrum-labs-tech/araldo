@@ -29,9 +29,9 @@ func txt(records map[string][]string) func(context.Context, string) ([]string, e
 	return func(_ context.Context, name string) ([]string, error) { return records[name], nil }
 }
 
-func newSSOWorld(t *testing.T) *ssoWorld {
+func newSSOWorld(t *testing.T, opts ...option) *ssoWorld {
 	t.Helper()
-	w := newWorld(t)
+	w := newWorld(t, opts...)
 	ctx := t.Context()
 	idp := oidctest.New(t)
 	w.s.SSOHTTP = idp.Client()

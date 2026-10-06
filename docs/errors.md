@@ -329,6 +329,13 @@ every problem in `errors`, each with its own `code` and `param`.
 - **mfa_required_first**: turn on two-factor authentication for yourself
   before requiring it for the org.
 
+## Password reset (dashboard)
+
+- **mail_unavailable** (503): the server sends no email; an owner or the
+  operator resets the password.
+- **reset_link_invalid** (404): the link expired (after 30 minutes) or was
+  used; ask for a new one.
+
 ## Single sign-on (dashboard)
 
 - **issuer_invalid**, **issuer_unreachable**: the issuer is the provider's

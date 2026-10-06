@@ -92,10 +92,12 @@ type world struct {
 	s       *core.Service
 	user    *model.User
 	session *model.Session
-	org     *model.Org
-	owner   core.Actor
-	brand   *model.Brand
-	channel *model.Channel
+	// loginToken is session's token.
+	loginToken string
+	org        *model.Org
+	owner      core.Actor
+	brand      *model.Brand
+	channel    *model.Channel
 }
 
 func newWorld(t *testing.T, opts ...option) *world {
@@ -127,7 +129,7 @@ func newWorld(t *testing.T, opts ...option) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &world{s: s, user: u, session: login.Session, org: org, owner: owner, brand: b, channel: ch}
+	return &world{s: s, user: u, session: login.Session, loginToken: login.Token, org: org, owner: owner, brand: b, channel: ch}
 }
 
 func kind(err error) apperr.Kind {

@@ -12,5 +12,6 @@
 </div>
 <p class="mt-4 text-sm"><a href="/login/sso{{with .Data.Next}}?next={{.}}{{end}}">Sign in with single sign-on</a></p>
 {{with .SignupURL}}<p class="mt-4 text-sm">New here? <a href="{{.}}">Create an account</a></p>{{end}}
-<p class="mt-4 text-sm text-muted">Forgot your password? Ask your org's owner, or an operator can run <code>araldo admin users reset-password</code>.</p>
+{{if .MailEnabled}}<p class="mt-4 text-sm"><a href="/login/forgot{{with .Data.Email}}?email={{.}}{{end}}">Forgot your password?</a></p>
+{{else}}<p class="mt-4 text-sm text-muted">Forgot your password? Ask your org's owner, or an operator can run <code>araldo admin users reset-password</code>.</p>{{end}}
 {{end}}

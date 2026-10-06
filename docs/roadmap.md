@@ -93,7 +93,7 @@ Principles every feature keeps:
 | 12 | The rest of OpenTelemetry (traces, logs, publish lateness) | ADR 0014 | Planned (built-in backups, ADR 0013, were withdrawn: they are the operator's) |
 | 13 | Passkeys (WebAuthn) and OIDC single sign-on | ADR 0007, ADR 0033 | Built |
 | 14 | Hosted plan: a separate install with sign-up, billing and developer apps shared by every organization, at araldo.dev (the project's site and docs, `app.araldo.dev` for the dashboard, `api.araldo.dev` for the API) | ADR 0021, 0030, 0031 | Built in Araldo: install-wide developer apps (`araldo admin apps`), the operator API with org limits and status, and links out to sign up and to pay. Sign-up and billing themselves live in the host's own service |
-| 15 | Notifications in the dashboard and by email: SMTP, self-service password reset, notification types with preferences and one-click unsubscribe, invitations by email | ADR 0034 | Next: SMTP and password reset |
+| 15 | Notifications in the dashboard and by email: SMTP, self-service password reset, notification types with preferences and one-click unsubscribe, invitations by email | ADR 0034 | SMTP and password reset built; the notification engine next |
 
 ## Not now
 

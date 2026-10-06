@@ -29,6 +29,11 @@ Everything comes from environment variables.
 | `ARALDO_SIGNUP_URL` | | Where people create an account and org, on an install that hosts orgs for others (see Hosting orgs for others). The sign-in page links there, and members can no longer create orgs themselves. |
 | `ARALDO_BILLING_URL` | | Where owners manage billing; they get a Billing link that sends them there with a signed hand-off. |
 | `ARALDO_BILLING_LINK_KEY` | with a billing URL | The key that signs the hand-off, at least 32 characters, shared with the billing service. Or `ARALDO_BILLING_LINK_KEY_FILE`. |
+| `ARALDO_SMTP_HOST` | | The SMTP server the install's own email goes through: password resets, and notifications ([ADR 0034](adr/0034-notifications-and-email.md)). Without it, no email is sent. Any provider's SMTP works. |
+| `ARALDO_SMTP_FROM` | with a host | The sender, as `Araldo <noreply@example.com>`. Its domain needs the provider's SPF and DKIM records. |
+| `ARALDO_SMTP_PORT` | | Default 587, with STARTTLS. |
+| `ARALDO_SMTP_TLS` | | `starttls` (default), `tls` (port 465), or `none` for a relay on the same host only. |
+| `ARALDO_SMTP_USERNAME`, `ARALDO_SMTP_PASSWORD` | | The SMTP sign-in. Or `ARALDO_SMTP_PASSWORD_FILE`. |
 
 ## First run
 
@@ -83,6 +88,12 @@ To move an install from a local key to Transit:
 
 - `araldo admin users create --email …` and `araldo admin users reset-password --email …`
   print a generated password (or read one with `--password-stdin`).
+- **Forgotten passwords**: with `ARALDO_SMTP_HOST` set, the sign-in page
+  offers *Forgot your password?*, which emails a link that works once,
+  for 30 minutes, and signs the person out everywhere when used. The page
+  answers the same whether or not the account exists; an account gets at
+  most three links an hour. Someone whose email domain an org signs in
+  with by single sign-on is sent a link to sign in that way instead.
 - **Passkeys**: anyone can add one under **Your account → Passkeys** and
   then sign in with it alone; it counts as two-factor authentication, for
   orgs that require it too ([ADR 0007](adr/0007-authentication-and-mfa.md)).

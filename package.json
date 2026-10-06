@@ -18,10 +18,13 @@
     "@lezer/highlight": "1.2.5",
     "@tailwindcss/cli": "4.3.3",
     "esbuild": "0.28.2",
-    "simple-icons": "16.33.0",
+    "simple-icons": "16.34.0",
     "tailwindcss": "4.3.3"
   },
   "engines": {
     "node": ">=20"
+  },
+  "overrides": {
+    "@parcel/watcher": "2.6.0"
   }
 }

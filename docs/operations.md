@@ -614,11 +614,13 @@ replies and quotes 1 hour, 6 hours, 1, 3, 7 and 30 days after publishing
 | Facebook Pages | Reactions, comments and shares. |
 | Instagram | Likes and comments. |
 | YouTube | Views, likes and comments. |
+| X | Impressions (as views), likes, reposts, replies and quotes, a hundred posts a request. X bills reads to the org's app, like posts. |
+| Pinterest | Impressions (as views), reactions (as likes) and comments, one pin a request. Pins made before 2023-03-20 report only their last 90 days' impressions. |
 
-X, LinkedIn (members and Pages), Pinterest and TikTok are not read yet,
-and Discord and Telegram report nothing: their posts show no engagement.
-A count a platform does not report stays zero. Posts published before an upgrade to a version with
-engagement are read once soon after it, then on the schedule. A failed
+LinkedIn (members and Pages) and TikTok are not read yet, and Discord and
+Telegram report nothing: their posts show no engagement.
+A count a platform does not report stays zero. Posts published before an upgrade to a version that
+reads their platform are read once soon after it, then on the schedule. A failed
 reading is retried later and never affects publishing; see the target's
 `engagement.state` and the task on Organization → Background tasks.
 

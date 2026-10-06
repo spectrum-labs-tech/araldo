@@ -22,6 +22,7 @@ package pinterest
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -291,4 +292,50 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string([]rune(s)[:n])
+}
+
+// Engagement reads each pin's lifetime reactions (as likes), comments (as
+// replies) and impressions (as views), one pin at a time: Pinterest has no
+// batch read (https://developers.pinterest.com/docs/api/v5/pins-get, with
+// pin_metrics). Pins made before 2023-03-20 may have no lifetime metrics;
+// their impressions are the last 90 days'. A pin Pinterest no longer has
+// is left out.
+func (a *Adapter) Engagement(ctx context.Context, c platform.Credentials, refs []platform.RemoteRef) (map[string]platform.Counts, error) {
+	h, err := headers(c)
+	if err != nil {
+		return nil, err
+	}
+	type metrics struct {
+		Impression *int64 `json:"impression"`
+		Reaction   int64  `json:"reaction"`
+		Comment    int64  `json:"comment"`
+	}
+	out := map[string]platform.Counts{}
+	for _, r := range refs {
+		var p struct {
+			Metrics *struct {
+				Lifetime *metrics `json:"lifetime_metrics"`
+				Recent   *metrics `json:"90d"`
+			} `json:"pin_metrics"`
+		}
+		err := platform.JSON(ctx, a.Client, http.MethodGet, a.API+"/pins/"+url.PathEscape(r.ID)+"?pin_metrics=true", h, nil, &p)
+		var pe *platform.Error
+		if errors.As(err, &pe) && pe.Kind == platform.Rejected && strings.HasPrefix(pe.Msg, "HTTP 404") {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		var n platform.Counts
+		if m := p.Metrics; m != nil {
+			switch {
+			case m.Lifetime != nil:
+				n = platform.Counts{Likes: m.Lifetime.Reaction, Replies: m.Lifetime.Comment, Views: m.Lifetime.Impression}
+			case m.Recent != nil:
+				n.Views = m.Recent.Impression
+			}
+		}
+		out[r.ID] = n
+	}
+	return out, nil
 }

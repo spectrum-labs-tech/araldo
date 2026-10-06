@@ -213,3 +213,40 @@ func TestPostSearch(t *testing.T) {
 		t.Fatalf("a 201-character search: %v", err)
 	}
 }
+
+// TestEngagementResumesOnNewlyReadablePlatforms checks that posts marked
+// unsupported, as those on a platform before its reader was added, are
+// read once a version that reads it runs: once per process (ADR 0018).
+func TestEngagementResumesOnNewlyReadablePlatforms(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	p, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "Before the reader"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tg := settle(t, w, p.ID).Targets[0]
+	st := open(t)
+	if err := st.SetEngagementState(ctx, w.org.ID, tg.ID, model.EngagementUnsupported, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	w.s.Now = func() time.Time { return tg.PublishedAt.Add(2 * time.Hour) }
+	if n, err := core.CollectEngagementOrg(w.s, w.org.ID); err != nil || n != 1 {
+		t.Fatalf("the first collection after the upgrade: %d, %v", n, err)
+	}
+	got, err := w.s.Post(ctx, w.owner, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := got.Targets[0].Engagement; e.State != model.EngagementCollecting || e.ReadAt == nil {
+		t.Fatalf("after resuming: %+v", e)
+	}
+
+	// Later collections do not look again.
+	if err := st.SetEngagementState(ctx, w.org.ID, tg.ID, model.EngagementUnsupported, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := core.CollectEngagementOrg(w.s, w.org.ID); err != nil || n != 0 {
+		t.Fatalf("a later collection: %d, %v", n, err)
+	}
+}

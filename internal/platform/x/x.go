@@ -453,3 +453,46 @@ func nonce() string {
 	_, _ = rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
 }
+
+// statsPageSize is how many posts one lookup reads (the ids parameter
+// takes up to 100: https://docs.x.com/x-api/posts/get-posts-by-ids).
+const statsPageSize = 100
+
+// Engagement reads each post's public metrics: likes, reposts, replies,
+// quotes and impressions (as views), a hundred at a time. A post X no
+// longer has comes back as an error for its ID, and is left out. Reads are
+// billed to the org's X app like its posts.
+func (a *Adapter) Engagement(ctx context.Context, c platform.Credentials, refs []platform.RemoteRef) (map[string]platform.Counts, error) {
+	cr, err := creds(c)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]platform.Counts{}
+	for start := 0; start < len(refs); start += statsPageSize {
+		var ids []string
+		for _, r := range refs[start:min(start+statsPageSize, len(refs))] {
+			ids = append(ids, r.ID)
+		}
+		var page struct {
+			Data []struct {
+				ID      string `json:"id"`
+				Metrics struct {
+					Likes       int64  `json:"like_count"`
+					Reposts     int64  `json:"retweet_count"`
+					Replies     int64  `json:"reply_count"`
+					Quotes      int64  `json:"quote_count"`
+					Impressions *int64 `json:"impression_count"`
+				} `json:"public_metrics"`
+			} `json:"data"`
+		}
+		q := url.Values{"ids": {strings.Join(ids, ",")}, "tweet.fields": {"public_metrics"}}
+		if err := a.call(ctx, cr, http.MethodGet, "/2/tweets?"+q.Encode(), nil, &page); err != nil {
+			return nil, err
+		}
+		for _, d := range page.Data {
+			m := d.Metrics
+			out[d.ID] = platform.Counts{Likes: m.Likes, Reposts: m.Reposts, Replies: m.Replies, Quotes: m.Quotes, Views: m.Impressions}
+		}
+	}
+	return out, nil
+}

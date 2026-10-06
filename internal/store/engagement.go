@@ -69,6 +69,17 @@ func (s *Store) RecordEngagement(ctx context.Context, orgID, targetID uuid.UUID,
 	return mapErr(err)
 }
 
+// ResumeEngagement schedules a reading at at for targets marked
+// unsupported on the given platforms, in one org or (orgID nil) every org:
+// once a platform's engagement can be read, its earlier posts are read
+// too. It returns how many.
+func (s *Store) ResumeEngagement(ctx context.Context, orgID *uuid.UUID, providers []string, at time.Time) (int, error) {
+	tag, err := s.q.Exec(ctx, `UPDATE target_engagement e SET state = 'collecting', next_read_at = $3, error = ''
+		FROM post_targets t WHERE t.id = e.target_id AND e.state = 'unsupported' AND t.provider = ANY($2)
+		AND ($1::uuid IS NULL OR e.org_id = $1)`, orgID, providers, at)
+	return int(tag.RowsAffected()), err
+}
+
 // SetEngagementState records a reading that did not happen: a new state
 // (deleted, unsupported) or a retry later, with why.
 func (s *Store) SetEngagementState(ctx context.Context, orgID, targetID uuid.UUID, state string, next *time.Time, msg string) error {

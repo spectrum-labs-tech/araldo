@@ -48,6 +48,12 @@ func (s *Service) CollectEngagement(ctx context.Context) (int, error) {
 // org's, a channel at a time.
 func (s *Service) collectEngagement(ctx context.Context, orgID *uuid.UUID) (int, error) {
 	now := s.Now()
+	if !s.engagementResumed.Swap(true) {
+		if err := s.resumeEngagement(ctx, orgID, now); err != nil {
+			s.engagementResumed.Store(false)
+			return 0, err
+		}
+	}
 	due, err := s.store.DueEngagement(ctx, orgID, now, engagementBatch)
 	if err != nil {
 		return 0, err
@@ -69,6 +75,26 @@ func (s *Service) collectEngagement(ctx context.Context, orgID *uuid.UUID) (int,
 		}
 	}
 	return n, nil
+}
+
+// resumeEngagement schedules the posts marked unsupported on platforms
+// whose engagement this version reads: after an upgrade that adds a
+// reader, the posts published before it are read once, then follow the
+// schedule (ADR 0018). It runs once per process.
+func (s *Service) resumeEngagement(ctx context.Context, orgID *uuid.UUID, now time.Time) error {
+	var readable []string
+	for _, p := range append(s.platforms.Providers(), platform.Sandbox) {
+		if a, ok := s.platforms.Get(p); ok {
+			if _, reads := a.(platform.EngagementReader); reads {
+				readable = append(readable, string(p))
+			}
+		}
+	}
+	n, err := s.store.ResumeEngagement(ctx, orgID, readable, now)
+	if n > 0 {
+		s.log.InfoContext(ctx, "engagement resumed for posts on newly readable platforms", "targets", n)
+	}
+	return err
 }
 
 // readChannelEngagement reads one channel's due targets in one request

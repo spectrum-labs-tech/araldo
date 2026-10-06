@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -57,6 +58,7 @@ type fakeX struct {
 	auth     []string
 	status   int // answer tweets with this status, when set
 	response string
+	lookups  []int // how many IDs each lookup asked for
 }
 
 func (f *fakeX) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +98,10 @@ func (f *fakeX) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.alt = append(f.alt, in["id"].(string)+"="+alt["text"].(string))
 		_, _ = w.Write([]byte(`{}`))
 	case "/2/tweets":
+		if r.Method == http.MethodGet {
+			f.lookup(w, r)
+			return
+		}
 		if f.status != 0 {
 			w.WriteHeader(f.status)
 			_, _ = w.Write([]byte(f.response))
@@ -107,6 +113,62 @@ func (f *fakeX) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"data":{"id":"t` + string(rune('0'+len(f.tweets))) + `","text":"x"}}`))
 	default:
 		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+// lookup answers GET /2/tweets: post n has n likes, 2n reposts, and so on;
+// IDs starting "gone" were deleted, and "fail" fails the request.
+func (f *fakeX) lookup(w http.ResponseWriter, r *http.Request) {
+	ids := strings.Split(r.URL.Query().Get("ids"), ",")
+	f.lookups = append(f.lookups, len(ids))
+	if r.URL.Query().Get("tweet.fields") != "public_metrics" || !strings.HasPrefix(r.Header.Get("Authorization"), "OAuth ") {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	var data, errs []map[string]any
+	for _, id := range ids {
+		var n int
+		switch {
+		case id == "fail":
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		case strings.HasPrefix(id, "gone"):
+			errs = append(errs, map[string]any{"value": id, "detail": "Could not find tweet with ids: [" + id + "].", "title": "Not Found Error"})
+			continue
+		}
+		_, _ = fmt.Sscan(id, &n)
+		data = append(data, map[string]any{"id": id, "text": "x", "public_metrics": map[string]any{"like_count": n, "retweet_count": 2 * n,
+			"reply_count": 3 * n, "quote_count": 4 * n, "bookmark_count": 1, "impression_count": 10 * n}})
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": data, "errors": errs})
+}
+
+func TestEngagement(t *testing.T) {
+	t.Parallel()
+	f, a, c := setup(t)
+	var refs []platform.RemoteRef
+	for i := 1; i <= 150; i++ {
+		refs = append(refs, platform.RemoteRef{ID: fmt.Sprint(i)})
+	}
+	refs = append(refs, platform.RemoteRef{ID: "gone1"})
+	got, err := a.Engagement(t.Context(), c, refs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 150 || len(f.lookups) != 2 || f.lookups[0] != 100 || f.lookups[1] != 51 {
+		t.Fatalf("read %d posts in lookups of %v, want 150 in 100 and 51", len(got), f.lookups)
+	}
+	if g := got["7"]; g.Likes != 7 || g.Reposts != 14 || g.Replies != 21 || g.Quotes != 28 || g.Views == nil || *g.Views != 70 {
+		t.Fatalf("post 7: %+v", g)
+	}
+	if _, ok := got["gone1"]; ok {
+		t.Fatal("a deleted post has counts")
+	}
+	if _, err := a.Engagement(t.Context(), c, []platform.RemoteRef{{ID: "fail"}}); platform.KindOf(err) != platform.Transient {
+		t.Fatalf("X unavailable: %v", err)
+	}
+	if _, err := a.Engagement(t.Context(), platform.Credentials{"api_key": "ck"}, refs); platform.KindOf(err) != platform.AuthRevoked {
+		t.Fatalf("incomplete credentials: %v", err)
 	}
 }
 

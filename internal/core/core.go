@@ -94,6 +94,9 @@ type Service struct {
 	denied denials
 	// requests buffers the request log on its way to the database (ADR 0032).
 	requests requestLog
+	// engagementResumed is set once posts on newly readable platforms were
+	// scheduled (resumeEngagement).
+	engagementResumed atomic.Bool
 	// SSOHTTP reaches identity providers (ADR 0033).
 	SSOHTTP *http.Client
 	// LookupTXT reads DNS TXT records, to verify single sign-on domains.

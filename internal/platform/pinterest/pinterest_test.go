@@ -76,6 +76,17 @@ func (f *fakePinterest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/boards/"):
 		w.WriteHeader(http.StatusNotFound)
 		write(map[string]any{"code": 40, "message": "Board not found."})
+	case r.URL.Path == "/pins/1" && r.URL.Query().Get("pin_metrics") == "true":
+		write(map[string]any{"id": "1", "pin_metrics": map[string]any{
+			"90d":              map[string]any{"impression": 40, "pin_click": 3},
+			"lifetime_metrics": map[string]any{"impression": 120, "reaction": 9, "comment": 2, "pin_click": 5},
+		}})
+	case r.URL.Path == "/pins/2" && r.URL.Query().Get("pin_metrics") == "true": // made before lifetime metrics
+		write(map[string]any{"id": "2", "pin_metrics": map[string]any{"90d": map[string]any{"impression": 15}}})
+	case r.URL.Path == "/pins/3" && r.URL.Query().Get("pin_metrics") == "true": // no metrics at all
+		write(map[string]any{"id": "3", "pin_metrics": nil})
+	case r.URL.Path == "/pins/500":
+		w.WriteHeader(http.StatusInternalServerError)
 	case r.URL.Path == "/pins" && r.Method == http.MethodPost:
 		var p pin
 		_ = json.NewDecoder(r.Body).Decode(&p)
@@ -239,5 +250,36 @@ func TestSplit(t *testing.T) {
 	}
 	if FirstLink("see https://a.example/x, then https://b.example") != "https://a.example/x" || FirstLink("none") != "" {
 		t.Fatal("FirstLink")
+	}
+}
+
+func TestEngagement(t *testing.T) {
+	t.Parallel()
+	_, a := setup(t)
+	creds := platform.Credentials{"access_token": "t"}
+	got, err := a.Engagement(t.Context(), creds, []platform.RemoteRef{{ID: "1"}, {ID: "2"}, {ID: "3"}, {ID: "4"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	views := func(n int64) *int64 { return &n }
+	want := map[string]platform.Counts{
+		"1": {Likes: 9, Replies: 2, Views: views(120)},
+		"2": {Views: views(15)},
+		"3": {},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Engagement = %+v, want pins 1-3 and the deleted pin 4 missing", got)
+	}
+	for id, w := range want {
+		g := got[id]
+		if g.Likes != w.Likes || g.Replies != w.Replies || (g.Views == nil) != (w.Views == nil) || g.Views != nil && *g.Views != *w.Views {
+			t.Errorf("pin %s: %+v, want %+v", id, g, w)
+		}
+	}
+	if _, err := a.Engagement(t.Context(), creds, []platform.RemoteRef{{ID: "500"}}); platform.KindOf(err) != platform.Transient {
+		t.Fatalf("a server error: %v", err)
+	}
+	if _, err := a.Engagement(t.Context(), platform.Credentials{"access_token": "old"}, []platform.RemoteRef{{ID: "1"}}); platform.KindOf(err) != platform.AuthRevoked {
+		t.Fatalf("a revoked token: %v", err)
 	}
 }

@@ -3,6 +3,7 @@
 package web
 
 import (
+	"context"
 	"crypto/subtle"
 	"net/http"
 	"net/url"
@@ -18,6 +19,10 @@ import (
 // Invitations (ADR 0004): admins invite people from the org page, and the
 // invitee accepts at /invite/{token}, signed in or by creating an account.
 
+// inviteSendTimeout bounds emailing an invitation, which the admin waits
+// for.
+const inviteSendTimeout = 20 * time.Second
+
 func (s *Server) inviteMember(c *reqCtx) error {
 	d, err := s.orgData(c)
 	if err != nil {
@@ -30,8 +35,18 @@ func (s *Server) inviteMember(c *reqCtx) error {
 		}
 		return s.formErr(c, "org", "org", "Organization", d, err)
 	}
-	// The link is shown once, here; only its hash is kept.
+	// The link is shown once, here; only its hash is kept. It is emailed
+	// too when the server sends email; if that fails, it can be shared.
 	d.InviteLink, d.Invited = link, inv
+	if s.svc.MailEnabled() {
+		ctx, cancel := context.WithTimeout(c.ctx(), inviteSendTimeout)
+		err := s.svc.EmailInvitation(ctx, c.actor, inv, link)
+		cancel()
+		if d.InviteEmailed = err == nil; err != nil {
+			s.log.WarnContext(c.ctx(), "emailing an invitation", "err", err)
+			d.InviteEmailError = "We could not email it, so share the link yourself."
+		}
+	}
 	if d.Invitations, err = s.svc.Invitations(c.ctx(), c.actor); err != nil {
 		return err
 	}

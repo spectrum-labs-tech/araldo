@@ -1,6 +1,6 @@
 # ADR 0034: Notifications, in the dashboard and by email
 
-- Status: accepted; being built
+- Status: accepted; built
 - Date: 2026-10-05
 - Builds on: [ADR 0004](0004-tenancy-roles-approvals.md), [ADR 0007](0007-authentication-and-mfa.md), [ADR 0012](0012-events-and-webhooks.md), [ADR 0033](0033-single-sign-on.md)
 

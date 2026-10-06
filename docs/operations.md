@@ -492,7 +492,9 @@ an administrative scope.
 Members, their roles and the org's settings are for people, not API keys.
 In the dashboard, admins invite people from the org page: each invitation
 is a one-time link, valid for a week, that the invitee opens to join,
-signing in or creating their account. The operator can also use these
+signing in or creating their account. With `ARALDO_SMTP_HOST` set, it is
+emailed to them as well; the page always shows the link, to share if the
+email does not arrive. The operator can also use these
 server administration commands, run where the
 server's configuration is. They act as the operator, with an owner's
 permissions, in the org named by `--org` (an ID or name; not needed on a

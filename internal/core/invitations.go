@@ -29,6 +29,31 @@ const InvitationTTL = 7 * 24 * time.Hour
 var errInvitationInvalid = &apperr.Error{Kind: apperr.KindNotFound, Code: "invitation_invalid",
 	Message: "This invitation link is not valid: it was used, withdrawn or has expired. Ask for a new one."}
 
+// EmailInvitation sends an invitation's link to the person invited, from
+// the actor (ADR 0034). The link is the one InviteMember returned: only its
+// hash is kept, so it can be sent only then.
+func (s *Service) EmailInvitation(ctx context.Context, a Actor, inv *model.Invitation, link string) error {
+	if s.cfg.Mail == nil {
+		return errMailOff
+	}
+	from := "Someone"
+	if a.UserID != nil {
+		u, err := s.store.User(ctx, *a.UserID)
+		if err != nil {
+			return err
+		}
+		from = u.Email
+		if u.Name != "" {
+			from = u.Name + " (" + u.Email + ")"
+		}
+	}
+	return s.sendMail(ctx, mailContent{To: inv.Email, Subject: "Join " + inv.OrgName + " on Araldo",
+		Paragraphs: []string{from + " invited you to join " + inv.OrgName + " on Araldo as " + string(inv.Role) + ".",
+			"Accept with this link within 7 days. If you have no Araldo account yet, you make one as you accept."},
+		ButtonLabel: "Accept the invitation", ButtonURL: link,
+		Footer: "If you did not expect this, you can ignore this email: nothing happens unless you accept."})
+}
+
 // InviteMember invites email to the org with role, and returns the link to
 // share. Inviting an owner needs what making one does: an owner, in sudo
 // mode. Inviting the same person again replaces the open invitation.

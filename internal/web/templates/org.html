@@ -64,7 +64,9 @@
   <h2>Invite a member</h2>
   {{with $d.InviteLink}}
   <div class="mb-4 flex flex-col gap-1">
-    <p>Send this link to <strong>{{$d.Invited.Email}}</strong>, privately. It works once, for a week, and is not shown again.</p>
+    {{if $d.InviteEmailed}}<p>We emailed <strong>{{$d.Invited.Email}}</strong> the invitation. You can also send them this link, privately. It works once, for a week, and is not shown again.</p>
+    {{else}}{{with $d.InviteEmailError}}<p class="alert" role="alert">{{.}}</p>{{end}}
+    <p>Send this link to <strong>{{$d.Invited.Email}}</strong>, privately. It works once, for a week, and is not shown again.</p>{{end}}
     <span class="flex flex-wrap items-center gap-2"><code id="invite-link" class="copy-box">{{.}}</code>
       <button type="button" data-copy="invite-link">Copy</button></span>
   </div>
@@ -73,7 +75,7 @@
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <label>Email <input type="email" name="email" required></label>
     <label>Role <select name="role"><option>editor</option><option>viewer</option><option>admin</option>{{if $d.IsOwner}}<option>owner</option>{{end}}</select></label>
-    <p class="text-sm text-muted">You get a link to share. They join when they open it and sign in, or create their account with their own password.</p>
+    <p class="text-sm text-muted">{{if $.MailEnabled}}We email them a link, and show it to you too.{{else}}You get a link to share.{{end}} They join when they open it and sign in, or create their account with their own password.</p>
     <div><button class="btn-primary">Create invitation</button></div>
   </form>
   {{if $d.Invitations}}

@@ -39,4 +39,4 @@ open a pull request.
 | [0031](0031-operator-api.md) | An operator API, org limits and status, and links out for sign-up and billing | accepted; built |
 | [0032](0032-request-log.md) | A request log of every authenticated API request, for the org's developers | accepted; built |
 | [0033](0033-single-sign-on.md) | OIDC single sign-on by DNS-verified domain, joining automatically, optionally required | accepted; built |
-| [0034](0034-notifications-and-email.md) | Notifications in the dashboard and by email, with SMTP set by the operator and self-service password reset | accepted; being built |
+| [0034](0034-notifications-and-email.md) | Notifications in the dashboard and by email, with SMTP set by the operator and self-service password reset | accepted; built |

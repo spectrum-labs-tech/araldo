@@ -450,11 +450,14 @@ type orgData struct {
 	Members     []model.Membership
 	Roles       []model.Role
 	Invitations []*model.Invitation
-	// InviteLink is shown once, after inviting Invited.
-	InviteLink string
-	Invited    *model.Invitation
-	IsOwner    bool
-	IsAdmin    bool
+	// InviteLink is shown once, after inviting Invited; InviteEmailed says
+	// it was emailed to them (ADR 0034), or InviteEmailError why not.
+	InviteLink       string
+	Invited          *model.Invitation
+	InviteEmailed    bool
+	InviteEmailError string
+	IsOwner          bool
+	IsAdmin          bool
 	// Usage is shown, against the org's limits, to those who manage it
 	// when it has limits (ADR 0031).
 	Usage *model.OrgUsage

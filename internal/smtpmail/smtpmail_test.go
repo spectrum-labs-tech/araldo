@@ -32,8 +32,7 @@ func TestSendInEachMode(t *testing.T) {
 	for _, mode := range []string{smtptest.Plain, smtptest.StartTLS, smtptest.Implicit} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
-			srv := smtptest.New(t, mode)
-			srv.Username, srv.Password = "user", "pass"
+			srv := smtptest.New(t, smtptest.Options{Mode: mode, Username: "user", Password: "pass"})
 			if err := client(t, srv, mode, "user", "pass").Send(t.Context(), msg); err != nil {
 				t.Fatal(err)
 			}
@@ -97,8 +96,7 @@ func TestSendFailures(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			srv := smtptest.New(t, tc.mode)
-			srv.Username, srv.Password, srv.RejectRcpt = "user", "pass", tc.reject
+			srv := smtptest.New(t, smtptest.Options{Mode: tc.mode, Username: "user", Password: "pass", RejectRcpt: tc.reject})
 			err := client(t, srv, tc.client, "user", tc.pass).Send(t.Context(), tc.msg)
 			if err == nil || smtpmail.IsPermanent(err) != tc.permanent {
 				t.Fatalf("err = %v, permanent %v, want permanent %v", err, smtpmail.IsPermanent(err), tc.permanent)

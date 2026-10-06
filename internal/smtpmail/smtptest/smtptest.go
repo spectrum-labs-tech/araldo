@@ -38,21 +38,27 @@ type Mail struct {
 	Auth string
 }
 
-// Server is a running test server.
-type Server struct {
-	// Host and Port are where it listens.
-	Host string
-	Port int
+// Options configure a server; they are fixed once it runs.
+type Options struct {
+	// Mode is Plain, StartTLS or Implicit.
+	Mode string
 	// Username and Password, when set, are required.
 	Username, Password string
 	// RejectRcpt, when set, answers RCPT TO with this reply ("550 no such
 	// user", "451 try later").
 	RejectRcpt string
+}
 
+// Server is a running test server.
+type Server struct {
+	// Host and Port are where it listens.
+	Host string
+	Port int
+
+	opts    Options
 	ln      net.Listener
 	tlsConf *tls.Config
 	client  *tls.Config
-	mode    string
 
 	mu   sync.Mutex
 	mail []Mail
@@ -65,11 +71,12 @@ const (
 	Implicit = "tls"
 )
 
-// New starts a server in mode, closed when t ends.
-func New(t testing.TB, mode string) *Server {
+// New starts a server, closed when t ends.
+func New(t testing.TB, opts Options) *Server {
 	t.Helper()
 	cert, pool := selfSigned(t)
-	s := &Server{Host: "127.0.0.1", mode: mode, tlsConf: &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}}
+	mode := opts.Mode
+	s := &Server{Host: "127.0.0.1", opts: opts, tlsConf: &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}}
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +120,7 @@ func (s *Server) session(conn net.Conn) {
 	reply := func(line string) { _ = tp.PrintfLine("%s", line) }
 	reply("220 smtptest ready")
 	var cur Mail
-	authed := s.Username == ""
+	authed := s.opts.Username == ""
 	for {
 		line, err := tp.ReadLine()
 		if err != nil {
@@ -123,7 +130,7 @@ func (s *Server) session(conn net.Conn) {
 		switch strings.ToUpper(verb) {
 		case "EHLO", "HELO":
 			lines := []string{"250-smtptest"}
-			if s.mode == StartTLS && !isTLS {
+			if s.opts.Mode == StartTLS && !isTLS {
 				lines = append(lines, "250-STARTTLS")
 			}
 			lines = append(lines, "250 AUTH PLAIN")
@@ -131,7 +138,7 @@ func (s *Server) session(conn net.Conn) {
 				reply(l)
 			}
 		case "STARTTLS":
-			if s.mode != StartTLS || isTLS {
+			if s.opts.Mode != StartTLS || isTLS {
 				reply("503 not now")
 				continue
 			}
@@ -153,7 +160,7 @@ func (s *Server) session(conn net.Conn) {
 			}
 			raw, _ := base64.StdEncoding.DecodeString(parts[1])
 			fields := strings.Split(string(raw), "\x00")
-			if len(fields) != 3 || fields[1] != s.Username || fields[2] != s.Password {
+			if len(fields) != 3 || fields[1] != s.opts.Username || fields[2] != s.opts.Password {
 				reply("535 authentication failed")
 				continue
 			}
@@ -167,8 +174,8 @@ func (s *Server) session(conn net.Conn) {
 			cur.From, cur.To = addr(arg), nil
 			reply("250 ok")
 		case "RCPT":
-			if s.RejectRcpt != "" {
-				reply(s.RejectRcpt)
+			if s.opts.RejectRcpt != "" {
+				reply(s.opts.RejectRcpt)
 				continue
 			}
 			cur.To = append(cur.To, addr(arg))

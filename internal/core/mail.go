@@ -30,16 +30,26 @@ type mailContent struct {
 	Footer string
 }
 
+// mailHTML is the layout of every email the install sends: Araldo's look
+// (the dashboard's accent and warm greys) in tables and inline styles, as
+// mail clients need. The mark is drawn in a table cell, not an image, so it
+// shows where clients block images. Light only: a client that darkens mail
+// keeps the contrast, as every pair here is AA or better.
 var mailHTML = template.Must(template.New("mail").Parse(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>{{.Subject}}</title></head>
-<body style="margin:0;padding:24px;background:#f5f5f4;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1c1917">
-<div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e7e5e4;border-radius:8px;padding:32px">
-<p style="margin:0 0 24px;font-weight:600;font-size:18px">Araldo</p>
-{{range .Paragraphs}}<p style="margin:0 0 16px;font-size:16px;line-height:1.5">{{.}}</p>
-{{end}}{{if .ButtonURL}}<p style="margin:24px 0"><a href="{{.ButtonURL}}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;font-weight:600">{{.ButtonLabel}}</a></p>
-<p style="margin:0 0 16px;font-size:13px;color:#57534e;word-break:break-all">Or open this link: {{.ButtonURL}}</p>
-{{end}}{{with .Footer}}<p style="margin:24px 0 0;font-size:13px;color:#57534e">{{.}}</p>{{end}}
-</div></body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="color-scheme" content="light"><title>{{.Subject}}</title></head>
+<body style="margin:0;padding:24px 12px;background:#f7f6f3;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1d1b16">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto"><tr><td>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px"><tr>
+<td width="28" height="28" align="center" valign="middle" style="width:28px;height:28px;background:#8a3b12;border-radius:6px;color:#ffffff;font-weight:700;font-size:17px;line-height:28px">A</td>
+<td style="padding-left:10px;font-weight:700;font-size:18px;color:#1d1b16">Araldo</td>
+</tr></table>
+<div style="background:#ffffff;border:1px solid #e4e0d6;border-radius:10px;padding:32px">
+{{range .Paragraphs}}<p style="margin:0 0 16px;font-size:16px;line-height:1.6">{{.}}</p>
+{{end}}{{if .ButtonURL}}<p style="margin:24px 0"><a href="{{.ButtonURL}}" style="display:inline-block;background:#8a3b12;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600">{{.ButtonLabel}}</a></p>
+<p style="margin:0 0 16px;font-size:13px;color:#5f5a4e;word-break:break-all">Or open this link: <a href="{{.ButtonURL}}" style="color:#8a3b12">{{.ButtonURL}}</a></p>
+{{end}}</div>
+{{with .Footer}}<p style="margin:16px 4px 0;font-size:13px;line-height:1.5;color:#5f5a4e">{{.}}</p>{{end}}
+</td></tr></table></body></html>
 `))
 
 // message renders an email as text and HTML.

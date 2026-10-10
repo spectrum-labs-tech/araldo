@@ -559,6 +559,13 @@ changes its name, status, note and limits, invites people, reads its
 usage for a month, and deletes it. Every change is audited with the key's
 ID. The API reference lists the operations under Operator.
 
+**Keep the operator API off the internet.** An operator key acts in every
+org: it can create an org with no limits, invite anyone into any org and
+delete one. When the service runs beside Araldo, have it call Araldo's
+internal address and refuse `/v1/operator/` at the proxy or edge in front
+of the public hostnames; members' own API, the rest of `/v1`, stays
+public. A stolen key is then useless from outside.
+
 **Limits** cap brands, live channels, members (with open invitations) and
 live posts a calendar month (UTC); each is unlimited unless set, and
 lowering one removes nothing. A member who reaches one is refused with

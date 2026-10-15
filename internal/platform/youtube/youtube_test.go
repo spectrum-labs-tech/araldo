@@ -135,9 +135,10 @@ func TestPublishUploadsResumably(t *testing.T) {
 		t.Fatalf("result %+v, meta %v, uploaded %q", res, f.meta, f.uploaded)
 	}
 	f.quota = true
+	a.Now = func() time.Time { return time.Date(2026, 7, 1, 6, 0, 0, 0, time.UTC) }
 	_, err = a.Publish(t.Context(), platform.Credentials{"access_token": "at"}, platform.Payload{Parts: []string{"x"}, Media: []platform.Media{v}}, nil)
 	var pe *platform.Error
-	if !errors.As(err, &pe) || pe.Kind != platform.RateLimited || pe.Code != "quota_exceeded" || pe.RetryAfter == 0 {
+	if !errors.As(err, &pe) || pe.Kind != platform.RateLimited || pe.Code != "quota_exceeded" || pe.RetryAfter != time.Hour {
 		t.Fatalf("a spent quota: %v", err)
 	}
 	if _, err := a.Publish(t.Context(), platform.Credentials{"access_token": "at"}, platform.Payload{Parts: []string{"x"}}, nil); platform.KindOf(err) != platform.Rejected {
@@ -169,6 +170,25 @@ func TestSplit(t *testing.T) {
 	for _, tt := range tests {
 		if title, desc := Split(tt.text, tt.alt); title != tt.title || desc != tt.description {
 			t.Errorf("Split(%q, %q) = %q, %q; want %q, %q", tt.text, tt.alt, title, desc, tt.title, tt.description)
+		}
+	}
+}
+
+func TestUntilQuotaReset(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		now  time.Time
+		want time.Duration
+	}{
+		// Summer: midnight Pacific is 07:00 UTC.
+		{time.Date(2026, 7, 1, 6, 0, 0, 0, time.UTC), time.Hour},
+		{time.Date(2026, 7, 1, 7, 30, 0, 0, time.UTC), 23*time.Hour + 30*time.Minute},
+		// Winter: 08:00 UTC.
+		{time.Date(2026, 12, 1, 2, 0, 0, 0, time.UTC), 6 * time.Hour},
+	}
+	for _, tt := range tests {
+		if got := untilQuotaReset(tt.now); got != tt.want {
+			t.Errorf("untilQuotaReset(%s) = %s, want %s", tt.now, got, tt.want)
 		}
 	}
 }

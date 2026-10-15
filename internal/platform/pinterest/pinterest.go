@@ -22,7 +22,6 @@ package pinterest
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -257,8 +256,8 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 	if err := platform.JSON(ctx, a.Client, http.MethodPost, a.API+"/pins", h, body, &out); err != nil {
 		return res, err
 	}
-	if out.ID == "" {
-		return res, platform.Errorf(platform.Uncertain, "Pinterest accepted the pin but did not say which it was")
+	if err := platform.RequireID(out.ID, "Pinterest"); err != nil {
+		return res, err
 	}
 	ref := platform.RemoteRef{ID: out.ID, URL: "https://www.pinterest.com/pin/" + out.ID + "/"}
 	if onPart != nil {
@@ -319,8 +318,7 @@ func (a *Adapter) Engagement(ctx context.Context, c platform.Credentials, refs [
 			} `json:"pin_metrics"`
 		}
 		err := platform.JSON(ctx, a.Client, http.MethodGet, a.API+"/pins/"+url.PathEscape(r.ID)+"?pin_metrics=true", h, nil, &p)
-		var pe *platform.Error
-		if errors.As(err, &pe) && pe.Kind == platform.Rejected && strings.HasPrefix(pe.Msg, "HTTP 404") {
+		if platform.HTTPStatus(err) == http.StatusNotFound {
 			continue
 		}
 		if err != nil {

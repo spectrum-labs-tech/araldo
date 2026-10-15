@@ -16,10 +16,10 @@
 package youtube
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -159,7 +159,7 @@ func (a *Adapter) channels(ctx context.Context, c platform.Credentials) ([]chann
 		Items []channel `json:"items"`
 	}
 	if err := platform.JSON(ctx, a.Client, http.MethodGet, a.API+"/youtube/v3/channels?part=snippet&mine=true", h, nil, &out); err != nil {
-		return nil, quota(err)
+		return nil, a.quota(err)
 	}
 	return out.Items, nil
 }
@@ -212,24 +212,21 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 	}
 	meta := map[string]any{"snippet": snippet{Title: title, Description: description, CategoryID: "22"},
 		"status": status{PrivacyStatus: privacy}}
-	body, _ := json.Marshal(meta)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		a.API+"/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status", strings.NewReader(string(body)))
+	body, err := json.Marshal(meta)
 	if err != nil {
-		return res, &platform.Error{Kind: platform.Rejected, Code: "request", Err: err}
+		return res, &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
 	}
-	req.Header.Set("Authorization", h["Authorization"])
-	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
-	req.Header.Set("X-Upload-Content-Length", strconv.FormatInt(v.Size, 10))
-	req.Header.Set("X-Upload-Content-Type", v.Type)
-	resp, err := platform.Do(a.Client, req)
+	// Starting an upload publishes nothing until the video is sent: it
+	// can be done again.
+	resp, err := platform.Fetch(platform.RetrySafe(ctx), a.Client, platform.Request{Method: http.MethodPost,
+		URL: a.API + "/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status", Body: bytes.NewReader(body), Length: int64(len(body)),
+		ContentType: "application/json; charset=UTF-8", Header: map[string]string{"Authorization": h["Authorization"],
+			"X-Upload-Content-Length": strconv.FormatInt(v.Size, 10), "X-Upload-Content-Type": v.Type}})
 	if err != nil {
 		return res, err
 	}
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	_ = resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return res, quota(platform.Classify(resp, raw))
+	if err := resp.Err(); err != nil {
+		return res, a.quota(err)
 	}
 	location := resp.Header.Get("Location")
 	if location == "" {
@@ -244,10 +241,10 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		ID string `json:"id"`
 	}
 	if err := platform.SendStream(ctx, a.Client, http.MethodPut, location, h, rc, v.Size, v.Type, &out); err != nil {
-		return res, quota(err)
+		return res, a.quota(err)
 	}
-	if out.ID == "" {
-		return res, platform.Errorf(platform.Uncertain, "YouTube took the video but did not say which it was")
+	if err := platform.RequireID(out.ID, "YouTube"); err != nil {
+		return res, err
 	}
 	ref := platform.RemoteRef{ID: out.ID, URL: "https://www.youtube.com/watch?v=" + out.ID}
 	if onPart != nil {
@@ -285,7 +282,7 @@ func (a *Adapter) Engagement(ctx context.Context, c platform.Credentials, refs [
 		}
 		q := url.Values{"part": {"statistics"}, "id": {strings.Join(ids, ",")}}
 		if err := platform.JSON(ctx, a.Client, http.MethodGet, a.API+"/youtube/v3/videos?"+q.Encode(), h, nil, &page); err != nil {
-			return nil, quota(err)
+			return nil, a.quota(err)
 		}
 		for _, it := range page.Items {
 			views := count(it.Statistics.Views)
@@ -325,17 +322,32 @@ func Split(text, alt string) (title, description string) {
 }
 
 // quota explains the error YouTube answers when the project's daily quota
-// is spent: a 403 that lifts at midnight Pacific time.
-func quota(err error) error {
+// is spent: a 403 that lifts at midnight Pacific time
+// (https://developers.google.com/youtube/v3/getting-started#quota), so
+// that is when to try again.
+func (a *Adapter) quota(err error) error {
 	var pe *platform.Error
-	if errors.As(err, &pe) && strings.Contains(pe.Msg, "quotaExceeded") {
+	if errors.As(err, &pe) && (strings.Contains(string(pe.Body), "quotaExceeded") || strings.Contains(pe.Msg, "quotaExceeded")) {
 		pe.Kind, pe.Code = platform.RateLimited, "quota_exceeded"
 		pe.Msg = "the Google project's YouTube quota for today is spent; it resets at midnight Pacific time. " + pe.Msg
 		if pe.RetryAfter == 0 {
-			pe.RetryAfter = time.Hour
+			pe.RetryAfter = untilQuotaReset(a.Now())
 		}
 	}
 	return err
+}
+
+// untilQuotaReset is the time from now to the next midnight Pacific time.
+// Without the time zone database it assumes standard time (UTC-8), which
+// is never early.
+func untilQuotaReset(now time.Time) time.Duration {
+	loc, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		loc = time.FixedZone("PST", -8*60*60)
+	}
+	t := now.In(loc)
+	next := time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, loc)
+	return next.Sub(now)
 }
 
 // count reads one of YouTube's counts, which it sends as strings.

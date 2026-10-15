@@ -50,6 +50,17 @@ type fakeLinkedIn struct {
 	finalize   map[string]any
 	polls      int
 	rawPaths   []string
+	// answer replaces the response to a path (with ?action= if any).
+	answer map[string]canned
+	// extra asks for that many bytes more than the video has.
+	extra int
+	// stuck keeps the video processing; noURN leaves the post's URN out.
+	stuck, noURN bool
+}
+
+type canned struct {
+	status int
+	body   string
 }
 
 func (f *fakeLinkedIn) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +69,15 @@ func (f *fakeLinkedIn) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if f.expired || r.Header.Get("Authorization") != "Bearer tok" {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"message":"Expired access token"}`))
+		return
+	}
+	key := r.URL.Path
+	if act := r.URL.Query().Get("action"); act != "" {
+		key += "?action=" + act
+	}
+	if c, ok := f.answer[key]; ok {
+		w.WriteHeader(c.status)
+		_, _ = w.Write([]byte(c.body))
 		return
 	}
 	switch {
@@ -80,6 +100,9 @@ func (f *fakeLinkedIn) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var parts []string
 		for first := 0; first < in.Req.Size; first += 4 {
 			last := min(first+3, in.Req.Size-1)
+			if first+4 >= in.Req.Size {
+				last += f.extra
+			}
 			parts = append(parts, fmt.Sprintf(`{"uploadUrl":"%s/vupload/%d","firstByte":%d,"lastByte":%d}`, f.srv.URL, len(parts), first, last))
 		}
 		_, _ = w.Write([]byte(`{"value":{"video":"urn:li:video:V1","uploadToken":"","uploadInstructions":[` + strings.Join(parts, ",") + `]}}`))
@@ -93,7 +116,7 @@ func (f *fakeLinkedIn) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.rawPaths = append(f.rawPaths, r.URL.EscapedPath())
 		f.polls++
 		status := "PROCESSING"
-		if f.polls >= 2 {
+		if f.polls >= 2 && !f.stuck {
 			status = "AVAILABLE"
 		}
 		_, _ = w.Write([]byte(`{"status":"` + status + `"}`))
@@ -102,7 +125,9 @@ func (f *fakeLinkedIn) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		f.posts = append(f.posts, in)
 		f.headers = append(f.headers, r.Header.Clone())
-		w.Header().Set("X-Restli-Id", "urn:li:share:7")
+		if !f.noURN {
+			w.Header().Set("X-Restli-Id", "urn:li:share:7")
+		}
 		w.WriteHeader(http.StatusCreated)
 	default:
 		w.WriteHeader(http.StatusNotFound)
@@ -261,5 +286,44 @@ func TestPublishVideo(t *testing.T) {
 	media, _ := f.posts[0]["content"].(map[string]any)["media"].(map[string]any)
 	if media["id"] != "urn:li:video:V1" {
 		t.Fatalf("post %v", f.posts[0])
+	}
+}
+
+func TestPublishOutcomes(t *testing.T) {
+	t.Parallel()
+	png := platform.Media{Type: "image/png"}.WithData([]byte("png"))
+	video := platform.Media{Type: "video/mp4"}.WithData([]byte("0123456789"))
+	server := canned{http.StatusInternalServerError, `{}`}
+	tests := []struct {
+		name  string
+		media []platform.Media
+		setup func(f *fakeLinkedIn)
+		want  platform.Kind
+	}{
+		{"a post without a URN is uncertain", nil, func(f *fakeLinkedIn) { f.noURN = true }, platform.Uncertain},
+		{"a failed post is uncertain", nil, func(f *fakeLinkedIn) { f.answer = map[string]canned{"/rest/posts": server} }, platform.Uncertain},
+		{"a failed image upload is retried", []platform.Media{png}, func(f *fakeLinkedIn) {
+			f.answer = map[string]canned{"/rest/images?action=initializeUpload": server}
+		}, platform.Transient},
+		{"a failed video finalize is retried", []platform.Media{video}, func(f *fakeLinkedIn) {
+			f.answer = map[string]canned{"/rest/videos?action=finalizeUpload": server}
+		}, platform.Transient},
+		{"more bytes than the video has", []platform.Media{video}, func(f *fakeLinkedIn) { f.extra = 1 << 40 }, platform.Rejected},
+		{"processing for too long", []platform.Media{video}, func(f *fakeLinkedIn) { f.stuck = true }, platform.Transient},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f, a := setup(t)
+			a.Sleep = func(context.Context, time.Duration) error { return nil }
+			tt.setup(f)
+			_, err := a.Publish(t.Context(), platform.Credentials{"access_token": "tok"}, platform.Payload{Parts: []string{"x"}, Media: tt.media}, nil)
+			if platform.KindOf(err) != tt.want {
+				t.Fatalf("err = %v, want %s", err, tt.want)
+			}
+			if tt.want != platform.Uncertain && len(f.posts) != 0 {
+				t.Fatalf("posted %v", f.posts)
+			}
+		})
 	}
 }

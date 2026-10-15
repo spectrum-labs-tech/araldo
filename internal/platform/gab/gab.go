@@ -144,7 +144,9 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		// Media goes on the first part only (ADR 0017); a thread resumed after
 		// the first part has already published it.
 		if i == 0 && len(p.Media) > 0 {
-			ids, err := a.upload(ctx, h, p.Media)
+			// An attachment no post uses is not public: uploading it again
+			// is safe.
+			ids, err := a.upload(platform.RetrySafe(ctx), h, p.Media)
 			if err != nil {
 				return res, err
 			}
@@ -164,12 +166,11 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		}
 		// A 2xx with no post in it: we cannot tell whether it published, and
 		// this adapter is not idempotent, so a person decides (ADR 0011).
-		if st.ID == "" {
-			msg := st.Error
-			if msg == "" {
-				msg = "Gab accepted the request but returned no post"
-			}
-			return res, &platform.Error{Kind: platform.Uncertain, Code: "no_post_returned", Msg: msg}
+		if st.ID == "" && st.Error != "" {
+			return res, &platform.Error{Kind: platform.Uncertain, Code: "no_id", Msg: "Gab answered without an ID: " + st.Error}
+		}
+		if err := platform.RequireID(st.ID, "Gab"); err != nil {
+			return res, err
 		}
 		ref := platform.RemoteRef{ID: st.ID, URL: st.URL}
 		if onPart != nil {
@@ -209,7 +210,7 @@ func (a *Adapter) upload(ctx context.Context, headers map[string]string, media [
 		var att attachment
 		err = platform.Send(ctx, a.Client, http.MethodPost, a.base()+"/api/v1/media", headers, body, contentType, &att)
 		var pe *platform.Error
-		if errors.As(err, &pe) && pe.Kind == platform.Rejected && strings.HasPrefix(pe.Msg, "HTTP 403") {
+		if errors.As(err, &pe) && pe.Kind == platform.Rejected && pe.Status == http.StatusForbidden {
 			pe.Code = "scope_missing"
 			pe.Msg = "the access token cannot upload images: create one with the write:media scope and reconnect (" + pe.Msg + ")"
 		}
@@ -240,8 +241,7 @@ func (a *Adapter) Engagement(ctx context.Context, c platform.Credentials, refs [
 			Replies int64 `json:"replies_count"`
 		}
 		err := platform.JSON(ctx, a.Client, http.MethodGet, a.base()+"/api/v1/statuses/"+url.PathEscape(r.ID), h, nil, &st)
-		var pe *platform.Error
-		if errors.As(err, &pe) && pe.Kind == platform.Rejected && strings.HasPrefix(pe.Msg, "HTTP 404") {
+		if platform.HTTPStatus(err) == http.StatusNotFound {
 			continue
 		}
 		if err != nil {

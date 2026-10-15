@@ -274,8 +274,8 @@ func TestPublishWithoutAPostIsUncertain(t *testing.T) {
 				t.Fatalf("kind = %q, want %q (err %v)", platform.KindOf(err), platform.Uncertain, err)
 			}
 			var pe *platform.Error
-			if !errors.As(err, &pe) || pe.Code != "no_post_returned" {
-				t.Errorf("err = %v, want code no_post_returned", err)
+			if !errors.As(err, &pe) || pe.Code != "no_id" {
+				t.Errorf("err = %v, want code no_id", err)
 			}
 		})
 	}
@@ -360,5 +360,30 @@ func TestBaseURLDefaultsToGab(t *testing.T) {
 	}
 	if got := (&Adapter{BaseURL: "https://gab.test/"}).base(); got != "https://gab.test" {
 		t.Errorf("base = %q", got)
+	}
+}
+
+// An image no post uses is not public, so a failed upload is retried.
+func TestFailedUploadIsTransient(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		status int
+		want   platform.Kind
+	}{
+		{http.StatusBadGateway, platform.Transient},
+		{http.StatusUnprocessableEntity, platform.Rejected},
+	}
+	for _, tt := range tests {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(tt.status)
+		}))
+		a := New(srv.Client())
+		a.BaseURL = srv.URL
+		_, err := a.Publish(t.Context(), platform.Credentials{"access_token": "tok"},
+			platform.Payload{Key: "k", Parts: []string{"hi"}, Media: []platform.Media{platform.Media{Type: "image/png"}.WithData([]byte("png"))}}, nil)
+		srv.Close()
+		if platform.KindOf(err) != tt.want {
+			t.Errorf("HTTP %d: %v, want %s", tt.status, err, tt.want)
+		}
 	}
 }

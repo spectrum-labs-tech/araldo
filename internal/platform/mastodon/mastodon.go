@@ -5,7 +5,8 @@
 // write:statuses, write:media and read:accounts).
 //
 // Mastodon honors an Idempotency-Key header for an hour, so a retry after
-// an uncertain failure within that hour cannot post twice.
+// an uncertain failure within that hour cannot post twice; after it, a
+// retry would be a second post (see IdempotencyWindow).
 package mastodon
 
 import (
@@ -23,13 +24,20 @@ import (
 // Adapter publishes to Mastodon.
 type Adapter struct {
 	Client *http.Client
-	// Poll is how long to wait between checks on an image the server is
-	// still processing; tests shorten it.
-	Poll time.Duration
+	// Poll is how long to wait between checks on media the server is
+	// still processing, and MaxPolls how many checks to make; tests
+	// shorten them.
+	Poll     time.Duration
+	MaxPolls int
 }
 
+// maxPolls at the 1-second Poll waits five minutes for a video to process.
+const maxPolls = 300
+
 // New returns a Mastodon adapter.
-func New(client *http.Client) *Adapter { return &Adapter{Client: client, Poll: time.Second} }
+func New(client *http.Client) *Adapter {
+	return &Adapter{Client: client, Poll: time.Second, MaxPolls: maxPolls}
+}
 
 func (a *Adapter) Provider() platform.Provider { return platform.Mastodon }
 
@@ -46,6 +54,12 @@ func (a *Adapter) Fields() []platform.Field {
 }
 
 func (a *Adapter) Idempotent() bool { return true }
+
+// IdempotencyWindow is how long a retry with the same Idempotency-Key
+// cannot post twice. Mastodon keeps a key for an hour
+// (https://docs.joinmastodon.org/methods/statuses/#create, "Idempotency-Key");
+// five minutes less leaves room for the retry itself to arrive.
+func (a *Adapter) IdempotencyWindow() time.Duration { return 55 * time.Minute }
 
 func instance(c platform.Credentials) (string, error) {
 	raw := strings.TrimRight(strings.TrimSpace(c["instance"]), "/")
@@ -113,7 +127,9 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 			body["in_reply_to_id"] = replyTo
 		}
 		if i == 0 && len(p.Media) > 0 {
-			ids, err := a.upload(ctx, base, c, p.Media)
+			// An attachment no status uses is not public: uploading it
+			// again is safe.
+			ids, err := a.upload(platform.RetrySafe(ctx), base, c, p.Media)
 			if err != nil {
 				return res, err
 			}
@@ -121,6 +137,9 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		}
 		var st status
 		if err := platform.JSON(ctx, a.Client, http.MethodPost, base+"/api/v1/statuses", h, body, &st); err != nil {
+			return res, err
+		}
+		if err := platform.RequireID(st.ID, "Mastodon"); err != nil {
 			return res, err
 		}
 		ref := platform.RemoteRef{ID: st.ID, URL: st.URL}
@@ -154,14 +173,20 @@ func (a *Adapter) upload(ctx context.Context, base string, c platform.Credential
 		var att attachment
 		err := a.send(ctx, base, c, i, m, &att)
 		var pe *platform.Error
-		if errors.As(err, &pe) && pe.Kind == platform.Rejected && strings.HasPrefix(pe.Msg, "HTTP 403") {
+		if errors.As(err, &pe) && pe.Kind == platform.Rejected && pe.Status == http.StatusForbidden {
 			pe.Code = "scope_missing"
 			pe.Msg = "the access token cannot upload images: create one with the write:media scope and reconnect (" + pe.Msg + ")"
 		}
 		if err != nil {
 			return nil, err
 		}
-		for att.URL == nil || *att.URL == "" {
+		if att.ID == "" {
+			return nil, &platform.Error{Kind: platform.Transient, Code: "no_id", Msg: "the server returned no attachment for the media"}
+		}
+		for polls := 0; att.URL == nil || *att.URL == ""; polls++ {
+			if polls == max(a.MaxPolls, 1) {
+				return nil, &platform.Error{Kind: platform.Transient, Code: "media_processing", Msg: "the server was still processing the media"}
+			}
 			select {
 			case <-ctx.Done():
 				return nil, &platform.Error{Kind: platform.Transient, Code: "media_processing", Msg: "the server was still processing the media", Err: ctx.Err()}
@@ -193,8 +218,7 @@ func (a *Adapter) Engagement(ctx context.Context, c platform.Credentials, refs [
 			Quotes  int64 `json:"quotes_count"`
 		}
 		err := platform.JSON(ctx, a.Client, http.MethodGet, base+"/api/v1/statuses/"+url.PathEscape(r.ID), headers(c), nil, &st)
-		var pe *platform.Error
-		if errors.As(err, &pe) && pe.Kind == platform.Rejected && strings.HasPrefix(pe.Msg, "HTTP 404") {
+		if platform.HTTPStatus(err) == http.StatusNotFound {
 			continue
 		}
 		if err != nil {

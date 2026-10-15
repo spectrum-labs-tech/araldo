@@ -86,11 +86,23 @@ type fakeServer struct {
 	uploads      []map[string]string // description, filename, type, data
 	statuses     []map[string]any
 	forbidMedia  bool
+	// answer replaces the response to a path: a status and a body.
+	answer map[string]canned
+}
+
+type canned struct {
+	status int
+	body   string
 }
 
 func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if c, ok := f.answer[r.URL.Path]; ok {
+		w.WriteHeader(c.status)
+		_, _ = w.Write([]byte(c.body))
+		return
+	}
 	switch {
 	case r.URL.Path == "/api/v2/media":
 		if f.forbidMedia {
@@ -246,5 +258,50 @@ func TestPublishVideo(t *testing.T) {
 	}
 	if got := asStrings(f.statuses[0]["media_ids"]); strings.Join(got, ",") != "m1" {
 		t.Fatalf("status %v", f.statuses[0])
+	}
+}
+
+func TestPublishOutcomes(t *testing.T) {
+	t.Parallel()
+	png := platform.Media{Type: "image/png"}.WithData([]byte("png"))
+	tests := []struct {
+		name   string
+		answer map[string]canned
+		polls  int // checks before media is ready
+		want   platform.Kind
+	}{
+		{"a status without an ID is uncertain", map[string]canned{"/api/v1/statuses": {http.StatusOK, `{}`}}, 0, platform.Uncertain},
+		{"a failed upload can be sent again", map[string]canned{"/api/v2/media": {http.StatusBadGateway, `{}`}}, 0, platform.Transient},
+		{"media processing for too long", nil, 1000, platform.Transient},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := &fakeServer{processPolls: tt.polls, polls: map[string]int{}, answer: tt.answer}
+			srv := httptest.NewServer(f)
+			t.Cleanup(srv.Close)
+			a := New(srv.Client())
+			a.Poll, a.MaxPolls = time.Millisecond, 5
+			p := platform.Payload{Key: "ptgt_o", Parts: []string{"hi"}, Media: []platform.Media{png}}
+			_, err := a.Publish(t.Context(), platform.Credentials{"instance": srv.URL, "access_token": "tok"}, p, nil)
+			if platform.KindOf(err) != tt.want {
+				t.Fatalf("err = %v, want %s", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestIdempotencyWindow(t *testing.T) {
+	t.Parallel()
+	a := New(nil)
+	first := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	tests := []struct {
+		age  time.Duration
+		want bool
+	}{{10 * time.Minute, true}, {54 * time.Minute, true}, {time.Hour, false}, {3 * time.Hour, false}}
+	for _, tt := range tests {
+		if got := platform.RetryUncertain(a, first, first.Add(tt.age)); got != tt.want {
+			t.Errorf("after %s: RetryUncertain = %v, want %v", tt.age, got, tt.want)
+		}
 	}
 }

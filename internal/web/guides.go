@@ -21,6 +21,9 @@ type appGuide struct {
 	ClientID, Confidential template.HTML
 	// Notes are what is easy to get wrong, or to be surprised by later.
 	Notes []template.HTML
+	// Kind is the type of app to create, for a platform that asks first
+	// (the ads guide's one-line summary says it).
+	Kind template.HTML
 }
 
 // appGuides are the setup guides, by platform.
@@ -162,6 +165,7 @@ var appGuides = map[platform.Provider]appGuide{
 		},
 		ClientID:     `the ID under the app's name`,
 		Confidential: `the secret`,
+		Kind:         `<em>web app</em>`,
 		Notes: []template.HTML{
 			`Araldo only reads results (<code>adsread</code>); it never spends.`,
 		},

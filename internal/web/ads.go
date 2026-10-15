@@ -3,6 +3,7 @@
 package web
 
 import (
+	"html/template"
 	"maps"
 	"net/url"
 	"strconv"
@@ -33,8 +34,11 @@ type adsData struct {
 	Values   map[string]string
 	// Apps are the org's developer apps for the network's sign-in.
 	Apps []*model.ProviderApp
-	// For the guide: the redirect URI to register, whether any account has
-	// been read, and the link builder's form and result.
+	// For the guide: where and what kind of app to create, the redirect
+	// URI to register, whether any account has been read, and the link
+	// builder's form and result.
+	AppSite    string
+	AppKind    template.HTML
 	Redirect   string
 	HasResults bool
 	Tag        tagForm
@@ -68,6 +72,7 @@ func (s *Server) adsData(c *reqCtx) (*adsData, error) {
 	}
 	if d.Network != nil && d.Network.OAuth {
 		d.Redirect = s.svc.ConnectRedirectURI(d.Network.Provider)
+		d.AppSite, d.AppKind = developerSites[d.Network.Provider], appGuides[d.Network.Provider].Kind
 	}
 	d.Tag = tagForm{URL: q.Get("tag_url"), Source: q.Get("tag_source"), Campaign: q.Get("tag_campaign"), Content: q.Get("tag_content")}
 	if d.Tag.Source == "" && d.Network != nil && d.Network.Network != ads.Sandbox {

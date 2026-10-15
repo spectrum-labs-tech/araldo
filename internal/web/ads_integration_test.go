@@ -12,10 +12,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/ads"
+	"github.com/spectrum-labs-tech/araldo/internal/ads/reddit"
 	"github.com/spectrum-labs-tech/araldo/internal/analytics"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 )
+
+// TestAdsGuideSaysWhereToCreateTheApp checks the live guide for a network
+// that signs in through a developer app names its site and kind of app,
+// from the app guides rather than the page.
+func TestAdsGuideSaysWhereToCreateTheApp(t *testing.T) {
+	t.Parallel()
+	d := newDashWith(t, func(cfg *core.Config) { cfg.AdNetworks = []ads.Reporter{reddit.New(http.DefaultClient)} })
+	form := url.Values{"csrf": {d.login.Session.CSRFToken}, "mode": {"live"}, "back": {"/ads"}}
+	r := httptest.NewRequest(http.MethodPost, "/context", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if rec := d.send(r); rec.Code != http.StatusSeeOther {
+		t.Fatalf("switching to live mode: %d", rec.Code)
+	}
+	rec := d.send(httptest.NewRequest(http.MethodGet, "/ads", nil))
+	page := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(page, `at <a href="https://www.reddit.com/prefs/apps" rel="noopener" target="_blank">https://www.reddit.com/prefs/apps</a>, of type <em>web app</em>, with this redirect URI`) {
+		t.Fatalf("the guide does not say where to create the app: %d\n%s", rec.Code, page)
+	}
+}
 
 func TestAdsPage(t *testing.T) {
 	t.Parallel()

@@ -87,17 +87,17 @@
 </section>
 
 {{if $is}}
-{{$open := or (eq (printf "%s" $is.Status) "draft") (eq (printf "%s" $is.Status) "pending_approval") (eq (printf "%s" $is.Status) "scheduled") (eq (printf "%s" $is.Status) "sending")}}
+{{$open := $d.Open}}
 {{if and $d.CanWrite $open}}
 <section class="card">
-  <h2>{{if eq (printf "%s" $is.Status) "draft"}}Schedule{{else}}Move{{end}}</h2>
+  <h2>{{if eq $is.Status "draft"}}Schedule{{else}}Move{{end}}</h2>
   <form method="post" action="/newsletters/{{issueID $is.ID}}/action" class="flex flex-wrap items-end gap-3">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <input type="hidden" name="action" value="schedule">
     <label>Send at <input type="datetime-local" name="send_at" value="{{$d.SendAt}}" required> <span class="hint">{{$d.Brand.Timezone}}</span></label>
-    <button class="btn-primary">{{if eq (printf "%s" $is.Status) "draft"}}Schedule{{else}}Move{{end}}</button>
+    <button class="btn-primary">{{if eq $is.Status "draft"}}Schedule{{else}}Move{{end}}</button>
   </form>
-  {{if ne (printf "%s" $is.Status) "draft"}}
+  {{if ne $is.Status "draft"}}
   <form method="post" action="/newsletters/{{issueID $is.ID}}/action" class="mt-3">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <input type="hidden" name="action" value="unschedule">
@@ -107,7 +107,7 @@
 </section>
 {{end}}
 
-{{if and $d.CanReview (eq (printf "%s" $is.Status) "pending_approval")}}
+{{if and $d.CanReview (eq $is.Status "pending_approval")}}
 <section class="card">
   <h2>Review</h2>
   <form method="post" action="/newsletters/{{issueID $is.ID}}/action" class="flex max-w-xl flex-col gap-3">

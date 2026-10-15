@@ -5,6 +5,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/api"
@@ -71,6 +72,14 @@ type inviteData struct {
 	CSRF     string
 	Name     string
 	Token    string
+}
+
+// Article is "a" or "an", whichever goes before the invitation's role.
+func (d inviteData) Article() string {
+	if d.Invitation != nil && d.Invitation.Role != "" && strings.ContainsRune("aeiouAEIOU", rune(d.Invitation.Role[0])) {
+		return "an"
+	}
+	return "a"
 }
 
 // activeSession is the request's signed-in session, if it has one.

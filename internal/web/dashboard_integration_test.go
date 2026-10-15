@@ -498,6 +498,9 @@ func TestInviteSomeone(t *testing.T) {
 		!strings.Contains(page, "sign in as "+invitee) {
 		t.Fatalf("the invitation, signed in as someone else:\n%s", page)
 	}
+	if !strings.Contains(page, "as an <strong>editor</strong>") {
+		t.Fatalf("the invitation does not name the role with its article:\n%s", page)
+	}
 
 	// The invitee has no account: the page offers one.
 	rec = anon(httptest.NewRequest(http.MethodGet, link, nil))

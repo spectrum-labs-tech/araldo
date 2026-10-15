@@ -115,8 +115,9 @@ func TestNewslettersInTheDashboard(t *testing.T) {
 	if is, _ = d.s.Issue(ctx, d.owner, iid); is.Status != model.IssueScheduled {
 		t.Fatalf("scheduled: %s", is.Status)
 	}
-	if got := get(issuePath); !strings.Contains(got, ">Move</button>") || !strings.Contains(got, "Back to draft") || strings.Contains(got, `name="body"`) {
-		t.Fatalf("a scheduled issue offers moving and back to draft, not editing:\n%s", got)
+	if got := get(issuePath); !strings.Contains(got, ">Move</button>") || !strings.Contains(got, "Back to draft") || strings.Contains(got, `name="body"`) ||
+		!strings.Contains(got, `<button class="btn-danger">Cancel this issue</button>`) {
+		t.Fatalf("a scheduled issue offers moving, back to draft and canceling, not editing:\n%s", got)
 	}
 	if got := get("/newsletters"); strings.Count(got, `<li class="done">`) != 4 {
 		t.Fatalf("every guide step but the domain is done:\n%s", got)

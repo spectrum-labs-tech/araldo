@@ -6,7 +6,7 @@
 {{else}}
 {{$i := $d.Invitation}}
 <h1>Join {{$i.OrgName}}</h1>
-<p class="mb-4">You are invited to join <strong>{{$i.OrgName}}</strong> on Araldo as {{if eq (printf "%s" $i.Role) "admin"}}an{{else}}a{{end}} <strong>{{$i.Role}}</strong>.
+<p class="mb-4">You are invited to join <strong>{{$i.OrgName}}</strong> on Araldo as {{$d.Article}} <strong>{{$i.Role}}</strong>.
   The invitation is for <strong>{{$i.Email}}</strong>.</p>
 {{if $d.SignedIn}}
   {{if $d.Matches}}

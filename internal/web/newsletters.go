@@ -211,6 +211,19 @@ type issueData struct {
 	TestTo string
 }
 
+// Open says the issue can still be scheduled, moved or canceled: it is
+// not sent, canceled or failed (core's stopIssue takes the same ones).
+func (d issueData) Open() bool {
+	if d.Issue == nil {
+		return false
+	}
+	switch d.Issue.Status {
+	case model.IssueDraft, model.IssuePendingApproval, model.IssueScheduled, model.IssueSending:
+		return true
+	}
+	return false
+}
+
 // accountChoice is a mail account in the editor: whether the issue goes
 // through it, and which audiences.
 type accountChoice struct {

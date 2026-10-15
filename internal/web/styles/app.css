@@ -114,8 +114,10 @@
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
+  /* A column as tall as the window at least, so the footer sits at the
+     bottom of a short page. */
   body {
-    @apply bg-bg font-sans leading-normal text-ink antialiased;
+    @apply flex min-h-screen flex-col bg-bg font-sans leading-normal text-ink antialiased;
   }
   a {
     @apply text-accent underline-offset-2 hover:underline;
@@ -208,6 +210,11 @@
   /* The first thing to focus: hidden until it is (WCAG 2.4.1). */
   .skip-link {
     @apply sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-10 focus:rounded-md focus:bg-panel focus:px-3 focus:py-2 focus:font-semibold;
+  }
+  /* The signed-in page: navigation beside the content on wide screens,
+     above it on narrow ones, filling the window's height. */
+  .shell {
+    @apply grid grow grid-rows-[auto_1fr] md:grid-cols-[var(--spacing-sidebar)_minmax(0,1fr)] md:grid-rows-1;
   }
   .side-nav {
     @apply flex flex-row flex-wrap gap-0.5 border-b border-line p-3 md:flex-col md:border-r md:border-b-0;
@@ -359,12 +366,6 @@
   .facts dd {
     @apply m-0;
   }
-  .muted {
-    @apply text-muted;
-  }
-  .small {
-    @apply text-sm;
-  }
 
   /* Pills and tags */
   .pill {
@@ -411,7 +412,8 @@
     @apply inline-block size-4 shrink-0 align-[-0.15em];
   }
 
-  /* Template editor: tabs, platform chips, preview cards */
+  /* Template editor and new post: tabs, platform chips, preview cards
+     (the editor's script builds the same markup as post_new.html) */
   .tabbar {
     @apply mb-2 flex flex-wrap gap-1 border-b border-line;
   }
@@ -501,15 +503,7 @@
   .post-text {
     @apply my-1.5 rounded-md border border-line bg-bg px-3 py-2.5 font-sans text-[0.95rem] break-words whitespace-pre-wrap;
   }
-  .rendition {
-    @apply my-4 border-l-4 border-good pl-3;
-  }
-  .rendition.bad {
-    @apply border-bad;
-  }
-  .r-head {
-    @apply flex items-baseline gap-2;
-  }
+
   .json {
     @apply overflow-auto rounded-lg border border-line bg-panel p-4 text-xs;
   }

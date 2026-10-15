@@ -66,13 +66,13 @@ const theme = EditorView.theme({
     backgroundColor: "var(--panel)",
     color: "var(--ink)",
     border: "1px solid var(--field)",
-    borderRadius: "6px",
+    borderRadius: "var(--radius-md)",
     fontSize: "0.9rem",
   },
   "&.cm-focused": { outline: "2px solid var(--accent)", outlineOffset: "1px" },
   ".cm-content": { fontFamily: "var(--font-mono, ui-monospace, monospace)", padding: "6px 0", caretColor: "var(--ink)" },
   ".cm-scroller": { fontFamily: "var(--font-mono, ui-monospace, monospace)", lineHeight: "1.5" },
-  ".cm-gutters": { backgroundColor: "var(--bg)", color: "var(--muted)", border: "none", borderRadius: "6px 0 0 6px" },
+  ".cm-gutters": { backgroundColor: "var(--bg)", color: "var(--muted)", border: "none", borderRadius: "var(--radius-md) 0 0 var(--radius-md)" },
   ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--accent) 7%, transparent)" },
   ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--ink)" },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 25%, transparent)" },
@@ -209,7 +209,8 @@ function mountPreview() {
   if (!form || !out) return;
   const chips = [...document.querySelectorAll("[data-preview-toggle]")];
   const names = Object.fromEntries(chips.map((c) => [c.dataset.previewToggle, c.dataset.name]));
-  const chosen = loadChoice((out.dataset.defaultPlatforms || "x,facebook,instagram").split(","));
+  // The server picks the default: the brand's channels' platforms.
+  const chosen = loadChoice((out.dataset.defaultPlatforms || "").split(",").filter(Boolean));
   let last = null;
 
   const syncChips = () => chips.forEach((c) => c.setAttribute("aria-pressed", String(chosen.has(c.dataset.previewToggle))));
@@ -243,7 +244,7 @@ function mountPreview() {
     }
     const shown = (res.renditions || []).filter((r) => chosen.has(r.provider));
     if (!shown.length) {
-      out.appendChild(el("p", "muted small", "Choose platforms above to preview."));
+      out.appendChild(el("p", "text-sm text-muted", "Choose platforms above to preview."));
       announce("No platforms chosen for the preview.");
       return;
     }
@@ -266,10 +267,10 @@ function mountPreview() {
       head.append(title, count);
       card.appendChild(head);
       r.parts.forEach((part, i) => {
-        if (r.parts.length > 1) card.appendChild(el("div", "muted small", `Part ${i + 1} of ${r.parts.length} · ${r.lengths[i]}`));
+        if (r.parts.length > 1) card.appendChild(el("div", "text-sm text-muted", `Part ${i + 1} of ${r.parts.length} · ${r.lengths[i]}`));
         card.appendChild(el("pre", "post-text", part));
       });
-      r.violations.forEach((v) => card.appendChild(el("p", "alert small", v.message)));
+      r.violations.forEach((v) => card.appendChild(el("p", "alert mt-2 text-sm", v.message)));
       grid.appendChild(card);
     });
     out.appendChild(grid);
@@ -289,7 +290,7 @@ function mountPreview() {
         show(res);
       })
       .catch(() => {
-        out.replaceChildren(el("p", "muted small", "Preview unavailable."));
+        out.replaceChildren(el("p", "text-sm text-muted", "Preview unavailable."));
       });
   };
   const soon = (ms) => {

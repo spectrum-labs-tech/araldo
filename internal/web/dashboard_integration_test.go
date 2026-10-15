@@ -185,6 +185,10 @@ func TestPostFormCarriesImages(t *testing.T) {
 	if rec.Code != http.StatusOK || m == nil || !strings.Contains(page, `src="/media/`+m[1]+`"`) || !strings.Contains(page, `value="Front"`) {
 		t.Fatalf("preview: %d, image kept: %v\n%s", rec.Code, m != nil, page)
 	}
+	// The same card markup as the template editor's live preview.
+	if !strings.Contains(page, `<article class="preview-card">`) || !strings.Contains(page, `<pre class="post-text">New build</pre>`) {
+		t.Fatalf("the preview does not show the rendition:\n%s", page)
+	}
 	mediaRef := m[1]
 
 	rec = send(httptest.NewRequest(http.MethodGet, "/media/"+mediaRef, nil))
@@ -863,5 +867,16 @@ func TestContextSwitchReturnsToThePage(t *testing.T) {
 		if rec := d.send(r); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != tt.want {
 			t.Errorf("back %q: %d to %q, want %q", tt.back, rec.Code, rec.Header().Get("Location"), tt.want)
 		}
+	}
+}
+
+// TestTemplateEditorPreviewsTheBrandsPlatforms checks the server, not the
+// editor's script, picks the platforms previewed first: the brand's.
+func TestTemplateEditorPreviewsTheBrandsPlatforms(t *testing.T) {
+	t.Parallel()
+	d := newDash(t) // one brand, with a sandbox channel imitating Bluesky
+	page := d.send(httptest.NewRequest(http.MethodGet, "/templates/new", nil)).Body.String()
+	if !strings.Contains(page, `data-default-platforms="bluesky"`) {
+		t.Fatalf("the preview does not default to the brand's platforms:\n%s", page)
 	}
 }

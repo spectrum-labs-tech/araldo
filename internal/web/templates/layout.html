@@ -38,7 +38,7 @@
     <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="btn-link">Sign out</button></form>
   </div>
 </header>
-<div class="grid min-h-[calc(100vh-110px)] md:grid-cols-[var(--spacing-sidebar)_minmax(0,1fr)]">
+<div class="shell">
   <nav class="side-nav" aria-label="Main">
     <a href="/" {{if eq .Nav "home"}}class="active" aria-current="page"{{end}}>Overview</a>
     <a href="/posts" {{if eq .Nav "posts"}}class="active" aria-current="page"{{end}}>Posts</a>
@@ -80,7 +80,7 @@
   {{template "content" .}}
 </main>
 {{else}}
-<main id="main" class="grid min-h-[90vh] place-items-center p-4">
+<main id="main" class="grid grow place-items-center p-4">
   <div class="w-full max-w-sm rounded-xl border border-line bg-panel p-8">
     <a class="brandmark mb-4 text-2xl" href="/"><img src="/static/icon.svg" alt="" width="32" height="32"> Araldo</a>
     {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}

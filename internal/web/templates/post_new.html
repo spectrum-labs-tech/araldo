@@ -82,13 +82,15 @@
 {{if .Data.Renditions}}
 <section class="card">
   <h2>Preview</h2>
+  <div class="preview-grid">
   {{range .Data.Renditions}}
-  <div class="rendition {{if .Violations}}bad{{end}}">
-    <div class="r-head"><strong>{{.Provider}}</strong> <span class="text-muted">limit {{.Limit}} {{.Counting}}</span></div>
+  <article class="preview-card{{if .Violations}} bad{{end}}">
+    <header class="preview-head"><span class="preview-title">{{icon .Provider}} {{.Provider}}</span> <span class="text-sm text-muted">limit {{.Limit}} {{.Counting}}</span></header>
     {{$r := .}}{{range $i, $p := .Parts}}<pre class="post-text">{{$p}}</pre><div class="text-sm text-muted">{{if gt (len $r.Parts) 1}}part {{inc $i}} · {{end}}{{index $r.Lengths $i}} / {{$r.Limit}}</div>{{end}}
     {{range .Violations}}<p class="alert mt-2 text-sm">{{.Message}}</p>{{end}}
-  </div>
+  </article>
   {{end}}
+  </div>
 </section>
 {{end}}
 {{end}}

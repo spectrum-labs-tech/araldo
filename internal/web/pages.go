@@ -1005,10 +1005,14 @@ type templateForm struct {
 	Fit       map[string]string
 	Providers []platformChoice
 	// DefaultPreview is the platforms previewed before the person picks:
-	// the brand's channels in this mode, or X, Facebook and Instagram.
+	// the brand's channels in this mode, or defaultPreview. The editor's
+	// script takes it from the page (data-default-platforms).
 	DefaultPreview string
 	CanApprove     bool
 }
+
+// defaultPreview is the platforms previewed for a brand with no channels.
+const defaultPreview = "x,facebook,instagram"
 
 // platformChoice is a platform in the editor's tabs and preview chips.
 type platformChoice struct {
@@ -1065,7 +1069,7 @@ func (s *Server) withChoices(c *reqCtx, f *templateForm, brandID uuid.UUID) {
 	if f.Approval == "" {
 		f.Approval = string(model.TemplateApprovalInherit)
 	}
-	f.DefaultPreview = "x,facebook,instagram"
+	f.DefaultPreview = defaultPreview
 	if brandID == uuid.Nil && len(f.Brands) > 0 {
 		brandID = f.Brands[0].ID
 	}

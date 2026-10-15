@@ -444,7 +444,7 @@ func (s *Service) nextSlot(ctx context.Context, q *store.Store, b *model.Brand, 
 			if by != nil && !t.Before(*by) {
 				return time.Time{}, apperr.Conflict("no_slot_before_publish_by", "No free slot of brand %s comes before publish_by.", b.Name)
 			}
-			holder, err := q.SlotHolder(ctx, b.ID, livemode, t)
+			holder, err := q.SlotHolder(ctx, b.OrgID, b.ID, livemode, t)
 			if err != nil {
 				return time.Time{}, err
 			}
@@ -698,7 +698,7 @@ func (s *Service) movePost(ctx context.Context, tx *store.Store, a Actor, postID
 			return nil, err
 		}
 		if isSlot {
-			holder, err := tx.SlotHolder(ctx, b.ID, p.Livemode, *at)
+			holder, err := tx.SlotHolder(ctx, b.OrgID, b.ID, p.Livemode, *at)
 			if err != nil {
 				return nil, err
 			}

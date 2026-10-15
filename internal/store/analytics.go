@@ -84,8 +84,9 @@ func (s *Store) ClaimDueAnalyticsSources(ctx context.Context, orgID *uuid.UUID, 
 // tags are added together.
 func (s *Store) SaveAnalyticsResults(ctx context.Context, orgID, sourceID uuid.UUID, from, to time.Time, rows []analytics.Row, readAt, next time.Time) error {
 	return s.InTx(ctx, func(tx *Store) error {
-		if _, err := tx.q.Exec(ctx, `DELETE FROM analytics_results WHERE source_id = $1 AND day BETWEEN $2 AND $3`, sourceID, from, to); err != nil {
-			return err
+		if _, err := tx.q.Exec(ctx, `DELETE FROM analytics_results WHERE org_id = $1 AND source_id = $2 AND day BETWEEN $3 AND $4`,
+			orgID, sourceID, from, to); err != nil {
+			return mapErr(err)
 		}
 		for _, r := range rows {
 			if _, err := tx.q.Exec(ctx, `INSERT INTO analytics_results (org_id, source_id, day, utm_source, utm_medium, utm_campaign, utm_content,

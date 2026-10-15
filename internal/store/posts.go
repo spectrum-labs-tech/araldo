@@ -497,10 +497,11 @@ func (s *Store) StartAttempt(ctx context.Context, a *model.Attempt) error {
 	return mapErr(err)
 }
 
-func (s *Store) FinishAttempt(ctx context.Context, id uuid.UUID, at time.Time, outcome, code, msg string) error {
-	_, err := s.q.Exec(ctx, `UPDATE publish_attempts SET finished_at = $2, outcome = $3, error_code = $4, error = $5 WHERE id = $1`,
-		id, at, outcome, code, msg)
-	return err
+// FinishAttempt records how an attempt still running ended; one already
+// finished is ErrNotFound.
+func (s *Store) FinishAttempt(ctx context.Context, orgID, id uuid.UUID, at time.Time, outcome, code, msg string) error {
+	return s.execOne(ctx, `UPDATE publish_attempts SET finished_at = $3, outcome = $4, error_code = $5, error = $6
+		WHERE org_id = $1 AND id = $2 AND outcome = 'running'`, orgID, id, at, outcome, code, msg)
 }
 
 func (s *Store) Attempts(ctx context.Context, orgID, targetID uuid.UUID) ([]model.Attempt, error) {

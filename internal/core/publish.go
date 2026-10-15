@@ -293,7 +293,7 @@ func (s *Service) finishPublish(ctx context.Context, owner string, t *model.Targ
 			}
 			return err
 		}
-		if err := tx.FinishAttempt(ctx, attempt.ID, now, outcome, o.ErrorCode, o.ErrorMessage); err != nil {
+		if err := tx.FinishAttempt(ctx, t.OrgID, attempt.ID, now, outcome, o.ErrorCode, o.ErrorMessage); err != nil {
 			return err
 		}
 		if o.Status == model.TargetPublished {

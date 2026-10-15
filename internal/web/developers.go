@@ -157,7 +157,9 @@ func (s *Server) keyDetail(c *reqCtx) error {
 	}
 	d := keyDetailData{Key: k, Creator: s.whoIs(c, k.CreatedBy, nil), CanManage: c.actor.Can(core.PermKeysWrite)}
 	if k.BrandID != nil {
-		d.Brand, _ = s.svc.Brand(c.ctx(), c.actor, *k.BrandID)
+		if d.Brand, err = s.optionalBrand(c, *k.BrandID); err != nil {
+			return err
+		}
 	}
 	if k.Livemode == c.actor.Livemode {
 		d.Posts, _, err = s.svc.Posts(c.ctx(), c.actor, core.PostFilter{CreatedByKey: &k.ID}, store.Page{Limit: 20})

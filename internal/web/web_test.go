@@ -169,3 +169,32 @@ func TestServerFault(t *testing.T) {
 		})
 	}
 }
+
+func TestChooseBrand(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		err      error
+		wantCode string // "" when the error must pass through unchanged
+	}{
+		{"no such brand", apperr.NotFound("brand"), "brand_required"},
+		{"no brand given", apperr.Invalid("brand_invalid", "brand", "Bad."), "brand_required"},
+		{"database down", &apperr.Error{Kind: apperr.KindUnavailable, Code: "service_unavailable"}, ""},
+		{"refused", apperr.Forbidden("This key is for another brand."), ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := chooseBrand(tt.err)
+			if tt.wantCode == "" {
+				if got != tt.err {
+					t.Fatalf("chooseBrand changed %v into %v", tt.err, got)
+				}
+				return
+			}
+			if ae := apperr.As(got); ae.Code != tt.wantCode || ae.Kind != apperr.KindInvalid {
+				t.Fatalf("chooseBrand = %+v, want an invalid %s", ae, tt.wantCode)
+			}
+		})
+	}
+}

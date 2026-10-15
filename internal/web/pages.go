@@ -433,7 +433,7 @@ func (s *Server) createPost(c *reqCtx) error {
 	} else {
 		b, err := s.svc.ResolveBrand(c.ctx(), c.actor, brandRef)
 		if err != nil {
-			return s.formErr(c, "post_new", "posts", "New post", d, apperr.Invalid("brand_required", "brand", "Choose a brand."))
+			return s.formErr(c, "post_new", "posts", "New post", d, chooseBrand(err))
 		}
 		in.BrandID = b.ID
 	}
@@ -449,7 +449,10 @@ func (s *Server) createPost(c *reqCtx) error {
 		in.Media = append(in.Media, m.ID)
 	}
 	if in.PublishAt == "at" {
-		b, _ := s.svc.Brand(c.ctx(), c.actor, in.BrandID)
+		b, err := s.optionalBrand(c, in.BrandID)
+		if err != nil {
+			return err
+		}
 		at, err := brandTime(b, f.Get("publish_at"), "publish_at")
 		if err != nil {
 			return s.formErr(c, "post_new", "posts", "New post", d, err)
@@ -731,13 +734,7 @@ func brandTime(b *model.Brand, v, param string) (string, error) {
 	if err != nil {
 		return "", apperr.Invalid("publish_at_invalid", param, "Pick a date and time.")
 	}
-	loc := time.UTC
-	if b != nil {
-		if l, err := time.LoadLocation(b.Timezone); err == nil {
-			loc = l
-		}
-	}
-	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, loc).Format(time.RFC3339), nil
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, brandLoc(b)).Format(time.RFC3339), nil
 }
 
 func (s *Server) postDetail(c *reqCtx) error {
@@ -759,7 +756,9 @@ func (s *Server) loadPostDetail(c *reqCtx, pid uuid.UUID) (*postDetailData, erro
 	}
 	d := &postDetailData{Post: p, View: core.ViewPost(p), Attempts: map[uuid.UUID][]model.Attempt{}, CanApprove: c.actor.Can(core.PermPostsApprove),
 		Move: "at"}
-	d.Brand, _ = s.svc.Brand(c.ctx(), c.actor, p.BrandID)
+	if d.Brand, err = s.optionalBrand(c, p.BrandID); err != nil {
+		return nil, err
+	}
 	d.Creator = s.whoIs(c, p.CreatedByUser, p.CreatedByKey)
 	d.Reviewer = s.whoIs(c, p.ReviewedBy, p.ReviewedByKey)
 	for _, t := range p.Targets {
@@ -791,6 +790,27 @@ func movable(p *model.Post) bool {
 		}
 	}
 	return true
+}
+
+// chooseBrand turns a brand a form could not resolve into its "Choose a
+// brand." problem. A fault, such as the database being down, stays as it
+// is, so the page answers 503 instead of blaming the person's choice.
+func chooseBrand(err error) error {
+	switch apperr.As(err).Kind {
+	case apperr.KindNotFound, apperr.KindInvalid:
+		return apperr.Invalid("brand_required", "brand", "Choose a brand.")
+	}
+	return err
+}
+
+// optionalBrand loads a brand a page only shows or takes a time zone from:
+// one that is gone is nil, and any other error is returned.
+func (s *Server) optionalBrand(c *reqCtx, brandID uuid.UUID) (*model.Brand, error) {
+	b, err := s.svc.Brand(c.ctx(), c.actor, brandID)
+	if apperr.As(err).Kind == apperr.KindNotFound {
+		return nil, nil
+	}
+	return b, err
 }
 
 // brandLoc is the brand's time zone: UTC when it has none, an unknown one,
@@ -840,7 +860,10 @@ func (s *Server) movePost(c *reqCtx) error {
 	}
 	switch in.PublishAt {
 	case "at":
-		b, _ := s.svc.Brand(c.ctx(), c.actor, p.BrandID)
+		var b *model.Brand
+		if b, err = s.optionalBrand(c, p.BrandID); err != nil {
+			return err
+		}
 		in.PublishAt, err = brandTime(b, f.Get("move_at"), "move_at")
 	case "swap":
 		in.PublishAt = ""
@@ -1336,7 +1359,7 @@ func (s *Server) createChannel(c *reqCtx) error {
 	}
 	b, err := s.svc.ResolveBrand(c.ctx(), c.actor, f.Brand)
 	if err != nil {
-		return s.formErr(c, "channel_new", "channels", "Connect a channel", f, apperr.Invalid("brand_required", "brand", "Choose a brand."))
+		return s.formErr(c, "channel_new", "channels", "Connect a channel", f, chooseBrand(err))
 	}
 	ch, err := s.svc.ConnectChannel(c.ctx(), c.actor, core.ConnectInput{BrandID: b.ID, Provider: f.Provider.Provider, Fields: fields})
 	if err != nil {

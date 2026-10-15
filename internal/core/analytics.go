@@ -4,7 +4,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -99,27 +98,14 @@ func (s *Service) ConnectAnalyticsSource(ctx context.Context, a Actor, in Analyt
 	if err != nil {
 		return nil, err
 	}
-	creds := platform.Credentials{}
-	for k, v := range settings {
-		creds[k] = v
-	}
-	for k, v := range secrets {
-		creds[k] = v
-	}
-	site, err := src.Verify(ctx, creds)
+	site, err := src.Verify(ctx, mergeCredentials(settings, secrets))
 	if err != nil {
 		return nil, connectError(platform.Provider(src.Name()), err)
 	}
 	as := &model.AnalyticsSource{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, Provider: string(in.Provider),
 		Site: site.ID, Name: site.Name, Timezone: site.Timezone, Goals: goals, Settings: settings, Status: model.AdAccountActive}
-	if len(secrets) > 0 {
-		raw, err := json.Marshal(secrets)
-		if err != nil {
-			return nil, err
-		}
-		if as.Credentials, err = s.keys.Encrypt(ctx, a.OrgID, analyticsCredentialsAAD(as.ID), raw); err != nil {
-			return nil, err
-		}
+	if as.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, analyticsCredentialsAAD(as.ID), secrets); err != nil {
+		return nil, err
 	}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.CreateAnalyticsSource(ctx, as); err != nil {
@@ -362,25 +348,7 @@ func (s *Service) readAnalyticsSource(ctx context.Context, as *model.AnalyticsSo
 }
 
 func (s *Service) analyticsCredentials(ctx context.Context, as *model.AnalyticsSource) (platform.Credentials, error) {
-	creds := platform.Credentials{}
-	for k, v := range as.Settings {
-		creds[k] = v
-	}
-	if len(as.Credentials) == 0 {
-		return creds, nil
-	}
-	raw, err := s.keys.Decrypt(ctx, as.OrgID, analyticsCredentialsAAD(as.ID), as.Credentials)
-	if err != nil {
-		return nil, err
-	}
-	var secrets map[string]string
-	if err := json.Unmarshal(raw, &secrets); err != nil {
-		return nil, err
-	}
-	for k, v := range secrets {
-		creds[k] = v
-	}
-	return creds, nil
+	return openCredentials(ctx, s.keys, as.OrgID, analyticsCredentialsAAD(as.ID), as.Settings, as.Credentials)
 }
 
 // AnalyticsProviderView is a provider in the API.

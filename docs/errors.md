@@ -260,7 +260,8 @@ every problem in `errors`, each with its own `code` and `param`.
 - **livemode_required**: test mode connects only sandbox channels.
 - **testmode_required**: sandbox channels exist only in test mode.
 - **connect_failed**: the platform refused the credentials.
-- **provider_unavailable**: the platform could not be reached; try again.
+- **provider_unavailable** (503): the platform could not be reached, was
+  rate limiting, or gave no clear answer; try again.
 - **field_required**, **field_unknown**: name the `provider`, and give
   each field it requires in `fields` and no others (ad accounts, analytics
   sources and mail accounts check their `fields` the same way).

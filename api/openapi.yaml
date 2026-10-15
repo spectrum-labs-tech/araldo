@@ -3312,7 +3312,11 @@ components:
         - post_target.failed
         - post_target.needs_attention
         - channel.connected
+        - channel.reconnected
         - channel.needs_reauth
+        - channel.disabled
+        - channel.enabled
+        - channel.deleted
         - template.version_created
         - newsletter.created
         - newsletter.updated

@@ -4,7 +4,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -100,28 +99,15 @@ func (s *Service) ConnectAdAccount(ctx context.Context, a Actor, in AdAccountInp
 	if err != nil {
 		return nil, err
 	}
-	creds := platform.Credentials{}
-	for k, v := range settings {
-		creds[k] = v
-	}
-	for k, v := range secrets {
-		creds[k] = v
-	}
-	acct, err := rep.Verify(ctx, platform.App{}, creds)
+	acct, err := rep.Verify(ctx, platform.App{}, mergeCredentials(settings, secrets))
 	if err != nil {
 		return nil, connectError(platform.Provider(rep.Name()), err)
 	}
 	ac := &model.AdAccount{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, Network: string(in.Network),
 		ExternalID: acct.ExternalID, Name: acct.Name, Currency: acct.Currency, Timezone: acct.Timezone, Settings: settings,
 		Status: model.AdAccountActive}
-	if len(secrets) > 0 {
-		raw, err := json.Marshal(secrets)
-		if err != nil {
-			return nil, err
-		}
-		if ac.Credentials, err = s.keys.Encrypt(ctx, a.OrgID, adCredentialsAAD(ac.ID), raw); err != nil {
-			return nil, err
-		}
+	if ac.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, adCredentialsAAD(ac.ID), secrets); err != nil {
+		return nil, err
 	}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.CreateAdAccount(ctx, ac); err != nil {
@@ -369,11 +355,7 @@ func (s *Service) connectAdAccounts(ctx context.Context, a Actor, st *model.OAut
 			}
 		}
 		ac.Name, ac.Currency, ac.Timezone, ac.AppID, ac.InstallApp = acct.Name, acct.Currency, acct.Timezone, &st.AppID, st.InstallApp
-		raw, err := json.Marshal(c.Credentials)
-		if err != nil {
-			return nil, err
-		}
-		if ac.Credentials, err = s.keys.Encrypt(ctx, a.OrgID, adCredentialsAAD(ac.ID), raw); err != nil {
+		if ac.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, adCredentialsAAD(ac.ID), c.Credentials); err != nil {
 			return nil, err
 		}
 		action := "ad_account.connect"
@@ -397,25 +379,7 @@ func (s *Service) connectAdAccounts(ctx context.Context, a Actor, st *model.OAut
 }
 
 func (s *Service) adCredentials(ctx context.Context, ac *model.AdAccount) (platform.Credentials, error) {
-	creds := platform.Credentials{}
-	for k, v := range ac.Settings {
-		creds[k] = v
-	}
-	if len(ac.Credentials) == 0 {
-		return creds, nil
-	}
-	raw, err := s.keys.Decrypt(ctx, ac.OrgID, adCredentialsAAD(ac.ID), ac.Credentials)
-	if err != nil {
-		return nil, err
-	}
-	var secrets map[string]string
-	if err := json.Unmarshal(raw, &secrets); err != nil {
-		return nil, err
-	}
-	for k, v := range secrets {
-		creds[k] = v
-	}
-	return creds, nil
+	return openCredentials(ctx, s.keys, ac.OrgID, adCredentialsAAD(ac.ID), ac.Settings, ac.Credentials)
 }
 
 // AdNetworkView is an ad network in the API.

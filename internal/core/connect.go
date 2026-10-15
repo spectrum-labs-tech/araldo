@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -417,17 +418,14 @@ func (s *Service) connectAll(ctx context.Context, a Actor, st *model.OAuthState,
 			}
 			ch.DisplayName, ch.Handle, ch.ExternalID, ch.ProfileURL = c.Account.DisplayName, c.Account.Handle, c.Account.ExternalID, c.Account.URL
 			ch.Status, ch.StatusNote, ch.AppID, ch.InstallApp, ch.TokenExpiresAt = model.ChannelActive, "", &st.AppID, st.InstallApp, c.ExpiresAt
-			raw, err := json.Marshal(c.Credentials)
-			if err != nil {
-				return err
-			}
 			// Through tx: see keyring.With.
-			if ch.Credentials, err = s.keys.With(tx).Encrypt(ctx, a.OrgID, credentialsAAD(ch.ID), raw); err != nil {
+			var err error
+			if ch.Credentials, err = sealSecrets(ctx, s.keys.With(tx), a.OrgID, credentialsAAD(ch.ID), c.Credentials); err != nil {
 				return err
 			}
 			action, event := "channel.connect", "channel.connected"
 			if slices.ContainsFunc(existing, func(e *model.Channel) bool { return e.ID == ch.ID }) {
-				action, event = "channel.reconnect", ""
+				action, event = "channel.reconnect", "channel.reconnected"
 				err = tx.UpdateChannelConnection(ctx, ch)
 			} else {
 				err = tx.CreateChannel(ctx, ch)
@@ -438,10 +436,8 @@ func (s *Service) connectAll(ctx context.Context, a Actor, st *model.OAuthState,
 			if err := s.audit(ctx, tx, a, action, id.Format(id.Channel, ch.ID), map[string]any{"provider": st.Provider}); err != nil {
 				return err
 			}
-			if event != "" {
-				if err := s.emit(ctx, tx, a.OrgID, true, a.RequestID, event, ViewChannel(ch)); err != nil {
-					return err
-				}
+			if err := s.emit(ctx, tx, a.OrgID, true, a.RequestID, event, ViewChannel(ch)); err != nil {
+				return err
 			}
 			out = append(out, ch)
 		}
@@ -528,14 +524,8 @@ func (s *Service) refreshOne(ctx context.Context, ch *model.Channel, r platform.
 		if err != nil {
 			return err
 		}
-		for k, v := range fresh {
-			secrets[k] = v
-		}
-		raw, err := json.Marshal(secrets)
-		if err != nil {
-			return err
-		}
-		sealed, err := keys.Encrypt(ctx, locked.OrgID, credentialsAAD(locked.ID), raw)
+		maps.Copy(secrets, fresh)
+		sealed, err := sealSecrets(ctx, keys, locked.OrgID, credentialsAAD(locked.ID), secrets)
 		if err != nil {
 			return err
 		}

@@ -4,7 +4,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -139,13 +138,7 @@ func (s *Service) ConnectMailAccount(ctx context.Context, a Actor, in MailAccoun
 	if err := ps.Err("The mail account is not valid."); err != nil {
 		return nil, err
 	}
-	creds := platform.Credentials{}
-	for k, v := range settings {
-		creds[k] = v
-	}
-	for k, v := range secrets {
-		creds[k] = v
-	}
+	creds := mergeCredentials(settings, secrets)
 	acct, err := m.Verify(ctx, creds, email.Address{Name: fromName, Email: fromEmail})
 	if err != nil {
 		return nil, connectError(platform.Provider(m.Name()), err)
@@ -157,14 +150,8 @@ func (s *Service) ConnectMailAccount(ctx context.Context, a Actor, in MailAccoun
 	ma := &model.MailAccount{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, Provider: string(in.Provider),
 		ExternalID: acct.ExternalID, Name: acct.Name, FromName: fromName, FromEmail: fromEmail, ReplyTo: replyTo,
 		DefaultAudiences: audienceIDs(defaults), Settings: settings, Status: model.AdAccountActive}
-	if len(secrets) > 0 {
-		raw, err := json.Marshal(secrets)
-		if err != nil {
-			return nil, err
-		}
-		if ma.Credentials, err = s.keys.Encrypt(ctx, a.OrgID, mailCredentialsAAD(ma.ID), raw); err != nil {
-			return nil, err
-		}
+	if ma.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, mailCredentialsAAD(ma.ID), secrets); err != nil {
+		return nil, err
 	}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.CreateMailAccount(ctx, ma); err != nil {
@@ -326,22 +313,9 @@ func (s *Service) mailerFor(ctx context.Context, ma *model.MailAccount) (email.M
 	if !ok {
 		return nil, nil, apperr.Conflict("provider_unsupported", "This install cannot send through %s.", ma.Provider)
 	}
-	creds := platform.Credentials{}
-	for k, v := range ma.Settings {
-		creds[k] = v
-	}
-	if len(ma.Credentials) > 0 {
-		raw, err := s.keys.Decrypt(ctx, ma.OrgID, mailCredentialsAAD(ma.ID), ma.Credentials)
-		if err != nil {
-			return nil, nil, err
-		}
-		var secrets map[string]string
-		if err := json.Unmarshal(raw, &secrets); err != nil {
-			return nil, nil, err
-		}
-		for k, v := range secrets {
-			creds[k] = v
-		}
+	creds, err := openCredentials(ctx, s.keys, ma.OrgID, mailCredentialsAAD(ma.ID), ma.Settings, ma.Credentials)
+	if err != nil {
+		return nil, nil, err
 	}
 	return m, creds, nil
 }

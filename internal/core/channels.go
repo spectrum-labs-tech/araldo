@@ -4,7 +4,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -70,14 +69,7 @@ func (s *Service) ConnectChannel(ctx context.Context, a Actor, in ConnectInput) 
 	if err != nil {
 		return nil, err
 	}
-	creds := platform.Credentials{}
-	for k, v := range settings {
-		creds[k] = v
-	}
-	for k, v := range secrets {
-		creds[k] = v
-	}
-	acct, err := adapter.Verify(ctx, creds)
+	acct, err := adapter.Verify(ctx, mergeCredentials(settings, secrets))
 	if err != nil {
 		return nil, connectError(in.Provider, err)
 	}
@@ -88,14 +80,8 @@ func (s *Service) ConnectChannel(ctx context.Context, a Actor, in ConnectInput) 
 	if in.Provider == platform.Sandbox {
 		ch.Emulates = platform.Provider(settings["emulates"])
 	}
-	if len(secrets) > 0 {
-		raw, err := json.Marshal(secrets)
-		if err != nil {
-			return nil, err
-		}
-		if ch.Credentials, err = s.keys.Encrypt(ctx, a.OrgID, credentialsAAD(ch.ID), raw); err != nil {
-			return nil, err
-		}
+	if ch.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, credentialsAAD(ch.ID), secrets); err != nil {
+		return nil, err
 	}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.CreateChannel(ctx, ch); err != nil {
@@ -133,30 +119,23 @@ func (s *Service) ReconnectChannel(ctx context.Context, a Actor, channelID uuid.
 	if err != nil {
 		return nil, err
 	}
-	creds := platform.Credentials{}
-	for k, v := range settings {
-		creds[k] = v
-	}
-	for k, v := range secrets {
-		creds[k] = v
-	}
-	acct, err := adapter.Verify(ctx, creds)
+	acct, err := adapter.Verify(ctx, mergeCredentials(settings, secrets))
 	if err != nil {
 		return nil, connectError(ch.Provider, err)
 	}
 	ch.DisplayName, ch.Handle, ch.ExternalID, ch.ProfileURL, ch.Settings = acct.DisplayName, acct.Handle, acct.ExternalID, acct.URL, settings
-	ch.Status, ch.StatusNote, ch.Credentials = model.ChannelActive, "", nil
-	if len(secrets) > 0 {
-		raw, _ := json.Marshal(secrets)
-		if ch.Credentials, err = s.keys.Encrypt(ctx, a.OrgID, credentialsAAD(ch.ID), raw); err != nil {
-			return nil, err
-		}
+	ch.Status, ch.StatusNote = model.ChannelActive, ""
+	if ch.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, credentialsAAD(ch.ID), secrets); err != nil {
+		return nil, err
 	}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.UpdateChannelConnection(ctx, ch); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, a, "channel.reconnect", id.Format(id.Channel, ch.ID), nil)
+		if err := s.audit(ctx, tx, a, "channel.reconnect", id.Format(id.Channel, ch.ID), nil); err != nil {
+			return err
+		}
+		return s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, "channel.reconnected", ViewChannel(ch))
 	})
 	return ch, err
 }
@@ -198,8 +177,8 @@ func connectError(p platform.Provider, err error) error {
 		case platform.AuthRevoked, platform.Rejected:
 			return &apperr.Error{Kind: apperr.KindInvalid, Code: "connect_failed", Param: "fields",
 				Message: fmt.Sprintf("%s did not accept these credentials: %s", p, pe.Msg)}
-		default:
-			return &apperr.Error{Kind: apperr.KindInvalid, Code: "provider_unavailable",
+		default: // unreachable, rate limited or unsure: worth retrying
+			return &apperr.Error{Kind: apperr.KindUnavailable, Code: "provider_unavailable",
 				Message: fmt.Sprintf("Could not reach %s to check the credentials; try again. (%s)", p, pe.Kind)}
 		}
 	}
@@ -251,11 +230,19 @@ func (s *Service) SetChannelEnabled(ctx context.Context, a Actor, channelID uuid
 			return apperr.Conflict("needs_reauth", "Reconnect this channel to enable it.")
 		}
 	}
+	action := "disable"
+	if enabled {
+		action = "enable"
+	}
+	ch.Status, ch.StatusNote = status, ""
 	return s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.SetChannelStatus(ctx, a.OrgID, ch.ID, status, ""); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, a, "channel."+map[bool]string{true: "enable", false: "disable"}[enabled], id.Format(id.Channel, ch.ID), nil)
+		if err := s.audit(ctx, tx, a, "channel."+action, id.Format(id.Channel, ch.ID), nil); err != nil {
+			return err
+		}
+		return s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, "channel."+action+"d", ViewChannel(ch))
 	})
 }
 
@@ -272,7 +259,10 @@ func (s *Service) DeleteChannel(ctx context.Context, a Actor, channelID uuid.UUI
 		if err := tx.DeleteChannel(ctx, a.OrgID, ch.ID); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, a, "channel.delete", id.Format(id.Channel, ch.ID), map[string]any{"provider": ch.Provider})
+		if err := s.audit(ctx, tx, a, "channel.delete", id.Format(id.Channel, ch.ID), map[string]any{"provider": ch.Provider}); err != nil {
+			return err
+		}
+		return s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, "channel.deleted", ViewChannel(ch))
 	})
 }
 
@@ -282,35 +272,13 @@ func (s *Service) credentials(ctx context.Context, ch *model.Channel) (platform.
 }
 
 func credentialsWith(ctx context.Context, keys *keyring.Keyring, ch *model.Channel) (platform.Credentials, error) {
-	creds := platform.Credentials{}
-	for k, v := range ch.Settings {
-		creds[k] = v
-	}
-	secrets, err := secretsWith(ctx, keys, ch)
-	if err != nil {
-		return nil, err
-	}
-	for k, v := range secrets {
-		creds[k] = v
-	}
-	return creds, nil
+	return openCredentials(ctx, keys, ch.OrgID, credentialsAAD(ch.ID), ch.Settings, ch.Credentials)
 }
 
 // secretsWith is a channel's encrypted credentials alone, without its
 // settings.
 func secretsWith(ctx context.Context, keys *keyring.Keyring, ch *model.Channel) (map[string]string, error) {
-	secrets := map[string]string{}
-	if len(ch.Credentials) == 0 {
-		return secrets, nil
-	}
-	raw, err := keys.Decrypt(ctx, ch.OrgID, credentialsAAD(ch.ID), ch.Credentials)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(raw, &secrets); err != nil {
-		return nil, err
-	}
-	return secrets, nil
+	return openSecrets(ctx, keys, ch.OrgID, credentialsAAD(ch.ID), ch.Credentials)
 }
 
 // ProviderInfo describes a platform for connect forms.

@@ -47,7 +47,8 @@ const (
 var EventTypes = []string{
 	"post.created", "post.approval_requested", "post.approved", "post.rejected", "post.published", "post.partially_published",
 	"post.failed", "post.canceled", "post_target.published", "post_target.failed", "post_target.needs_attention",
-	"channel.connected", "channel.needs_reauth", "template.version_created", "post.rescheduled",
+	"channel.connected", "channel.reconnected", "channel.needs_reauth", "channel.disabled", "channel.enabled", "channel.deleted",
+	"template.version_created", "post.rescheduled",
 	"newsletter.created", "newsletter.updated", "newsletter.approval_requested", "newsletter.approved", "newsletter.rejected",
 	"newsletter.scheduled", "newsletter.rescheduled", "newsletter.unscheduled", "newsletter.canceled", "newsletter.sent", "newsletter.failed",
 	"webhook_endpoint.disabled",

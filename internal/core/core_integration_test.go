@@ -196,6 +196,40 @@ func TestPostPublishesThroughTheSandbox(t *testing.T) {
 	}
 }
 
+// TestChannelChangesAreEvents checks each change to a channel is an
+// event an endpoint can subscribe to.
+func TestChannelChangesAreEvents(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	if _, err := w.s.ReconnectChannel(ctx, w.owner, w.channel.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.s.SetChannelEnabled(ctx, w.owner, w.channel.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.s.SetChannelEnabled(ctx, w.owner, w.channel.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.s.DeleteChannel(ctx, w.owner, w.channel.ID); err != nil {
+		t.Fatal(err)
+	}
+	events, _, err := w.s.Events(ctx, w.owner, "", store.Page{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, e := range slices.Backward(events) {
+		if strings.HasPrefix(e.Type, "channel.") {
+			got = append(got, e.Type)
+		}
+	}
+	want := []string{"channel.connected", "channel.reconnected", "channel.disabled", "channel.enabled", "channel.deleted"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("channel events %v, want %v", got, want)
+	}
+}
+
 // settle runs publishing rounds until none of the post's targets is due or
 // being published. Publishing claims due targets in every org, and tests run
 // in parallel (and other packages' tests at the same time), so another
@@ -275,6 +309,9 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	_, checks["post"] = b.s.Post(ctx, b.owner, p.ID)
 	_, checks["brand"] = b.s.Brand(ctx, b.owner, a.brand.ID)
 	_, checks["channel"] = b.s.Channel(ctx, b.owner, a.channel.ID)
+	_, checks["reconnect channel"] = b.s.ReconnectChannel(ctx, b.owner, a.channel.ID, nil)
+	checks["disable channel"] = b.s.SetChannelEnabled(ctx, b.owner, a.channel.ID, false)
+	checks["delete channel"] = b.s.DeleteChannel(ctx, b.owner, a.channel.ID)
 	_, checks["cancel"] = b.s.CancelPost(ctx, b.owner, p.ID)
 	_, checks["reschedule"] = b.s.ReschedulePost(ctx, b.owner, p.ID, core.RescheduleInput{PublishAt: "now"})
 	theirs, err := b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: b.brand.ID, Content: &model.Content{Body: "theirs"}, PublishAt: "next_slot"})

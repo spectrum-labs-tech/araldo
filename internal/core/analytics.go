@@ -98,7 +98,9 @@ func (s *Service) ConnectAnalyticsSource(ctx context.Context, a Actor, in Analyt
 	if err != nil {
 		return nil, err
 	}
-	site, err := src.Verify(ctx, mergeCredentials(settings, secrets))
+	site, err := callProvider(ctx, func(ctx context.Context) (analytics.Site, error) {
+		return src.Verify(ctx, mergeCredentials(settings, secrets))
+	})
 	if err != nil {
 		return nil, connectError(platform.Provider(src.Name()), err)
 	}

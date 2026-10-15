@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -63,4 +64,18 @@ func openCredentials(ctx context.Context, keys *keyring.Keyring, orgID uuid.UUID
 		return nil, err
 	}
 	return mergeCredentials(settings, secrets), nil
+}
+
+// providerCallTimeout bounds a call to a provider that sends no media:
+// checking credentials, redeeming a sign-in's code, renewing a token. The
+// HTTP client the platforms share sets no overall deadline, since an
+// upload takes as long as it takes (ADR 0027), so these calls set their
+// own.
+const providerCallTimeout = time.Minute
+
+// callProvider runs fn with a context that ends after providerCallTimeout.
+func callProvider[T any](ctx context.Context, fn func(context.Context) (T, error)) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, providerCallTimeout)
+	defer cancel()
+	return fn(ctx)
 }

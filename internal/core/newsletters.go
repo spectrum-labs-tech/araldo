@@ -139,7 +139,9 @@ func (s *Service) ConnectMailAccount(ctx context.Context, a Actor, in MailAccoun
 		return nil, err
 	}
 	creds := mergeCredentials(settings, secrets)
-	acct, err := m.Verify(ctx, creds, email.Address{Name: fromName, Email: fromEmail})
+	acct, err := callProvider(ctx, func(ctx context.Context) (email.Account, error) {
+		return m.Verify(ctx, creds, email.Address{Name: fromName, Email: fromEmail})
+	})
 	if err != nil {
 		return nil, connectError(platform.Provider(m.Name()), err)
 	}
@@ -261,7 +263,9 @@ func (s *Service) UpdateMailAccount(ctx context.Context, a Actor, accountID uuid
 		return nil, err
 	}
 	if fromEmail != ma.FromEmail {
-		if _, err := m.Verify(ctx, creds, email.Address{Name: fromName, Email: fromEmail}); err != nil {
+		if _, err := callProvider(ctx, func(ctx context.Context) (email.Account, error) {
+			return m.Verify(ctx, creds, email.Address{Name: fromName, Email: fromEmail})
+		}); err != nil {
 			return nil, connectError(platform.Provider(m.Name()), err)
 		}
 	}

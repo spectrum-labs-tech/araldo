@@ -65,7 +65,7 @@ func (s *Service) checkEach(ctx context.Context, due []*model.Channel, now time.
 			problem = "This server has no " + string(ch.Provider) + " adapter."
 		} else if creds, err := s.usableCredentials(ctx, ch, adapter); err != nil {
 			problem = "Could not decrypt the channel's credentials."
-		} else if _, err := adapter.Verify(ctx, creds); err != nil {
+		} else if _, err := callProvider(ctx, func(ctx context.Context) (platform.Account, error) { return adapter.Verify(ctx, creds) }); err != nil {
 			problem = truncate("The credential check failed: "+err.Error(), 500)
 			var pe *platform.Error
 			if errors.As(err, &pe) && pe.Kind == platform.AuthRevoked {

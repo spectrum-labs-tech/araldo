@@ -304,7 +304,9 @@ func (s *Service) FinishConnect(ctx context.Context, a Actor, provider platform.
 	if !ok || code == "" {
 		return nil, apperr.Invalid("connect_failed", "code", "The platform did not grant access.")
 	}
-	conns, err := conn.Exchange(ctx, creds, s.ConnectRedirectURI(provider), code, st.Verifier)
+	conns, err := callProvider(ctx, func(ctx context.Context) ([]platform.Connection, error) {
+		return conn.Exchange(ctx, creds, s.ConnectRedirectURI(provider), code, st.Verifier)
+	})
 	if err != nil {
 		return nil, connectError(provider, err)
 	}
@@ -514,7 +516,9 @@ func (s *Service) refreshOne(ctx context.Context, ch *model.Channel, r platform.
 		if err != nil {
 			return err
 		}
-		fresh, expires, err := r.Refresh(ctx, appCreds, creds)
+		rctx, cancel := context.WithTimeout(ctx, providerCallTimeout)
+		defer cancel()
+		fresh, expires, err := r.Refresh(rctx, appCreds, creds)
 		if err != nil {
 			return err
 		}

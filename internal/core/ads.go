@@ -99,7 +99,9 @@ func (s *Service) ConnectAdAccount(ctx context.Context, a Actor, in AdAccountInp
 	if err != nil {
 		return nil, err
 	}
-	acct, err := rep.Verify(ctx, platform.App{}, mergeCredentials(settings, secrets))
+	acct, err := callProvider(ctx, func(ctx context.Context) (ads.Account, error) {
+		return rep.Verify(ctx, platform.App{}, mergeCredentials(settings, secrets))
+	})
 	if err != nil {
 		return nil, connectError(platform.Provider(rep.Name()), err)
 	}
@@ -345,7 +347,7 @@ func (s *Service) connectAdAccounts(ctx context.Context, a Actor, st *model.OAut
 	}
 	var ready []prepared
 	for _, c := range conns {
-		acct, err := rep.Verify(ctx, appCreds, c.Credentials)
+		acct, err := callProvider(ctx, func(ctx context.Context) (ads.Account, error) { return rep.Verify(ctx, appCreds, c.Credentials) })
 		if err != nil {
 			return nil, connectError(platform.Provider(rep.Name()), err)
 		}

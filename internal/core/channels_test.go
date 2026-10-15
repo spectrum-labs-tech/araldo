@@ -3,9 +3,11 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"maps"
 	"testing"
+	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
@@ -65,5 +67,21 @@ func TestMergeCredentials(t *testing.T) {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestCallProviderSetsADeadline checks a provider call gets a deadline even
+// when its caller set none: the shared HTTP client has no overall one.
+func TestCallProviderSetsADeadline(t *testing.T) {
+	t.Parallel()
+	got, err := callProvider(context.Background(), func(ctx context.Context) (time.Duration, error) {
+		dl, ok := ctx.Deadline()
+		if !ok {
+			return 0, errors.New("no deadline")
+		}
+		return time.Until(dl), nil
+	})
+	if err != nil || got <= 0 || got > providerCallTimeout {
+		t.Fatalf("deadline in %v, %v; want within %v", got, err, providerCallTimeout)
 	}
 }

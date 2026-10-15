@@ -164,8 +164,12 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 		}
 	}
 	// No limit on a whole request: a video upload takes as long as it
-	// takes, within the publish attempt's deadline (ADR 0027).
+	// takes, within the publish attempt's deadline (ADR 0027). Their other
+	// calls set deadlines in core.
 	client := netguard.UploadClient(cfg.PrivateNetworks, 60*time.Second)
+	// Ad networks, analytics tools and mail providers upload nothing large:
+	// every request is over in a minute.
+	apiClient := netguard.Client(cfg.PrivateNetworks, 60*time.Second)
 	reg := platform.NewRegistry(
 		sandbox.New(cfg.BaseURL),
 		bluesky.New(client),
@@ -185,8 +189,8 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 	)
 	ccfg := core.Config{BaseURL: cfg.BaseURL, PrivateWebhooks: cfg.PrivateWebhooks, MaxVideoBytes: cfg.MaxVideoBytes,
 		SignupURL: cfg.SignupURL, BillingURL: cfg.BillingURL, BillingLinkKey: []byte(cfg.BillingLinkKey),
-		AdNetworks: []ads.Reporter{reddit.New(client)}, AnalyticsSources: []analytics.Source{plausible.New(client), ga4.New(client)},
-		Mailers: []email.Mailer{brevo.New(client)}}
+		AdNetworks: []ads.Reporter{reddit.New(apiClient)}, AnalyticsSources: []analytics.Source{plausible.New(apiClient), ga4.New(apiClient)},
+		Mailers: []email.Mailer{brevo.New(apiClient)}}
 	if s := cfg.S3; s.Bucket != "" {
 		b, err := blob.NewS3(s.Endpoint, s.Bucket, s.Region, s.AccessKeyID, s.SecretAccessKey, s.Prefix)
 		if err != nil {

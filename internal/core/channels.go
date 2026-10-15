@@ -64,7 +64,9 @@ func (s *Service) ConnectChannel(ctx context.Context, a Actor, in ConnectInput) 
 	if err != nil {
 		return nil, err
 	}
-	acct, err := adapter.Verify(ctx, mergeCredentials(settings, secrets))
+	acct, err := callProvider(ctx, func(ctx context.Context) (platform.Account, error) {
+		return adapter.Verify(ctx, mergeCredentials(settings, secrets))
+	})
 	if err != nil {
 		return nil, connectError(in.Provider, err)
 	}
@@ -119,7 +121,9 @@ func (s *Service) ReconnectChannel(ctx context.Context, a Actor, channelID uuid.
 	if err != nil {
 		return nil, err
 	}
-	acct, err := adapter.Verify(ctx, mergeCredentials(settings, secrets))
+	acct, err := callProvider(ctx, func(ctx context.Context) (platform.Account, error) {
+		return adapter.Verify(ctx, mergeCredentials(settings, secrets))
+	})
 	if err != nil {
 		return nil, connectError(ch.Provider, err)
 	}

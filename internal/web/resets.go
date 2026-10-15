@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/api"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 )
 
@@ -91,7 +92,7 @@ func (s *Server) resetSubmit(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusUnprocessableEntity, "The two passwords are not the same.", true)
 		return
 	}
-	if err := s.svc.ResetPasswordWithLink(r.Context(), token, r.PostFormValue("password")); err != nil {
+	if err := s.svc.ResetPasswordWithLink(r.Context(), token, r.PostFormValue("password"), api.RequestID(r.Context())); err != nil {
 		ae := apperr.As(err)
 		switch ae.Kind {
 		case apperr.KindNotFound:

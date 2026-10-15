@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spectrum-labs-tech/araldo/internal/api"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -222,7 +223,7 @@ func (s *Server) addPasskey(w http.ResponseWriter, r *http.Request) {
 		s.jsonFail(w, r, err)
 		return
 	}
-	p, err := s.svc.FinishPasskeyRegistration(r.Context(), ss, in.Token, in.Name, in.Response)
+	p, err := s.svc.FinishPasskeyRegistration(r.Context(), ss, in.Token, in.Name, in.Response, api.RequestID(r.Context()))
 	if err != nil {
 		s.jsonFail(w, r, err)
 		return
@@ -236,7 +237,7 @@ func (s *Server) deletePasskey(c *reqCtx) error {
 	if err != nil {
 		return apperr.NotFound("passkey")
 	}
-	if err := s.svc.DeletePasskey(c.ctx(), c.session, pid); err != nil {
+	if err := s.svc.DeletePasskey(c.ctx(), c.session, pid, api.RequestID(c.ctx())); err != nil {
 		if core.NeedsReauth(err) {
 			return redirect(c, "/confirm?next=/account", "Confirm it's you to remove a passkey.")
 		}

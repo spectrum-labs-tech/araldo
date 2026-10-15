@@ -3,6 +3,7 @@
 package web
 
 import (
+	"github.com/spectrum-labs-tech/araldo/internal/api"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -45,7 +46,7 @@ func (s *Server) deviceSubmit(c *reqCtx) error {
 		}
 		return s.page(c, "device", "account", "Sign in a device", deviceData{Device: dev})
 	}
-	dev, err := s.svc.DecideDevice(c.ctx(), c.session, code, action == "approve")
+	dev, err := s.svc.DecideDevice(c.ctx(), c.session, code, action == "approve", api.RequestID(c.ctx()))
 	if err != nil {
 		if core.NeedsReauth(err) {
 			return confirmForDevice(c)
@@ -63,7 +64,7 @@ func (s *Server) revokeDevice(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	if err := s.svc.RevokeUserToken(c.ctx(), c.user.ID, tid); err != nil {
+	if err := s.svc.RevokeUserToken(c.ctx(), c.user.ID, tid, api.RequestID(c.ctx())); err != nil {
 		return err
 	}
 	return redirect(c, "/account", "Signed out.")

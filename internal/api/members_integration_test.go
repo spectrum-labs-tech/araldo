@@ -33,10 +33,10 @@ func tokenFor(t *testing.T, c *client) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.s.DecideDevice(ctx, login.Session, start.UserCode, true); err != nil {
+	if _, err := c.s.DecideDevice(ctx, login.Session, start.UserCode, true, "req_test"); err != nil {
 		t.Fatal(err)
 	}
-	plain, _, err := c.s.PollDevice(ctx, start.DeviceCode)
+	plain, _, err := c.s.PollDevice(ctx, start.DeviceCode, "req_test")
 	if err != nil {
 		t.Fatal(err)
 	}

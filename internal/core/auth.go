@@ -130,7 +130,7 @@ func (s *Service) Login(ctx context.Context, email, password, userAgent, ip stri
 		authn.SpendPasswordTime(password)
 	}
 	if !ok {
-		if err := s.recordFailure(ctx, u, now); err != nil {
+		if err := s.recordFailure(ctx, u.ID, now); err != nil {
 			return nil, err
 		}
 		return nil, ErrBadCredentials
@@ -161,13 +161,20 @@ func locked(u *model.User, now time.Time) error {
 
 // recordFailure counts a wrong password or code against the account (ADR
 // 0007), locking it for longer after each failure past lockAfterFailures.
-func (s *Service) recordFailure(ctx context.Context, u *model.User, now time.Time) error {
-	var lock *time.Time
-	if u.FailedLogins+1 >= lockAfterFailures {
-		d := min(time.Minute<<min(u.FailedLogins+1-lockAfterFailures, 6), time.Hour)
-		lock = ptr(now.Add(d))
+// The count comes back from the database, so failures made in parallel
+// each see their own and the lock still falls.
+func (s *Service) recordFailure(ctx context.Context, userID uuid.UUID, now time.Time) error {
+	n, err := s.store.RecordLoginFailure(ctx, userID)
+	if err != nil || n < lockAfterFailures {
+		return err
 	}
-	return s.store.RecordLoginFailure(ctx, u.ID, lock)
+	return s.store.LockUser(ctx, userID, now.Add(lockFor(n)))
+}
+
+// lockFor is how long the n-th failure in a row locks an account: a
+// minute at lockAfterFailures, doubling with each failure, up to an hour.
+func lockFor(n int) time.Duration {
+	return min(time.Minute<<min(n-lockAfterFailures, 6), time.Hour)
 }
 
 func (s *Service) resetFailures(ctx context.Context, u *model.User) error {
@@ -289,7 +296,7 @@ func (s *Service) checkSecondFactor(ctx context.Context, userID uuid.UUID, code 
 	})
 	switch {
 	case err == bad: //nolint:errorlint // bad is this call's own value
-		if ferr := s.recordFailure(ctx, u, s.Now()); ferr != nil {
+		if ferr := s.recordFailure(ctx, userID, s.Now()); ferr != nil {
 			return ferr
 		}
 		return bad
@@ -317,7 +324,7 @@ func (s *Service) Reauthenticate(ctx context.Context, ss *model.Session, passwor
 	if err != nil || !ok {
 		// Counted like a sign-in, so a stolen session cannot guess the
 		// password here to reach sudo mode.
-		if err := s.recordFailure(ctx, u, now); err != nil {
+		if err := s.recordFailure(ctx, u.ID, now); err != nil {
 			return err
 		}
 		return &apperr.Error{Kind: apperr.KindUnauthorized, Code: "bad_password", Message: "Password is incorrect."}
@@ -401,9 +408,15 @@ func (s *Service) BeginTOTP(ctx context.Context, ss *model.Session) (secretText,
 	return authn.TOTPSecretText(secret), authn.TOTPURI("Araldo", u.Email, secret), nil
 }
 
+// accountActor is a person changing their own account, in no org, for
+// the audit log.
+func accountActor(userID uuid.UUID, requestID string) Actor {
+	return Actor{UserID: &userID, RequestID: requestID}
+}
+
 // ConfirmTOTP turns TOTP on once the user proves the app works, and returns
 // fresh recovery codes (shown once).
-func (s *Service) ConfirmTOTP(ctx context.Context, ss *model.Session, code string) ([]string, error) {
+func (s *Service) ConfirmTOTP(ctx context.Context, ss *model.Session, code, requestID string) ([]string, error) {
 	if err := s.requireOwnSignIn(ss); err != nil {
 		return nil, err
 	}
@@ -430,22 +443,26 @@ func (s *Service) ConfirmTOTP(ctx context.Context, ss *model.Session, code strin
 		if err := tx.AdvanceTOTPStep(ctx, u.ID, step); err != nil {
 			return err
 		}
-		codes, err = replaceRecoveryCodes(ctx, tx, u.ID)
-		return err
+		if codes, err = replaceRecoveryCodes(ctx, tx, u.ID); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, accountActor(u.ID, requestID), "user.mfa_enable", id.Format(id.User, u.ID), nil)
 	})
 	return codes, err
 }
 
 // RegenerateRecoveryCodes replaces the user's recovery codes.
-func (s *Service) RegenerateRecoveryCodes(ctx context.Context, ss *model.Session) ([]string, error) {
+func (s *Service) RegenerateRecoveryCodes(ctx context.Context, ss *model.Session, requestID string) ([]string, error) {
 	if err := s.requireOwnSignIn(ss); err != nil {
 		return nil, err
 	}
 	var codes []string
 	err := s.store.InTx(ctx, func(tx *store.Store) error {
 		var err error
-		codes, err = replaceRecoveryCodes(ctx, tx, ss.UserID)
-		return err
+		if codes, err = replaceRecoveryCodes(ctx, tx, ss.UserID); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, accountActor(ss.UserID, requestID), "user.recovery_codes", id.Format(id.User, ss.UserID), nil)
 	})
 	return codes, err
 }
@@ -461,7 +478,7 @@ func replaceRecoveryCodes(ctx context.Context, tx *store.Store, userID uuid.UUID
 
 // DisableTOTP turns two-factor authentication off, unless an org the user
 // belongs to requires it.
-func (s *Service) DisableTOTP(ctx context.Context, ss *model.Session) error {
+func (s *Service) DisableTOTP(ctx context.Context, ss *model.Session, requestID string) error {
 	if err := s.requireOwnSignIn(ss); err != nil {
 		return err
 	}
@@ -484,8 +501,11 @@ func (s *Service) DisableTOTP(ctx context.Context, ss *model.Session) error {
 		if err := tx.ReplaceRecoveryCodes(ctx, ss.UserID, nil); err != nil {
 			return err
 		}
-		return s.notifyAccount(ctx, tx, ss.UserID, notice{Type: NotifyMFADisabled, Subject: "Two-factor authentication was turned off",
-			Body: "The authenticator app was removed from your Araldo account. If it was not you, reset your password at once.", Link: "/account"})
+		if err := s.notifyAccount(ctx, tx, ss.UserID, notice{Type: NotifyMFADisabled, Subject: "Two-factor authentication was turned off",
+			Body: "The authenticator app was removed from your Araldo account. If it was not you, reset your password at once.", Link: "/account"}); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, accountActor(ss.UserID, requestID), "user.mfa_disable", id.Format(id.User, ss.UserID), nil)
 	})
 }
 
@@ -497,7 +517,7 @@ func (s *Service) RemainingRecoveryCodes(ctx context.Context, userID uuid.UUID) 
 // ChangePassword sets a new password and signs out everywhere else: other
 // sessions, and the CLI's user tokens, since a changed password is often
 // a taken-over account being taken back.
-func (s *Service) ChangePassword(ctx context.Context, ss *model.Session, current, next string) error {
+func (s *Service) ChangePassword(ctx context.Context, ss *model.Session, current, next, requestID string) error {
 	if ss.SSOOrg != nil {
 		return errSSOSession
 	}
@@ -505,9 +525,24 @@ func (s *Service) ChangePassword(ctx context.Context, ss *model.Session, current
 	if err != nil {
 		return err
 	}
+	now := s.Now()
+	if err := locked(u, now); err != nil {
+		authn.SpendPasswordTime(current)
+		return err
+	}
 	ok, _, err := authn.VerifyPassword(current, u.PasswordHash)
 	if err != nil || !ok {
+		// Counted like a sign-in, so a stolen session cannot guess the
+		// password here.
+		if err := s.recordFailure(ctx, u.ID, now); err != nil {
+			return err
+		}
 		return apperr.Invalid("bad_password", "current_password", "Current password is incorrect.")
+	}
+	if !u.SecondFactor() { // as Login: the code's guesses are not reset by the password
+		if err := s.resetFailures(ctx, u); err != nil {
+			return err
+		}
 	}
 	if err := authn.ValidatePassword(next); err != nil {
 		return apperr.Invalid("password_invalid", "new_password", "%s", upperFirst(err.Error()))
@@ -527,14 +562,20 @@ func (s *Service) ChangePassword(ctx context.Context, ss *model.Session, current
 			Body: "It was changed from a signed-in session, which signed you out everywhere else. If it was not you, reset it at once and tell your org's owner.", Link: "/account"}); err != nil {
 			return err
 		}
-		return tx.DeleteOtherSessions(ctx, u.ID, ss.ID)
+		if err := tx.DeleteOtherSessions(ctx, u.ID, ss.ID); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, accountActor(u.ID, requestID), "user.password_change", id.Format(id.User, u.ID), nil)
 	})
 }
 
 // ResetPassword sets a user's password (operator CLI; ADR 0007) and signs
 // them out everywhere, the CLI included: it is how a taken-over account is
 // recovered.
-func (s *Service) ResetPassword(ctx context.Context, email, password string) error {
+func (s *Service) ResetPassword(ctx context.Context, a Actor, email, password string) error {
+	if !a.Operator {
+		return apperr.Forbidden("Only the server's operator resets passwords, with araldo admin users reset-password.")
+	}
 	u, err := s.UserByEmail(ctx, email)
 	if err != nil {
 		return err
@@ -560,7 +601,10 @@ func (s *Service) ResetPassword(ctx context.Context, email, password string) err
 			Body: "The server's operator reset it, which signed you out everywhere. If it was not you, reset it at once and tell your org's owner.", Link: "/account"}); err != nil {
 			return err
 		}
-		return tx.DeleteOtherSessions(ctx, u.ID, uuid.Nil)
+		if err := tx.DeleteOtherSessions(ctx, u.ID, uuid.Nil); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, a, "user.password_reset", id.Format(id.User, u.ID), nil)
 	})
 }
 

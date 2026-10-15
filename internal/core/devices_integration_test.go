@@ -31,10 +31,10 @@ func TestDeviceSignIn(t *testing.T) {
 	}
 	now := time.Now()
 	w.s.Now = func() time.Time { return now }
-	if _, _, err := w.s.PollDevice(ctx, start.DeviceCode); code(err) != "authorization_pending" {
+	if _, _, err := w.s.PollDevice(ctx, start.DeviceCode, "req_test"); code(err) != "authorization_pending" {
 		t.Fatalf("polling before approval: %v", err)
 	}
-	if _, _, err := w.s.PollDevice(ctx, start.DeviceCode); code(err) != "slow_down" {
+	if _, _, err := w.s.PollDevice(ctx, start.DeviceCode, "req_test"); code(err) != "slow_down" {
 		t.Fatalf("polling again at once: %v", err)
 	}
 
@@ -45,22 +45,22 @@ func TestDeviceSignIn(t *testing.T) {
 	}
 	stale := *w.session
 	stale.SudoUntil = nil
-	if _, err := w.s.DecideDevice(ctx, &stale, start.UserCode, true); code(err) != "reauthentication_required" {
+	if _, err := w.s.DecideDevice(ctx, &stale, start.UserCode, true, "req_test"); code(err) != "reauthentication_required" {
 		t.Fatalf("approving without sudo: %v", err)
 	}
-	if _, err := w.s.DecideDevice(ctx, w.session, start.UserCode, true); err != nil {
+	if _, err := w.s.DecideDevice(ctx, w.session, start.UserCode, true, "req_test"); err != nil {
 		t.Fatalf("approving: %v", err)
 	}
 	if _, err := w.s.PendingDevice(ctx, start.UserCode); code(err) != "device_code_unknown" {
 		t.Fatalf("the code after approval: %v", err)
 	}
 	now = now.Add(20 * time.Second) // past the slowed-down interval
-	plain, tok, err := w.s.PollDevice(ctx, start.DeviceCode)
+	plain, tok, err := w.s.PollDevice(ctx, start.DeviceCode, "req_test")
 	if err != nil || !authn.IsUserToken(plain) || !tok.Livemode || tok.UserID != w.user.ID {
 		t.Fatalf("the token: %q %+v, %v", plain, tok, err)
 	}
 	now = now.Add(20 * time.Second)
-	if _, _, err := w.s.PollDevice(ctx, start.DeviceCode); code(err) != "invalid_grant" {
+	if _, _, err := w.s.PollDevice(ctx, start.DeviceCode, "req_test"); code(err) != "invalid_grant" {
 		t.Fatalf("polling after the token was issued: %v", err)
 	}
 	w.s.Now = time.Now
@@ -104,7 +104,7 @@ func TestDeviceSignIn(t *testing.T) {
 		t.Fatalf("a revoked token: %v", err)
 	}
 	second := approved(t, w, false)
-	if err := w.s.ResetPassword(ctx, w.user.Email, "a brand new password"); err != nil {
+	if err := w.s.ResetPassword(ctx, core.InstallOperator("test"), w.user.Email, "a brand new password"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := w.s.AuthenticateUserToken(ctx, second, id.Format(id.Org, w.org.ID), "req_test"); code(err) != "user_token_invalid" {
@@ -123,10 +123,10 @@ func TestDeviceSignInDeniedOrLate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.s.DecideDevice(ctx, w.session, denied.UserCode, false); err != nil {
+	if _, err := w.s.DecideDevice(ctx, w.session, denied.UserCode, false, "req_test"); err != nil {
 		t.Fatalf("denying: %v", err)
 	}
-	if _, _, err := w.s.PollDevice(ctx, denied.DeviceCode); code(err) != "access_denied" {
+	if _, _, err := w.s.PollDevice(ctx, denied.DeviceCode, "req_test"); code(err) != "access_denied" {
 		t.Fatalf("after a denial: %v", err)
 	}
 
@@ -135,14 +135,14 @@ func TestDeviceSignInDeniedOrLate(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.s.Now = func() time.Time { return time.Now().Add(core.DeviceCodeTTL + time.Minute) }
-	if _, _, err := w.s.PollDevice(ctx, late.DeviceCode); code(err) != "expired_token" {
+	if _, _, err := w.s.PollDevice(ctx, late.DeviceCode, "req_test"); code(err) != "expired_token" {
 		t.Fatalf("an expired sign-in: %v", err)
 	}
 	if _, err := w.s.PendingDevice(ctx, late.UserCode); code(err) != "device_code_unknown" {
 		t.Fatalf("approving an expired code: %v", err)
 	}
 	w.s.Now = time.Now
-	if _, _, err := w.s.PollDevice(ctx, "not a device code"); code(err) != "invalid_grant" {
+	if _, _, err := w.s.PollDevice(ctx, "not a device code", "req_test"); code(err) != "invalid_grant" {
 		t.Fatalf("an unknown device code: %v", err)
 	}
 
@@ -175,10 +175,10 @@ func approved(t *testing.T, w *world, live bool) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.s.DecideDevice(ctx, w.session, start.UserCode, true); err != nil {
+	if _, err := w.s.DecideDevice(ctx, w.session, start.UserCode, true, "req_test"); err != nil {
 		t.Fatal(err)
 	}
-	plain, _, err := w.s.PollDevice(ctx, start.DeviceCode)
+	plain, _, err := w.s.PollDevice(ctx, start.DeviceCode, "req_test")
 	if err != nil {
 		t.Fatal(err)
 	}

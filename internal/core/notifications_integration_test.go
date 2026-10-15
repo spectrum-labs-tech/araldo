@@ -197,7 +197,7 @@ func TestAccountNotices(t *testing.T) {
 			opts, want = append(opts, withMail(&outbox{})), "queued"
 		}
 		w := newWorld(t, opts...)
-		if err := w.s.ChangePassword(t.Context(), w.session, "correct horse battery", "a whole new password"); err != nil {
+		if err := w.s.ChangePassword(t.Context(), w.session, "correct horse battery", "a whole new password", "req_test"); err != nil {
 			t.Fatal(err)
 		}
 		got := inbox(t, w, w.user.ID, core.NotifyPasswordChanged)

@@ -84,10 +84,10 @@ func TestPasswordResetByEmail(t *testing.T) {
 	}
 
 	// A weak password is refused without spending the link.
-	if err := w.s.ResetPasswordWithLink(ctx, token, "short"); code(err) != "password_invalid" {
+	if err := w.s.ResetPasswordWithLink(ctx, token, "short", "req_test"); code(err) != "password_invalid" {
 		t.Fatalf("a weak password: %v", err)
 	}
-	if err := w.s.ResetPasswordWithLink(ctx, token, "a whole new password"); err != nil {
+	if err := w.s.ResetPasswordWithLink(ctx, token, "a whole new password", "req_test"); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := w.s.Session(ctx, w.loginToken); err == nil {
@@ -96,7 +96,7 @@ func TestPasswordResetByEmail(t *testing.T) {
 	if _, err := w.s.Login(ctx, w.user.Email, "a whole new password", "test", "127.0.0.1"); err != nil {
 		t.Fatalf("signing in with the new password: %v", err)
 	}
-	if err := w.s.ResetPasswordWithLink(ctx, token, "yet another password"); code(err) != "reset_link_invalid" {
+	if err := w.s.ResetPasswordWithLink(ctx, token, "yet another password", "req_test"); code(err) != "reset_link_invalid" {
 		t.Fatalf("using the link again: %v", err)
 	}
 
@@ -117,7 +117,7 @@ func TestPasswordResetByEmail(t *testing.T) {
 	if err := w.s.CheckPasswordReset(ctx, stale); code(err) != "reset_link_invalid" {
 		t.Fatalf("an expired link: %v", err)
 	}
-	if err := w.s.ResetPasswordWithLink(ctx, stale, "a whole new password 2"); code(err) != "reset_link_invalid" {
+	if err := w.s.ResetPasswordWithLink(ctx, stale, "a whole new password 2", "req_test"); code(err) != "reset_link_invalid" {
 		t.Fatalf("using an expired link: %v", err)
 	}
 }

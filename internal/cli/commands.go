@@ -262,7 +262,7 @@ func runUsers(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 				return err
 			}
 		}
-		if err := a.Svc.ResetPassword(ctx, email, password); err != nil {
+		if err := a.Svc.ResetPassword(ctx, core.InstallOperator("araldo admin users reset-password"), email, password); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintf(stdout, "Password reset for %s; their sessions were signed out.\n", email)

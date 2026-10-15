@@ -63,7 +63,7 @@ func TestNotificationEmails(t *testing.T) {
 	}
 
 	// An account notice.
-	if err := w.s.ChangePassword(ctx, w.session, "correct horse battery", "a whole new password"); err != nil {
+	if err := w.s.ChangePassword(ctx, w.session, "correct horse battery", "a whole new password", "req_test"); err != nil {
 		t.Fatal(err)
 	}
 	if n := send(); n != 1 {

@@ -88,7 +88,7 @@ func (s *Service) PendingDevice(ctx context.Context, userCode string) (*model.De
 
 // DecideDevice approves or denies a waiting sign-in as the signed-in user.
 // Approving creates a credential, so it needs sudo mode (ADR 0007).
-func (s *Service) DecideDevice(ctx context.Context, ss *model.Session, userCode string, approve bool) (*model.DeviceAuthorization, error) {
+func (s *Service) DecideDevice(ctx context.Context, ss *model.Session, userCode string, approve bool, requestID string) (*model.DeviceAuthorization, error) {
 	if approve {
 		if err := s.requireSudo(ss); err != nil {
 			return nil, err
@@ -102,7 +102,7 @@ func (s *Service) DecideDevice(ctx context.Context, ss *model.Session, userCode 
 	if approve {
 		status, action = "approved", "user_token.approve"
 	}
-	a := Actor{UserID: &ss.UserID, RequestID: "dashboard"}
+	a := accountActor(ss.UserID, requestID)
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.DecideDevice(ctx, d.ID, status, ss.UserID, ss.SSOOrg); err != nil {
 			return notFoundAs(err, errNoDevice)
@@ -125,7 +125,7 @@ var (
 
 // PollDevice is the CLI asking whether its sign-in was approved. Once it
 // was, it returns the token, once.
-func (s *Service) PollDevice(ctx context.Context, deviceCode string) (string, *model.UserToken, error) {
+func (s *Service) PollDevice(ctx context.Context, deviceCode, requestID string) (string, *model.UserToken, error) {
 	now := s.Now()
 	var answer error
 	var plain string
@@ -174,7 +174,7 @@ func (s *Service) PollDevice(ctx context.Context, deviceCode string) (string, *m
 			Link: "/account"}); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, Actor{UserID: d.UserID, RequestID: "device"}, "user_token.create", id.Format(id.UserToken, tok.ID),
+		return s.audit(ctx, tx, accountActor(*d.UserID, requestID), "user_token.create", id.Format(id.UserToken, tok.ID),
 			map[string]any{"device_name": d.DeviceName, "livemode": d.Livemode})
 	})
 	if err != nil {
@@ -305,12 +305,12 @@ func (s *Service) UserTokens(ctx context.Context, userID uuid.UUID) ([]*model.Us
 }
 
 // RevokeUserToken stops one of a person's tokens working.
-func (s *Service) RevokeUserToken(ctx context.Context, userID, tokenID uuid.UUID) error {
+func (s *Service) RevokeUserToken(ctx context.Context, userID, tokenID uuid.UUID, requestID string) error {
 	return s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.RevokeUserToken(ctx, userID, tokenID, s.Now()); err != nil {
 			return notFound(err, "token")
 		}
-		return s.audit(ctx, tx, Actor{UserID: &userID}, "user_token.revoke", id.Format(id.UserToken, tokenID), nil)
+		return s.audit(ctx, tx, accountActor(userID, requestID), "user_token.revoke", id.Format(id.UserToken, tokenID), nil)
 	})
 }
 
@@ -319,5 +319,5 @@ func (s *Service) RevokeOwnToken(ctx context.Context, a Actor) error {
 	if a.TokenID == nil || a.UserID == nil {
 		return apperr.Forbidden("Only a user token can sign itself out; revoke an API key in the dashboard.")
 	}
-	return s.RevokeUserToken(ctx, *a.UserID, *a.TokenID)
+	return s.RevokeUserToken(ctx, *a.UserID, *a.TokenID, a.RequestID)
 }

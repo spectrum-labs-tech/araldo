@@ -24,7 +24,7 @@ func addPasskey(t *testing.T, w *world, ss *model.Session, device *webauthntest.
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := w.s.FinishPasskeyRegistration(ctx, ss, token, "Laptop", resp)
+	p, err := w.s.FinishPasskeyRegistration(ctx, ss, token, "Laptop", resp, "req_test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,13 +138,13 @@ func TestPasskeys(t *testing.T) {
 	if err := w.s.UpdateOrg(ctx, owner, login.Session, w.org.Name, true); err != nil {
 		t.Fatalf("requiring two-factor with a passkey: %v", err)
 	}
-	if err := w.s.DeletePasskey(ctx, login.Session, p.ID); kind(err) != apperr.KindForbidden {
+	if err := w.s.DeletePasskey(ctx, login.Session, p.ID, "req_test"); kind(err) != apperr.KindForbidden {
 		t.Fatalf("removing the last second factor where it is required: %v", err)
 	}
 	if err := w.s.UpdateOrg(ctx, owner, login.Session, w.org.Name, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.s.DeletePasskey(ctx, login.Session, p.ID); err != nil {
+	if err := w.s.DeletePasskey(ctx, login.Session, p.ID, "req_test"); err != nil {
 		t.Fatal(err)
 	}
 	if l, err := w.s.Login(ctx, w.user.Email, "correct horse battery", "test", "127.0.0.1"); err != nil || l.NeedsMFA {

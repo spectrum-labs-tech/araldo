@@ -434,7 +434,7 @@ type SSOResult struct {
 // new gets an account without a password; someone not yet a member joins
 // with the org's default role. The session needs no second factor (the
 // provider is the org's) and is in the org.
-func (s *Service) FinishSSO(ctx context.Context, state, code, userAgent, ip string) (*SSOResult, error) {
+func (s *Service) FinishSSO(ctx context.Context, state, code, userAgent, ip, requestID string) (*SSOResult, error) {
 	st, err := s.store.TakeSSOState(ctx, authn.HashToken(state), s.Now())
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, errSSOExpired
@@ -479,7 +479,7 @@ func (s *Service) FinishSSO(ctx context.Context, state, code, userAgent, ip stri
 		return nil, &apperr.Error{Kind: apperr.KindForbidden, Code: "sso_domain_mismatch",
 			Message: emailDomain(email) + " is not a domain this organization signs in with."}
 	}
-	u, err := s.ssoUser(ctx, conn, email, claims.Name)
+	u, err := s.ssoUser(ctx, conn, email, claims.Name, requestID)
 	if err != nil {
 		return nil, err
 	}
@@ -492,7 +492,7 @@ func (s *Service) FinishSSO(ctx context.Context, state, code, userAgent, ip stri
 
 // ssoUser finds the person by email, or makes their account, and makes
 // them a member of conn's org if they are not one.
-func (s *Service) ssoUser(ctx context.Context, conn *model.SSOConnection, email, name string) (*model.User, error) {
+func (s *Service) ssoUser(ctx context.Context, conn *model.SSOConnection, email, name, requestID string) (*model.User, error) {
 	u, err := s.store.UserByEmail(ctx, email)
 	if errors.Is(err, store.ErrNotFound) {
 		u = &model.User{ID: id.New(), Email: email, Name: truncate(strings.TrimSpace(name), 100)}
@@ -508,7 +508,7 @@ func (s *Service) ssoUser(ctx context.Context, conn *model.SSOConnection, email,
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
-	a := Actor{OrgID: conn.OrgID, UserID: &u.ID, Role: conn.DefaultRole, RequestID: "sso"}
+	a := Actor{OrgID: conn.OrgID, UserID: &u.ID, Role: conn.DefaultRole, RequestID: requestID}
 	if err := s.checkLimit(ctx, a, limitMembers, 1, email); err != nil {
 		return nil, err
 	}

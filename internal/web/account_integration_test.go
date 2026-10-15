@@ -31,7 +31,7 @@ func TestAccountPageKeepsItsSections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.s.ConfirmTOTP(ctx, d.login.Session, authn.TOTPCode(key, authn.TOTPStep(time.Now()))); err != nil {
+	if _, err := d.s.ConfirmTOTP(ctx, d.login.Session, authn.TOTPCode(key, authn.TOTPStep(time.Now())), "req_test"); err != nil {
 		t.Fatal(err)
 	}
 	const left = "10 recovery codes left"

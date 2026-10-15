@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/api"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -91,7 +92,7 @@ func (s *Server) ssoCallback(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, "This sign-in was started in another browser, or took too long. Start again here.")
 		return
 	}
-	res, err := s.svc.FinishSSO(r.Context(), state, q.Get("code"), r.UserAgent(), s.clientIP(r))
+	res, err := s.svc.FinishSSO(r.Context(), state, q.Get("code"), r.UserAgent(), s.clientIP(r), api.RequestID(r.Context()))
 	if status, msg, fault := s.serverFault(w, r, "finishing single sign-on", err); fault {
 		fail(status, msg)
 		return

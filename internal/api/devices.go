@@ -71,7 +71,7 @@ func (h *Handler) pollDevice(w http.ResponseWriter, r *http.Request) error {
 	if body.DeviceCode == "" {
 		return badRequest("parameter_missing", "device_code", "Send the device_code from POST /v1/auth/device.")
 	}
-	plain, t, err := h.svc.PollDevice(r.Context(), body.DeviceCode)
+	plain, t, err := h.svc.PollDevice(r.Context(), body.DeviceCode, RequestID(r.Context()))
 	if err != nil {
 		return err
 	}

@@ -584,7 +584,7 @@ func TestApproveADevice(t *testing.T) {
 	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.Contains(noticeOf(rec), "is signed in") {
 		t.Fatalf("approving: %d %q", rec.Code, loc)
 	}
-	if _, _, err := d.s.PollDevice(ctx, start.DeviceCode); err != nil {
+	if _, _, err := d.s.PollDevice(ctx, start.DeviceCode, "req_test"); err != nil {
 		t.Fatalf("the CLI's token after approval: %v", err)
 	}
 	page = d.send(httptest.NewRequest(http.MethodGet, "/account", nil)).Body.String()

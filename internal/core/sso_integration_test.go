@@ -67,7 +67,7 @@ func (w *ssoWorld) signIn(t *testing.T, email string, claims map[string]any) (*c
 	if err != nil || gotState != state {
 		t.Fatalf("at the provider: %v (state %q, want %q)", err, gotState, state)
 	}
-	return w.s.FinishSSO(ctx, state, authCode, "test", "127.0.0.1")
+	return w.s.FinishSSO(ctx, state, authCode, "test", "127.0.0.1", "req_test")
 }
 
 // TestSSOSetup checks connecting a provider and verifying domains: the
@@ -250,17 +250,17 @@ func TestSSOSignIn(t *testing.T) {
 	if _, _, err := w.s.BeginTOTP(ctx, ss); code(err) != "sso_session" {
 		t.Fatalf("setting up an authenticator from an SSO session: %v", err)
 	}
-	if err := w.s.ChangePassword(ctx, ss, "", "a brand new password"); code(err) != "sso_session" {
+	if err := w.s.ChangePassword(ctx, ss, "", "a brand new password", "req_test"); code(err) != "sso_session" {
 		t.Fatalf("setting a password from an SSO session: %v", err)
 	}
 	start, err := w.s.StartDevice(ctx, "laptop", false, "203.0.113.7")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.s.DecideDevice(ctx, ss, start.UserCode, true); err != nil {
+	if _, err := w.s.DecideDevice(ctx, ss, start.UserCode, true, "req_test"); err != nil {
 		t.Fatal(err)
 	}
-	plain, _, err := w.s.PollDevice(ctx, start.DeviceCode)
+	plain, _, err := w.s.PollDevice(ctx, start.DeviceCode, "req_test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestSSOSignIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.s.FinishSSO(ctx, other, authCode, "test", "127.0.0.1"); code(err) != "sso_failed" {
+	if _, err := w.s.FinishSSO(ctx, other, authCode, "test", "127.0.0.1", "req_test"); code(err) != "sso_failed" {
 		t.Fatalf("a code with another sign-in's state: %v", err)
 	}
 	authURL, state, err := w.s.BeginSSO(ctx, email, "")
@@ -317,10 +317,10 @@ func TestSSOSignIn(t *testing.T) {
 	if _, authCode, err = w.idp.Authorize(authURL, map[string]any{"email": email}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.s.FinishSSO(ctx, state, authCode, "test", "127.0.0.1"); err != nil {
+	if _, err := w.s.FinishSSO(ctx, state, authCode, "test", "127.0.0.1", "req_test"); err != nil {
 		t.Fatalf("the code with its own state: %v", err)
 	}
-	if _, err := w.s.FinishSSO(ctx, state, authCode, "test", "127.0.0.1"); code(err) != "sso_expired" {
+	if _, err := w.s.FinishSSO(ctx, state, authCode, "test", "127.0.0.1", "req_test"); code(err) != "sso_expired" {
 		t.Fatalf("replaying the state: %v", err)
 	}
 }
@@ -363,10 +363,10 @@ func TestRequireSSO(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := w.s.DecideDevice(ctx, ss, start.UserCode, true); err != nil {
+		if _, err := w.s.DecideDevice(ctx, ss, start.UserCode, true, "req_test"); err != nil {
 			t.Fatal(err)
 		}
-		plain, _, err := w.s.PollDevice(ctx, start.DeviceCode)
+		plain, _, err := w.s.PollDevice(ctx, start.DeviceCode, "req_test")
 		if err != nil {
 			t.Fatal(err)
 		}

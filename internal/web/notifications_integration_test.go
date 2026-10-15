@@ -24,7 +24,7 @@ func TestNotificationsInTheDashboard(t *testing.T) {
 	d := newDash(t)
 	ctx := t.Context()
 	csrf := d.login.Session.CSRFToken
-	if err := d.s.ChangePassword(ctx, d.login.Session, "correct horse battery", "a whole new password"); err != nil {
+	if err := d.s.ChangePassword(ctx, d.login.Session, "correct horse battery", "a whole new password", "req_test"); err != nil {
 		t.Fatal(err)
 	}
 

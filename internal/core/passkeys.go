@@ -145,7 +145,7 @@ func (s *Service) BeginPasskeyRegistration(ctx context.Context, ss *model.Sessio
 
 // FinishPasskeyRegistration checks the browser's new credential and keeps
 // it as a passkey named name.
-func (s *Service) FinishPasskeyRegistration(ctx context.Context, ss *model.Session, token, name string, response []byte) (*model.Passkey, error) {
+func (s *Service) FinishPasskeyRegistration(ctx context.Context, ss *model.Session, token, name string, response []byte, requestID string) (*model.Passkey, error) {
 	if err := s.requireOwnSignIn(ss); err != nil {
 		return nil, err
 	}
@@ -196,7 +196,9 @@ func (s *Service) FinishPasskeyRegistration(ctx context.Context, ss *model.Sessi
 			Link: "/account"}); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, Actor{UserID: &ss.UserID, RequestID: "dashboard"}, "passkey.add", p.ID.String(), map[string]any{"name": name})
+		// Passkeys have no ID prefix: they are never named outside the
+		// account page, so the audit log keeps the bare UUID.
+		return s.audit(ctx, tx, accountActor(ss.UserID, requestID), "passkey.add", p.ID.String(), map[string]any{"name": name})
 	})
 	return p, err
 }
@@ -351,7 +353,7 @@ func (s *Service) Passkeys(ctx context.Context, userID uuid.UUID) ([]*model.Pass
 // DeletePasskey removes one of the session's user's passkeys, after a
 // recent confirmation; not their last second factor while an org they
 // belong to requires one.
-func (s *Service) DeletePasskey(ctx context.Context, ss *model.Session, passkeyID uuid.UUID) error {
+func (s *Service) DeletePasskey(ctx context.Context, ss *model.Session, passkeyID uuid.UUID, requestID string) error {
 	if err := s.requireOwnSignIn(ss); err != nil {
 		return err
 	}
@@ -375,7 +377,7 @@ func (s *Service) DeletePasskey(ctx context.Context, ss *model.Session, passkeyI
 		if err := tx.DeletePasskey(ctx, ss.UserID, passkeyID); err != nil {
 			return notFound(err, "passkey")
 		}
-		return s.audit(ctx, tx, Actor{UserID: &ss.UserID, RequestID: "dashboard"}, "passkey.remove", passkeyID.String(), nil)
+		return s.audit(ctx, tx, accountActor(ss.UserID, requestID), "passkey.remove", passkeyID.String(), nil)
 	})
 }
 

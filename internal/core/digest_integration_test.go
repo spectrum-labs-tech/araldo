@@ -51,7 +51,7 @@ func TestDailySummary(t *testing.T) {
 	}
 	notify(core.NotifyPostApproval, "A post waits")
 	notify(core.NotifyChannelReauth, "Reconnect Bluesky")
-	if err := w.s.ChangePassword(ctx, w.session, "correct horse battery", "a whole new password"); err != nil {
+	if err := w.s.ChangePassword(ctx, w.session, "correct horse battery", "a whole new password", "req_test"); err != nil {
 		t.Fatal(err)
 	}
 	if n := send(); n != 1 || len(mail.to(w.user.Email)) != 1 || !strings.Contains(mail.to(w.user.Email)[0].Subject, "password") {

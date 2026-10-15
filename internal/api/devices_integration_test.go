@@ -41,7 +41,7 @@ func TestDeviceSignInOverTheAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.s.DecideDevice(ctx, login.Session, userCode, true); err != nil {
+	if _, err := c.s.DecideDevice(ctx, login.Session, userCode, true, "req_test"); err != nil {
 		t.Fatal(err)
 	}
 	c.s.Now = func() time.Time { return time.Now().Add(time.Minute) } // past the polling interval

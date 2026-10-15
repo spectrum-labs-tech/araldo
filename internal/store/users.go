@@ -110,8 +110,17 @@ func (s *Store) SetPassword(ctx context.Context, id uuid.UUID, hash string) erro
 
 // RecordLoginFailure counts a failed sign-in and locks the account for
 // lock (if non-zero).
-func (s *Store) RecordLoginFailure(ctx context.Context, id uuid.UUID, lockUntil *time.Time) error {
-	return s.execOne(ctx, `UPDATE users SET failed_logins = failed_logins + 1, locked_until = COALESCE($2, locked_until) WHERE id = $1`, id, lockUntil)
+// RecordLoginFailure counts a failed sign-in and returns the new count,
+// which concurrent failures each see distinctly.
+func (s *Store) RecordLoginFailure(ctx context.Context, id uuid.UUID) (int, error) {
+	var n int
+	err := s.q.QueryRow(ctx, `UPDATE users SET failed_logins = failed_logins + 1 WHERE id = $1 RETURNING failed_logins`, id).Scan(&n)
+	return n, mapErr(err)
+}
+
+// LockUser locks the user out until until, or keeps a later lock.
+func (s *Store) LockUser(ctx context.Context, id uuid.UUID, until time.Time) error {
+	return s.execOne(ctx, `UPDATE users SET locked_until = GREATEST(locked_until, $2) WHERE id = $1`, id, until)
 }
 
 func (s *Store) ResetLoginFailures(ctx context.Context, id uuid.UUID) error {

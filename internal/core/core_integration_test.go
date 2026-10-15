@@ -612,7 +612,7 @@ func TestOwnerChangesNeedSudo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.s.ConfirmTOTP(ctx, w.session, authn.TOTPCode(decodeB32(t, secretText), authn.TOTPStep(time.Now()))); err != nil {
+	if _, err := w.s.ConfirmTOTP(ctx, w.session, authn.TOTPCode(decodeB32(t, secretText), authn.TOTPStep(time.Now())), "req_test"); err != nil {
 		t.Fatal(err)
 	}
 	if err := w.s.UpdateOrg(ctx, w.owner, &stale, w.org.Name, true); err != nil {
@@ -841,7 +841,7 @@ func TestLoginAndTOTP(t *testing.T) {
 		t.Fatalf("BeginTOTP: %v", err)
 	}
 	secret := decodeB32(t, secretText)
-	codes, err := w.s.ConfirmTOTP(ctx, w.session, authn.TOTPCode(secret, authn.TOTPStep(time.Now())))
+	codes, err := w.s.ConfirmTOTP(ctx, w.session, authn.TOTPCode(secret, authn.TOTPStep(time.Now())), "req_test")
 	if err != nil || len(codes) != 10 {
 		t.Fatalf("ConfirmTOTP: %d codes, %v", len(codes), err)
 	}
@@ -883,7 +883,7 @@ func TestWrongCodesLockTheAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 	secret := decodeB32(t, secretText)
-	if _, err := w.s.ConfirmTOTP(ctx, w.session, authn.TOTPCode(secret, authn.TOTPStep(time.Now()))); err != nil {
+	if _, err := w.s.ConfirmTOTP(ctx, w.session, authn.TOTPCode(secret, authn.TOTPStep(time.Now())), "req_test"); err != nil {
 		t.Fatal(err)
 	}
 	// Each sign-in gives the right password; only the code is wrong.
@@ -911,6 +911,28 @@ func TestWrongCodesLockTheAccount(t *testing.T) {
 	}
 	if _, err := w2.s.Login(ctx, w2.user.Email, "correct horse battery", "", ""); !isLocked(err) {
 		t.Fatalf("sign-in after 10 wrong passwords to confirm: %v (want account_locked)", err)
+	}
+
+	// Changing the password checks the current one like a sign-in.
+	w3 := newWorld(t)
+	for i := range 10 {
+		if err := w3.s.ChangePassword(ctx, w3.session, "wrong password!!", "a new password here", "req_test"); kind(err) != apperr.KindInvalid {
+			t.Fatalf("wrong current password %d: %v", i+1, err)
+		}
+	}
+	if err := w3.s.ChangePassword(ctx, w3.session, "correct horse battery", "a new password here", "req_test"); !isLocked(err) {
+		t.Fatalf("changing after 10 wrong passwords: %v (want account_locked)", err)
+	}
+
+	// Guesses made in parallel are each counted, so they lock too.
+	w4 := newWorld(t)
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Go(func() { _, _ = w4.s.Login(ctx, w4.user.Email, "wrong password!!", "", "") })
+	}
+	wg.Wait()
+	if _, err := w4.s.Login(ctx, w4.user.Email, "correct horse battery", "", ""); !isLocked(err) {
+		t.Fatalf("sign-in after 10 parallel wrong passwords: %v (want account_locked)", err)
 	}
 }
 
@@ -1494,10 +1516,10 @@ func userToken(t *testing.T, w *world, ss *model.Session) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.s.DecideDevice(ctx, ss, start.UserCode, true); err != nil {
+	if _, err := w.s.DecideDevice(ctx, ss, start.UserCode, true, "req_test"); err != nil {
 		t.Fatal(err)
 	}
-	plain, _, err := w.s.PollDevice(ctx, start.DeviceCode)
+	plain, _, err := w.s.PollDevice(ctx, start.DeviceCode, "req_test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1523,14 +1545,14 @@ func TestAccountSecurity(t *testing.T) {
 	here, elsewhere := login(pw), login(pw)
 	cli := userToken(t, w, here.Session)
 
-	if err := w.s.ChangePassword(ctx, here.Session, "not my password", "a brand new password"); code(err) != "bad_password" {
+	if err := w.s.ChangePassword(ctx, here.Session, "not my password", "a brand new password", "req_test"); code(err) != "bad_password" {
 		t.Fatalf("the wrong current password: %v", err)
 	}
-	if err := w.s.ChangePassword(ctx, here.Session, pw, "short"); code(err) != "password_invalid" {
+	if err := w.s.ChangePassword(ctx, here.Session, pw, "short", "req_test"); code(err) != "password_invalid" {
 		t.Fatalf("a short new password: %v", err)
 	}
 	const next = "a brand new password"
-	if err := w.s.ChangePassword(ctx, here.Session, pw, next); err != nil {
+	if err := w.s.ChangePassword(ctx, here.Session, pw, next, "req_test"); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := w.s.Session(ctx, here.Token); err != nil {
@@ -1554,16 +1576,16 @@ func TestAccountSecurity(t *testing.T) {
 		t.Fatal(err)
 	}
 	secret := decodeB32(t, secretText)
-	old, err := w.s.ConfirmTOTP(ctx, fresh.Session, authn.TOTPCode(secret, authn.TOTPStep(time.Now())))
+	old, err := w.s.ConfirmTOTP(ctx, fresh.Session, authn.TOTPCode(secret, authn.TOTPStep(time.Now())), "req_test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	stale := *fresh.Session
 	stale.SudoUntil = nil
-	if _, err := w.s.RegenerateRecoveryCodes(ctx, &stale); code(err) != "reauthentication_required" {
+	if _, err := w.s.RegenerateRecoveryCodes(ctx, &stale, "req_test"); code(err) != "reauthentication_required" {
 		t.Fatalf("new codes without a recent password: %v", err)
 	}
-	codes, err := w.s.RegenerateRecoveryCodes(ctx, fresh.Session)
+	codes, err := w.s.RegenerateRecoveryCodes(ctx, fresh.Session, "req_test")
 	if err != nil || len(codes) != 10 {
 		t.Fatalf("new codes: %d, %v", len(codes), err)
 	}
@@ -1580,20 +1602,39 @@ func TestAccountSecurity(t *testing.T) {
 	if err := w.s.UpdateOrg(ctx, owner, fresh.Session, w.org.Name, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.s.DisableTOTP(ctx, fresh.Session); kind(err) != apperr.KindForbidden {
+	if err := w.s.DisableTOTP(ctx, fresh.Session, "req_test"); kind(err) != apperr.KindForbidden {
 		t.Fatalf("turning it off where it is required: %v", err)
 	}
 	if err := w.s.UpdateOrg(ctx, owner, fresh.Session, w.org.Name, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.s.DisableTOTP(ctx, &stale); code(err) != "reauthentication_required" {
+	if err := w.s.DisableTOTP(ctx, &stale, "req_test"); code(err) != "reauthentication_required" {
 		t.Fatalf("turning it off without a recent password: %v", err)
 	}
-	if err := w.s.DisableTOTP(ctx, fresh.Session); err != nil {
+	if err := w.s.DisableTOTP(ctx, fresh.Session, "req_test"); err != nil {
 		t.Fatal(err)
 	}
 	if l := login(next); l.NeedsMFA {
 		t.Fatal("still asked for a code with two-factor authentication off")
+	}
+	if err := w.s.ResetPassword(ctx, core.InstallOperator("test"), w.user.Email, "an operator's new password"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Each change is in the audit log, under the request that made it.
+	rows, err := open(t).Pool().Query(ctx, `SELECT action || ' ' || request_id FROM audit_events WHERE target = $1 ORDER BY id`,
+		id.Format(id.User, w.user.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"user.password_change req_test", "user.mfa_enable req_test", "user.recovery_codes req_test", "user.mfa_disable req_test",
+		"user.password_reset " + core.OperatorRequestID}
+	if !slices.Equal(got, want) {
+		t.Fatalf("audit log %q, want %q", got, want)
 	}
 }
 

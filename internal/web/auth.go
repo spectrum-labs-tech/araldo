@@ -14,6 +14,7 @@ import (
 
 	"rsc.io/qr"
 
+	"github.com/spectrum-labs-tech/araldo/internal/api"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -216,19 +217,19 @@ func (s *Server) accountMFABegin(c *reqCtx) error {
 }
 
 func (s *Server) accountMFAConfirm(c *reqCtx) error {
-	codes, err := s.svc.ConfirmTOTP(c.ctx(), c.session, c.r.PostFormValue("code"))
+	codes, err := s.svc.ConfirmTOTP(c.ctx(), c.session, c.r.PostFormValue("code"), api.RequestID(c.ctx()))
 	return s.renderAccount(c, accountData{RecoveryCodes: codes}, err)
 }
 
 func (s *Server) accountMFADisable(c *reqCtx) error {
-	if err := s.svc.DisableTOTP(c.ctx(), c.session); err != nil {
+	if err := s.svc.DisableTOTP(c.ctx(), c.session, api.RequestID(c.ctx())); err != nil {
 		return err
 	}
 	return redirect(c, "/account", "Two-factor authentication is off.")
 }
 
 func (s *Server) accountRecoveryCodes(c *reqCtx) error {
-	codes, err := s.svc.RegenerateRecoveryCodes(c.ctx(), c.session)
+	codes, err := s.svc.RegenerateRecoveryCodes(c.ctx(), c.session, api.RequestID(c.ctx()))
 	if err != nil {
 		return err
 	}
@@ -240,7 +241,7 @@ func (s *Server) accountPassword(c *reqCtx) error {
 	if next != c.r.PostFormValue("confirm_password") {
 		return s.renderAccount(c, accountData{}, apperr.Invalid("password_mismatch", "confirm_password", "The new passwords do not match."))
 	}
-	if err := s.svc.ChangePassword(c.ctx(), c.session, c.r.PostFormValue("current_password"), next); err != nil {
+	if err := s.svc.ChangePassword(c.ctx(), c.session, c.r.PostFormValue("current_password"), next, api.RequestID(c.ctx())); err != nil {
 		return s.renderAccount(c, accountData{}, err)
 	}
 	return redirect(c, "/account", "Password changed. Other sessions were signed out.")

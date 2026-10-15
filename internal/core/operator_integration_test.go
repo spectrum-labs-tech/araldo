@@ -19,6 +19,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/opsched"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
@@ -468,5 +469,50 @@ func TestSuspendedOrgsGetNoWebhooks(t *testing.T) {
 	}
 	if err := w.s.ResendDelivery(ctx, w.owner, delivery().ID); err != nil {
 		t.Fatalf("resending it in its own mode: %v", err)
+	}
+}
+
+// TestTaskErrorsAreForTheOperator: background tasks span every org, so an
+// owner sees that one fails but not its error, which may name another
+// org's records; the operator sees it.
+func TestTaskErrorsAreForTheOperator(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	st := open(t)
+	name := "test.failing_" + uuid.NewString()[:8]
+	now := time.Now()
+	if err := st.EnsureTasks(ctx, []opsched.TaskDef{{Name: name, Enabled: true, Interval: time.Hour}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := st.ClaimTask(ctx, name, "test", now.Add(time.Minute), now.Add(time.Hour)); err != nil || !ok {
+		t.Fatalf("claim: %v, %v", ok, err)
+	}
+	if err := st.FinishTask(ctx, name, "test", false, "org_other: provider said no", now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	find := func(a core.Actor) opsched.TaskStatus {
+		t.Helper()
+		ts, err := w.s.TaskStatuses(ctx, a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, x := range ts {
+			if x.Name == name {
+				return x
+			}
+		}
+		t.Fatalf("task %s not listed", name)
+		return opsched.TaskStatus{}
+	}
+	if got := find(w.owner); got.Failures != 1 || got.LastError != "" {
+		t.Fatalf("owner sees %+v, want the failure without its error", got)
+	}
+	op, _, err := w.s.OperatorActor(ctx, id.Format(id.Org, w.org.ID), false, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := find(op); got.LastError == "" {
+		t.Fatalf("operator sees %+v, want the error", got)
 	}
 }

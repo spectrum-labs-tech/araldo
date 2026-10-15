@@ -12,7 +12,7 @@
     <td>{{if .LastRunAt}}{{ago (derefTime .LastRunAt)}}{{else}}never{{end}}</td>
     <td>{{if .LastOKAt}}{{ago (derefTime .LastOKAt)}}{{else}}never{{end}}</td>
     <td>{{ago .NextRunAt}}</td>
-    <td>{{if .Failures}}<span class="pill bad">{{.Failures}}</span> <span class="text-sm">{{.LastError}}</span>{{else}}0{{end}}</td>
+    <td>{{if .Failures}}<span class="pill bad">{{.Failures}}</span>{{with .LastError}} <span class="text-sm">{{.}}</span>{{end}}{{else}}0{{end}}</td>
   </tr>
   {{else}}<tr><td colspan="6" class="text-muted">No worker has started yet.</td></tr>{{end}}
   </tbody>

@@ -165,12 +165,25 @@ func (s *Service) Tasks() []opsched.Task {
 	}
 }
 
-// TaskStatuses lists background tasks for operators.
+// TaskStatuses lists the install's background tasks. Owners see whether
+// each runs and fails; only the operator sees the error text, since the
+// tasks work across every org and their errors may name another org's
+// records or providers.
 func (s *Service) TaskStatuses(ctx context.Context, a Actor) ([]opsched.TaskStatus, error) {
 	if !a.Can(PermOrgWrite) {
 		return nil, apperr.Forbidden("Only owners can see background tasks.")
 	}
-	return s.store.Tasks(ctx)
+	if err := a.requireToRead(PermOrgWrite); err != nil {
+		return nil, err
+	}
+	ts, err := s.store.Tasks(ctx)
+	if err != nil || a.Operator {
+		return ts, err
+	}
+	for i := range ts {
+		ts[i].LastError = ""
+	}
+	return ts, nil
 }
 
 // QueueStats is a publishing queue's counts.

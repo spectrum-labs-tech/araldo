@@ -170,8 +170,8 @@ func (s *Service) planReportMailings(ctx context.Context, orgID *uuid.UUID) erro
 // sendReportEmails sends the report emails due, retrying failures as
 // notification emails are.
 func (s *Service) sendReportEmails(ctx context.Context, orgID *uuid.UUID) (int, error) {
-	now := s.Now()
-	due, err := s.store.ClaimReportEmails(ctx, orgID, now, now.Add(notificationEmailLease), reportEmailBatch)
+	now, owner := s.Now(), id.New().String()
+	due, err := s.store.ClaimReportEmails(ctx, orgID, owner, now, now.Add(notificationEmailLease), reportEmailBatch)
 	if err != nil {
 		return 0, err
 	}
@@ -185,7 +185,12 @@ func (s *Service) sendReportEmails(ctx context.Context, orgID *uuid.UUID) (int, 
 		if status == "sent" {
 			n++
 		}
-		if err := s.store.FinishReportEmail(ctx, d.ID, status, reason, s.Now(), next); err != nil {
+		err = s.store.FinishReportEmail(ctx, d.ID, owner, status, reason, s.Now(), next)
+		if errors.Is(err, store.ErrNotFound) { // its lease ran out and another worker has it
+			s.log.WarnContext(ctx, "a report email outlived its lease", "brand", id.Format(id.Brand, d.BrandID))
+			continue
+		}
+		if err != nil {
 			return n, err
 		}
 	}

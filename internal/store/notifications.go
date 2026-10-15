@@ -220,10 +220,10 @@ func (s *Store) TurnOffOrgEmails(ctx context.Context, userID uuid.UUID, types []
 }
 
 // ClaimNotificationEmails claims queued emails due at now, for a person
-// (userID) or everyone: each counts an attempt and is not due again until
-// lease, so another worker leaves it while this one sends.
-func (s *Store) ClaimNotificationEmails(ctx context.Context, userID *uuid.UUID, now, lease time.Time, limit int) ([]NotificationEmailDue, error) {
-	rows, err := s.q.Query(ctx, `UPDATE notification_emails e SET attempts = e.attempts + 1, next_attempt_at = $2
+// (userID) or everyone, for owner: each counts an attempt and is not due
+// again until lease, so another worker leaves it while this one sends.
+func (s *Store) ClaimNotificationEmails(ctx context.Context, userID *uuid.UUID, owner string, now, lease time.Time, limit int) ([]NotificationEmailDue, error) {
+	rows, err := s.q.Query(ctx, `UPDATE notification_emails e SET attempts = e.attempts + 1, next_attempt_at = $2, lease_owner = $5
 		FROM notifications n JOIN users u ON u.id = n.user_id LEFT JOIN orgs o ON o.id = n.org_id
 		WHERE e.notification_id = n.id AND e.notification_id IN (
 			SELECT x.notification_id FROM notification_emails x JOIN notifications y ON y.id = x.notification_id
@@ -231,7 +231,7 @@ func (s *Store) ClaimNotificationEmails(ctx context.Context, userID *uuid.UUID, 
 			ORDER BY x.next_attempt_at LIMIT $3 FOR UPDATE OF x SKIP LOCKED)
 		RETURNING n.id, n.user_id, n.org_id, COALESCE(o.name, ''), n.type, n.subject, n.body, n.link, n.created_at, u.email, e.attempts,
 			COALESCE((SELECT digest FROM notification_settings ns WHERE ns.user_id = n.user_id), false)`,
-		now, lease, limit, userID)
+		now, lease, limit, userID, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -242,15 +242,17 @@ func (s *Store) ClaimNotificationEmails(ctx context.Context, userID *uuid.UUID, 
 	})
 }
 
-// FinishNotificationEmail records an email's outcome: sent (at), failed or
-// suppressed (with why), or queued again for next.
-func (s *Store) FinishNotificationEmail(ctx context.Context, notificationID uuid.UUID, status, reason string, at time.Time, next *time.Time) error {
+// FinishNotificationEmail records the outcome of an email owner claimed:
+// sent (at), failed or suppressed (with why), or queued again for next. It
+// is ErrNotFound if another worker has claimed it since.
+func (s *Store) FinishNotificationEmail(ctx context.Context, notificationID uuid.UUID, owner, status, reason string, at time.Time,
+	next *time.Time) error {
 	var sentAt *time.Time
 	if status == "sent" {
 		sentAt = &at
 	}
-	return s.execOne(ctx, `UPDATE notification_emails SET status = $2, reason = $3, sent_at = $4, next_attempt_at = $5 WHERE notification_id = $1`,
-		notificationID, status, reason, sentAt, next)
+	return s.execOne(ctx, `UPDATE notification_emails SET status = $2, reason = $3, sent_at = $4, next_attempt_at = $5, lease_owner = NULL
+		WHERE notification_id = $1 AND status = 'queued' AND lease_owner = $6`, notificationID, status, reason, sentAt, next, owner)
 }
 
 // NotificationEmailsSent counts the notification emails sent to a person

@@ -96,15 +96,15 @@ type ReportEmailDue struct {
 }
 
 // ClaimReportEmails claims queued report emails due at now, in one org or
-// (orgID nil) every org, each until lease; an address no longer a
-// recipient is still claimed, for the caller to suppress.
-func (s *Store) ClaimReportEmails(ctx context.Context, orgID *uuid.UUID, now, lease time.Time, limit int) ([]ReportEmailDue, error) {
-	rows, err := s.q.Query(ctx, `UPDATE report_emails e SET attempts = e.attempts + 1, next_attempt_at = $2
+// (orgID nil) every org, each for owner until lease; an address no longer
+// a recipient is still claimed, for the caller to suppress.
+func (s *Store) ClaimReportEmails(ctx context.Context, orgID *uuid.UUID, owner string, now, lease time.Time, limit int) ([]ReportEmailDue, error) {
+	rows, err := s.q.Query(ctx, `UPDATE report_emails e SET attempts = e.attempts + 1, next_attempt_at = $2, lease_owner = $5
 		FROM report_mailings m
 		WHERE m.org_id = e.org_id AND m.brand_id = e.brand_id AND m.month = e.month AND e.id IN (
 			SELECT id FROM report_emails WHERE status = 'queued' AND next_attempt_at <= $1 AND ($4::uuid IS NULL OR org_id = $4)
 			ORDER BY next_attempt_at LIMIT $3 FOR UPDATE SKIP LOCKED)
-		RETURNING e.id, e.org_id, e.brand_id, e.month, e.email, e.attempts, m.share_id, m.share_token`, now, lease, limit, orgID)
+		RETURNING e.id, e.org_id, e.brand_id, e.month, e.email, e.attempts, m.share_id, m.share_token`, now, lease, limit, orgID, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -122,15 +122,15 @@ func (s *Store) IsReportRecipient(ctx context.Context, orgID, brandID uuid.UUID,
 	return ok, err
 }
 
-// FinishReportEmail records a report email's outcome, as
-// FinishNotificationEmail does.
-func (s *Store) FinishReportEmail(ctx context.Context, id uuid.UUID, status, reason string, at time.Time, next *time.Time) error {
+// FinishReportEmail records the outcome of a report email owner claimed,
+// as FinishNotificationEmail does.
+func (s *Store) FinishReportEmail(ctx context.Context, id uuid.UUID, owner, status, reason string, at time.Time, next *time.Time) error {
 	var sentAt *time.Time
 	if status == "sent" {
 		sentAt = &at
 	}
-	return s.execOne(ctx, `UPDATE report_emails SET status = $2, reason = $3, sent_at = $4, next_attempt_at = $5 WHERE id = $1`,
-		id, status, reason, sentAt, next)
+	return s.execOne(ctx, `UPDATE report_emails SET status = $2, reason = $3, sent_at = $4, next_attempt_at = $5, lease_owner = NULL
+		WHERE id = $1 AND status = 'queued' AND lease_owner = $6`, id, status, reason, sentAt, next, owner)
 }
 
 // ReportEmailStatus returns a recipient's email status for a month, and why.

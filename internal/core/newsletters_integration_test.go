@@ -500,10 +500,57 @@ func TestNewsletterStaleHandoffIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	st, d := open(t), is.Deliveries[0]
-	if err := st.DeliveryHandedOff(ctx, w.org.ID, d.ID, "sbx_stale", first.Add(time.Hour), first); !errors.Is(err, store.ErrNotFound) {
+	// Claim it as a worker would, at a time it is due; no other test's
+	// worker claims it, as it is not due yet.
+	owner := id.New().String()
+	claimed, err := st.ClaimDueHandoffs(ctx, &w.org.ID, owner, []string{d.Provider}, moved, time.Minute, 10)
+	if err != nil || len(claimed) != 1 || claimed[0].ID != d.ID {
+		t.Fatalf("claiming the hand-off: %v, %v", claimed, err)
+	}
+	if err := st.DeliveryHandedOff(ctx, w.org.ID, d.ID, owner, "sbx_stale", first.Add(time.Hour), first); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("recording a hand-off for the old send time: %v", err)
 	}
-	if err := st.DeliveryHandedOff(ctx, w.org.ID, d.ID, "sbx_fresh", moved.Add(time.Hour), moved); err != nil {
+	if err := st.DeliveryHandedOff(ctx, w.org.ID, d.ID, "another worker", "sbx_fresh", moved.Add(time.Hour), moved); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("recording one from a worker without the lease: %v", err)
+	}
+	if err := st.DeliveryHandedOff(ctx, w.org.ID, d.ID, owner, "sbx_fresh", moved.Add(time.Hour), moved); err != nil {
 		t.Fatalf("recording one for the new send time: %v", err)
+	}
+}
+
+// TestNewsletterHandoffLeaseOwner checks that a worker whose lease on a
+// hand-off ran out, and was claimed by another, can no longer end it or
+// retry it: only the worker holding the lease records an outcome.
+func TestNewsletterHandoffLeaseOwner(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	setTheme(t, w)
+	connectSandboxMail(t, w, "news@araldo.dev", nil)
+	is, err := w.s.CreateIssue(ctx, w.owner, core.IssueInput{BrandID: w.brand.ID, Subject: "Hi", Body: "Hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendAt := time.Now().Add(72 * time.Hour).Truncate(time.Second)
+	if is, err = w.s.ScheduleIssue(ctx, w.owner, is.ID, sendAt); err != nil {
+		t.Fatal(err)
+	}
+	st, d := open(t), is.Deliveries[0]
+	first, second := id.New().String(), id.New().String()
+	if got, err := st.ClaimDueHandoffs(ctx, &w.org.ID, first, []string{d.Provider}, sendAt, time.Minute, 10); err != nil || len(got) != 1 {
+		t.Fatalf("first claim: %v, %v", got, err)
+	}
+	// The first lease has run out a minute later; the second worker takes it.
+	if got, err := st.ClaimDueHandoffs(ctx, &w.org.ID, second, []string{d.Provider}, sendAt.Add(2*time.Minute), time.Minute, 10); err != nil || len(got) != 1 {
+		t.Fatalf("second claim: %v, %v", got, err)
+	}
+	if err := st.RetryHandoff(ctx, w.org.ID, d.ID, first, "late", sendAt); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the first worker retried a hand-off it lost: %v", err)
+	}
+	if err := st.EndDelivery(ctx, w.org.ID, d.ID, first, model.DeliveryFailed, "late"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the first worker ended a hand-off it lost: %v", err)
+	}
+	if err := st.RetryHandoff(ctx, w.org.ID, d.ID, second, "try again", sendAt); err != nil {
+		t.Errorf("the worker holding the lease could not retry: %v", err)
 	}
 }

@@ -267,7 +267,7 @@ func (s *Store) ReviewIssue(ctx context.Context, orgID, id uuid.UUID, userID, ke
 // SetDeliveries moves an issue's deliveries in one of from to status to,
 // with a hand-off time (nil clears it), and returns how many moved.
 func (s *Store) SetDeliveries(ctx context.Context, orgID, issueID uuid.UUID, from []model.DeliveryStatus, to model.DeliveryStatus, handoffAt *time.Time) (int64, error) {
-	tag, err := s.q.Exec(ctx, `UPDATE newsletter_deliveries SET status = $4, handoff_at = $5, lease_until = NULL, updated_at = now()
+	tag, err := s.q.Exec(ctx, `UPDATE newsletter_deliveries SET status = $4, handoff_at = $5, lease_owner = NULL, lease_until = NULL, updated_at = now()
 		WHERE org_id = $1 AND issue_id = $2 AND status = ANY($3)`, orgID, issueID, deliveryStatuses(from), to, handoffAt)
 	if err != nil {
 		return 0, err
@@ -286,7 +286,7 @@ func deliveryStatuses(ss []model.DeliveryStatus) []string {
 // ResetDeliveries returns an issue's open deliveries to draft, forgetting
 // their campaigns and attempts.
 func (s *Store) ResetDeliveries(ctx context.Context, orgID, issueID uuid.UUID) error {
-	_, err := s.q.Exec(ctx, `UPDATE newsletter_deliveries SET status = 'draft', handoff_at = NULL, lease_until = NULL, attempts = 0,
+	_, err := s.q.Exec(ctx, `UPDATE newsletter_deliveries SET status = 'draft', handoff_at = NULL, lease_owner = NULL, lease_until = NULL, attempts = 0,
 		campaign_id = '', last_error = '', next_read_at = NULL, updated_at = now()
 		WHERE org_id = $1 AND issue_id = $2 AND status IN ('draft', 'held', 'queued', 'handed_off')`, orgID, issueID)
 	return err
@@ -303,41 +303,46 @@ func (s *Store) HandoffInFlight(ctx context.Context, orgID, issueID uuid.UUID, n
 
 // ClaimDueHandoffs takes queued deliveries of providers the caller can
 // send through whose hand-off is due, in one org or (orgID nil) every
-// org but suspended ones (ADR 0031): each is leased, and counts an attempt.
-func (s *Store) ClaimDueHandoffs(ctx context.Context, orgID *uuid.UUID, providers []string, now time.Time, lease time.Duration, limit int) ([]*model.IssueDelivery, error) {
-	return collectDeliveries(s.q.Query(ctx, `UPDATE newsletter_deliveries SET lease_until = $3, attempts = attempts + 1, updated_at = now()
+// org but suspended ones (ADR 0031): each is leased to owner, and counts an
+// attempt.
+func (s *Store) ClaimDueHandoffs(ctx context.Context, orgID *uuid.UUID, owner string, providers []string, now time.Time, lease time.Duration,
+	limit int) ([]*model.IssueDelivery, error) {
+	return collectDeliveries(s.q.Query(ctx, `UPDATE newsletter_deliveries SET lease_owner = $6, lease_until = $3, attempts = attempts + 1, updated_at = now()
 		WHERE id IN (
 			SELECT id FROM newsletter_deliveries WHERE status = 'queued' AND handoff_at <= $2 AND (lease_until IS NULL OR lease_until <= $2)
 				AND ($1::uuid IS NULL OR org_id = $1) AND provider = ANY($5)
 				AND NOT EXISTS (SELECT 1 FROM orgs WHERE orgs.id = newsletter_deliveries.org_id AND orgs.status = 'suspended')
 			ORDER BY handoff_at LIMIT $4 FOR UPDATE SKIP LOCKED)
-		RETURNING `+deliveryCols, orgID, now, now.Add(lease), limit, providers))
+		RETURNING `+deliveryCols, orgID, now, now.Add(lease), limit, providers, owner))
 }
 
 // DeliveryHandedOff records a delivery's campaign at its provider. It is
-// ErrNotFound if the delivery stopped being queued meanwhile.
+// ErrNotFound if the delivery stopped being queued meanwhile, or owner no
+// longer holds its lease.
 //
 // sendAt is the send time the campaign was scheduled for: if the issue was
 // moved meanwhile, it is ErrNotFound too, and the campaign is stale.
-func (s *Store) DeliveryHandedOff(ctx context.Context, orgID, id uuid.UUID, campaignID string, nextRead, sendAt time.Time) error {
-	return s.execOne(ctx, `UPDATE newsletter_deliveries d SET status = 'handed_off', campaign_id = $3, next_read_at = $4, lease_until = NULL,
-		last_error = '', updated_at = now() FROM newsletter_issues i
+func (s *Store) DeliveryHandedOff(ctx context.Context, orgID, id uuid.UUID, owner, campaignID string, nextRead, sendAt time.Time) error {
+	return s.execOne(ctx, `UPDATE newsletter_deliveries d SET status = 'handed_off', campaign_id = $3, next_read_at = $4, lease_owner = NULL,
+		lease_until = NULL, last_error = '', updated_at = now() FROM newsletter_issues i
 		WHERE i.org_id = d.org_id AND i.id = d.issue_id AND i.send_at = $5
-		AND d.org_id = $1 AND d.id = $2 AND d.status = 'queued'`, orgID, id, campaignID, nextRead, sendAt)
+		AND d.org_id = $1 AND d.id = $2 AND d.status = 'queued' AND d.lease_owner = $6`, orgID, id, campaignID, nextRead, sendAt, owner)
 }
 
 // RetryHandoff keeps a delivery queued, to be tried again at next. The
 // lease is released: a delivery waiting to retry is not being handed off,
-// and its issue can be moved or canceled meanwhile.
-func (s *Store) RetryHandoff(ctx context.Context, orgID, id uuid.UUID, lastError string, next time.Time) error {
-	return s.execOne(ctx, `UPDATE newsletter_deliveries SET handoff_at = $3, lease_until = NULL, last_error = $4, updated_at = now()
-		WHERE org_id = $1 AND id = $2 AND status = 'queued'`, orgID, id, next, lastError)
+// and its issue can be moved or canceled meanwhile. It is ErrNotFound if
+// owner no longer holds the lease.
+func (s *Store) RetryHandoff(ctx context.Context, orgID, id uuid.UUID, owner, lastError string, next time.Time) error {
+	return s.execOne(ctx, `UPDATE newsletter_deliveries SET handoff_at = $3, lease_owner = NULL, lease_until = NULL, last_error = $4, updated_at = now()
+		WHERE org_id = $1 AND id = $2 AND status = 'queued' AND lease_owner = $5`, orgID, id, next, lastError, owner)
 }
 
-// EndDelivery sets a delivery's final status and why.
-func (s *Store) EndDelivery(ctx context.Context, orgID, id uuid.UUID, status model.DeliveryStatus, lastError string) error {
-	return s.execOne(ctx, `UPDATE newsletter_deliveries SET status = $3, last_error = $4, lease_until = NULL, next_read_at = NULL,
-		updated_at = now() WHERE org_id = $1 AND id = $2`, orgID, id, status, lastError)
+// EndDelivery sets the final status, and why, of a delivery owner is
+// handing off. It is ErrNotFound if owner no longer holds the lease.
+func (s *Store) EndDelivery(ctx context.Context, orgID, id uuid.UUID, owner string, status model.DeliveryStatus, lastError string) error {
+	return s.execOne(ctx, `UPDATE newsletter_deliveries SET status = $3, last_error = $4, lease_owner = NULL, lease_until = NULL, next_read_at = NULL,
+		updated_at = now() WHERE org_id = $1 AND id = $2 AND status = 'queued' AND lease_owner = $5`, orgID, id, status, lastError, owner)
 }
 
 // ClaimDueDeliveryReads takes handed-off and sent deliveries of providers

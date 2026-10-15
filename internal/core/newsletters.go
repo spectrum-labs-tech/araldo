@@ -1200,13 +1200,17 @@ func (s *Service) HandOffNewsletters(ctx context.Context) (int, error) {
 }
 
 func (s *Service) handOffNewsletters(ctx context.Context, orgID *uuid.UUID) (int, error) {
-	now := s.Now()
-	due, err := s.store.ClaimDueHandoffs(ctx, orgID, s.mailProviders(), now, handoffLease, 20)
+	now, owner := s.Now(), id.New().String()
+	due, err := s.store.ClaimDueHandoffs(ctx, orgID, owner, s.mailProviders(), now, handoffLease, 20)
 	if err != nil {
 		return 0, err
 	}
 	for _, d := range due {
-		if err := s.handOff(ctx, d, now); err != nil {
+		if err := s.handOff(ctx, d, owner, now); err != nil {
+			if errors.Is(err, store.ErrNotFound) { // its lease ran out and another worker has it
+				s.log.WarnContext(ctx, "a newsletter hand-off outlived its lease", "delivery", id.Format(id.IssueDelivery, d.ID))
+				continue
+			}
 			return 0, err
 		}
 	}
@@ -1225,10 +1229,10 @@ func (s *Service) mailProviders() []string {
 // the issue's send time. Once is all (ADR 0024 decision 14): a retry
 // first looks for the campaign by its tag, and a create whose result was
 // unknown, with no campaign to be found, waits for a person.
-func (s *Service) handOff(ctx context.Context, d *model.IssueDelivery, now time.Time) error {
+func (s *Service) handOff(ctx context.Context, d *model.IssueDelivery, owner string, now time.Time) error {
 	end := func(status model.DeliveryStatus, why string) error {
 		return s.store.InTx(ctx, func(tx *store.Store) error {
-			if err := tx.EndDelivery(ctx, d.OrgID, d.ID, status, truncate(why, 500)); err != nil {
+			if err := tx.EndDelivery(ctx, d.OrgID, d.ID, owner, status, truncate(why, 500)); err != nil {
 				return err
 			}
 			return s.refreshIssue(ctx, tx, &model.Issue{ID: d.IssueID, OrgID: d.OrgID, Livemode: d.Livemode}, "", "")
@@ -1260,7 +1264,7 @@ func (s *Service) handOff(ctx context.Context, d *model.IssueDelivery, now time.
 	campaignID := ""
 	if d.Attempts > 1 {
 		if campaignID, err = m.Find(ctx, creds, tag); err != nil {
-			return s.retryHandoff(ctx, d, is, now, err)
+			return s.retryHandoff(ctx, d, is, owner, now, err)
 		}
 		if campaignID == "" && strings.HasPrefix(d.LastError, uncertainPrefix) {
 			return end(model.DeliveryNeedsAttention, "Whether "+m.Name()+" has the campaign is unknown, and none tagged "+tag+
@@ -1280,11 +1284,11 @@ func (s *Service) handOff(ctx context.Context, d *model.IssueDelivery, now time.
 		msg := email.Message{Name: is.Subject + " · " + id.Format(id.Issue, is.ID), Subject: is.Subject, PreviewText: is.PreviewText,
 			HTML: r.HTML, Text: r.Text, From: email.Address{Name: ma.FromName, Email: ma.FromEmail}, ReplyTo: ma.ReplyTo, Tag: tag}
 		if campaignID, err = m.Schedule(ctx, creds, msg, audienceIDs(d.Audiences), at); err != nil {
-			return s.retryHandoff(ctx, d, is, now, err)
+			return s.retryHandoff(ctx, d, is, owner, now, err)
 		}
 	}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
-		if err := tx.DeliveryHandedOff(ctx, d.OrgID, d.ID, campaignID, is.SendAt.Add(firstLookAfter), *is.SendAt); err != nil {
+		if err := tx.DeliveryHandedOff(ctx, d.OrgID, d.ID, owner, campaignID, is.SendAt.Add(firstLookAfter), *is.SendAt); err != nil {
 			return err
 		}
 		return s.refreshIssue(ctx, tx, is, "", "")
@@ -1307,11 +1311,11 @@ const uncertainPrefix = "unknown: "
 // retryHandoff records a failed hand-off: a refused key or request ends
 // the delivery; anything else is tried again, backing off, until well
 // past the send time.
-func (s *Service) retryHandoff(ctx context.Context, d *model.IssueDelivery, is *model.Issue, now time.Time, err error) error {
+func (s *Service) retryHandoff(ctx context.Context, d *model.IssueDelivery, is *model.Issue, owner string, now time.Time, err error) error {
 	kind := platform.KindOf(err)
 	end := func(status model.DeliveryStatus, why string) error {
 		return s.store.InTx(ctx, func(tx *store.Store) error {
-			if err := tx.EndDelivery(ctx, d.OrgID, d.ID, status, truncate(why, 500)); err != nil {
+			if err := tx.EndDelivery(ctx, d.OrgID, d.ID, owner, status, truncate(why, 500)); err != nil {
 				return err
 			}
 			return s.refreshIssue(ctx, tx, is, "", "")
@@ -1337,7 +1341,7 @@ func (s *Service) retryHandoff(ctx context.Context, d *model.IssueDelivery, is *
 	if pe := (*platform.Error)(nil); errors.As(err, &pe) && pe.RetryAfter > backoff {
 		backoff = pe.RetryAfter
 	}
-	return s.store.RetryHandoff(ctx, d.OrgID, d.ID, truncate(why, 500), now.Add(backoff))
+	return s.store.RetryHandoff(ctx, d.OrgID, d.ID, owner, truncate(why, 500), now.Add(backoff))
 }
 
 // ReadNewsletterResults checks handed-off deliveries and reads sent ones'

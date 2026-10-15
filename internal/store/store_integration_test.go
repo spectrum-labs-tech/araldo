@@ -6,6 +6,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -123,5 +124,40 @@ func TestPruneSessions(t *testing.T) {
 	}
 	if !sessionExists(ctx, t, st, live) {
 		t.Error("the prune deleted a live session")
+	}
+}
+
+// TestNotificationEmailLeaseOwner checks that only the worker holding an
+// email's lease records its outcome: one whose lease ran out, and was
+// claimed again, cannot, so the email is not sent twice.
+func TestNotificationEmailLeaseOwner(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	st := testStore(ctx, t)
+	u := newUser(ctx, t, st)
+	// Due in a day, so no other test's worker claims it.
+	due := time.Now().Add(24 * time.Hour)
+	n := &model.Notification{ID: id.New(), UserID: u.ID, Type: "test", Subject: "Hello", Shown: true}
+	if ok, err := st.CreateNotification(ctx, n, "queued", "", time.Now(), due); err != nil || !ok {
+		t.Fatalf("CreateNotification: %t, %v", ok, err)
+	}
+	first, second := "first-"+uuid.NewString(), "second-"+uuid.NewString()
+	if got, err := st.ClaimNotificationEmails(ctx, &u.ID, first, due, due.Add(time.Minute), 10); err != nil || len(got) != 1 {
+		t.Fatalf("first claim: %v, %v", got, err)
+	}
+	if got, err := st.ClaimNotificationEmails(ctx, &u.ID, second, due.Add(2*time.Minute), due.Add(3*time.Minute), 10); err != nil || len(got) != 1 {
+		t.Fatalf("second claim, after the first lease ran out: %v, %v", got, err)
+	}
+	if err := st.FinishNotificationEmail(ctx, n.ID, first, "sent", "", due, nil); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the worker that lost the lease finished the email: %v", err)
+	}
+	if err := st.FinishNotificationEmail(ctx, n.ID, second, "sent", "", due, nil); err != nil {
+		t.Errorf("the worker holding the lease could not finish: %v", err)
+	}
+	if err := st.FinishNotificationEmail(ctx, n.ID, second, "sent", "", due, nil); !errors.Is(err, ErrNotFound) {
+		t.Errorf("an email was finished twice: %v", err)
+	}
+	if status, _, err := st.NotificationEmail(ctx, n.ID); err != nil || status != "sent" {
+		t.Errorf("email status %q, %v; want sent", status, err)
 	}
 }

@@ -48,8 +48,8 @@ func (s *Service) SendNotificationEmails(ctx context.Context) (int, error) {
 // sendNotificationEmails sends one person's due emails, or (userID nil)
 // everyone's.
 func (s *Service) sendNotificationEmails(ctx context.Context, userID *uuid.UUID) (int, error) {
-	now := s.Now()
-	due, err := s.store.ClaimNotificationEmails(ctx, userID, now, now.Add(notificationEmailLease), notificationEmailBatch)
+	now, owner := s.Now(), id.New().String()
+	due, err := s.store.ClaimNotificationEmails(ctx, userID, owner, now, now.Add(notificationEmailLease), notificationEmailBatch)
 	if err != nil {
 		return 0, err
 	}
@@ -71,7 +71,7 @@ func (s *Service) sendNotificationEmails(ctx context.Context, userID *uuid.UUID)
 		if status == "sent" {
 			n++
 		}
-		if err := s.store.FinishNotificationEmail(ctx, d.ID, status, reason, s.Now(), next); err != nil {
+		if err := s.finishNotificationEmail(ctx, d.ID, owner, status, reason, next); err != nil {
 			return n, err
 		}
 	}
@@ -85,12 +85,23 @@ func (s *Service) sendNotificationEmails(ctx context.Context, userID *uuid.UUID)
 			n++
 		}
 		for _, d := range group {
-			if err := s.store.FinishNotificationEmail(ctx, d.ID, status, reason, s.Now(), next); err != nil {
+			if err := s.finishNotificationEmail(ctx, d.ID, owner, status, reason, next); err != nil {
 				return n, err
 			}
 		}
 	}
 	return n, nil
+}
+
+// finishNotificationEmail records what became of an email owner claimed. A
+// lost lease is no error: another worker has the email now.
+func (s *Service) finishNotificationEmail(ctx context.Context, notificationID uuid.UUID, owner, status, reason string, next *time.Time) error {
+	err := s.store.FinishNotificationEmail(ctx, notificationID, owner, status, reason, s.Now(), next)
+	if errors.Is(err, store.ErrNotFound) {
+		s.log.WarnContext(ctx, "a notification email outlived its lease", "notification", notificationID)
+		return nil
+	}
+	return err
 }
 
 // deliverDigest sends a person's daily summary: their org notifications

@@ -78,6 +78,10 @@ func TestPasskeysInTheDashboard(t *testing.T) {
 	if !strings.Contains(page, "Work laptop") {
 		t.Fatalf("the account page does not list the passkey:\n%s", page)
 	}
+	// app.js reads the new passkey's name from the input this names by id.
+	if !strings.Contains(page, `data-name-field="passkey-name"`) || !strings.Contains(page, `<input id="passkey-name"`) {
+		t.Fatalf("the add-a-passkey button does not name its name field:\n%s", page)
+	}
 	for _, issue := range a11yIssues(page, true) {
 		t.Errorf("/account: %s", issue)
 	}

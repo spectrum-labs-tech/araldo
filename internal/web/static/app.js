@@ -3,10 +3,6 @@
 (function () {
   "use strict";
 
-  // The org/mode switch returns to the current page.
-  document.querySelectorAll('form.ctx input[name="back"]').forEach(function (el) {
-    el.value = location.pathname;
-  });
 
   // Confirmations for destructive actions.
   document.querySelectorAll("form[data-confirm]").forEach(function (form) {
@@ -16,7 +12,16 @@
   });
 
   // Radio groups and selects that show [data-when="name=value"] blocks.
-  function currentValue(name) {
+  // A block in a form follows that form's control; one outside any form
+  // (a page's guide) follows the page's.
+  function currentValue(block, name) {
+    var form = block.closest("form");
+    if (form) {
+      var el = form.elements.namedItem(name);
+      if (!el) { return null; }
+      if (el.type === "radio" || el.type === "checkbox") { return el.checked ? el.value : null; }
+      return el.value; // a select, or a group of radios (RadioNodeList)
+    }
     var select = document.querySelector('select[name="' + name + '"]');
     if (select) { return select.value; }
     var checked = document.querySelector('input[name="' + name + '"]:checked');
@@ -25,14 +30,17 @@
   function syncToggles() {
     document.querySelectorAll("[data-when]").forEach(function (block) {
       var parts = block.getAttribute("data-when").split("=");
-      block.hidden = currentValue(parts[0]) !== parts[1];
+      block.hidden = currentValue(block, parts[0]) !== parts[1];
     });
   }
   document.querySelectorAll("[data-toggle]").forEach(function (el) { el.addEventListener("change", syncToggles); });
   syncToggles();
 
   // Copy buttons. The result is announced to screen readers too.
+  // The label is read once: a second click while it says "Copied" must
+  // not make that the label to go back to.
   document.querySelectorAll("[data-copy]").forEach(function (btn) {
+    var label = btn.textContent, timer;
     var status = document.createElement("span");
     status.className = "sr-only";
     status.setAttribute("role", "status");
@@ -41,10 +49,10 @@
       var el = document.getElementById(btn.getAttribute("data-copy"));
       if (!el || !navigator.clipboard) { return; }
       navigator.clipboard.writeText(el.textContent.trim()).then(function () {
-        var old = btn.textContent;
         btn.textContent = "Copied";
         status.textContent = "Copied to the clipboard.";
-        setTimeout(function () { btn.textContent = old; status.textContent = ""; }, 1500);
+        clearTimeout(timer);
+        timer = setTimeout(function () { btn.textContent = label; status.textContent = ""; }, 1500);
       });
     });
   });
@@ -112,7 +120,7 @@
           var pk = decodeOptions(data.options.publicKey);
           return c.get ? navigator.credentials.get({ publicKey: pk }) : navigator.credentials.create({ publicKey: pk });
         }).then(function (cred) {
-          var nameEl = btn.getAttribute("data-name") && document.querySelector(btn.getAttribute("data-name"));
+          var nameEl = document.getElementById(btn.getAttribute("data-name-field") || "");
           return post(c.finish, csrf, { token: token, response: encodeCredential(cred), next: btn.getAttribute("data-next") || "",
             name: nameEl ? nameEl.value : "" });
         }).then(function (data) {

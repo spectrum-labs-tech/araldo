@@ -243,6 +243,11 @@ type view struct {
 	MailEnabled bool
 	// Unread counts the person's unread notifications.
 	Unread int
+	// Back is where the org and mode switch returns to: the page shown, if
+	// it was asked for with GET (a form's POST address may have no page).
+	// The path only: a query can carry what must not be echoed (a device
+	// code someone sent).
+	Back string
 }
 
 // widePages use the full width of the window.
@@ -430,6 +435,9 @@ func (s *Server) view(c *reqCtx, nav, title string, data any) view {
 			if c.org.Status != model.OrgActive {
 				v.OrgStatus, v.StatusNote = string(c.org.Status), c.org.StatusNote
 			}
+		}
+		if c.r.Method == http.MethodGet {
+			v.Back = c.r.URL.EscapedPath()
 		}
 		v.BillingLink = s.svc.Billing() && c.member != nil && c.member.Role == model.RoleOwner
 		v.Unread = c.unread

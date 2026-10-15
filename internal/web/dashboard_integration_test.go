@@ -836,3 +836,32 @@ func TestDevelopersNavMarksTheCurrentPage(t *testing.T) {
 		}
 	}
 }
+
+// TestContextSwitchReturnsToThePage checks switching mode comes back to
+// the page it was made from without JavaScript: the server fills the
+// form's back field (the path, never the query), and the switch takes
+// only a path on this site.
+func TestContextSwitchReturnsToThePage(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	page := d.send(httptest.NewRequest(http.MethodGet, "/templates?q=launch", nil)).Body.String()
+	if !strings.Contains(page, `<input type="hidden" name="back" value="/templates">`) {
+		t.Fatalf("the switch form does not carry the page:\n%s", page)
+	}
+	tests := []struct{ back, want string }{
+		{"/templates", "/templates"},
+		{"/posts?q=launch", "/posts?q=launch"},
+		{"", "/"},
+		{"https://evil.example/", "/"},
+		{"//evil.example/", "/"},
+		{"/posts/post_123", "/"}, // a record of the other mode
+	}
+	for _, tt := range tests {
+		form := url.Values{"csrf": {d.login.Session.CSRFToken}, "mode": {"test"}, "back": {tt.back}}
+		r := httptest.NewRequest(http.MethodPost, "/context", strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if rec := d.send(r); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != tt.want {
+			t.Errorf("back %q: %d to %q, want %q", tt.back, rec.Code, rec.Header().Get("Location"), tt.want)
+		}
+	}
+}

@@ -18,7 +18,7 @@
   {{if .Org}}
   <form method="post" action="/context" class="ctx flex items-center gap-2.5">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <input type="hidden" name="back" value="">
+    <input type="hidden" name="back" value="{{.Back}}">
     {{if gt (len .Orgs) 1}}
     <label class="sr-only" for="org-switch">Organization</label>
     <select id="org-switch" name="org">

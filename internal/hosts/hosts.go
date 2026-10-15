@@ -137,8 +137,11 @@ func (s *Store) Load() (*File, error) {
 	return f, nil
 }
 
-// Save writes hosts.yaml, readable only by the user.
-func (s *Store) Save(f *File) error {
+// Save writes hosts.yaml, readable only by the user. It writes a new file
+// beside it and renames it into place, so a crash or a full disk leaves the
+// old file whole, and a file once readable by others (written by hand, or
+// by an older version) ends up 0600 like a new one.
+func (s *Store) Save(f *File) (err error) {
 	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
 		return err
 	}
@@ -146,7 +149,29 @@ func (s *Store) Save(f *File) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path(), b, 0o600)
+	tmp, err := os.CreateTemp(s.Dir, ".hosts-*.yaml") // created 0600
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+	if err := tmp.Chmod(0o600); err != nil && !errors.Is(err, errors.ErrUnsupported) {
+		return err
+	}
+	if _, err := tmp.Write(b); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), s.path())
 }
 
 // Name turns what the user typed (a URL or a bare host name) into the

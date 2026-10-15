@@ -123,6 +123,34 @@ func TestSignInFallsBackToTheFile(t *testing.T) {
 	}
 }
 
+// TestSaveReplacesTheFile checks Save leaves only hosts.yaml behind, with
+// what was saved, made private even if it was readable by others before.
+func TestSaveReplacesTheFile(t *testing.T) {
+	t.Parallel()
+	s := &Store{Dir: t.TempDir()}
+	path := filepath.Join(s.Dir, "hosts.yaml")
+	if err := os.WriteFile(path, []byte("hosts: {}\n"), 0o644); err != nil { //nolint:gosec // the old, too open file under test
+		t.Fatal(err)
+	}
+	f := &File{Default: "araldo.example.com", Hosts: map[string]*Host{"araldo.example.com": {URL: "https://araldo.example.com"}}}
+	if err := s.Save(f); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Load()
+	if err != nil || got.Default != "araldo.example.com" || got.Hosts["araldo.example.com"] == nil {
+		t.Fatalf("Load after Save = %+v, %v", got, err)
+	}
+	entries, err := os.ReadDir(s.Dir)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "hosts.yaml" {
+		t.Fatalf("the directory holds %v, %v; want hosts.yaml alone", entries, err)
+	}
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("hosts.yaml mode %v, %v; want 0600", info.Mode().Perm(), err)
+		}
+	}
+}
+
 // The environment wins, for CI: ARALDO_TOKEN over a stored token, and
 // ARALDO_HOST over the default.
 func TestEnvironmentOverrides(t *testing.T) {

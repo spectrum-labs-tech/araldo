@@ -32,12 +32,16 @@ func TestFormatMatchesSpec(t *testing.T) {
 			if got != "post_"+tt.want {
 				t.Fatalf("Format = %q, want post_%s", got, tt.want)
 			}
-			back, err := Parse(Post, got)
+			back, err := decode(tt.want)
 			if err != nil {
-				t.Fatalf("Parse(%q): %v", got, err)
+				t.Fatalf("decode(%q): %v", tt.want, err)
 			}
 			if back != u {
 				t.Fatalf("round trip = %s, want %s", back, u)
+			}
+			// Of these, Parse takes only the version 7 one.
+			if _, err := Parse(Post, got); (err == nil) != (u.Version() == 7) {
+				t.Fatalf("Parse(%q) = %v", got, err)
 			}
 		})
 	}
@@ -47,14 +51,18 @@ func TestParseRejects(t *testing.T) {
 	t.Parallel()
 	good := Format(Post, New())
 	tests := map[string]string{
-		"wrong prefix":      Format(Template, New()),
-		"no prefix":         good[len("post_"):],
-		"too short":         good[:len(good)-1],
-		"too long":          good + "0",
-		"overflow":          "post_8zzzzzzzzzzzzzzzzzzzzzzzzz",
-		"excluded letter i": "post_0000000000000000000000000i",
-		"uppercase":         "post_01H455VB4PEX5VSKNK084SN02Q",
-		"empty":             "",
+		"wrong prefix":                        Format(Template, New()),
+		"no prefix":                           good[len("post_"):],
+		"too short":                           good[:len(good)-1],
+		"too long":                            good + "0",
+		"overflow":                            "post_8zzzzzzzzzzzzzzzzzzzzzzzzz",
+		"excluded letter i":                   "post_0000000000000000000000000i",
+		"uppercase":                           "post_01H455VB4PEX5VSKNK084SN02Q",
+		"empty":                               "",
+		"the nil UUID":                        Format(Post, uuid.Nil),
+		"the signing scope":                   Format(Post, uuid.MustParse("00000000-0000-0000-0000-000000000001")),
+		"a version 4 UUID":                    Format(Post, uuid.MustParse("6ba7b810-9dad-41d1-80b4-00c04fd430c8")),
+		"a version 7 UUID of another variant": Format(Post, uuid.MustParse("01890a5d-ac96-774b-ccce-b302099a8057")),
 	}
 	for name, s := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -81,9 +89,13 @@ func FuzzRoundTrip(f *testing.F) {
 			return
 		}
 		u := uuid.UUID(b)
-		back, err := Parse(Brand, Format(Brand, u))
+		back, err := decode(Format(Brand, u)[len("brand_"):])
 		if err != nil || back != u {
 			t.Fatalf("round trip of %x = %s, %v", b, back, err)
+		}
+		parsed, err := Parse(Brand, Format(Brand, u))
+		if v7 := u.Version() == 7 && u.Variant() == uuid.RFC4122; v7 != (err == nil) || v7 && parsed != u {
+			t.Fatalf("Parse of %x = %s, %v", b, parsed, err)
 		}
 	})
 }

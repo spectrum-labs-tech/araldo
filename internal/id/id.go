@@ -98,7 +98,9 @@ func Format(p Prefix, u uuid.UUID) string {
 	return string(p) + "_" + encode(u)
 }
 
-// Parse reads an ID that must carry prefix p.
+// Parse reads an ID that must carry prefix p. Every ID Araldo makes is a
+// version 7 UUID (New), so anything else, the nil UUID and the keyring's
+// reserved scopes among them, names nothing and is refused.
 func Parse(p Prefix, s string) (uuid.UUID, error) {
 	rest, ok := strings.CutPrefix(s, string(p)+"_")
 	if !ok {
@@ -107,6 +109,9 @@ func Parse(p Prefix, s string) (uuid.UUID, error) {
 	u, err := decode(rest)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("%w: %q: %w", ErrInvalid, s, err)
+	}
+	if u.Version() != 7 || u.Variant() != uuid.RFC4122 {
+		return uuid.Nil, fmt.Errorf("%w: %q is not a version 7 UUID", ErrInvalid, s)
 	}
 	return u, nil
 }

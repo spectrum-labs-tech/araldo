@@ -65,14 +65,14 @@
       <td><span class="pill {{statusClass .Status}}">{{.Status}}</span>{{if .StatusNote}}<div class="text-muted">{{.StatusNote}}</div>{{end}}</td>
       <td>{{fmtTime .ReadAt}}</td>
       {{if $.Data.CanConnect}}<td><form method="post" action="/performance/analytics/{{analyticsSourceID .ID}}/delete" data-confirm="Disconnect {{.Name}} and forget its counts?">
-        <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-link" aria-label="Disconnect {{.Name}}">Disconnect</button></form></td>{{end}}
+        <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger" aria-label="Disconnect {{.Name}}">Disconnect</button></form></td>{{end}}
     </tr>{{end}}</tbody>
   </table>
   {{else}}<p class="text-muted">No web analytics connected.</p>{{end}}
   {{if and .Data.CanConnect .Data.Provider}}
   {{$p := .Data.Provider}}
   <h3 class="mt-4">Connect a site</h3>
-  {{if gt (len .Data.Providers) 1}}<p class="text-sm">Provider: {{range .Data.Providers}}<a href="/performance?provider={{.Provider}}" {{if eq .Provider $p.Provider}}aria-current="true"{{end}}>{{.Name}}</a> {{end}}</p>{{end}}
+  {{if gt (len .Data.Providers) 1}}<nav class="choices" aria-label="Provider">{{range .Data.Providers}}<a class="chip" href="/performance?provider={{.Provider}}" {{if eq .Provider $p.Provider}}aria-current="true"{{end}}>{{.Name}}</a>{{end}}</nav>{{end}}
   <form method="post" action="/performance/analytics" class="flex max-w-xl flex-col gap-4">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <input type="hidden" name="provider" value="{{$p.Provider}}">

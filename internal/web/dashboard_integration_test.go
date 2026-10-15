@@ -410,7 +410,7 @@ func TestPostsListFiltersAndPages(t *testing.T) {
 	if rows(page) != 25 || !strings.Contains(links(page)["next"], "q=build") || !strings.Contains(links(page)["next"], "status=scheduled") {
 		t.Fatalf("filtered paging: %d rows, links %v", rows(page), links(page))
 	}
-	if !strings.Contains(page, `class="chip no-underline hover:no-underline" aria-current="true">scheduled`) {
+	if !strings.Contains(page, `class="chip" aria-current="true">scheduled`) {
 		t.Fatal("the chosen status chip is not marked current")
 	}
 	// Each target's status is said in words, not only by the pill's color.

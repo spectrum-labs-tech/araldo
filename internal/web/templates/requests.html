@@ -29,6 +29,6 @@
   {{end}}
   </tbody>
 </table>
-{{if $d.HasMore}}<p class="mt-3"><a href="/logs?status={{$d.Class}}&after={{$d.Next}}">Older →</a></p>{{end}}
+{{if $d.HasMore}}<nav class="pager" aria-label="Pages"><span></span><span><a class="btn" href="/logs?status={{$d.Class}}&after={{$d.Next}}" rel="next">Older →</a></span></nav>{{end}}
 {{else}}<p class="text-muted">No requests{{if $d.Class}} with that outcome{{end}} in the last 14 days.</p>{{end}}
 {{end}}

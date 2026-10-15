@@ -44,7 +44,7 @@
       <td><span class="pill {{statusClass .Status}}">{{.Status}}</span>{{if .StatusNote}}<div class="text-muted">{{.StatusNote}}</div>{{end}}</td>
       <td>{{fmtTime .ReadAt}}</td>
       {{if $d.CanWrite}}<td><form method="post" action="/ads/accounts/{{adAccountID .ID}}/delete" data-confirm="Disconnect {{.Name}} and forget its results?">
-        <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-link" aria-label="Disconnect {{.Name}}">Disconnect</button></form></td>{{end}}
+        <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger" aria-label="Disconnect {{.Name}}">Disconnect</button></form></td>{{end}}
     </tr>{{end}}</tbody>
   </table>
   {{else}}<p class="text-muted">No ad accounts are connected.</p>{{end}}
@@ -56,7 +56,7 @@
   {{if not $d.Network}}
   <p class="text-muted">This install reads no ad networks in live mode yet. Each network is added once its ads API approves the install (ADR 0023).</p>
   {{else}}
-  {{if gt (len $d.Networks) 1}}<p class="text-sm">Network: {{range $d.Networks}}<a href="/ads?network={{.Network}}" {{if eq .Network $d.Network.Network}}aria-current="true"{{end}}>{{.Name}}</a> {{end}}</p>{{end}}
+  {{if gt (len $d.Networks) 1}}<nav class="choices" aria-label="Network">{{range $d.Networks}}<a class="chip" href="/ads?network={{.Network}}" {{if eq .Network $d.Network.Network}}aria-current="true"{{end}}>{{.Name}}</a>{{end}}</nav>{{end}}
   {{if $d.Network.OAuth}}
   {{if $d.Apps}}
   <form method="get" action="/connect/{{$d.Network.Provider}}/start" class="flex max-w-xl flex-col gap-4">

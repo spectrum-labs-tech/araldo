@@ -18,10 +18,10 @@
   {{if or $d.Query $d.Brand $d.Status}}<a class="btn" href="/posts">Clear</a>{{end}}
 </form>
 
-<nav class="mb-4 flex flex-wrap gap-1.5" aria-label="Filter by status">
-  <a href="{{$d.StatusLink ""}}" class="chip no-underline hover:no-underline" {{if eq $d.Status ""}}aria-current="true"{{end}}>All <span class="chip-count">{{$d.Total}}</span></a>
+<nav class="choices mb-4" aria-label="Filter by status">
+  <a href="{{$d.StatusLink ""}}" class="chip" {{if eq $d.Status ""}}aria-current="true"{{end}}>All <span class="chip-count">{{$d.Total}}</span></a>
   {{range $s := $d.Statuses}}{{with index $d.Counts $s}}
-  <a href="{{$d.StatusLink (printf "%s" $s)}}" class="chip no-underline hover:no-underline" {{if eq $d.Status (printf "%s" $s)}}aria-current="true"{{end}}>{{$s}} <span class="chip-count">{{.}}</span></a>
+  <a href="{{$d.StatusLink (printf "%s" $s)}}" class="chip" {{if eq $d.Status (printf "%s" $s)}}aria-current="true"{{end}}>{{$s}} <span class="chip-count">{{.}}</span></a>
   {{end}}{{end}}
 </nav>
 
@@ -43,7 +43,7 @@
   </tbody>
 </table>
 {{if or $d.Newer $d.Older}}
-<nav class="mt-3 flex justify-between gap-3" aria-label="Pages">
+<nav class="pager" aria-label="Pages">
   <span>{{if $d.Newer}}<a class="btn" href="{{$d.Newer}}" rel="prev">← Newer</a>{{end}}</span>
   <span>{{if $d.Older}}<a class="btn" href="{{$d.Older}}" rel="next">Older →</a>{{end}}</span>
 </nav>

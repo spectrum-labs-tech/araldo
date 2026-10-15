@@ -394,7 +394,15 @@
     @apply size-1.5 rounded-full bg-accent;
   }
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-panel px-2.5 py-1 text-sm font-semibold text-muted;
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-panel px-2.5 py-1 text-sm font-semibold text-muted no-underline hover:no-underline;
+  }
+  /* A row of chips: filters, or which provider a form is for. */
+  .choices {
+    @apply my-2 flex flex-wrap items-center gap-1.5;
+  }
+  /* Newer and older pages of a list. */
+  .pager {
+    @apply mt-3 flex justify-between gap-3;
   }
   .chip-count {
     @apply rounded-full bg-subtle px-1.5 text-xs font-normal text-muted;

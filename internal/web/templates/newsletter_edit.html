@@ -136,7 +136,7 @@
 <form method="post" action="/newsletters/{{issueID $is.ID}}/action" data-confirm="Cancel this issue? Copies not yet sent are stopped at the providers too.">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <input type="hidden" name="action" value="cancel">
-  <button class="btn-link">Cancel this issue</button>
+  <button class="btn-danger">Cancel this issue</button>
 </form>
 {{end}}
 {{end}}

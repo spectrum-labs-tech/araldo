@@ -13,7 +13,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -45,13 +44,17 @@ type Adapter struct {
 	AppView string
 	// Video is the video service; tests replace it.
 	Video string
-	// Sleep waits while a video is processed; tests replace it.
+	// Sleep waits while a video is processed, and Now is the clock for
+	// session expiry; tests replace them.
 	Sleep func(ctx context.Context, d time.Duration) error
+	Now   func() time.Time
+
+	sessions sessionCache
 }
 
 // New returns a Bluesky adapter.
 func New(client *http.Client) *Adapter {
-	return &Adapter{Client: client, Web: "https://bsky.app", AppView: DefaultAppView, Video: DefaultVideo, Sleep: sleep}
+	return &Adapter{Client: client, Web: "https://bsky.app", AppView: DefaultAppView, Video: DefaultVideo, Sleep: sleep, Now: time.Now}
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
@@ -131,10 +134,31 @@ func (a *Adapter) login(ctx context.Context, c platform.Credentials) (session, e
 	return s, err
 }
 
+// Verify checks the credentials: a cached session is checked with
+// getSession, and signed in again if its token went stale.
 func (a *Adapter) Verify(ctx context.Context, c platform.Credentials) (platform.Account, error) {
-	s, err := a.login(ctx, c)
+	s, cached, err := a.session(ctx, c)
 	if err != nil {
 		return platform.Account{}, err
+	}
+	if cached {
+		var cur struct {
+			DID    string `json:"did"`
+			Handle string `json:"handle"`
+		}
+		err := platform.JSON(ctx, a.Client, http.MethodGet, service(c)+"/xrpc/com.atproto.server.getSession",
+			map[string]string{"Authorization": "Bearer " + s.AccessJwt}, nil, &cur)
+		switch {
+		case stale(err):
+			a.sessions.forget(keyOf(c), s.AccessJwt)
+			if s, _, err = a.session(ctx, c); err != nil {
+				return platform.Account{}, err
+			}
+		case err != nil:
+			return platform.Account{}, err
+		case cur.Handle != "":
+			s.DID, s.Handle = cur.DID, cur.Handle
+		}
 	}
 	return platform.Account{ExternalID: s.DID, Handle: s.Handle, DisplayName: "@" + s.Handle, URL: a.Web + "/profile/" + s.Handle}, nil
 }
@@ -193,10 +217,21 @@ type feature struct {
 }
 
 func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platform.Payload, onPart func(platform.RemoteRef) error) (platform.Result, error) {
-	s, err := a.login(ctx, c)
+	s, cached, err := a.session(ctx, c)
 	if err != nil {
 		return platform.Result{}, err
 	}
+	res, err := a.publish(ctx, c, s, p, onPart)
+	if cached && stale(err) {
+		// The cached session went stale: forget it, and try again with a
+		// new one. Records have fixed keys, so trying again is safe.
+		a.sessions.forget(keyOf(c), s.AccessJwt)
+		return res, &platform.Error{Kind: platform.Transient, Code: "session_expired", Msg: "the Bluesky session expired", Err: err}
+	}
+	return res, err
+}
+
+func (a *Adapter) publish(ctx context.Context, c platform.Credentials, s session, p platform.Payload, onPart func(platform.RemoteRef) error) (platform.Result, error) {
 	auth := map[string]string{"Authorization": "Bearer " + s.AccessJwt}
 	res := platform.Result{Parts: append([]platform.RemoteRef(nil), p.Posted...)}
 	var root, parent *strongRef
@@ -295,6 +330,8 @@ func (a *Adapter) existing(ctx context.Context, c platform.Credentials, s sessio
 	switch {
 	case err == nil:
 		return &out, nil
+	case stale(err):
+		return nil, err
 	case errors.As(err, &pe) && pe.Kind == platform.Rejected:
 		return nil, nil // RecordNotFound (HTTP 400)
 	default:
@@ -389,8 +426,12 @@ type jobStatus struct {
 	Message string          `json:"message"`
 }
 
-// maxVideoWait is the longest wait between checks on a processing video.
-const maxVideoWait = 5 * time.Second
+// maxVideoWait is the wait between checks on a processing video, and
+// maxVideoChecks how many checks to make: ten minutes.
+const (
+	maxVideoWait   = 5 * time.Second
+	maxVideoChecks = 120
+)
 
 // uploadVideo sends a video, streamed, to Bluesky's video service with a
 // token the account's PDS grants for it, waits for it to be processed, and
@@ -412,28 +453,23 @@ func (a *Adapter) uploadVideo(ctx context.Context, c platform.Credentials, s ses
 	}
 	defer func() { _ = rc.Close() }()
 	u := a.Video + "/xrpc/app.bsky.video.uploadVideo?" + url.Values{"did": {s.DID}, "name": {m.Filename(0)}}.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, rc)
-	if err != nil {
-		return nil, &platform.Error{Kind: platform.Rejected, Code: "request", Err: err}
-	}
-	req.ContentLength = m.Size
-	req.Header.Set("Authorization", "Bearer "+tok.Token)
-	req.Header.Set("Content-Type", m.Type)
-	resp, err := platform.Do(a.Client, req)
+	resp, err := platform.Fetch(ctx, a.Client, platform.Request{Method: http.MethodPost, URL: u, Body: rc, Length: m.Size, ContentType: m.Type,
+		Header: map[string]string{"Authorization": "Bearer " + tok.Token}})
 	if err != nil {
 		return nil, err
 	}
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	_ = resp.Body.Close()
 	var job jobStatus
 	// A video the service already has comes back as 409 with its job.
-	if json.Unmarshal(raw, &job) != nil || job.JobID == "" || resp.StatusCode/100 != 2 && resp.StatusCode != http.StatusConflict {
-		if resp.StatusCode/100 == 2 {
+	if json.Unmarshal(resp.Body, &job) != nil || job.JobID == "" || resp.Status/100 != 2 && resp.Status != http.StatusConflict {
+		if resp.Status/100 == 2 {
 			return nil, &platform.Error{Kind: platform.Transient, Code: "decode", Msg: "the video service answered without a job"}
 		}
-		return nil, platform.Classify(resp, raw)
+		return nil, resp.Err()
 	}
-	for len(job.Blob) == 0 {
+	for checks := 0; len(job.Blob) == 0; checks++ {
+		if checks == maxVideoChecks {
+			return nil, &platform.Error{Kind: platform.Transient, Code: "media_processing", Msg: "Bluesky was still processing the video"}
+		}
 		if job.State == "JOB_STATE_FAILED" {
 			return nil, &platform.Error{Kind: platform.Rejected, Code: "video_rejected",
 				Msg: strings.TrimSpace("Bluesky could not process the video: " + job.Error + " " + job.Message)}

@@ -213,10 +213,35 @@ func (s *Service) ChangeOrg(ctx context.Context, a Actor, ch OrgChange) (*model.
 	if err := requireOperator(a); err != nil {
 		return nil, err
 	}
-	o, err := s.store.Org(ctx, a.OrgID)
+	// Read and written with the row locked: two changes at once apply one
+	// after the other, each to what the other left, so neither undoes the
+	// other's (a suspension, say).
+	var o *model.Org
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		var err error
+		if o, err = tx.OrgForUpdate(ctx, a.OrgID); err != nil {
+			return notFound(err, "org")
+		}
+		changed, err := applyOrgChange(o, ch)
+		if err != nil || len(changed) == 0 {
+			return err
+		}
+		if err := tx.SetOrgOperated(ctx, o); err != nil {
+			if errors.Is(err, store.ErrConflict) {
+				return apperr.Conflict("external_ref_taken", "Another org has the external reference %q.", o.ExternalRef)
+			}
+			return notFound(err, "org")
+		}
+		return s.audit(ctx, tx, a, "org.operate", id.Format(id.Org, o.ID), changed)
+	})
 	if err != nil {
-		return nil, notFound(err, "org")
+		return nil, err
 	}
+	return o, nil
+}
+
+// applyOrgChange checks ch and applies it to o, returning what changed.
+func applyOrgChange(o *model.Org, ch OrgChange) (map[string]any, error) {
 	var ps apperr.Problems
 	changed := map[string]any{}
 	if ch.Name != nil {
@@ -254,19 +279,7 @@ func (s *Service) ChangeOrg(ctx context.Context, a Actor, ch OrgChange) (*model.
 	if err := ps.Err("The change is not valid."); err != nil {
 		return nil, err
 	}
-	if len(changed) == 0 {
-		return o, nil
-	}
-	err = s.store.InTx(ctx, func(tx *store.Store) error {
-		if err := tx.SetOrgOperated(ctx, o); err != nil {
-			if errors.Is(err, store.ErrConflict) {
-				return apperr.Conflict("external_ref_taken", "Another org has the external reference %q.", o.ExternalRef)
-			}
-			return notFound(err, "org")
-		}
-		return s.audit(ctx, tx, a, "org.operate", id.Format(id.Org, o.ID), changed)
-	})
-	return o, err
+	return changed, nil
 }
 
 // InviteAsOperator invites someone to the org the operator acts in, with

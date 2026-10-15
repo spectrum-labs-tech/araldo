@@ -573,3 +573,42 @@ func TestLimitsHoldAtOnce(t *testing.T) {
 		t.Fatalf("the refused person's account: %v, want none", err)
 	}
 }
+
+// TestOrgChangesAtOnceKeepEachOther checks two operator changes made at
+// once both stand: neither writes back what it read before the other.
+func TestOrgChangesAtOnceKeepEachOther(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	_, op := operatorKey(t, w.s)
+	in, _, err := w.s.InOrg(ctx, op, w.org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for round := range 5 {
+		name := fmt.Sprintf("Renamed %d", round)
+		status := model.OrgSuspended
+		if round%2 == 1 {
+			status = model.OrgActive
+		}
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			if _, err := w.s.ChangeOrg(ctx, in, core.OrgChange{Name: &name}); err != nil {
+				t.Error(err)
+			}
+		})
+		wg.Go(func() {
+			if _, err := w.s.ChangeOrg(ctx, in, core.OrgChange{Status: &status}); err != nil {
+				t.Error(err)
+			}
+		})
+		wg.Wait()
+		o, err := w.s.Org(ctx, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.Name != name || o.Status != status {
+			t.Fatalf("round %d: name %q status %s, want %q and %s", round, o.Name, o.Status, name, status)
+		}
+	}
+}

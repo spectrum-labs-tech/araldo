@@ -7,7 +7,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
@@ -92,7 +91,7 @@ func (s *Server) cliCreateKey(c *reqCtx) error {
 	}
 	plain, _, err := s.svc.CreateAPIKey(c.ctx(), c.actor, c.session, in)
 	if err != nil {
-		if apperr.As(err).Code == "reauthentication_required" {
+		if core.NeedsReauth(err) {
 			return confirmFirst(c, d)
 		}
 		return s.formErr(c, "cli", "developers", "Connect the araldo CLI", d, err)

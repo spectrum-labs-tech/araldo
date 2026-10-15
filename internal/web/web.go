@@ -484,7 +484,7 @@ func (s *Server) formErr(c *reqCtx, page, nav, title string, data any, err error
 // recordDenial audits a member refused an action (ADR 0004); a password
 // confirmation asked for is not a refusal.
 func (s *Server) recordDenial(c *reqCtx, ae *apperr.Error) {
-	if c.member == nil || ae.Code == "reauthentication_required" {
+	if c.member == nil || ae.Code == core.CodeReauthRequired {
 		return
 	}
 	op := c.r.Pattern // the route, without the IDs in it
@@ -507,7 +507,7 @@ func (s *Server) handleErr(c *reqCtx, err error) {
 	case apperr.KindNotFound:
 		s.renderError(c, http.StatusNotFound, ae.Message)
 	case apperr.KindForbidden:
-		if ae.Code == "reauthentication_required" {
+		if ae.Code == core.CodeReauthRequired {
 			http.Redirect(c.w, c.r, "/confirm?next="+url.QueryEscape(c.r.URL.RequestURI()), http.StatusSeeOther)
 			return
 		}

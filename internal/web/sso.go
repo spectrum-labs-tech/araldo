@@ -143,14 +143,12 @@ func (s *Server) ssoFormErr(c *reqCtx, err error) error {
 	return s.formErr(c, "sso", "org", "Single sign-on", s.ssoData(c, st), err)
 }
 
-func needsConfirm(err error) bool { return apperr.As(err).Code == "reauthentication_required" }
-
 func (s *Server) saveSSO(c *reqCtx) error {
 	err := s.svc.SaveSSOConnection(c.ctx(), c.actor, c.session, core.SSOConnectionInput{Issuer: c.r.PostFormValue("issuer"),
 		ClientID: c.r.PostFormValue("client_id"), ClientSecret: c.r.PostFormValue("client_secret"),
 		DefaultRole: model.Role(c.r.PostFormValue("default_role"))})
 	switch {
-	case needsConfirm(err):
+	case core.NeedsReauth(err):
 		return redirect(c, "/confirm?next=/org/sso", "Confirm it's you to change single sign-on.")
 	case err != nil:
 		return s.ssoFormErr(c, err)
@@ -161,7 +159,7 @@ func (s *Server) saveSSO(c *reqCtx) error {
 func (s *Server) deleteSSO(c *reqCtx) error {
 	err := s.svc.DeleteSSOConnection(c.ctx(), c.actor, c.session)
 	switch {
-	case needsConfirm(err):
+	case core.NeedsReauth(err):
 		return redirect(c, "/confirm?next=/org/sso", "Confirm it's you to disconnect single sign-on.")
 	case err != nil:
 		return s.ssoFormErr(c, err)
@@ -196,7 +194,7 @@ func (s *Server) requireSSO(c *reqCtx) error {
 	on := c.r.PostFormValue("require") == "1"
 	err := s.svc.SetRequireSSO(c.ctx(), c.actor, c.session, on)
 	switch {
-	case needsConfirm(err):
+	case core.NeedsReauth(err):
 		return redirect(c, "/confirm?next=/org/sso", "Confirm it's you to stop requiring single sign-on.")
 	case err != nil:
 		return s.ssoFormErr(c, err)

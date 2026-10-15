@@ -61,7 +61,7 @@ func (s *Server) jsonFail(w http.ResponseWriter, r *http.Request, err error) {
 		status = http.StatusTooManyRequests
 	}
 	out := map[string]string{"error": ae.Message, "code": ae.Code}
-	if ae.Code == "reauthentication_required" {
+	if ae.Code == core.CodeReauthRequired {
 		out["confirm"] = "/confirm?next=" + url.QueryEscape("/account")
 	}
 	writeJSON(w, status, out)
@@ -237,7 +237,7 @@ func (s *Server) deletePasskey(c *reqCtx) error {
 		return apperr.NotFound("passkey")
 	}
 	if err := s.svc.DeletePasskey(c.ctx(), c.session, pid); err != nil {
-		if apperr.As(err).Code == "reauthentication_required" {
+		if core.NeedsReauth(err) {
 			return redirect(c, "/confirm?next=/account", "Confirm it's you to remove a passkey.")
 		}
 		return err

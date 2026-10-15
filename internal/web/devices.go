@@ -3,7 +3,6 @@
 package web
 
 import (
-	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -48,7 +47,7 @@ func (s *Server) deviceSubmit(c *reqCtx) error {
 	}
 	dev, err := s.svc.DecideDevice(c.ctx(), c.session, code, action == "approve")
 	if err != nil {
-		if apperr.As(err).Code == "reauthentication_required" {
+		if core.NeedsReauth(err) {
 			return confirmForDevice(c)
 		}
 		return s.formErr(c, "device", "account", "Sign in a device", deviceData{}, err)

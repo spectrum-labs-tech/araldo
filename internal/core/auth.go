@@ -20,6 +20,14 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
+// CodeReauthRequired is the code of an action refused until the person
+// confirms their password (sudo mode, ADR 0007).
+const CodeReauthRequired = "reauthentication_required"
+
+// NeedsReauth reports whether err asks the person to confirm their
+// password first.
+func NeedsReauth(err error) bool { return err != nil && apperr.As(err).Code == CodeReauthRequired }
+
 // Session lifetimes (ADR 0007).
 const (
 	SessionIdle       = 7 * 24 * time.Hour
@@ -361,7 +369,7 @@ func (s *Service) requireOwnSignIn(ss *model.Session) error {
 
 func (s *Service) requireSudo(ss *model.Session) error {
 	if ss == nil || !s.InSudo(ss) {
-		return &apperr.Error{Kind: apperr.KindForbidden, Code: "reauthentication_required", Message: "Confirm your password to continue."}
+		return &apperr.Error{Kind: apperr.KindForbidden, Code: CodeReauthRequired, Message: "Confirm your password to continue."}
 	}
 	return nil
 }

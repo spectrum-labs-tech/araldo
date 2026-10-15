@@ -98,7 +98,7 @@ func (s *Server) createKey(c *reqCtx) error {
 	}
 	plain, k, err := s.svc.CreateAPIKey(c.ctx(), c.actor, c.session, in)
 	if err != nil {
-		if apperr.As(err).Code == "reauthentication_required" {
+		if core.NeedsReauth(err) {
 			return redirect(c, "/confirm?next=/keys", "Confirm your password to create a key.")
 		}
 		return s.formErr(c, "keys", "developers", "API keys", d, err)
@@ -209,7 +209,7 @@ func (s *Server) rollKey(c *reqCtx) error {
 	}
 	plain, k, err := s.svc.RollAPIKey(c.ctx(), c.actor, c.session, kid, RollOverlap)
 	if err != nil {
-		if apperr.As(err).Code == "reauthentication_required" {
+		if core.NeedsReauth(err) {
 			return redirect(c, "/confirm?next=/keys", "Confirm your password to roll a key.")
 		}
 		return err
@@ -511,7 +511,7 @@ func (s *Server) billing(c *reqCtx) error {
 
 func (s *Server) saveOrg(c *reqCtx) error {
 	if err := s.svc.UpdateOrg(c.ctx(), c.actor, c.session, c.r.PostFormValue("name"), c.r.PostFormValue("require_mfa") == "1"); err != nil {
-		if apperr.As(err).Code == "reauthentication_required" {
+		if core.NeedsReauth(err) {
 			return redirect(c, "/confirm?next=/org", "Confirm your password to stop requiring two-factor authentication.")
 		}
 		d, derr := s.orgData(c)
@@ -526,7 +526,7 @@ func (s *Server) saveOrg(c *reqCtx) error {
 func (s *Server) deleteOrg(c *reqCtx) error {
 	name := c.org.Name
 	if err := s.svc.DeleteOrg(c.ctx(), c.actor, c.session, c.r.PostFormValue("confirm")); err != nil {
-		if apperr.As(err).Code == "reauthentication_required" {
+		if core.NeedsReauth(err) {
 			return redirect(c, "/confirm?next=/org", "Confirm your password to delete the org.")
 		}
 		d, derr := s.orgData(c)
@@ -562,7 +562,7 @@ func (s *Server) changeMember(c *reqCtx) error {
 // ownerErr sends a member who must re-authenticate to change owners to
 // confirm their password and come back to the org page.
 func ownerErr(c *reqCtx, err error, what string) error {
-	if apperr.As(err).Code == "reauthentication_required" {
+	if core.NeedsReauth(err) {
 		return redirect(c, "/confirm?next=/org", "Confirm your password to "+what+".")
 	}
 	return err

@@ -28,7 +28,7 @@ func (s *Server) inviteMember(c *reqCtx) error {
 	}
 	link, inv, err := s.svc.InviteMember(c.ctx(), c.actor, c.session, c.r.PostFormValue("email"), model.Role(c.r.PostFormValue("role")))
 	if err != nil {
-		if apperr.As(err).Code == "reauthentication_required" {
+		if core.NeedsReauth(err) {
 			return redirect(c, "/confirm?next=/org", "Confirm your password to invite an owner.")
 		}
 		return s.formErr(c, "org", "org", "Organization", d, err)

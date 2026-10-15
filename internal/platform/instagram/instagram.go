@@ -126,7 +126,7 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 			if m.Alt != "" {
 				item.Set("alt_text", m.Alt)
 			}
-			id, err := a.container(ctx, user, tok, item)
+			id, err := a.container(platform.RetrySafe(ctx), user, tok, item)
 			if err != nil {
 				return res, err
 			}
@@ -135,7 +135,9 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		params.Set("media_type", "CAROUSEL")
 		params.Set("children", strings.Join(children, ","))
 	}
-	container, err := a.container(ctx, user, tok, params)
+	// A container is not public until it is published: making one again
+	// is safe.
+	container, err := a.container(platform.RetrySafe(ctx), user, tok, params)
 	if err != nil {
 		return res, err
 	}
@@ -143,6 +145,9 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		ID string `json:"id"`
 	}
 	if err := a.Meta.Post(ctx, user+"/media_publish", url.Values{"creation_id": {container}, "access_token": {tok}}, &published); err != nil {
+		return res, err
+	}
+	if err := platform.RequireID(published.ID, "Instagram"); err != nil {
 		return res, err
 	}
 	var link struct {
@@ -161,7 +166,9 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 }
 
 // container creates a media container and waits until Instagram has
-// fetched and processed its image or video.
+// fetched and processed its image or video. A status Instagram does not
+// report yet counts as still processing; it gives up after MaxPolls checks
+// (the container is not public, so trying again later is safe).
 func (a *Adapter) container(ctx context.Context, user, tok string, params url.Values) (string, error) {
 	var out struct {
 		ID string `json:"id"`
@@ -169,7 +176,10 @@ func (a *Adapter) container(ctx context.Context, user, tok string, params url.Va
 	if err := a.Meta.Post(ctx, user+"/media", params, &out); err != nil {
 		return "", err
 	}
-	for {
+	if out.ID == "" {
+		return "", &platform.Error{Kind: platform.Transient, Code: "no_id", Msg: "Instagram made a container without an ID"}
+	}
+	for range max(a.Meta.MaxPolls, 1) {
 		var st struct {
 			StatusCode string `json:"status_code"`
 		}
@@ -177,7 +187,7 @@ func (a *Adapter) container(ctx context.Context, user, tok string, params url.Va
 			return "", err
 		}
 		switch st.StatusCode {
-		case "FINISHED", "PUBLISHED", "":
+		case "FINISHED", "PUBLISHED":
 			return out.ID, nil
 		case "ERROR", "EXPIRED":
 			return "", &platform.Error{Kind: platform.Rejected, Code: "media_rejected", Msg: "Instagram could not process the media (" + st.StatusCode + ")"}
@@ -188,6 +198,7 @@ func (a *Adapter) container(ctx context.Context, user, tok string, params url.Va
 		case <-time.After(a.Meta.Poll):
 		}
 	}
+	return "", &platform.Error{Kind: platform.Transient, Code: "processing", Msg: "Instagram was still processing the media"}
 }
 
 // Engagement reads each post's likes and comments (replies). A post

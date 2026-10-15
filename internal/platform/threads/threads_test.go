@@ -24,6 +24,13 @@ type fakeGraph struct {
 	polls      map[string]int
 	processing int // how many polls a container stays IN_PROGRESS
 	expired    bool
+	// answer replaces the response to a path: a status and a body.
+	answer map[string]canned
+}
+
+type canned struct {
+	status int
+	body   string
 }
 
 func (f *fakeGraph) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +40,11 @@ func (f *fakeGraph) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if f.expired {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"error":{"message":"Error validating access token","type":"OAuthException","code":190}}`))
+		return
+	}
+	if c, ok := f.answer[r.URL.Path]; ok {
+		w.WriteHeader(c.status)
+		_, _ = w.Write([]byte(c.body))
 		return
 	}
 	switch {
@@ -197,5 +209,35 @@ func TestPublishVideo(t *testing.T) {
 	if c.Get("media_type") != "VIDEO" || c.Get("video_url") != v.URL || c.Get("text") != "Launch day" || f.polls["/v1.0/c1"] != 4 ||
 		len(f.published) != 1 || res.Permalink == "" {
 		t.Fatalf("container %v, polls %v, published %v, result %+v", c, f.polls, f.published, res)
+	}
+}
+
+func TestPublishOutcomes(t *testing.T) {
+	t.Parallel()
+	limit := `{"error":{"message":"Application request limit reached","type":"OAuthException","code":4}}`
+	tests := []struct {
+		name      string
+		answer    map[string]canned
+		processed int // polls a container stays IN_PROGRESS
+		want      platform.Kind
+		published int
+	}{
+		{"a rate limit is not a revoked token", map[string]canned{"/v1.0/123/threads": {http.StatusBadRequest, limit}}, 0, platform.RateLimited, 0},
+		{"a failed container can be made again", map[string]canned{"/v1.0/123/threads": {http.StatusInternalServerError, `{}`}}, 0, platform.Transient, 0},
+		{"a failed publish is uncertain", map[string]canned{"/v1.0/123/threads_publish": {http.StatusInternalServerError, `{}`}}, 0, platform.Uncertain, 0},
+		{"a publish without an ID is uncertain", map[string]canned{"/v1.0/123/threads_publish": {http.StatusOK, `{}`}}, 0, platform.Uncertain, 0},
+		{"no status yet is still processing", map[string]canned{"/v1.0/c1": {http.StatusOK, `{}`}}, 0, platform.Transient, 0},
+		{"processing for too long", nil, 1000, platform.Transient, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f, a := setup(t)
+			f.answer, f.processing, a.MaxPolls = tt.answer, tt.processed, 5
+			_, err := a.Publish(t.Context(), platform.Credentials{"access_token": "long", "user_id": "123"}, platform.Payload{Parts: []string{"x"}}, nil)
+			if platform.KindOf(err) != tt.want || len(f.published) != tt.published {
+				t.Fatalf("err = %v, published %v; want %s", err, f.published, tt.want)
+			}
+		})
 	}
 }

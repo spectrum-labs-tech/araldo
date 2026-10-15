@@ -22,6 +22,13 @@ type fakeIG struct {
 	published  []string
 	polls      int
 	processing int
+	// answer replaces the response to a path: a status and a body.
+	answer map[string]canned
+}
+
+type canned struct {
+	status int
+	body   string
 }
 
 func (f *fakeIG) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -29,6 +36,11 @@ func (f *fakeIG) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	path := strings.TrimPrefix(r.URL.Path, "/"+meta.Version)
 	q := r.URL.Query()
+	if c, ok := f.answer[path]; ok {
+		w.WriteHeader(c.status)
+		_, _ = w.Write([]byte(c.body))
+		return
+	}
 	switch {
 	case path == "/ig1/media" && r.Method == http.MethodPost:
 		_ = r.ParseForm()
@@ -150,5 +162,36 @@ func TestPublishReel(t *testing.T) {
 	if c["media_type"] != "REELS" || c["video_url"] != v.URL || c["share_to_feed"] != "true" || c["caption"] != "Launch day" ||
 		c["image_url"] != "" || f.polls != 5 || f.published[0] != "c1" {
 		t.Fatalf("container %v after %d polls, published %v", c, f.polls, f.published)
+	}
+}
+
+func TestPublishOutcomes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		answer     map[string]canned
+		processing int
+		want       platform.Kind
+	}{
+		{"a failed container can be made again", map[string]canned{"/ig1/media": {http.StatusInternalServerError, `{}`}}, 0, platform.Transient},
+		{"a failed publish is uncertain", map[string]canned{"/ig1/media_publish": {http.StatusInternalServerError, `{}`}}, 0, platform.Uncertain},
+		{"a publish without an ID is uncertain", map[string]canned{"/ig1/media_publish": {http.StatusOK, `{}`}}, 0, platform.Uncertain},
+		{"no status yet is still processing", map[string]canned{"/c1": {http.StatusOK, `{}`}}, 0, platform.Transient},
+		{"processing for too long", nil, 1000, platform.Transient},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f, a, creds := setup(t)
+			f.answer, f.processing, a.Meta.MaxPolls = tt.answer, tt.processing, 5
+			img := platform.Media{Type: "image/jpeg", URL: "https://araldo.test/v1/media/media_1/content?sig"}
+			_, err := a.Publish(t.Context(), creds, platform.Payload{Parts: []string{"x"}, Media: []platform.Media{img}}, nil)
+			if platform.KindOf(err) != tt.want {
+				t.Fatalf("err = %v, want %s", err, tt.want)
+			}
+			if tt.want == platform.Transient && len(f.published) != 0 {
+				t.Fatalf("published %v after a retryable failure", f.published)
+			}
+		})
 	}
 }

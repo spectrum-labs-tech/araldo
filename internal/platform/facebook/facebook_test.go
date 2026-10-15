@@ -21,12 +21,24 @@ type fakePage struct {
 	feed   []map[string]string
 	photos []map[string]string // fields, plus "file"
 	videos []map[string]string // fields, plus "file" and "length"
+	// answer replaces the response to a path: a status and a body.
+	answer map[string]canned
+}
+
+type canned struct {
+	status int
+	body   string
 }
 
 func (f *fakePage) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	path := strings.TrimPrefix(r.URL.Path, "/"+meta.Version)
+	if c, ok := f.answer[path]; ok {
+		w.WriteHeader(c.status)
+		_, _ = w.Write([]byte(c.body))
+		return
+	}
 	switch {
 	case path == "/p1/feed" && r.Method == http.MethodPost:
 		_ = r.ParseForm()
@@ -58,7 +70,7 @@ func (f *fakePage) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		video := map[string]string{"length": fmt.Sprint(r.ContentLength)}
+		video := map[string]string{"length": fmt.Sprint(r.ContentLength), "auth": r.Header.Get("Authorization")}
 		for k, v := range r.MultipartForm.Value {
 			video[k] = v[0]
 		}
@@ -166,7 +178,36 @@ func TestPublishVideo(t *testing.T) {
 		t.Fatalf("result %+v", res)
 	}
 	got := f.videos[0]
-	if got["description"] != "Launch day" || got["access_token"] != "pt" || got["file"] != "video1.mp4:mp4 bytes" || got["length"] == "-1" {
+	if got["description"] != "Launch day" || got["auth"] != "Bearer pt" || got["access_token"] != "" || got["file"] != "video1.mp4:mp4 bytes" || got["length"] == "-1" {
 		t.Fatalf("upload %v", got)
+	}
+}
+
+func TestPublishOutcomes(t *testing.T) {
+	t.Parallel()
+	png := platform.Media{Type: "image/png"}.WithData([]byte("png"))
+	tests := []struct {
+		name   string
+		media  []platform.Media
+		answer map[string]canned
+		want   platform.Kind
+	}{
+		{"a post without an ID is uncertain", nil, map[string]canned{"/p1/feed": {http.StatusOK, `{}`}}, platform.Uncertain},
+		{"a photo post without an ID is uncertain", []platform.Media{png}, map[string]canned{"/p1/photos": {http.StatusOK, `{"id":"photo1"}`}}, platform.Uncertain},
+		{"a failed post is uncertain", nil, map[string]canned{"/p1/feed": {http.StatusInternalServerError, `{}`}}, platform.Uncertain},
+		{"a failed unpublished photo can be sent again", []platform.Media{png, png}, map[string]canned{"/p1/photos": {http.StatusInternalServerError, `{}`}}, platform.Transient},
+		{"a rate limit read from a long error", nil, map[string]canned{"/p1/feed": {http.StatusBadRequest,
+			`{"error":{"message":"` + strings.Repeat("Too many calls. ", 30) + `","code":32}}`}}, platform.RateLimited},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f, a, creds := setup(t)
+			f.answer = tt.answer
+			_, err := a.Publish(t.Context(), creds, platform.Payload{Parts: []string{"x"}, Media: tt.media}, nil)
+			if platform.KindOf(err) != tt.want {
+				t.Fatalf("err = %v, want %s", err, tt.want)
+			}
+		})
 	}
 }

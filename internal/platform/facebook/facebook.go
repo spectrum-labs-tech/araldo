@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
@@ -122,11 +123,16 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 			var out struct {
 				ID string `json:"id"`
 			}
-			if err := a.photo(ctx, page, tok, m, i, [][2]string{{"published", "false"}}, &out); err != nil {
+			// An unpublished photo is not public: uploading it again is
+			// safe.
+			if err := a.photo(platform.RetrySafe(ctx), page, tok, m, i, [][2]string{{"published", "false"}}, &out); err != nil {
 				return res, err
 			}
+			if out.ID == "" {
+				return res, &platform.Error{Kind: platform.Transient, Code: "no_id", Msg: "Facebook took a photo without saying which it was"}
+			}
 			ref, _ := json.Marshal(map[string]string{"media_fbid": out.ID})
-			params.Set("attached_media["+itoa(i)+"]", string(ref))
+			params.Set("attached_media["+strconv.Itoa(i)+"]", string(ref))
 		}
 		var out struct {
 			ID string `json:"id"`
@@ -135,6 +141,9 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 			return res, err
 		}
 		postID = out.ID
+	}
+	if err := platform.RequireID(postID, "Facebook"); err != nil {
+		return res, err
 	}
 	var link struct {
 		PermalinkURL string `json:"permalink_url"`
@@ -201,11 +210,6 @@ func (a *Adapter) Engagement(ctx context.Context, c platform.Credentials, refs [
 	return out, nil
 }
 
-func itoa(i int) string {
-	b, _ := json.Marshal(i)
-	return string(b)
-}
-
 // video uploads a video to the Page, streamed, with the text as its
 // description; Facebook publishes it once it has processed it.
 func (a *Adapter) video(ctx context.Context, page, tok string, m platform.Media, text string) (string, error) {
@@ -221,9 +225,6 @@ func (a *Adapter) video(ctx context.Context, page, tok string, m platform.Media,
 	if err := a.Meta.PostVideo(ctx, page+"/videos", fields,
 		platform.StreamFile{Field: "source", Name: m.Filename(0), Type: m.Type, Size: m.Size, Body: rc}, &out); err != nil {
 		return "", err
-	}
-	if out.ID == "" {
-		return "", platform.Errorf(platform.Uncertain, "Facebook accepted the video but did not say which it was")
 	}
 	return out.ID, nil
 }

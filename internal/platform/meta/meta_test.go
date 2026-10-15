@@ -30,6 +30,13 @@ func TestClassify(t *testing.T) {
 			t.Errorf("%s: %s, want %s", tt.body, platform.KindOf(err), tt.want)
 		}
 	}
+	// A long message pushes the code past any snippet of the body; the
+	// code is read from the body itself.
+	long := `{"error":{"message":"` + strings.Repeat("Error validating access token. ", 20) + `","type":"OAuthException","code":190}}`
+	err := Classify(&platform.Error{Kind: platform.Rejected, Code: "rejected", Msg: "HTTP 400: " + long[:300] + "…", Body: []byte(long)})
+	if platform.KindOf(err) != platform.AuthRevoked {
+		t.Errorf("long message: %s, want auth_revoked", platform.KindOf(err))
+	}
 	if err := Classify(nil); err != nil {
 		t.Fatalf("Classify(nil) = %v", err)
 	}
@@ -48,7 +55,7 @@ func TestLogin(t *testing.T) {
 			_, _ = w.Write([]byte(`{"access_token":"short"}`))
 		case r.URL.Path == "/"+Version+"/oauth/access_token" && q.Get("grant_type") == "fb_exchange_token" && q.Get("fb_exchange_token") == "short":
 			_, _ = w.Write([]byte(`{"access_token":"long","expires_in":5183944}`))
-		case r.URL.Path == "/"+Version+"/me/accounts" && q.Get("access_token") == "long":
+		case r.URL.Path == "/"+Version+"/me/accounts" && r.Header.Get("Authorization") == "Bearer long" && !q.Has("access_token"):
 			_, _ = w.Write([]byte(`{"data":[{"id":"p1","name":"Open B00KS","access_token":"pt1","instagram_business_account":{"id":"ig1","username":"openb00ks"}},` +
 				`{"id":"p2","name":"Araldo","access_token":"pt2"}]}`))
 		default:

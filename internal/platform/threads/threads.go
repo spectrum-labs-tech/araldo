@@ -9,6 +9,10 @@
 // fetches images from a link, so posts with images need the install's API
 // to be reachable from the internet. There is no idempotency key, so the
 // adapter is not idempotent.
+//
+// The Threads API documents its access token and client secret only as
+// query parameters, so they travel in URLs here; transport errors drop the
+// URL and every error is scrubbed of them (platform.Scrub).
 package threads
 
 import (
@@ -20,6 +24,7 @@ import (
 	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
+	"github.com/spectrum-labs-tech/araldo/internal/platform/meta"
 )
 
 // Defaults.
@@ -35,15 +40,17 @@ type Adapter struct {
 	// Graph and Authorize are Meta's endpoints; tests replace them.
 	Graph, Authorize string
 	// Poll is how long to wait between checks on a container Threads is
-	// still processing; tests shorten it.
-	Poll time.Duration
+	// still processing, and MaxPolls how many checks to make; tests
+	// shorten them.
+	Poll     time.Duration
+	MaxPolls int
 	// Now is the clock for token expiry; tests replace it.
 	Now func() time.Time
 }
 
 // New returns a Threads adapter.
 func New(client *http.Client) *Adapter {
-	return &Adapter{Client: client, Graph: DefaultGraph, Authorize: DefaultAuthorize, Poll: 2 * time.Second, Now: time.Now}
+	return &Adapter{Client: client, Graph: DefaultGraph, Authorize: DefaultAuthorize, Poll: 2 * time.Second, MaxPolls: meta.MaxPolls, Now: time.Now}
 }
 
 func (a *Adapter) Provider() platform.Provider { return platform.Threads }
@@ -107,7 +114,7 @@ func (a *Adapter) Refresh(ctx context.Context, _ platform.App, c platform.Creden
 	q := url.Values{"grant_type": {"th_refresh_token"}, "access_token": {c["access_token"]}}
 	var t token
 	if err := platform.JSON(ctx, a.Client, http.MethodGet, a.Graph+"/refresh_access_token?"+q.Encode(), nil, nil, &t); err != nil {
-		return nil, nil, revoked(err)
+		return nil, nil, meta.Classify(err)
 	}
 	fresh := platform.Credentials{"access_token": t.AccessToken, "user_id": c["user_id"]}
 	return fresh, a.expiry(t.ExpiresIn), nil
@@ -121,7 +128,7 @@ func (a *Adapter) Verify(ctx context.Context, c platform.Credentials) (platform.
 	}
 	q := url.Values{"fields": {"id,username,name"}, "access_token": {c["access_token"]}}
 	if err := platform.JSON(ctx, a.Client, http.MethodGet, a.Graph+"/v1.0/me?"+q.Encode(), nil, nil, &me); err != nil {
-		return platform.Account{}, revoked(err)
+		return platform.Account{}, meta.Classify(err)
 	}
 	name := me.Name
 	if name == "" {
@@ -154,15 +161,20 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		if i == 0 {
 			media = p.Media
 		}
-		container, err := a.container(ctx, user, tok, p.Parts[i], replyTo, media)
+		// A container is not public until it is published: making one
+		// again is safe.
+		container, err := a.container(platform.RetrySafe(ctx), user, tok, p.Parts[i], replyTo, media)
 		if err != nil {
-			return res, revoked(err)
+			return res, meta.Classify(err)
 		}
 		var published struct {
 			ID string `json:"id"`
 		}
 		if err := a.post(ctx, user+"/threads_publish", url.Values{"creation_id": {container}, "access_token": {tok}}, &published); err != nil {
-			return res, revoked(err)
+			return res, meta.Classify(err)
+		}
+		if err := platform.RequireID(published.ID, "Threads"); err != nil {
+			return res, err
 		}
 		ref := platform.RemoteRef{ID: published.ID, URL: a.permalink(ctx, tok, published.ID)}
 		if onPart != nil {
@@ -238,8 +250,14 @@ func noLink() error {
 
 // ready waits for a container to finish processing
 // (https://developers.facebook.com/docs/threads/troubleshooting#publishing-does-not-return-a-media-id).
+// A status Threads does not report yet counts as still processing. It
+// gives up after MaxPolls checks; the container is not public, so trying
+// again later is safe.
 func (a *Adapter) ready(ctx context.Context, tok, container string) error {
-	for {
+	if container == "" {
+		return &platform.Error{Kind: platform.Transient, Code: "no_id", Msg: "Threads made a container without an ID"}
+	}
+	for range max(a.MaxPolls, 1) {
 		var st struct {
 			Status       string `json:"status"`
 			ErrorMessage string `json:"error_message"`
@@ -249,7 +267,7 @@ func (a *Adapter) ready(ctx context.Context, tok, container string) error {
 			return err
 		}
 		switch st.Status {
-		case "FINISHED", "PUBLISHED", "":
+		case "FINISHED", "PUBLISHED":
 			return nil
 		case "ERROR", "EXPIRED":
 			return &platform.Error{Kind: platform.Rejected, Code: "media_rejected", Msg: "Threads could not process the post: " + st.ErrorMessage}
@@ -260,6 +278,7 @@ func (a *Adapter) ready(ctx context.Context, tok, container string) error {
 		case <-time.After(a.Poll):
 		}
 	}
+	return &platform.Error{Kind: platform.Transient, Code: "processing", Msg: "Threads was still processing the post"}
 }
 
 // permalink is a post's link; empty if Threads does not say.
@@ -295,7 +314,7 @@ func (a *Adapter) Engagement(ctx context.Context, c platform.Credentials, refs [
 			continue // deleted
 		}
 		if err != nil {
-			return nil, revoked(err)
+			return nil, meta.Classify(err)
 		}
 		var cn platform.Counts
 		for _, d := range res.Data {
@@ -320,14 +339,4 @@ func (a *Adapter) Engagement(ctx context.Context, c platform.Credentials, refs [
 		out[r.ID] = cn
 	}
 	return out, nil
-}
-
-// revoked reads Meta's error for an expired or revoked token (code 190)
-// as AuthRevoked, whatever the HTTP status.
-func revoked(err error) error {
-	pe, ok := err.(*platform.Error) //nolint:errorlint // platform helpers return *Error directly
-	if ok && pe.Kind == platform.Rejected && (strings.Contains(pe.Msg, `"code":190`) || strings.Contains(pe.Msg, "OAuthException")) {
-		pe.Kind, pe.Code = platform.AuthRevoked, "token_expired"
-	}
-	return err
 }

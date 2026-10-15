@@ -47,6 +47,24 @@ func TestLoadReportsEveryProblem(t *testing.T) {
 	}
 }
 
+// TestLoadLogLevel checks a log level that is not one is refused, rather
+// than quietly logging at info. It sets the environment, so it cannot run
+// in parallel, like every test here.
+func TestLoadLogLevel(t *testing.T) {
+	t.Setenv("ARALDO_DATABASE_URL", "postgres://x")
+	t.Setenv("ARALDO_BASE_URL", "https://araldo.example")
+	for _, tt := range []struct {
+		level string
+		ok    bool
+	}{{"", true}, {"debug", true}, {"WARN", true}, {"error", true}, {"info+2", true}, {"verbose", false}, {"warning", false}} {
+		t.Setenv("ARALDO_LOG_LEVEL", tt.level)
+		_, err := Load()
+		if tt.ok != (err == nil) || err != nil && !strings.Contains(err.Error(), "ARALDO_LOG_LEVEL") {
+			t.Errorf("ARALDO_LOG_LEVEL=%q: %v", tt.level, err)
+		}
+	}
+}
+
 func TestLoadS3(t *testing.T) {
 	t.Setenv("ARALDO_DATABASE_URL", "postgres://x")
 	t.Setenv("ARALDO_BASE_URL", "https://araldo.example")

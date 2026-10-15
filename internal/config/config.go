@@ -7,6 +7,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"strconv"
@@ -158,6 +159,10 @@ func Load() (Config, error) {
 	}
 	if c.PrivateWebhooks, err = netguard.ParsePolicy(os.Getenv("ARALDO_ALLOW_PRIVATE_WEBHOOKS")); err != nil {
 		errs = append(errs, fmt.Errorf("ARALDO_ALLOW_PRIVATE_WEBHOOKS: %w", err))
+	}
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(c.LogLevel)); err != nil {
+		errs = append(errs, fmt.Errorf("ARALDO_LOG_LEVEL %q is not debug, info, warn or error", c.LogLevel))
 	}
 	c.MaxVideoBytes = 1 << 30
 	if v := os.Getenv("ARALDO_MAX_VIDEO_BYTES"); v != "" {

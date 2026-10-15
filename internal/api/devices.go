@@ -3,7 +3,6 @@
 package api
 
 import (
-	"net"
 	"net/http"
 	"time"
 
@@ -17,11 +16,7 @@ import (
 
 // throttle limits an unauthenticated route per client address.
 func (h *Handler) throttle(r *http.Request) error {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	if _, _, _, allowed := h.limiter.take("ip:"+host, time.Now()); !allowed {
+	if _, _, _, allowed := h.ips.take(h.clientIP(r), time.Now()); !allowed {
 		return &apperr.Error{Kind: apperr.KindRateLimited, Code: "rate_limited", Message: "Too many requests; slow down."}
 	}
 	return nil
@@ -38,11 +33,7 @@ func (h *Handler) startDevice(w http.ResponseWriter, r *http.Request) error {
 	if err := decode(r, &body); err != nil {
 		return err
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	start, err := h.svc.StartDevice(r.Context(), body.DeviceName, body.Livemode, host)
+	start, err := h.svc.StartDevice(r.Context(), body.DeviceName, body.Livemode, h.clientIP(r))
 	if err != nil {
 		return err
 	}

@@ -205,7 +205,7 @@ func TestPage(t *testing.T) {
 
 func TestLimiter(t *testing.T) {
 	t.Parallel()
-	l := newLimiter(1, 3)
+	l := newLimiter(1, 3, false)
 	now := time.Unix(1000, 0)
 	for i := range 3 {
 		if _, _, _, ok := l.take("k", now); !ok {
@@ -220,6 +220,32 @@ func TestLimiter(t *testing.T) {
 	}
 	if _, _, _, ok := l.take("k", now.Add(time.Second)); !ok {
 		t.Fatal("no token after refill")
+	}
+}
+
+// TestLimiterForgetsOneByOne checks a full limiter forgets only buckets
+// that have refilled, never an active one's count; a strict one refuses a
+// new key while all are in use, a lenient one tracks it anyway.
+func TestLimiterForgetsOneByOne(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1000, 0)
+	for _, strict := range []bool{true, false} {
+		l := newLimiter(1, 3, strict)
+		l.tracked = 2
+		for range 3 {
+			l.take("busy", now)
+		}
+		l.take("idle", now.Add(-time.Hour)) // refilled long ago
+		if _, _, _, ok := l.take("new", now); !ok {
+			t.Fatalf("strict %v: a new key refused while an idle bucket could go", strict)
+		}
+		if _, _, _, ok := l.take("busy", now); ok {
+			t.Fatalf("strict %v: the busy key's count was reset", strict)
+		}
+		_, _, _, ok := l.take("another", now) // busy and new are both in use
+		if ok == strict {
+			t.Fatalf("strict %v: a new key past the cap allowed %v", strict, ok)
+		}
 	}
 }
 

@@ -15,7 +15,6 @@ import (
 	"html/template"
 	"io/fs"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -31,6 +30,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/authn"
 	"github.com/spectrum-labs-tech/araldo/internal/buildinfo"
+	"github.com/spectrum-labs-tech/araldo/internal/clientip"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/media"
@@ -587,16 +587,7 @@ func safeNext(next string) string {
 // header, it is the header's last address: the one that proxy added. A
 // list's earlier entries (X-Forwarded-For) are whatever the client sent.
 func (s *Server) clientIP(r *http.Request) string {
-	if s.cfg.ClientIPHeader != "" {
-		if v := r.Header.Get(s.cfg.ClientIPHeader); v != "" {
-			return strings.TrimSpace(v[strings.LastIndex(v, ",")+1:])
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return clientip.From(r, s.cfg.ClientIPHeader)
 }
 
 // ipLimiter bounds sign-in attempts per IP (ADR 0007).

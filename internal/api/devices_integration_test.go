@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spectrum-labs-tech/araldo/internal/api"
 )
 
 // TestDeviceSignInOverTheAPI drives the CLI's side of the device sign-in
@@ -80,5 +82,27 @@ func TestDeviceSignInOverTheAPI(t *testing.T) {
 	}
 	if status, got := c.do(http.MethodGet, "/v1/me", "", nil, as); status != http.StatusUnauthorized || got["code"] != "user_token_invalid" {
 		t.Fatalf("after signing out: %d %v", status, got)
+	}
+}
+
+// TestDeviceSignInRecordsTheClient checks a device sign-in records the
+// client's address as the dashboard reads it: from the trusted proxy
+// header, its last entry, when one is configured.
+func TestDeviceSignInRecordsTheClient(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	c.h.(*api.Handler).ClientIPHeader = "X-Forwarded-For"
+	h := map[string]string{"Authorization": "", "X-Forwarded-For": "192.0.2.1, 198.51.100.9"}
+	status, start := c.do(http.MethodPost, "/v1/auth/device", "application/json", []byte(`{"device_name":"araldo CLI"}`), h)
+	userCode, _ := start["user_code"].(string)
+	if status != http.StatusOK || userCode == "" {
+		t.Fatalf("starting: %d %v", status, start)
+	}
+	d, err := c.s.PendingDevice(t.Context(), userCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.ClientIP != "198.51.100.9" {
+		t.Fatalf("recorded %q, want the proxy's last entry", d.ClientIP)
 	}
 }

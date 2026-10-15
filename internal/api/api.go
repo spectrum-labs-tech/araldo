@@ -25,6 +25,7 @@ import (
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/authn"
+	"github.com/spectrum-labs-tech/araldo/internal/clientip"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -56,10 +57,15 @@ func actor(r *http.Request) core.Actor {
 
 // Handler serves /v1.
 type Handler struct {
-	svc     *core.Service
-	log     *slog.Logger
-	mux     *http.ServeMux
-	limiter *limiter
+	svc *core.Service
+	log *slog.Logger
+	mux *http.ServeMux
+	// keys limits each credential's requests; ips each client address's
+	// unauthenticated ones. Apart, so neither crowds out the other.
+	keys, ips *limiter
+	// ClientIPHeader is the trusted proxy header with the client's
+	// address (ARALDO_CLIENT_IP_HEADER), as the dashboard reads it.
+	ClientIPHeader string
 	// Routes lists "METHOD /path" for every route, for the contract test.
 	Routes []string
 	// Query lists each route's query parameters, for the contract test.
@@ -76,7 +82,8 @@ type Handler struct {
 
 // New returns the API handler.
 func New(svc *core.Service, log *slog.Logger) *Handler {
-	h := &Handler{svc: svc, log: log, mux: http.NewServeMux(), limiter: newLimiter(25, 100), Query: map[string][]string{}, open: map[string]bool{},
+	h := &Handler{svc: svc, log: log, mux: http.NewServeMux(), keys: newLimiter(25, 100, false), ips: newLimiter(25, 100, true),
+		Query: map[string][]string{}, open: map[string]bool{},
 		operatorOnly: map[string]bool{}, StreamRecheck: 30 * time.Second}
 	h.routes()
 	h.operatorRoutes()
@@ -162,7 +169,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w, r = sw, r.WithContext(context.WithValue(r.Context(), loggedKey, logged))
 		defer h.logRequest(r, a, pattern, sw, logged, started)
 	}
-	limit, remaining, reset, allowed := h.limiter.take(rateKey(a), time.Now())
+	limit, remaining, reset, allowed := h.keys.take(rateKey(a), time.Now())
 	w.Header().Set("RateLimit-Limit", strconv.Itoa(limit))
 	w.Header().Set("RateLimit-Remaining", strconv.Itoa(remaining))
 	w.Header().Set("RateLimit-Reset", strconv.Itoa(reset))
@@ -264,6 +271,9 @@ func (h *Handler) authenticate(r *http.Request, operator bool) (core.Actor, erro
 	}
 	return h.svc.AuthenticateKey(r.Context(), token, RequestID(r.Context()))
 }
+
+// clientIP is r's client address, read as the dashboard reads it.
+func (h *Handler) clientIP(r *http.Request) string { return clientip.From(r, h.ClientIPHeader) }
 
 // rateKey is the credential a request is counted against.
 func rateKey(a core.Actor) string {
@@ -400,6 +410,10 @@ type limiter struct {
 	rate    float64 // tokens per second
 	burst   float64
 	buckets map[string]*bucket
+	// tracked caps how many buckets it keeps; strict refuses a new key
+	// while every one is in use, rather than tracking past the cap.
+	tracked int
+	strict  bool
 }
 
 type bucket struct {
@@ -407,8 +421,17 @@ type bucket struct {
 	at     time.Time
 }
 
-func newLimiter(rate, burst float64) *limiter {
-	return &limiter{rate: rate, burst: burst, buckets: map[string]*bucket{}}
+// newLimiter makes a limiter. strict suits keys anyone can make up (client
+// addresses); a credential, which must be real, is never refused for the
+// cap.
+func newLimiter(rate, burst float64, strict bool) *limiter {
+	return &limiter{rate: rate, burst: burst, buckets: map[string]*bucket{}, tracked: 10_000, strict: strict}
+}
+
+// full reports whether b has refilled by now, so forgetting it changes
+// nothing.
+func (l *limiter) full(b *bucket, now time.Time) bool {
+	return b.tokens+now.Sub(b.at).Seconds()*l.rate >= l.burst
 }
 
 func (l *limiter) take(key string, now time.Time) (limit, remaining, reset int, ok bool) {
@@ -416,8 +439,17 @@ func (l *limiter) take(key string, now time.Time) (limit, remaining, reset int, 
 	defer l.mu.Unlock()
 	b, found := l.buckets[key]
 	if !found {
-		if len(l.buckets) > 10_000 {
-			clear(l.buckets)
+		if len(l.buckets) >= l.tracked {
+			// Forget the buckets that have refilled: one by one, never
+			// everyone's count at once.
+			for k, old := range l.buckets {
+				if l.full(old, now) {
+					delete(l.buckets, k)
+				}
+			}
+			if len(l.buckets) >= l.tracked && l.strict {
+				return int(l.burst), 0, int(math.Ceil(1 / l.rate)), false
+			}
 		}
 		b = &bucket{tokens: l.burst, at: now}
 		l.buckets[key] = b

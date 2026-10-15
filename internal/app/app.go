@@ -311,7 +311,9 @@ func (a *App) Handler() (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return server.Handler(api.New(a.Svc, a.Log), dash, a.Svc.Ready, a.DB, a.Log, a.tracers), nil
+	apiH := api.New(a.Svc, a.Log)
+	apiH.ClientIPHeader = a.Cfg.ClientIPHeader
+	return server.Handler(apiH, dash, a.Svc.Ready, a.DB, a.Log, a.tracers), nil
 }
 
 // Serve runs the HTTP server until ctx ends, and the request log's writer

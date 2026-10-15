@@ -272,7 +272,7 @@ func (s *Server) issueData(c *reqCtx, is *model.Issue, brandRef string) (*issueD
 	for _, ma := range accts {
 		ac := accountChoice{Account: ma}
 		if is == nil {
-			ac.Use, ac.Chosen = ma.Status == model.AdAccountActive && len(ma.DefaultAudiences) > 0, ma.DefaultAudiences
+			ac.Use, ac.Chosen = ma.Status == model.ConnectionActive && len(ma.DefaultAudiences) > 0, ma.DefaultAudiences
 		}
 		for _, dl := range deliveriesOf(is) {
 			if dl.MailAccountID != nil && *dl.MailAccountID == ma.ID {

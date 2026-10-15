@@ -105,7 +105,7 @@ func (s *Store) SaveAnalyticsResults(ctx context.Context, orgID, sourceID uuid.U
 
 // SetAnalyticsSourceStatus records why a source could not be read, and
 // when to try again.
-func (s *Store) SetAnalyticsSourceStatus(ctx context.Context, orgID, id uuid.UUID, status model.AdAccountStatus, note string, next time.Time) error {
+func (s *Store) SetAnalyticsSourceStatus(ctx context.Context, orgID, id uuid.UUID, status model.ConnectionStatus, note string, next time.Time) error {
 	return s.execOne(ctx, `UPDATE analytics_sources SET status = $3, status_note = $4, next_read_at = $5, updated_at = now() WHERE org_id = $1 AND id = $2`,
 		orgID, id, status, note, next)
 }

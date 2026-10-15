@@ -652,10 +652,10 @@ func (l *ipLimiter) allow(ip string, now time.Time) bool {
 var statusPills = func() map[string]string {
 	m := map[string]string{}
 	for class, statuses := range map[string][]string{
-		"good": {string(model.PostPublished), string(model.TargetPublished), string(model.ChannelActive), string(model.AdAccountActive),
+		"good": {string(model.PostPublished), string(model.TargetPublished), string(model.ChannelActive), string(model.ConnectionActive),
 			string(model.OrgActive), string(model.IssueSent), string(model.DeliverySent), model.EndpointEnabled, "succeeded", "ok"},
 		"bad": {string(model.PostFailed), string(model.PostRejected), string(model.TargetFailed), string(model.TargetNeedsAttention),
-			string(model.ChannelNeedsReauth), string(model.ChannelDisabled), string(model.AdAccountNeedsReauth), string(model.IssueFailed),
+			string(model.ChannelNeedsReauth), string(model.ChannelDisabled), string(model.ConnectionNeedsReauth), string(model.IssueFailed),
 			string(model.DeliveryFailed), string(model.DeliveryNeedsAttention), model.EndpointDisabled},
 		"warn": {string(model.PostPendingApproval), string(model.PostPublishing), string(model.PostPartiallyPublished),
 			string(model.IssuePendingApproval), string(model.IssueSending), string(model.IssuePartiallySent), string(model.DeliveryHeld),

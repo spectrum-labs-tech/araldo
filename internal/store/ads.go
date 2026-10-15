@@ -106,7 +106,7 @@ func (s *Store) SaveAdResults(ctx context.Context, orgID, accountID uuid.UUID, r
 
 // SetAdAccountStatus records why an account could not be read, and when to
 // try again.
-func (s *Store) SetAdAccountStatus(ctx context.Context, orgID, id uuid.UUID, status model.AdAccountStatus, note string, next time.Time) error {
+func (s *Store) SetAdAccountStatus(ctx context.Context, orgID, id uuid.UUID, status model.ConnectionStatus, note string, next time.Time) error {
 	return s.execOne(ctx, `UPDATE ad_accounts SET status = $3, status_note = $4, next_read_at = $5, updated_at = now() WHERE org_id = $1 AND id = $2`,
 		orgID, id, status, note, next)
 }

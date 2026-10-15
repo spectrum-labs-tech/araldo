@@ -100,20 +100,18 @@ func (s *Service) FinishIdempotent(ctx context.Context, a Actor, key string, sta
 // EventRetention is how long events, and their webhook deliveries, are kept.
 const EventRetention = 30 * 24 * time.Hour
 
+// Notification retention: read notifications go after
+// ReadNotificationRetention, any after NotificationRetention.
+const (
+	ReadNotificationRetention = 90 * 24 * time.Hour
+	NotificationRetention     = 365 * 24 * time.Hour
+)
+
 // PruneEvents deletes events past EventRetention in short batches until
 // none are left or the task's time runs out, so pruning keeps up however
 // many events an install makes.
 func (s *Service) PruneEvents(ctx context.Context) (int, error) {
-	const batch = 5000
-	n := 0
-	for ctx.Err() == nil {
-		k, err := s.store.PruneEvents(ctx, s.Now().Add(-EventRetention), batch)
-		n += k
-		if err != nil || k < batch {
-			return n, err
-		}
-	}
-	return n, nil
+	return s.store.PruneEvents(ctx, s.Now().Add(-EventRetention))
 }
 
 // Tasks returns the periodic tasks a worker runs.
@@ -142,7 +140,7 @@ func (s *Service) Tasks() []opsched.Task {
 		{Name: "reports.mail", Interval: 15 * time.Minute, Timeout: 10 * time.Minute, Run: s.MailReports},
 		{Name: "notifications.send", Interval: time.Minute, Timeout: 5 * time.Minute, Run: s.SendNotificationEmails},
 		{Name: "notifications.prune", Interval: time.Hour, Run: func(ctx context.Context) (int, error) {
-			return s.store.PruneNotifications(ctx, s.Now().Add(-90*24*time.Hour), s.Now().Add(-365*24*time.Hour))
+			return s.store.PruneNotifications(ctx, s.Now().Add(-ReadNotificationRetention), s.Now().Add(-NotificationRetention))
 		}},
 		{Name: "password_resets.prune", Interval: time.Hour, Run: func(ctx context.Context) (int, error) {
 			return s.store.PrunePasswordResets(ctx, s.Now().Add(-24*time.Hour))

@@ -22,11 +22,23 @@ import (
 // thousands.
 const denialEvery = time.Minute
 
+// denialKeys bounds what denials remembers: past it, the oldest is
+// forgotten early (and may be recorded again within its minute).
+const denialKeys = 10000
+
 // denials remembers when each actor's denial of an operation was last
-// recorded.
+// recorded. Entries are forgotten in the order they were made, a few at a
+// time as new ones come, so no call walks the whole map.
 type denials struct {
-	mu   sync.Mutex
-	last map[string]time.Time
+	mu    sync.Mutex
+	last  map[string]time.Time
+	order []denial // oldest first, from head
+	head  int
+}
+
+type denial struct {
+	key string
+	at  time.Time
 }
 
 func (d *denials) due(key string, now time.Time) bool {
@@ -35,17 +47,26 @@ func (d *denials) due(key string, now time.Time) bool {
 	if d.last == nil {
 		d.last = map[string]time.Time{}
 	}
+	for d.head < len(d.order) {
+		e := d.order[d.head]
+		if now.Sub(e.at) < denialEvery && len(d.last) < denialKeys {
+			break
+		}
+		if d.last[e.key].Equal(e.at) { // not recorded again since
+			delete(d.last, e.key)
+		}
+		d.order[d.head] = denial{}
+		d.head++
+	}
+	if d.head > len(d.order)/2 { // reclaim the forgotten front
+		d.order = append(d.order[:0], d.order[d.head:]...)
+		d.head = 0
+	}
 	if t, ok := d.last[key]; ok && now.Sub(t) < denialEvery {
 		return false
 	}
 	d.last[key] = now
-	if len(d.last) > 10000 { // forget the old, so it cannot grow without bound
-		for k, t := range d.last {
-			if now.Sub(t) >= denialEvery {
-				delete(d.last, k)
-			}
-		}
-	}
+	d.order = append(d.order, denial{key, now})
 	return true
 }
 

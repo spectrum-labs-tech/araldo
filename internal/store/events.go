@@ -88,10 +88,9 @@ func (s *Store) EventsSince(ctx context.Context, orgID uuid.UUID, livemode bool,
 // PruneEvents deletes up to limit events (and their deliveries) older than
 // before, oldest first. Event IDs are time-ordered, so the primary key
 // finds them without scanning the table.
-func (s *Store) PruneEvents(ctx context.Context, before time.Time, limit int) (int, error) {
-	tag, err := s.q.Exec(ctx, `DELETE FROM events WHERE id IN (SELECT id FROM events WHERE id < $1 ORDER BY id LIMIT $2)`,
-		id.Before(before), limit)
-	return int(tag.RowsAffected()), err
+func (s *Store) PruneEvents(ctx context.Context, before time.Time) (int, error) {
+	return s.inBatches(ctx, batchSize, `DELETE FROM events WHERE id IN (SELECT id FROM events WHERE id < $2 ORDER BY id LIMIT $1)`,
+		id.Before(before))
 }
 
 // Webhook endpoints.

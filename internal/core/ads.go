@@ -105,7 +105,7 @@ func (s *Service) ConnectAdAccount(ctx context.Context, a Actor, in AdAccountInp
 	}
 	ac := &model.AdAccount{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, Network: string(in.Network),
 		ExternalID: acct.ExternalID, Name: acct.Name, Currency: acct.Currency, Timezone: acct.Timezone, Settings: settings,
-		Status: model.AdAccountActive}
+		Status: model.ConnectionActive}
 	if ac.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, adCredentialsAAD(ac.ID), secrets); err != nil {
 		return nil, err
 	}
@@ -216,9 +216,6 @@ func (s *Service) AdsSummary(ctx context.Context, a Actor, f AdsFilter) (*AdsSum
 	if f.Since.After(f.Until) || f.Until.Sub(f.Since) > MaxAdsWindowDays*24*time.Hour {
 		return nil, apperr.Invalid("window_invalid", "since", "since must be on or before until, at most a year apart.")
 	}
-	if f.Limit <= 0 {
-		f.Limit = 20
-	}
 	rows, err := s.store.AdsSummary(ctx, a.OrgID, a.Livemode, f)
 	if err != nil {
 		return nil, err
@@ -311,7 +308,7 @@ func (s *Service) readAdAccount(ctx context.Context, ac *model.AdAccount, now ti
 	case err == nil:
 		return s.store.SaveAdResults(ctx, ac.OrgID, ac.ID, results, now, now.Add(AdsReadEvery))
 	case errors.As(err, &pe) && pe.Kind == platform.AuthRevoked:
-		return s.store.SetAdAccountStatus(ctx, ac.OrgID, ac.ID, model.AdAccountNeedsReauth,
+		return s.store.SetAdAccountStatus(ctx, ac.OrgID, ac.ID, model.ConnectionNeedsReauth,
 			truncate("The network refused the credentials: connect the account again. "+pe.Msg, 500), now.Add(AdsReadEvery))
 	default:
 		s.log.WarnContext(ctx, "reading an ad account failed; will retry", "ad_account", id.Format(id.AdAccount, ac.ID), "err", err)
@@ -340,40 +337,55 @@ func (s *Service) connectAdAccounts(ctx context.Context, a Actor, st *model.OAut
 	if err != nil {
 		return nil, err
 	}
-	var out []*model.AdAccount
+	// Every account is verified and sealed first, then all are written in
+	// one transaction: a sign-in connects all its accounts or none.
+	type prepared struct {
+		ac        *model.AdAccount
+		reconnect bool
+	}
+	var ready []prepared
 	for _, c := range conns {
 		acct, err := rep.Verify(ctx, appCreds, c.Credentials)
 		if err != nil {
 			return nil, connectError(platform.Provider(rep.Name()), err)
 		}
-		ac := &model.AdAccount{ID: id.New(), OrgID: a.OrgID, BrandID: st.BrandID, Livemode: true, Network: string(network),
-			ExternalID: acct.ExternalID, Settings: map[string]string{}, Status: model.AdAccountActive}
-		reconnect := false
+		p := prepared{ac: &model.AdAccount{ID: id.New(), OrgID: a.OrgID, BrandID: st.BrandID, Livemode: true, Network: string(network),
+			ExternalID: acct.ExternalID, Settings: map[string]string{}, Status: model.ConnectionActive}}
 		for _, e := range existing {
 			if e.Network == string(network) && e.ExternalID == acct.ExternalID {
-				ac, reconnect = e, true
+				p.ac, p.reconnect = e, true
 			}
 		}
+		ac := p.ac
 		ac.Name, ac.Currency, ac.Timezone, ac.AppID, ac.InstallApp = acct.Name, acct.Currency, acct.Timezone, &st.AppID, st.InstallApp
 		if ac.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, adCredentialsAAD(ac.ID), c.Credentials); err != nil {
 			return nil, err
 		}
-		action := "ad_account.connect"
-		err = s.store.InTx(ctx, func(tx *store.Store) error {
-			if reconnect {
+		ready = append(ready, p)
+	}
+	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		for _, p := range ready {
+			action := "ad_account.connect"
+			if p.reconnect {
 				action = "ad_account.reconnect"
-				if err := tx.UpdateAdAccountConnection(ctx, ac); err != nil {
+				if err := tx.UpdateAdAccountConnection(ctx, p.ac); err != nil {
 					return err
 				}
-			} else if err := tx.CreateAdAccount(ctx, ac); err != nil {
+			} else if err := tx.CreateAdAccount(ctx, p.ac); err != nil {
 				return err
 			}
-			return s.audit(ctx, tx, a, action, id.Format(id.AdAccount, ac.ID), map[string]any{"network": network})
-		})
-		if err != nil {
-			return nil, err
+			if err := s.audit(ctx, tx, a, action, id.Format(id.AdAccount, p.ac.ID), map[string]any{"network": network}); err != nil {
+				return err
+			}
 		}
-		out = append(out, ac)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*model.AdAccount, len(ready))
+	for i, p := range ready {
+		out[i] = p.ac
 	}
 	return out, nil
 }

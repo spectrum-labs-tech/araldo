@@ -203,6 +203,14 @@ func (s *Store) Brand(ctx context.Context, orgID, id uuid.UUID) (*model.Brand, e
 	return s.brandWithSlots(ctx, s.q.QueryRow(ctx, `SELECT `+brandCols+` FROM brands WHERE org_id = $1 AND id = $2`, orgID, id))
 }
 
+// LockBrand locks a brand's row for the rest of the transaction, so
+// changes counted against it (its report's recipients) go one at a time.
+func (s *Store) LockBrand(ctx context.Context, orgID, id uuid.UUID) error {
+	var locked uuid.UUID
+	err := s.q.QueryRow(ctx, `SELECT id FROM brands WHERE org_id = $1 AND id = $2 FOR NO KEY UPDATE`, orgID, id).Scan(&locked)
+	return mapErr(err)
+}
+
 func (s *Store) BrandBySlug(ctx context.Context, orgID uuid.UUID, slug string) (*model.Brand, error) {
 	return s.brandWithSlots(ctx, s.q.QueryRow(ctx, `SELECT `+brandCols+` FROM brands WHERE org_id = $1 AND slug = $2`, orgID, slug))
 }

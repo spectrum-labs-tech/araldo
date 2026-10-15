@@ -6,7 +6,10 @@ package core_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -121,5 +124,30 @@ func TestMonthlyReportEmail(t *testing.T) {
 	now = time.Date(2027, 1, 2, 12, 0, 0, 0, time.UTC)
 	if n := run(); n != 0 || status("2026-12", "client@example.com") != "none" {
 		t.Fatalf("after unsubscribing: sent %d", n)
+	}
+}
+
+// TestReportRecipientsCapHoldsAtOnce checks additions made at the same
+// time cannot pass a brand's cap on report recipients together.
+func TestReportRecipientsCapHoldsAtOnce(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	var added atomic.Int32
+	var wg sync.WaitGroup
+	for i := range 30 {
+		wg.Go(func() {
+			err := w.s.AddReportRecipient(ctx, w.owner, w.brand.ID, fmt.Sprintf("client-%d@example.com", i))
+			switch {
+			case err == nil:
+				added.Add(1)
+			case code(err) != "recipients_limit":
+				t.Errorf("recipient %d: %v", i, err)
+			}
+		})
+	}
+	wg.Wait()
+	if added.Load() != 20 {
+		t.Fatalf("%d recipients added at once, want 20", added.Load())
 	}
 }

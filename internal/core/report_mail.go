@@ -59,14 +59,19 @@ func (s *Service) AddReportRecipient(ctx context.Context, a Actor, brandID uuid.
 	if err != nil {
 		return err
 	}
-	have, err := s.store.ReportRecipients(ctx, a.OrgID, b.ID)
-	if err != nil {
-		return err
-	}
-	if len(have) >= maxReportRecipients {
-		return apperr.Invalid("recipients_limit", "email", "A brand's report goes to at most %d addresses.", maxReportRecipients)
-	}
 	return s.store.InTx(ctx, func(tx *store.Store) error {
+		// Counted with the brand locked, so additions at once cannot pass
+		// the cap together.
+		if err := tx.LockBrand(ctx, a.OrgID, b.ID); err != nil {
+			return notFound(err, "brand")
+		}
+		have, err := tx.ReportRecipients(ctx, a.OrgID, b.ID)
+		if err != nil {
+			return err
+		}
+		if len(have) >= maxReportRecipients {
+			return apperr.Invalid("recipients_limit", "email", "A brand's report goes to at most %d addresses.", maxReportRecipients)
+		}
 		if err := tx.AddReportRecipient(ctx, a.OrgID, b.ID, norm, a.UserID); err != nil {
 			if errors.Is(err, store.ErrConflict) {
 				return apperr.Conflict("recipient_exists", "%s already gets this report.", norm)

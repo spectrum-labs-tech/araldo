@@ -129,7 +129,7 @@ func TestAnalyticsSourceRules(t *testing.T) {
 		}
 	}, func() bool {
 		got, err := w.s.AnalyticsSource(ctx, w.owner, revoked.ID)
-		return err == nil && got.Status == model.AdAccountNeedsReauth
+		return err == nil && got.Status == model.ConnectionNeedsReauth
 	})
 	if _, err := w.s.AnalyticsSummary(ctx, w.owner, core.AnalyticsFilter{GroupBy: "hour"}); kind(err) != apperr.KindInvalid {
 		t.Fatalf("an unknown grouping: %v", err)

@@ -91,7 +91,7 @@ func TestNewsletterViewsMatchContract(t *testing.T) {
 		{"a draft", "Issue", core.ViewIssue(draft)},
 		{"a sent issue", "Issue", core.ViewIssue(sent)},
 		{"a mail account", "MailAccount", core.ViewMailAccount(&model.MailAccount{ID: acct, BrandID: uuid.New(), Provider: "brevo",
-			Status: model.AdAccountActive})},
+			Status: model.ConnectionActive})},
 		{"a brand with a theme", "Brand", core.ViewBrand(&model.Brand{ID: uuid.New(), EmailTheme: model.EmailTheme{LogoMediaID: &logo}})},
 		{"a brand without one", "Brand", core.ViewBrand(&model.Brand{ID: uuid.New()})},
 	}

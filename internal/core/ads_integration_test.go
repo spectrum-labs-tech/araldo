@@ -33,7 +33,7 @@ func TestAdAccountsAreReadAndSummarized(t *testing.T) {
 	w := newWorld(t)
 	ctx := t.Context()
 	ac := connectSandboxAds(t, w, w.owner, "Open B00KS", nil)
-	if ac.Currency != "USD" || ac.Status != model.AdAccountActive || ac.ReadAt != nil {
+	if ac.Currency != "USD" || ac.Status != model.ConnectionActive || ac.ReadAt != nil {
 		t.Fatalf("connected %+v", ac)
 	}
 	if _, err := w.s.ConnectAdAccount(ctx, w.owner, core.AdAccountInput{BrandID: w.brand.ID, Network: ads.Sandbox,
@@ -158,7 +158,7 @@ func TestAdAccountRules(t *testing.T) {
 			return false
 		}
 		for _, a := range accts {
-			if a.ID == revoked.ID && a.Status != model.AdAccountNeedsReauth || a.ID != revoked.ID && a.ReadAt == nil {
+			if a.ID == revoked.ID && a.Status != model.ConnectionNeedsReauth || a.ID != revoked.ID && a.ReadAt == nil {
 				return false
 			}
 		}

@@ -62,7 +62,7 @@ func (s *Store) UpdateMailAccount(ctx context.Context, m *model.MailAccount) err
 }
 
 // SetMailAccountStatus records whether an account can be used, and why not.
-func (s *Store) SetMailAccountStatus(ctx context.Context, orgID, id uuid.UUID, status model.AdAccountStatus, note string) error {
+func (s *Store) SetMailAccountStatus(ctx context.Context, orgID, id uuid.UUID, status model.ConnectionStatus, note string) error {
 	return s.execOne(ctx, `UPDATE mail_accounts SET status = $3, status_note = $4, updated_at = now() WHERE org_id = $1 AND id = $2`,
 		orgID, id, status, note)
 }

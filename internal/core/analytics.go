@@ -103,7 +103,7 @@ func (s *Service) ConnectAnalyticsSource(ctx context.Context, a Actor, in Analyt
 		return nil, connectError(platform.Provider(src.Name()), err)
 	}
 	as := &model.AnalyticsSource{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, Provider: string(in.Provider),
-		Site: site.ID, Name: site.Name, Timezone: site.Timezone, Goals: goals, Settings: settings, Status: model.AdAccountActive}
+		Site: site.ID, Name: site.Name, Timezone: site.Timezone, Goals: goals, Settings: settings, Status: model.ConnectionActive}
 	if as.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, analyticsCredentialsAAD(as.ID), secrets); err != nil {
 		return nil, err
 	}
@@ -234,9 +234,6 @@ func (s *Service) AnalyticsSummary(ctx context.Context, a Actor, f AnalyticsFilt
 	if f.Since.After(f.Until) || f.Until.Sub(f.Since) > MaxAdsWindowDays*24*time.Hour {
 		return nil, apperr.Invalid("window_invalid", "since", "since must be on or before until, at most a year apart.")
 	}
-	if f.Limit <= 0 {
-		f.Limit = 20
-	}
 	rows, totals, err := s.store.AnalyticsSummary(ctx, a.OrgID, a.Livemode, f)
 	if err != nil {
 		return nil, err
@@ -355,7 +352,7 @@ func (s *Service) readAnalyticsSource(ctx context.Context, as *model.AnalyticsSo
 		}
 		return s.store.SaveAnalyticsResults(ctx, as.OrgID, as.ID, from, to, rows, now, now.Add(AnalyticsReadEvery))
 	case errors.As(err, &pe) && pe.Kind == platform.AuthRevoked:
-		return s.store.SetAnalyticsSourceStatus(ctx, as.OrgID, as.ID, model.AdAccountNeedsReauth,
+		return s.store.SetAnalyticsSourceStatus(ctx, as.OrgID, as.ID, model.ConnectionNeedsReauth,
 			truncate("The provider refused the credentials: connect the site again. "+pe.Msg, 500), now.Add(AnalyticsReadEvery))
 	default:
 		s.log.WarnContext(ctx, "reading an analytics source failed; will retry", "analytics_source", id.Format(id.AnalyticsSource, as.ID), "err", err)

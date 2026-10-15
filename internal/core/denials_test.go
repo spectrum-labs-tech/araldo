@@ -39,3 +39,22 @@ func TestDenialsArePaced(t *testing.T) {
 		t.Fatalf("%d remembered after forgetting the old", n)
 	}
 }
+
+// TestDenialsStayBounded checks that many actors denied within one minute
+// cannot grow the memory past its bound.
+func TestDenialsStayBounded(t *testing.T) {
+	t.Parallel()
+	var d denials
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	for i := range 3 * denialKeys {
+		if !d.due("org|k|op"+strconv.Itoa(i), now.Add(time.Duration(i)*time.Microsecond)) {
+			t.Fatalf("a first denial (%d) was not due", i)
+		}
+	}
+	if n := len(d.last); n > denialKeys {
+		t.Fatalf("%d remembered, want at most %d", n, denialKeys)
+	}
+	if n := len(d.order) - d.head; n != len(d.last) {
+		t.Fatalf("%d in order, %d remembered", n, len(d.last))
+	}
+}

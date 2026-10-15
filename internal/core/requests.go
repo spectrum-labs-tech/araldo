@@ -106,12 +106,5 @@ func (s *Service) APIRequests(ctx context.Context, a Actor, f store.RequestFilte
 
 // PruneAPIRequests deletes logged requests past RequestLogRetention.
 func (s *Service) PruneAPIRequests(ctx context.Context) (int, error) {
-	n := 0
-	for {
-		k, err := s.store.PruneAPIRequests(ctx, s.Now().Add(-RequestLogRetention), 5000)
-		n += k
-		if err != nil || k < 5000 {
-			return n, err
-		}
-	}
+	return s.store.PruneAPIRequests(ctx, s.Now().Add(-RequestLogRetention))
 }

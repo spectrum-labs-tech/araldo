@@ -97,7 +97,7 @@ func TestAdNetworkSignIn(t *testing.T) {
 		got, err = w.s.AdAccount(ctx, live, first.ID)
 		return err == nil && got.ReadAt != nil
 	})
-	if got.Status != model.AdAccountActive {
+	if got.Status != model.ConnectionActive {
 		t.Fatalf("after reading: %+v", got)
 	}
 

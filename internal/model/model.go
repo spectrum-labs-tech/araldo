@@ -482,13 +482,15 @@ type Media struct {
 	CreatedAt     time.Time
 }
 
-// AdAccountStatus is whether an ad account can be read (ADR 0023).
-type AdAccountStatus string
+// ConnectionStatus is whether a connection to a provider still works: an
+// ad account (ADR 0023), analytics source (ADR 0025) or mail account (ADR
+// 0024). Channels have their own, with more states.
+type ConnectionStatus string
 
-// Ad account statuses.
+// Connection statuses.
 const (
-	AdAccountActive      AdAccountStatus = "active"
-	AdAccountNeedsReauth AdAccountStatus = "needs_reauth"
+	ConnectionActive      ConnectionStatus = "active"
+	ConnectionNeedsReauth ConnectionStatus = "needs_reauth"
 )
 
 // AdAccount is an ad network account connected to a brand, read for its
@@ -511,7 +513,7 @@ type AdAccount struct {
 	// InstallApp says it is the install's (ADR 0030).
 	AppID      *uuid.UUID
 	InstallApp bool
-	Status     AdAccountStatus
+	Status     ConnectionStatus
 	StatusNote string
 	ReadAt     *time.Time
 	NextReadAt time.Time
@@ -534,7 +536,7 @@ type AnalyticsSource struct {
 	Goals       []string
 	Settings    map[string]string // non-secret fields
 	Credentials []byte            // encrypted secret fields
-	Status      AdAccountStatus
+	Status      ConnectionStatus
 	StatusNote  string
 	ReadAt      *time.Time
 	NextReadAt  time.Time
@@ -558,7 +560,7 @@ type MailAccount struct {
 	DefaultAudiences []string
 	Settings         map[string]string // non-secret fields
 	Credentials      []byte            // encrypted secret fields
-	Status           AdAccountStatus
+	Status           ConnectionStatus
 	StatusNote       string
 	CreatedAt        time.Time
 }

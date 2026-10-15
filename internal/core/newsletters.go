@@ -149,7 +149,7 @@ func (s *Service) ConnectMailAccount(ctx context.Context, a Actor, in MailAccoun
 	}
 	ma := &model.MailAccount{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, Provider: string(in.Provider),
 		ExternalID: acct.ExternalID, Name: acct.Name, FromName: fromName, FromEmail: fromEmail, ReplyTo: replyTo,
-		DefaultAudiences: audienceIDs(defaults), Settings: settings, Status: model.AdAccountActive}
+		DefaultAudiences: audienceIDs(defaults), Settings: settings, Status: model.ConnectionActive}
 	if ma.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, mailCredentialsAAD(ma.ID), secrets); err != nil {
 		return nil, err
 	}
@@ -344,7 +344,7 @@ func (s *Service) flagRevoked(ctx context.Context, ma *model.MailAccount, err er
 		return
 	}
 	note := truncate("The provider refused the key: connect the account again. "+err.Error(), 500)
-	if serr := s.store.SetMailAccountStatus(ctx, ma.OrgID, ma.ID, model.AdAccountNeedsReauth, note); serr != nil {
+	if serr := s.store.SetMailAccountStatus(ctx, ma.OrgID, ma.ID, model.ConnectionNeedsReauth, note); serr != nil {
 		s.log.WarnContext(ctx, "flagging a mail account failed", "mail_account", id.Format(id.MailAccount, ma.ID), "err", serr)
 	}
 }
@@ -483,7 +483,7 @@ func (s *Service) issueDeliveries(ctx context.Context, a Actor, b *model.Brand, 
 			return nil, err
 		}
 		for _, ma := range accts {
-			if ma.Status == model.AdAccountActive && len(ma.DefaultAudiences) > 0 {
+			if ma.Status == model.ConnectionActive && len(ma.DefaultAudiences) > 0 {
 				in = append(in, DeliveryInput{MailAccountID: ma.ID})
 			}
 		}
@@ -503,7 +503,7 @@ func (s *Service) issueDeliveries(ctx context.Context, a Actor, b *model.Brand, 
 		if err != nil || ma.Livemode != a.Livemode || ma.BrandID != b.ID {
 			return nil, apperr.Invalid("mail_account_unknown", field+".mail_account", "The mail account is not one of brand %s's.", b.Name)
 		}
-		if ma.Status != model.AdAccountActive {
+		if ma.Status != model.ConnectionActive {
 			return nil, apperr.Invalid("mail_account_needs_reauth", field+".mail_account", "%s needs connecting again.", ma.Name)
 		}
 		ids := d.Audiences
@@ -786,7 +786,7 @@ func (s *Service) ScheduleIssue(ctx context.Context, a Actor, issueID uuid.UUID,
 			ps.Add("mail_account_unknown", fmt.Sprintf("deliveries[%d]", i), "%s was disconnected; edit the issue.", d.AccountName)
 			continue
 		}
-		if ma, err := s.store.MailAccount(ctx, a.OrgID, *d.MailAccountID); err != nil || ma.Status != model.AdAccountActive {
+		if ma, err := s.store.MailAccount(ctx, a.OrgID, *d.MailAccountID); err != nil || ma.Status != model.ConnectionActive {
 			ps.Add("mail_account_needs_reauth", fmt.Sprintf("deliveries[%d]", i), "%s needs connecting again.", d.AccountName)
 		}
 	}
@@ -1277,7 +1277,7 @@ func (s *Service) handOff(ctx context.Context, d *model.IssueDelivery, owner str
 	if err != nil {
 		return end(model.DeliveryFailed, "The mail account was disconnected.")
 	}
-	if ma.Status != model.AdAccountActive {
+	if ma.Status != model.ConnectionActive {
 		return end(model.DeliveryFailed, "The mail account needs connecting again: "+ma.StatusNote)
 	}
 	m, creds, err := s.mailerFor(ctx, ma)

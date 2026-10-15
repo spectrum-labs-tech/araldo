@@ -80,8 +80,7 @@ func (s *Store) APIRequests(ctx context.Context, orgID uuid.UUID, livemode bool,
 
 // PruneAPIRequests deletes up to limit logged requests made before before,
 // oldest first; IDs are time-ordered, so the key finds them.
-func (s *Store) PruneAPIRequests(ctx context.Context, before time.Time, limit int) (int, error) {
-	tag, err := s.q.Exec(ctx, `DELETE FROM api_requests WHERE id IN (SELECT id FROM api_requests WHERE id < $1 ORDER BY id LIMIT $2)`,
-		id.Before(before), limit)
-	return int(tag.RowsAffected()), err
+func (s *Store) PruneAPIRequests(ctx context.Context, before time.Time) (int, error) {
+	return s.inBatches(ctx, batchSize, `DELETE FROM api_requests WHERE id IN (SELECT id FROM api_requests WHERE id < $2 ORDER BY id LIMIT $1)`,
+		id.Before(before))
 }

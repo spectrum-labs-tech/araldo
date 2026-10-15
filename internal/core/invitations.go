@@ -77,17 +77,16 @@ func (s *Service) InviteMember(ctx context.Context, a Actor, ss *model.Session, 
 	if err != nil {
 		return "", nil, err
 	}
-	if err := s.checkLimit(ctx, a, limitMembers, 1, norm); err != nil {
-		return "", nil, err
-	}
-	o, err := s.store.Org(ctx, a.OrgID)
-	if err != nil {
-		return "", nil, err
-	}
 	var link string
 	var inv *model.Invitation
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
-		var err error
+		if err := s.checkLimit(ctx, tx, a, limitMembers, 1, norm); err != nil {
+			return err
+		}
+		o, err := tx.Org(ctx, a.OrgID)
+		if err != nil {
+			return notFound(err, "org")
+		}
 		link, inv, err = s.newInvitation(ctx, tx, a, o.Name, email, norm, role)
 		return err
 	})
@@ -159,32 +158,47 @@ func (s *Service) AcceptInvitation(ctx context.Context, token string, u *model.U
 	if err != nil {
 		return nil, err
 	}
-	invited, _ := NormalizeEmail(inv.Email)
-	if mine, _ := NormalizeEmail(u.Email); mine != invited {
-		return nil, apperr.Forbidden("This invitation is for %s. Sign in as them to accept it.", inv.Email)
+	if err := invitedIs(inv, u); err != nil {
+		return nil, err
 	}
-	a := Actor{OrgID: inv.OrgID, UserID: &u.ID, Role: inv.Role, RequestID: requestID}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
-		if err := tx.AcceptInvitation(ctx, inv.ID, s.Now()); err != nil {
-			return notFoundAs(err, errInvitationInvalid)
-		}
-		err := tx.AddMember(ctx, &model.Membership{OrgID: inv.OrgID, UserID: u.ID, Role: inv.Role})
-		switch {
-		case errors.Is(err, store.ErrConflict):
-			return nil // a member already: the invitation is spent, nothing changes
-		case err != nil:
-			return err
-		}
-		if err := s.notifyJoined(ctx, tx, inv.OrgID, u.ID, u.Email, inv.Role, &u.ID); err != nil {
-			return err
-		}
-		detail := map[string]any{"role": inv.Role, "invitation": id.Format(id.Invitation, inv.ID)}
-		if inv.InvitedBy != nil {
-			detail["invited_by"] = id.Format(id.User, *inv.InvitedBy)
-		}
-		return s.audit(ctx, tx, a, "member.add", id.Format(id.User, u.ID), detail)
+		return s.acceptInvitation(ctx, tx, inv, u, requestID)
 	})
 	return inv, err
+}
+
+// invitedIs checks u is the person inv invites: the same email. Addresses
+// that do not normalize never match, even each other.
+func invitedIs(inv *model.Invitation, u *model.User) error {
+	invited, err1 := NormalizeEmail(inv.Email)
+	mine, err2 := NormalizeEmail(u.Email)
+	if err1 != nil || err2 != nil || mine != invited {
+		return apperr.Forbidden("This invitation is for %s. Sign in as them to accept it.", inv.Email)
+	}
+	return nil
+}
+
+// acceptInvitation spends inv and makes u a member, in tx.
+func (s *Service) acceptInvitation(ctx context.Context, tx *store.Store, inv *model.Invitation, u *model.User, requestID string) error {
+	a := Actor{OrgID: inv.OrgID, UserID: &u.ID, Role: inv.Role, RequestID: requestID}
+	if err := tx.AcceptInvitation(ctx, inv.ID, s.Now()); err != nil {
+		return notFoundAs(err, errInvitationInvalid)
+	}
+	err := tx.AddMember(ctx, &model.Membership{OrgID: inv.OrgID, UserID: u.ID, Role: inv.Role})
+	switch {
+	case errors.Is(err, store.ErrConflict):
+		return nil // a member already: the invitation is spent, nothing changes
+	case err != nil:
+		return err
+	}
+	if err := s.notifyJoined(ctx, tx, inv.OrgID, u.ID, u.Email, inv.Role, &u.ID); err != nil {
+		return err
+	}
+	detail := map[string]any{"role": inv.Role, "invitation": id.Format(id.Invitation, inv.ID)}
+	if inv.InvitedBy != nil {
+		detail["invited_by"] = id.Format(id.User, *inv.InvitedBy)
+	}
+	return s.audit(ctx, tx, a, "member.add", id.Format(id.User, u.ID), detail)
 }
 
 // AcceptInvitationNewAccount creates the invited person's account, with
@@ -195,15 +209,25 @@ func (s *Service) AcceptInvitationNewAccount(ctx context.Context, token, name, p
 	if err != nil {
 		return nil, nil, err
 	}
-	u, err := s.CreateUser(ctx, inv.Email, name, password)
+	u, norm, err := newUser(inv.Email, name, password)
 	if err != nil {
-		if apperr.As(err).Code == "email_taken" {
-			return nil, nil, apperr.Conflict("account_exists", "%s has an account already: sign in to accept the invitation.", inv.Email)
-		}
 		return nil, nil, err
 	}
-	inv, err = s.AcceptInvitation(ctx, token, u, requestID)
-	return u, inv, err
+	// The account and the membership are made together: an invitation
+	// that cannot be accepted leaves no account behind.
+	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.CreateUser(ctx, u, norm); err != nil {
+			if errors.Is(err, store.ErrConflict) {
+				return apperr.Conflict("account_exists", "%s has an account already: sign in to accept the invitation.", inv.Email)
+			}
+			return err
+		}
+		return s.acceptInvitation(ctx, tx, inv, u, requestID)
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return u, inv, nil
 }
 
 // notFoundAs turns store.ErrNotFound into e.

@@ -310,46 +310,59 @@ const (
 	limitPosts    limit = "posts_per_month"
 )
 
+// of is the org's limit on l, or nil for none.
+func (l limit) of(ls model.OrgLimits) *int {
+	switch l {
+	case limitBrands:
+		return ls.Brands
+	case limitChannels:
+		return ls.Channels
+	case limitMembers:
+		return ls.Members
+	case limitPosts:
+		return ls.PostsMonth
+	}
+	return nil
+}
+
 var limitWords = map[limit]string{limitBrands: "brands", limitChannels: "live channels", limitMembers: "members and open invitations",
 	limitPosts: "live posts this month"}
 
 // checkLimit refuses adding `adding` more of what l counts when the org's
-// limit would be passed. The operator is not held back. A race between two
-// additions can pass a limit by one; limits are for plans, not security.
-// exceptEmail leaves out an open invitation being replaced.
-func (s *Service) checkLimit(ctx context.Context, a Actor, l limit, adding int, exceptEmail string) error {
+// limit would be passed. The operator is not held back. It runs in the
+// transaction that adds them, and an org with that limit is locked while
+// counting, so additions made at the same time count one after another
+// and cannot pass it together. exceptEmail leaves out an open invitation
+// being replaced.
+func (s *Service) checkLimit(ctx context.Context, tx *store.Store, a Actor, l limit, adding int, exceptEmail string) error {
 	if a.Operator || adding <= 0 {
 		return nil
 	}
-	o, err := s.store.Org(ctx, a.OrgID)
+	o, err := tx.Org(ctx, a.OrgID)
 	if err != nil {
 		return notFound(err, "org")
 	}
-	var most *int
-	switch l {
-	case limitBrands:
-		most = o.Limits.Brands
-	case limitChannels:
-		most = o.Limits.Channels
-	case limitMembers:
-		most = o.Limits.Members
-	case limitPosts:
-		most = o.Limits.PostsMonth
+	if l.of(o.Limits) == nil {
+		return nil // no limit: nothing to count, and no lock
 	}
+	if o, err = tx.OrgForUpdate(ctx, a.OrgID); err != nil {
+		return notFound(err, "org")
+	}
+	most := l.of(o.Limits)
 	if most == nil {
 		return nil
 	}
 	var n int
 	switch l {
 	case limitBrands:
-		n, err = s.store.CountBrands(ctx, o.ID)
+		n, err = tx.CountBrands(ctx, o.ID)
 	case limitChannels:
-		n, err = s.store.CountLiveChannels(ctx, o.ID)
+		n, err = tx.CountLiveChannels(ctx, o.ID)
 	case limitMembers:
-		n, err = s.store.CountSeats(ctx, o.ID, s.Now(), exceptEmail)
+		n, err = tx.CountSeats(ctx, o.ID, s.Now(), exceptEmail)
 	case limitPosts:
 		start, _ := MonthOf(s.Now())
-		n, err = s.store.CountLivePosts(ctx, o.ID, start)
+		n, err = tx.CountLivePosts(ctx, o.ID, start)
 	}
 	if err != nil {
 		return err

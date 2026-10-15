@@ -250,11 +250,6 @@ func (s *Service) CreatePost(ctx context.Context, a Actor, in PostInput) (*model
 	if err != nil {
 		return nil, err
 	}
-	if a.Livemode {
-		if err := s.checkLimit(ctx, a, limitPosts, 1, ""); err != nil {
-			return nil, err
-		}
-	}
 	now := s.Now()
 	p := &model.Post{ID: postID, OrgID: a.OrgID, BrandID: pl.brand.ID, Livemode: a.Livemode, Data: in.Data, Content: in.Content,
 		Metadata: in.Metadata, CreatedByUser: a.UserID, CreatedByKey: a.KeyID, Media: pl.media}
@@ -303,6 +298,11 @@ func (s *Service) CreatePost(ctx context.Context, a Actor, in PostInput) (*model
 				ChannelName: ch.DisplayName})
 		}
 		err := s.store.InTx(ctx, func(tx *store.Store) error {
+			if a.Livemode {
+				if err := s.checkLimit(ctx, tx, a, limitPosts, 1, ""); err != nil {
+					return err
+				}
+			}
 			if err := tx.CreatePost(ctx, p); err != nil {
 				return err
 			}
@@ -829,7 +829,10 @@ func (s *Service) resolveTarget(ctx context.Context, a Actor, targetID uuid.UUID
 	var out *model.Post
 	err := s.store.InTx(ctx, func(tx *store.Store) error {
 		t, err := tx.Target(ctx, a.OrgID, targetID)
-		if err != nil || t.Livemode != a.Livemode {
+		if err != nil {
+			return notFound(err, "post target")
+		}
+		if t.Livemode != a.Livemode {
 			return apperr.NotFound("post target")
 		}
 		p, err := s.lockPost(ctx, tx, a, t.PostID)

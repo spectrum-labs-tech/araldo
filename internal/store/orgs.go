@@ -42,6 +42,14 @@ func (s *Store) Org(ctx context.Context, id uuid.UUID) (*model.Org, error) {
 	return scanOrg(s.q.QueryRow(ctx, `SELECT `+orgCols+` FROM orgs WHERE id = $1`, id))
 }
 
+// OrgForUpdate reads the org and locks its row for the rest of the
+// transaction, so changes to it, and checks of its limits, go one at a
+// time. The lock (NO KEY UPDATE) still lets rows that reference the org be
+// written meanwhile.
+func (s *Store) OrgForUpdate(ctx context.Context, id uuid.UUID) (*model.Org, error) {
+	return scanOrg(s.q.QueryRow(ctx, `SELECT `+orgCols+` FROM orgs WHERE id = $1 FOR NO KEY UPDATE`, id))
+}
+
 // FindOrgs returns up to limit orgs named name (ignoring case), or with an
 // empty name any orgs, oldest first.
 func (s *Store) FindOrgs(ctx context.Context, name string, limit int) ([]*model.Org, error) {
@@ -79,9 +87,18 @@ func (s *Store) OrgObjectKeys(ctx context.Context, orgID uuid.UUID) ([]string, e
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
+// AddMember adds a membership, or returns ErrConflict when the person is a
+// member already, without failing the transaction it is in.
 func (s *Store) AddMember(ctx context.Context, m *model.Membership) error {
-	_, err := s.q.Exec(ctx, `INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, $3)`, m.OrgID, m.UserID, m.Role)
-	return mapErr(err)
+	tag, err := s.q.Exec(ctx, `INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		m.OrgID, m.UserID, m.Role)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConflict
+	}
+	return nil
 }
 
 func (s *Store) SetMemberRole(ctx context.Context, orgID, userID uuid.UUID, role model.Role) error {
@@ -280,11 +297,15 @@ func (s *Store) SlotHolder(ctx context.Context, orgID, brandID uuid.UUID, livemo
 // API keys.
 
 // apiKeyCols are column names, not a credential.
-const apiKeyCols = `id, org_id, livemode, name, hint, scopes, brand_id, created_by, created_at, last_used_at, expires_at, revoked_at` //nolint:gosec // G101 false positive
+//
+//nolint:gosec // G101 false positive: column names
+const apiKeyCols = `id, org_id, livemode, name, hint, scopes, brand_id, created_by, created_at, last_used_at, expires_at, revoked_at,
+	rolled_at`
 
 func scanAPIKey(r pgx.Row) (*model.APIKey, error) {
 	var k model.APIKey
-	err := r.Scan(&k.ID, &k.OrgID, &k.Livemode, &k.Name, &k.Hint, &k.Scopes, &k.BrandID, &k.CreatedBy, &k.CreatedAt, &k.LastUsedAt, &k.ExpiresAt, &k.RevokedAt)
+	err := r.Scan(&k.ID, &k.OrgID, &k.Livemode, &k.Name, &k.Hint, &k.Scopes, &k.BrandID, &k.CreatedBy, &k.CreatedAt, &k.LastUsedAt, &k.ExpiresAt, &k.RevokedAt,
+		&k.RolledAt)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -319,12 +340,22 @@ func (s *Store) APIKey(ctx context.Context, orgID, id uuid.UUID) (*model.APIKey,
 	return scanAPIKey(s.q.QueryRow(ctx, `SELECT `+apiKeyCols+` FROM api_keys WHERE org_id = $1 AND id = $2`, orgID, id))
 }
 
-// ExpireAPIKey sets (or shortens) a key's expiry, for revoking and rolling.
-func (s *Store) ExpireAPIKey(ctx context.Context, orgID, id uuid.UUID, at time.Time, revoke bool) error {
-	if revoke {
-		return s.execOne(ctx, `UPDATE api_keys SET revoked_at = $3 WHERE org_id = $1 AND id = $2 AND revoked_at IS NULL`, orgID, id, at)
-	}
-	return s.execOne(ctx, `UPDATE api_keys SET expires_at = LEAST(COALESCE(expires_at, $3), $3) WHERE org_id = $1 AND id = $2`, orgID, id, at)
+// APIKeyForUpdate reads a key and locks it for the rest of the transaction.
+func (s *Store) APIKeyForUpdate(ctx context.Context, orgID, id uuid.UUID) (*model.APIKey, error) {
+	return scanAPIKey(s.q.QueryRow(ctx, `SELECT `+apiKeyCols+` FROM api_keys WHERE org_id = $1 AND id = $2 FOR UPDATE`, orgID, id))
+}
+
+// RollAPIKey marks a key rolled at rolledAt and expiring by expireAt, once:
+// ErrNotFound if it was rolled already.
+func (s *Store) RollAPIKey(ctx context.Context, orgID, id uuid.UUID, expireAt, rolledAt time.Time) error {
+	return s.execOne(ctx, `UPDATE api_keys SET expires_at = LEAST(COALESCE(expires_at, $3), $3), rolled_at = $4
+		WHERE org_id = $1 AND id = $2 AND rolled_at IS NULL`, orgID, id, expireAt, rolledAt)
+}
+
+// RevokeAPIKey stops a key working from at; ErrNotFound if it was revoked
+// already.
+func (s *Store) RevokeAPIKey(ctx context.Context, orgID, id uuid.UUID, at time.Time) error {
+	return s.execOne(ctx, `UPDATE api_keys SET revoked_at = $3 WHERE org_id = $1 AND id = $2 AND revoked_at IS NULL`, orgID, id, at)
 }
 
 // TouchAPIKey records use, at most once a minute per key.

@@ -135,7 +135,10 @@ func (s *Service) Endpoint(ctx context.Context, a Actor, endpointID uuid.UUID) (
 		return nil, err
 	}
 	w, err := s.store.Endpoint(ctx, a.OrgID, endpointID)
-	if err != nil || w.Livemode != a.Livemode {
+	if err != nil {
+		return nil, notFound(err, "webhook endpoint")
+	}
+	if w.Livemode != a.Livemode {
 		return nil, apperr.NotFound("webhook endpoint")
 	}
 	return w, nil
@@ -279,7 +282,10 @@ func (s *Service) Event(ctx context.Context, a Actor, eventID uuid.UUID) (*model
 		return nil, err
 	}
 	e, err := s.store.Event(ctx, a.OrgID, eventID)
-	if err != nil || e.Livemode != a.Livemode {
+	if err != nil {
+		return nil, notFound(err, "event")
+	}
+	if e.Livemode != a.Livemode {
 		return nil, apperr.NotFound("event")
 	}
 	return e, nil

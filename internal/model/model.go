@@ -256,6 +256,8 @@ type APIKey struct {
 	LastUsedAt *time.Time
 	ExpiresAt  *time.Time
 	RevokedAt  *time.Time
+	// RolledAt is when the key was rolled, replaced by another.
+	RolledAt *time.Time
 }
 
 // Active reports whether the key can be used at now.

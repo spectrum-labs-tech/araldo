@@ -54,25 +54,39 @@ func NormalizeEmail(email string) (string, error) {
 
 // CreateUser adds a user with a password.
 func (s *Service) CreateUser(ctx context.Context, email, name, password string) (*model.User, error) {
-	norm, err := NormalizeEmail(email)
+	u, norm, err := newUser(email, name, password)
 	if err != nil {
 		return nil, err
 	}
+	if err := s.store.CreateUser(ctx, u, norm); err != nil {
+		return nil, errEmailTaken(err)
+	}
+	return u, nil
+}
+
+// newUser checks and prepares a user with a password, not yet stored, and
+// returns their normalized email.
+func newUser(email, name, password string) (*model.User, string, error) {
+	norm, err := NormalizeEmail(email)
+	if err != nil {
+		return nil, "", err
+	}
 	if err := authn.ValidatePassword(password); err != nil {
-		return nil, apperr.Invalid("password_invalid", "password", "%s", upperFirst(err.Error()))
+		return nil, "", apperr.Invalid("password_invalid", "password", "%s", upperFirst(err.Error()))
 	}
 	hash, err := authn.HashPassword(password)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	u := &model.User{ID: id.New(), Email: strings.TrimSpace(email), Name: strings.TrimSpace(name), PasswordHash: hash}
-	if err := s.store.CreateUser(ctx, u, norm); err != nil {
-		if errors.Is(err, store.ErrConflict) {
-			return nil, apperr.Conflict("email_taken", "A user with that email already exists.")
-		}
-		return nil, err
+	return &model.User{ID: id.New(), Email: strings.TrimSpace(email), Name: strings.TrimSpace(name), PasswordHash: hash}, norm, nil
+}
+
+// errEmailTaken says so for a conflict creating a user.
+func errEmailTaken(err error) error {
+	if errors.Is(err, store.ErrConflict) {
+		return apperr.Conflict("email_taken", "A user with that email already exists.")
 	}
-	return u, nil
+	return err
 }
 
 // User returns a user by ID.

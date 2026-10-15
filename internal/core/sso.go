@@ -494,25 +494,30 @@ func (s *Service) FinishSSO(ctx context.Context, state, code, userAgent, ip, req
 // them a member of conn's org if they are not one.
 func (s *Service) ssoUser(ctx context.Context, conn *model.SSOConnection, email, name, requestID string) (*model.User, error) {
 	u, err := s.store.UserByEmail(ctx, email)
-	if errors.Is(err, store.ErrNotFound) {
+	fresh := errors.Is(err, store.ErrNotFound)
+	if fresh {
 		u = &model.User{ID: id.New(), Email: email, Name: truncate(strings.TrimSpace(name), 100)}
-		if err = s.store.CreateUser(ctx, u, email); errors.Is(err, store.ErrConflict) {
-			u, err = s.store.UserByEmail(ctx, email) // made a moment ago, by another sign-in
-		}
-	}
-	if err != nil {
+	} else if err != nil {
 		return nil, err
-	}
-	if _, err := s.store.Member(ctx, conn.OrgID, u.ID); err == nil {
+	} else if _, err := s.store.Member(ctx, conn.OrgID, u.ID); err == nil {
 		return u, nil
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
 	a := Actor{OrgID: conn.OrgID, UserID: &u.ID, Role: conn.DefaultRole, RequestID: requestID}
-	if err := s.checkLimit(ctx, a, limitMembers, 1, email); err != nil {
-		return nil, err
-	}
+	// The account is made with the membership: a sign-in refused (the
+	// org's member limit) leaves no account behind.
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		if fresh {
+			if err := tx.CreateUser(ctx, u, email); errors.Is(err, store.ErrConflict) {
+				return errSSORace // made a moment ago, by another sign-in
+			} else if err != nil {
+				return err
+			}
+		}
+		if err := s.checkLimit(ctx, tx, a, limitMembers, 1, email); err != nil {
+			return err
+		}
 		err := tx.AddMember(ctx, &model.Membership{OrgID: conn.OrgID, UserID: u.ID, Role: conn.DefaultRole})
 		switch {
 		case errors.Is(err, store.ErrConflict):
@@ -525,5 +530,13 @@ func (s *Service) ssoUser(ctx context.Context, conn *model.SSOConnection, email,
 		}
 		return s.audit(ctx, tx, a, "member.add", id.Format(id.User, u.ID), map[string]any{"role": conn.DefaultRole, "via": "sso"})
 	})
+	if errors.Is(err, errSSORace) && fresh {
+		// Another sign-in made the account first: the account is theirs
+		// now, so join as an existing person.
+		return s.ssoUser(ctx, conn, email, name, requestID)
+	}
 	return u, err
 }
+
+// errSSORace is two first sign-ins of one person at once.
+var errSSORace = errors.New("core: the account was made by another sign-in")

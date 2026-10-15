@@ -224,6 +224,8 @@ every problem in `errors`, each with its own `code` and `param`.
 - **scope_invalid**: a listed scope does not exist.
 - **brand_invalid**: `brand` is not one of the org's brands.
 - **key_inactive** (409): the key to roll has expired or was revoked.
+- **key_rolled** (409): the key was rolled already; use its replacement,
+  or roll that.
 
 ## Connecting with OAuth
 

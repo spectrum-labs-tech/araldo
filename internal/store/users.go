@@ -85,10 +85,18 @@ func scanUser(r pgx.Row) (*model.User, error) {
 }
 
 // CreateUser inserts a user; a taken email is ErrConflict.
+// CreateUser adds a user, or returns ErrConflict when the email is taken,
+// without failing the transaction it is in.
 func (s *Store) CreateUser(ctx context.Context, u *model.User, normalizedEmail string) error {
-	_, err := s.q.Exec(ctx, `INSERT INTO users (id, email, email_normalized, name, password_hash) VALUES ($1, $2, $3, $4, NULLIF($5, ''))`,
-		u.ID, u.Email, normalizedEmail, u.Name, u.PasswordHash)
-	return mapErr(err)
+	tag, err := s.q.Exec(ctx, `INSERT INTO users (id, email, email_normalized, name, password_hash) VALUES ($1, $2, $3, $4, NULLIF($5, ''))
+		ON CONFLICT DO NOTHING`, u.ID, u.Email, normalizedEmail, u.Name, u.PasswordHash)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConflict
+	}
+	return nil
 }
 
 func (s *Store) UserByEmail(ctx context.Context, normalizedEmail string) (*model.User, error) {

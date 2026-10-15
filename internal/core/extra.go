@@ -213,7 +213,10 @@ func (s *Service) Attempts(ctx context.Context, a Actor, targetID uuid.UUID) ([]
 		return nil, err
 	}
 	t, err := s.store.Target(ctx, a.OrgID, targetID)
-	if err != nil || t.Livemode != a.Livemode {
+	if err != nil {
+		return nil, notFound(err, "post target")
+	}
+	if t.Livemode != a.Livemode {
 		return nil, apperr.NotFound("post target")
 	}
 	if _, err := s.Post(ctx, a, t.PostID); err != nil {

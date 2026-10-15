@@ -206,20 +206,29 @@ func (s *Service) AddMember(ctx context.Context, a Actor, ss *model.Session, ema
 			return nil, err
 		}
 	}
-	if err := s.checkLimit(ctx, a, limitMembers, 1, ""); err != nil {
-		return nil, err
-	}
 	u, err := s.UserByEmail(ctx, email)
-	if errors.Is(err, apperr.ErrNotFound) {
+	var norm string
+	fresh := errors.Is(err, apperr.ErrNotFound)
+	if fresh {
 		if tempPassword == "" {
 			return nil, apperr.Invalid("password_required", "password", "%s has no account yet: set a temporary password for them.", email)
 		}
-		u, err = s.CreateUser(ctx, email, "", tempPassword)
+		u, norm, err = newUser(email, "", tempPassword)
 	}
 	if err != nil {
 		return nil, err
 	}
+	// The account is made with the membership: one refused (a limit) leaves
+	// no account, with its temporary password, behind.
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := s.checkLimit(ctx, tx, a, limitMembers, 1, ""); err != nil {
+			return err
+		}
+		if fresh {
+			if err := tx.CreateUser(ctx, u, norm); err != nil {
+				return errEmailTaken(err)
+			}
+		}
 		if err := tx.AddMember(ctx, &model.Membership{OrgID: a.OrgID, UserID: u.ID, Role: role}); err != nil {
 			if errors.Is(err, store.ErrConflict) {
 				return apperr.Conflict("already_member", "%s is already a member.", u.Email)
@@ -405,12 +414,12 @@ func (s *Service) CreateBrand(ctx context.Context, a Actor, in BrandInput) (*mod
 	if err := in.check(); err != nil {
 		return nil, err
 	}
-	if err := s.checkLimit(ctx, a, limitBrands, 1, ""); err != nil {
-		return nil, err
-	}
 	b := &model.Brand{ID: id.New(), OrgID: a.OrgID, Name: in.Name, Slug: in.Slug, Timezone: in.Timezone, ApprovalPolicy: in.ApprovalPolicy,
 		UTMDomains: in.UTMDomains}
 	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := s.checkLimit(ctx, tx, a, limitBrands, 1, ""); err != nil {
+			return err
+		}
 		if err := tx.CreateBrand(ctx, b); err != nil {
 			if errors.Is(err, store.ErrConflict) {
 				return apperr.Invalid("slug_taken", "slug", "Another brand already uses the slug %q.", b.Slug)
@@ -561,7 +570,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, a Actor, ss *model.Session, 
 	if err := s.requireSudo(ss); err != nil {
 		return "", nil, err
 	}
-	return s.createAPIKey(ctx, a, in)
+	return s.createAPIKey(ctx, s.store, a, in)
 }
 
 // CreateOperatorAPIKey makes a key for the `araldo admin apikeys create`
@@ -572,10 +581,11 @@ func (s *Service) CreateOperatorAPIKey(ctx context.Context, a Actor, in APIKeyIn
 	if err := a.require(PermKeysWrite); err != nil {
 		return "", nil, err
 	}
-	return s.createAPIKey(ctx, a, in)
+	return s.createAPIKey(ctx, s.store, a, in)
 }
 
-func (s *Service) createAPIKey(ctx context.Context, a Actor, in APIKeyInput) (string, *model.APIKey, error) {
+// createAPIKey makes a key through st, the store or a transaction.
+func (s *Service) createAPIKey(ctx context.Context, st *store.Store, a Actor, in APIKeyInput) (string, *model.APIKey, error) {
 	var ps apperr.Problems
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" || len(in.Name) > 100 {
@@ -587,8 +597,10 @@ func (s *Service) createAPIKey(ctx context.Context, a Actor, in APIKeyInput) (st
 		}
 	}
 	if in.BrandID != nil {
-		if _, err := s.store.Brand(ctx, a.OrgID, *in.BrandID); err != nil {
+		if _, err := st.Brand(ctx, a.OrgID, *in.BrandID); errors.Is(err, store.ErrNotFound) {
 			ps.Add("brand_invalid", "brand", "No such brand.")
+		} else if err != nil {
+			return "", nil, err
 		}
 	}
 	if a.IsKey() && !in.self {
@@ -604,7 +616,7 @@ func (s *Service) createAPIKey(ctx context.Context, a Actor, in APIKeyInput) (st
 	}
 	k := &model.APIKey{ID: id.New(), OrgID: a.OrgID, Livemode: in.Livemode, Name: in.Name, Hint: authn.KeyHint(plain),
 		Scopes: in.Scopes, BrandID: in.BrandID, CreatedBy: createdBy, ExpiresAt: in.Expires}
-	err := s.store.InTx(ctx, func(tx *store.Store) error {
+	err := st.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.CreateAPIKey(ctx, k, authn.HashToken(plain)); err != nil {
 			return err
 		}
@@ -652,7 +664,6 @@ func keyVisible(a Actor, k *model.APIKey) bool {
 	return k.Livemode == a.Livemode && (a.BrandID == nil || k.BrandID != nil && *k.BrandID == *a.BrandID)
 }
 
-// APIKeys lists the org's keys (a key sees those of its mode and brand).
 // APIKeysInMode lists the actor's visible keys in its mode (test or live),
 // revoked ones included, as the dashboard shows them.
 func (s *Service) APIKeysInMode(ctx context.Context, a Actor) ([]*model.APIKey, error) {
@@ -663,6 +674,7 @@ func (s *Service) APIKeysInMode(ctx context.Context, a Actor) ([]*model.APIKey, 
 	return slices.DeleteFunc(keys, func(k *model.APIKey) bool { return k.Livemode != a.Livemode }), nil
 }
 
+// APIKeys lists the org's keys (a key sees those of its mode and brand).
 func (s *Service) APIKeys(ctx context.Context, a Actor) ([]*model.APIKey, error) {
 	if err := a.requireToRead(PermKeysWrite); err != nil {
 		return nil, err
@@ -689,7 +701,10 @@ func (s *Service) APIKey(ctx context.Context, a Actor, keyID uuid.UUID) (*model.
 		}
 	}
 	k, err := s.store.APIKey(ctx, a.OrgID, keyID)
-	if err != nil || !keyVisible(a, k) {
+	if err != nil {
+		return nil, notFound(err, "API key")
+	}
+	if !keyVisible(a, k) {
 		return nil, apperr.NotFound("API key")
 	}
 	return k, nil
@@ -705,7 +720,7 @@ func (s *Service) CreateKeyWithKey(ctx context.Context, a Actor, in APIKeyInput)
 		return "", nil, apperr.Forbidden("Members create keys in the dashboard.")
 	}
 	in.Livemode = a.Livemode
-	return s.createAPIKey(ctx, a, in)
+	return s.createAPIKey(ctx, s.store, a, in)
 }
 
 // RevokeAPIKey stops a key working immediately.
@@ -715,12 +730,15 @@ func (s *Service) RevokeAPIKey(ctx context.Context, a Actor, keyID uuid.UUID) er
 	}
 	if a.IsKey() {
 		k, err := s.store.APIKey(ctx, a.OrgID, keyID)
-		if err != nil || !keyVisible(a, k) {
+		if err != nil {
+			return notFound(err, "API key")
+		}
+		if !keyVisible(a, k) {
 			return apperr.NotFound("API key")
 		}
 	}
 	return s.store.InTx(ctx, func(tx *store.Store) error {
-		if err := tx.ExpireAPIKey(ctx, a.OrgID, keyID, s.Now(), true); err != nil {
+		if err := tx.RevokeAPIKey(ctx, a.OrgID, keyID, s.Now()); err != nil {
 			return notFound(err, "API key")
 		}
 		return s.audit(ctx, tx, a, "api_key.revoke", id.Format(id.APIKey, keyID), nil)
@@ -759,15 +777,40 @@ func (s *Service) RollOwnKey(ctx context.Context, a Actor, overlap time.Duration
 	return s.rollKey(ctx, a, *a.KeyID, overlap, true)
 }
 
-// rollKey creates the replacement and expires the old key after overlap.
-// self skips the grant rule: a key replacing itself keeps what it has.
+// rollKey creates the replacement and expires the old key after overlap,
+// in one transaction with the old key locked: a roll that fails leaves the
+// old key as it was, and rolls made at once make one replacement. self
+// skips the grant rule: a key replacing itself keeps what it has.
 func (s *Service) rollKey(ctx context.Context, a Actor, keyID uuid.UUID, overlap time.Duration, self bool) (string, *model.APIKey, error) {
-	old, err := s.store.APIKey(ctx, a.OrgID, keyID)
-	if err != nil || !keyVisible(a, old) {
-		return "", nil, apperr.NotFound("API key")
+	var plain string
+	var k *model.APIKey
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		old, err := tx.APIKeyForUpdate(ctx, a.OrgID, keyID)
+		if err != nil {
+			return notFound(err, "API key")
+		}
+		if !keyVisible(a, old) {
+			return apperr.NotFound("API key")
+		}
+		if plain, k, err = s.rollLocked(ctx, tx, a, old, overlap, self); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, a, "api_key.roll", id.Format(id.APIKey, old.ID), map[string]any{"replacement": id.Format(id.APIKey, k.ID)})
+	})
+	if err != nil {
+		return "", nil, err
 	}
+	return plain, k, nil
+}
+
+// rollLocked is rollKey's work on the locked old key, in tx.
+func (s *Service) rollLocked(ctx context.Context, tx *store.Store, a Actor, old *model.APIKey, overlap time.Duration, self bool) (string,
+	*model.APIKey, error) {
 	if !old.Active(s.Now()) {
 		return "", nil, apperr.Conflict("key_inactive", "That key is no longer active.")
+	}
+	if old.RolledAt != nil {
+		return "", nil, apperr.Conflict("key_rolled", "That key was rolled already: use its replacement, or roll that.")
 	}
 	overlap = min(max(overlap, 0), 7*24*time.Hour)
 	in := APIKeyInput{Name: old.Name, Livemode: old.Livemode, Scopes: old.Scopes, BrandID: old.BrandID, createdBy: old.CreatedBy, self: self}
@@ -781,11 +824,11 @@ func (s *Service) rollKey(ctx context.Context, a Actor, keyID uuid.UUID, overlap
 		// Extending a key's life is for a member, in the dashboard.
 		in.Expires = a.KeyExpiresAt
 	}
-	plain, k, err := s.createAPIKey(ctx, a, in)
+	plain, k, err := s.createAPIKey(ctx, tx, a, in)
 	if err != nil {
 		return "", nil, err
 	}
-	if err := s.store.ExpireAPIKey(ctx, a.OrgID, keyID, s.Now().Add(overlap), false); err != nil {
+	if err := tx.RollAPIKey(ctx, a.OrgID, old.ID, s.Now().Add(overlap), s.Now()); err != nil {
 		return "", nil, err
 	}
 	return plain, k, nil

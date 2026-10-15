@@ -381,8 +381,11 @@ func (s *Service) SetEmailTheme(ctx context.Context, a Actor, brandID uuid.UUID,
 	}
 	if t.LogoMediaID != nil {
 		m, err := s.store.Media(ctx, a.OrgID, *t.LogoMediaID)
-		if err != nil || m.BrandID != b.ID {
+		switch {
+		case errors.Is(err, store.ErrNotFound) || err == nil && m.BrandID != b.ID:
 			ps.Add("logo_unknown", "logo", "The logo must be one of the brand's images.")
+		case err != nil:
+			return nil, err
 		}
 	}
 	if err := ps.Err("The email theme is not valid."); err != nil {
@@ -494,6 +497,9 @@ func (s *Service) issueDeliveries(ctx context.Context, a Actor, b *model.Brand, 
 		}
 		seen[d.MailAccountID] = true
 		ma, err := s.store.MailAccount(ctx, a.OrgID, d.MailAccountID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
 		if err != nil || ma.Livemode != a.Livemode || ma.BrandID != b.ID {
 			return nil, apperr.Invalid("mail_account_unknown", field+".mail_account", "The mail account is not one of brand %s's.", b.Name)
 		}
@@ -1077,6 +1083,9 @@ func (s *Service) SendTestIssue(ctx context.Context, a Actor, issueID uuid.UUID,
 		return err
 	}
 	ma, err := s.MailAccount(ctx, a, in.MailAccountID)
+	if err != nil && apperr.As(err).Kind != apperr.KindNotFound {
+		return err
+	}
 	if err != nil || ma.BrandID != is.BrandID {
 		return apperr.Invalid("mail_account_unknown", "mail_account", "The mail account is not one of the issue's brand's.")
 	}

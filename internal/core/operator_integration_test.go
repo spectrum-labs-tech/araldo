@@ -6,9 +6,11 @@ package core_test
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -524,5 +526,50 @@ func TestTaskErrorsAreForTheOperator(t *testing.T) {
 	}
 	if got := find(op); got.LastError == "" {
 		t.Fatalf("operator sees %+v, want the error", got)
+	}
+}
+
+// TestLimitsHoldAtOnce checks additions made at the same time cannot pass
+// a limit together, and that a person refused by one gets no account.
+func TestLimitsHoldAtOnce(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	_, op := operatorKey(t, w.s)
+	in, _, err := w.s.InOrg(ctx, op, w.org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	three, one := 3, 1
+	if _, err := w.s.ChangeOrg(ctx, in, core.OrgChange{Limits: &model.OrgLimits{Brands: &three, Members: &one}}); err != nil {
+		t.Fatal(err)
+	}
+	// The world has one brand, so two more fit, however many try at once.
+	var made atomic.Int32
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			_, err := w.s.CreateBrand(ctx, w.owner, core.BrandInput{Name: fmt.Sprintf("At once %d", i), Timezone: "UTC"})
+			switch {
+			case err == nil:
+				made.Add(1)
+			case code(err) != "limit_reached":
+				t.Errorf("brand %d: %v", i, err)
+			}
+		})
+	}
+	wg.Wait()
+	if made.Load() != 2 {
+		t.Fatalf("%d brands made at once, want 2", made.Load())
+	}
+
+	// The owner fills the one seat: adding someone new is refused, and
+	// leaves no account with its temporary password behind.
+	email := "refused-" + uuid.NewString()[:8] + "@example.com"
+	if _, err := w.s.AddMember(ctx, w.owner, w.session, email, model.RoleEditor, "a temporary password"); code(err) != "limit_reached" {
+		t.Fatalf("adding past the limit: %v", err)
+	}
+	if _, err := w.s.UserByEmail(ctx, email); kind(err) != apperr.KindNotFound {
+		t.Fatalf("the refused person's account: %v, want none", err)
 	}
 }

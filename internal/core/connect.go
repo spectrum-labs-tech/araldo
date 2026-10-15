@@ -270,7 +270,10 @@ func (s *Service) oauthState(ctx context.Context, a Actor, provider platform.Pro
 		return nil, errConnectExpired
 	}
 	st, err := s.store.OAuthState(ctx, stateHash(state), s.Now().Add(-OAuthStateTTL))
-	if err != nil || st.OrgID != a.OrgID || st.UserID != *a.UserID || st.Provider != provider {
+	if err != nil {
+		return nil, notFoundAs(err, errConnectExpired)
+	}
+	if st.OrgID != a.OrgID || st.UserID != *a.UserID || st.Provider != provider {
 		return nil, errConnectExpired
 	}
 	return st, nil
@@ -361,7 +364,10 @@ func (s *Service) ChooseConnections(ctx context.Context, a Actor, provider platf
 		return nil, err
 	}
 	st, err := s.oauthState(ctx, a, provider, state)
-	if err != nil || len(st.Connections) == 0 {
+	if err != nil {
+		return nil, err
+	}
+	if len(st.Connections) == 0 {
 		return nil, errConnectExpired
 	}
 	hash := stateHash(state)
@@ -403,11 +409,11 @@ func (s *Service) connectAll(ctx context.Context, a Actor, st *model.OAuthState,
 			added++
 		}
 	}
-	if err := s.checkLimit(ctx, a, limitChannels, added, ""); err != nil {
-		return nil, err
-	}
 	var out []*model.Channel
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := s.checkLimit(ctx, tx, a, limitChannels, added, ""); err != nil {
+			return err
+		}
 		for _, c := range conns {
 			ch := &model.Channel{ID: id.New(), OrgID: a.OrgID, BrandID: st.BrandID, Livemode: true, Provider: st.Provider,
 				Settings: map[string]string{}, Status: model.ChannelActive}

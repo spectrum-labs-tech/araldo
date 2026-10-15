@@ -1725,3 +1725,67 @@ func TestRequestLogIsPruned(t *testing.T) {
 		t.Fatalf("after pruning: %+v, %v", left, err)
 	}
 }
+
+// TestRollsAtOnceMakeOneKey checks rolling a key is one change: rolls made
+// at the same time make one replacement, and the roll is audited.
+func TestRollsAtOnceMakeOneKey(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	_, k, err := w.s.CreateAPIKey(ctx, w.owner, w.session, core.APIKeyInput{Name: "rolled"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rolled atomic.Int32
+	var wg sync.WaitGroup
+	for range 5 {
+		wg.Go(func() {
+			_, _, err := w.s.RollAPIKey(ctx, w.owner, w.session, k.ID, time.Hour)
+			switch {
+			case err == nil:
+				rolled.Add(1)
+			case code(err) != "key_rolled":
+				t.Errorf("roll: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+	if rolled.Load() != 1 {
+		t.Fatalf("%d rolls succeeded at once, want 1", rolled.Load())
+	}
+	keys, err := w.s.APIKeys(ctx, w.owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(keys); n != 2 {
+		t.Fatalf("%d keys after rolling one, want 2", n)
+	}
+	events, _, err := w.s.AuditEvents(ctx, w.owner, store.Page{Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(events, func(e model.AuditEvent) bool { return e.Action == "api_key.roll" }) {
+		t.Fatal("the roll is not in the audit log")
+	}
+}
+
+// TestOutagesAreNotMissing checks a store error that is not a missing row
+// (here a canceled request) comes back as itself, not as a 404 that would
+// hide an outage.
+func TestOutagesAreNotMissing(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	checks := map[string]error{}
+	_, checks["api key"] = w.s.APIKey(ctx, w.owner, id.New())
+	_, checks["attempts"] = w.s.Attempts(ctx, w.owner, id.New())
+	_, checks["endpoint"] = w.s.Endpoint(ctx, w.owner, id.New())
+	_, checks["event"] = w.s.Event(ctx, w.owner, id.New())
+	_, checks["brand by slug"] = w.s.ResolveBrand(ctx, w.owner, "some-slug")
+	for what, err := range checks {
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("%s: %v, want the cancellation", what, err)
+		}
+	}
+}

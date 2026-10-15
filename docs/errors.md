@@ -183,6 +183,29 @@ every problem in `errors`, each with its own `code` and `param`.
   renders, are each at most 64 KiB.
 - **render_failed**: the template failed while rendering this data; the
   message says where.
+- **loop_limit**: the template's loops ran more than 10,000 times in all
+  while rendering this data. Bodies are also refused as
+  **template_syntax** for loops nested more than 3 deep, a `{{range}}`
+  over a number, or a `printf` width or precision over 1,000
+  ([ADR 0010](adr/0010-templates.md)).
+
+## Post target errors
+
+A target that did not publish carries the platform's answer in
+`error.code`: its kind (`rate_limited`, `auth_revoked`, `rejected`,
+`transient`, `uncertain`, `worker_lost`) or one of these:
+
+- **no_id**: the platform answered without the ID of what it made. When
+  that answer was to the request that publishes, the post may exist
+  (uncertain, so it needs attention); before it (an upload, a container),
+  the attempt is retried.
+- **response_too_large**: the platform's answer was larger than Araldo
+  reads; like **no_id**, uncertain after the publishing request.
+- **session_expired** (Bluesky): the kept session ran out; the next
+  attempt signs in again.
+
+Reading ad results can stop with **too_many_pages** (Reddit kept answering
+with another page), shown on the ad account and retried later.
 
 ## Engagement
 

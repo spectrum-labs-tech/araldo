@@ -62,7 +62,17 @@ platform per install.
    - `Transient`: retry with backoff;
    - `Uncertain`: the request may have been received, for example a
      timeout after sending, or a 5xx to a write (platforms have saved a
-     post and then answered 500); a 5xx to a read is `Transient`.
+     post and then answered 500); a 5xx to a read is `Transient`. So is a
+     failure after sending a request the adapter marks
+     `platform.RetrySafe`: a preparatory one that publishes nothing (a
+     media upload, a container to publish later, a read sent as a POST).
+     Never the request that makes the post public, nor any after it.
+   - A platform that honors an idempotency key but forgets it after a
+     while (Mastodon, an hour) says how long with `IdempotencyWindow`:
+     an uncertain attempt is retried only while the key, first sent with
+     the target's first attempt, is still remembered
+     (`platform.RetryUncertain`); after that it needs a person, as on a
+     platform without keys ([ADR 0011](0011-publishing.md)).
 6. **Channel health:** tokens are refreshed before they expire (an `opsched`
    task), and a channel whose refresh fails becomes `needs_reauth` and
    emits `channel.needs_reauth`.

@@ -59,6 +59,13 @@ and a crashed worker's claim simply expires.
      more. Without a `Finder`, the target waits in `needs_attention`, emits
      `post_target.uncertain`, and a person (or the caller, through the
      API) chooses `retry` or `mark_published`.
+   - On an idempotent adapter an uncertain attempt is retried with the
+     same key, but only while the platform remembers it: an adapter with
+     an idempotency window (Mastodon, an hour) is retried only if the retry
+     falls within the window of the target's first attempt, and otherwise
+     the target needs attention ([ADR 0009](0009-platform-adapters.md)).
+     A failure after a request the adapter marked retry-safe (a
+     preparatory upload) is transient, not uncertain.
    - Retries back off exponentially with jitter and stop at `publish_by`.
 5. **Threads** publish their parts in order, and each part's remote ID is
    stored as it succeeds, so a retry continues from the first missing part.

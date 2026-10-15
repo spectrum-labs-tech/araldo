@@ -35,7 +35,19 @@ should change without redeploying the caller.
    `default`, `plural`, `date` (in the brand's time zone), `urlquery`.
    Data is plain JSON (`map[string]any`), so templates can reach no methods
    or anything beyond the caller's data. Template source is limited to
-   16 KiB and data to 64 KiB.
+   16 KiB, data to 64 KiB and the rendered text to 64 KiB. Rendering is
+   bounded in time too, since `text/template` cannot be stopped midway and
+   a loop that prints nothing would otherwise spin unchecked:
+   - `{{range}}` nests at most 3 deep, and never ranges over a number
+     literal (`{{range 1000000000}}`);
+   - the loops of one render run at most 10,000 times in all, past which
+     it fails with `loop_limit`;
+   - a `printf` format must be written out, with widths and precisions of
+     at most 1,000 (no `*`), so it cannot build a huge string before the
+     output limit sees it;
+   - `{{define}}`, `{{template}}` and `{{block}}` are refused: a body is
+     one template.
+   The rules that refuse a body when it is saved report `template_syntax`.
 5. **Validation happens early:**
    - **On save:** every body must parse; every body is rendered with each
      example for every provider the brand has channels on; rule violations

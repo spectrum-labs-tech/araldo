@@ -68,7 +68,7 @@
       <label data-when="expires=date">Date <input type="date" name="expires_on"></label>
     </div>
     <label>Limit to one brand
-      <select name="brand"><option value="">All brands</option>{{range .Data.Brands}}<option value="{{brandID .ID}}">{{.Name}}</option>{{end}}</select></label>
+      {{template "brandSelect" (brandOptions .Data.Brands "" "All brands")}}</label>
     <div><button class="btn-primary">Create key</button></div>
     <p class="text-sm text-muted">Creating a key asks you to confirm your password.</p>
   </form>

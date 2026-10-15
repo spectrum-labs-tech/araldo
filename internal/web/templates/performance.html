@@ -4,7 +4,7 @@
 
 <form method="get" action="/performance" class="my-4 flex flex-wrap items-end gap-3">
   <label>Brand
-    <select name="brand"><option value="">All brands</option>{{range .Data.Brands}}<option value="{{brandID .ID}}" {{if eq $.Data.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+    {{template "brandSelect" (brandOptions .Data.Brands $.Data.Brand "All brands")}}
   </label>
   <label>Period
     <select name="days">{{range $n := (list "7" "30" "90" "365")}}<option value="{{$n}}" {{if eq (printf "%d" $.Data.Days) $n}}selected{{end}}>Last {{$n}} days</option>{{end}}</select>
@@ -77,13 +77,9 @@
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <input type="hidden" name="provider" value="{{$p.Provider}}">
     <label>Brand
-      <select name="brand">{{range .Data.Brands}}<option value="{{brandID .ID}}" {{if eq $.Data.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+      {{template "brandSelect" (brandOptions .Data.Brands $.Data.Brand "")}}
     </label>
-    {{range $p.Fields}}
-    <label>{{.Label}}{{if .Optional}} <span class="text-sm font-normal text-muted">(optional)</span>{{end}}
-      <input name="field_{{.Name}}" {{if .Secret}}type="password" autocomplete="off"{{else}}value="{{index $.Data.Values .Name}}"{{end}} {{if not .Optional}}required{{end}} placeholder="{{.Default}}">
-      {{if .Help}}<span class="text-sm font-normal text-muted">{{.Help}}</span>{{end}}</label>
-    {{end}}
+    {{range $p.Fields}}{{template "providerField" (fieldInput . $.Data.Values)}}{{end}}
     <label>Goals that count as signups <span class="text-sm font-normal text-muted">(comma-separated, as {{$p.Name}} names them)</span>
       <input name="goals" value="{{index .Data.Values "goals"}}" placeholder="Waitlist Signup"></label>
     <p class="text-sm text-muted">Araldo reads counts by link tag, never visitors, and stores the key encrypted.</p>

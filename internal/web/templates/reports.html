@@ -11,7 +11,7 @@
 
 <form method="get" action="/reports" class="no-print my-4 flex flex-wrap items-end gap-3">
   <label>Brand
-    <select name="brand">{{range $d.Brands}}<option value="{{brandID .ID}}" {{if eq .ID $d.Brand.ID}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+    {{template "brandSelect" (brandOptions $d.Brands (brandID $d.Brand.ID) "")}}
   </label>
   <label>Month <input type="month" name="month" value="{{$d.Month}}"></label>
   <button>Show</button>

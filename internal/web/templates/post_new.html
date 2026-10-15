@@ -12,7 +12,7 @@
 
   <div data-when="mode=content" class="flex flex-col gap-4">
     <label>Brand
-      <select name="brand">{{range .Data.Brands}}<option value="{{brandID .ID}}" {{if eq (index $.Data.Form "brand") (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+      {{template "brandSelect" (brandOptions .Data.Brands (index $.Data.Form "brand") "")}}
     </label>
     <label>Text <textarea name="body" rows="6" placeholder="What are you announcing?">{{index .Data.Form "body"}}</textarea></label>
     <label>If it's too long for a platform

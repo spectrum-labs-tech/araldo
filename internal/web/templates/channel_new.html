@@ -17,7 +17,7 @@
   {{if $f.Apps}}
   {{if $f.Channel}}<input type="hidden" name="brand" value="{{brandID $f.Channel.BrandID}}">{{else}}
   <label>Brand
-    <select name="brand">{{range $f.Brands}}<option value="{{brandID .ID}}" {{if eq $f.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+    {{template "brandSelect" (brandOptions $f.Brands $f.Brand "")}}
   </label>{{end}}
   <label>Through
     <select name="app">{{range $f.Apps}}<option value="{{appID .ID}}">{{.Name}}{{if .Install}} (provided by this server){{end}}</option>{{end}}</select></label>
@@ -37,7 +37,7 @@
   <p><strong>{{$f.Provider.Name}}</strong> {{if not $f.Channel}}<a class="text-sm" href="/channels/new">change</a>{{end}}</p>
   {{if not $f.Channel}}
   <label>Brand
-    <select name="brand">{{range $f.Brands}}<option value="{{brandID .ID}}" {{if eq $f.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+    {{template "brandSelect" (brandOptions $f.Brands $f.Brand "")}}
   </label>
   {{end}}
   {{range $f.Provider.Fields}}
@@ -45,11 +45,7 @@
     <label>{{.Label}}
       <select name="field_emulates">{{range $f.Emulable}}<option value="{{.}}" {{if eq (printf "%s" .) (index $f.Values "emulates")}}selected{{end}}>{{.}}</option>{{end}}</select>
       <span class="text-sm font-normal text-muted">{{.Help}}</span></label>
-    {{else}}
-    <label>{{.Label}}{{if .Optional}} <span class="text-sm font-normal text-muted">(optional)</span>{{end}}
-      <input name="field_{{.Name}}" {{if .Secret}}type="password" autocomplete="off"{{else}}value="{{index $f.Values .Name}}"{{end}} {{if not .Optional}}required{{end}} placeholder="{{.Default}}">
-      {{if .Help}}<span class="text-sm font-normal text-muted">{{.Help}}</span>{{end}}</label>
-    {{end}}
+    {{else}}{{template "providerField" (fieldInput . $f.Values)}}{{end}}
   {{end}}
   <p class="text-sm text-muted">Araldo checks these with {{$f.Provider.Name}} before saving them, and stores secrets encrypted.</p>
   <div><button class="{{if $f.Provider.OAuth}}btn{{else}}btn-primary{{end}}">{{if $f.Channel}}Reconnect{{else}}Connect{{end}}</button></div>

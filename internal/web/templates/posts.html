@@ -10,10 +10,7 @@
   <label class="min-w-0 grow">Search
     <input type="search" name="q" value="{{$d.Query}}" maxlength="200" placeholder="Text in any channel's copy"></label>
   <label>Brand
-    <select name="brand">
-      <option value="">All brands</option>
-      {{range $d.Brands}}<option value="{{.Slug}}" {{if eq $d.Brand .Slug (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}
-    </select></label>
+    {{template "brandSelect" (brandOptions $d.Brands $d.Brand "All brands")}}</label>
   <button>Filter</button>
   {{if or $d.Query $d.Brand $d.Status}}<a class="btn" href="/posts">Clear</a>{{end}}
 </form>

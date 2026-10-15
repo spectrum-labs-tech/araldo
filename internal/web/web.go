@@ -821,8 +821,10 @@ var funcs = template.FuncMap{
 		}
 		return *p
 	},
-	"statusClass": statusClass,
-	"inc":         func(i int) int { return i + 1 },
+	"statusClass":  statusClass,
+	"brandOptions": brandOptions,
+	"fieldInput":   fieldInput,
+	"inc":          func(i int) int { return i + 1 },
 	"deref": func(p *int) int {
 		if p == nil {
 			return 0

@@ -15,7 +15,7 @@
   {{if .Data.Live}}<input type="hidden" name="mode" value="live">{{end}}
   <label>Name <input name="name" required maxlength="100" value="araldo CLI{{with .Data.Device}} on {{.}}{{end}}"></label>
   <label>Brand
-    <select name="brand"><option value="">All brands</option>{{range .Data.Brands}}<option value="{{brandID .ID}}">{{.Name}}</option>{{end}}</select></label>
+    {{template "brandSelect" (brandOptions .Data.Brands "" "All brands")}}</label>
   <p class="text-sm text-muted">{{if .Data.Live}}The key works in <strong>live mode</strong>: it posts to real accounts. For one that only reaches sandbox channels, run <code>araldo auth login</code> without <code>--live</code>.{{else}}The key works in <strong>test mode</strong>, so it only reaches sandbox channels. For live channels, run <code>araldo auth login --live</code>.{{end}} It has full access; make a restricted one under <a href="/keys">API keys</a>.</p>
   <div><button class="btn-primary">Create key</button></div>
 </form>

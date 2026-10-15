@@ -16,7 +16,7 @@
   <div class="grid gap-4 sm:grid-cols-2">
     {{if not $f.Template}}
     <label>Brand
-      <select name="brand">{{range $f.Brands}}<option value="{{brandID .ID}}" {{if eq $f.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
+      {{template "brandSelect" (brandOptions $f.Brands $f.Brand "")}}
     </label>
     <label>Key <input name="key" value="{{$f.Key}}" required pattern="[a-z0-9][a-z0-9_\-]*" placeholder="featured-build" title="lowercase letters, digits, - and _"></label>
     {{else}}<input type="hidden" name="brand" value="{{brandID $f.Template.BrandID}}">{{end}}

@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -322,11 +323,18 @@ type readCloser struct{ *bytes.Reader }
 
 func (readCloser) Close() error { return nil }
 
+// readBody reads r's body, of at most limit bytes. Only a body past the
+// limit is too large: any other failure to read it (the client went away
+// partway) is unreadable.
 func readBody(r *http.Request, limit int64) ([]byte, error) {
 	var buf bytes.Buffer
-	n, err := buf.ReadFrom(http.MaxBytesReader(nil, r.Body, limit+1))
-	if err != nil || n > limit {
+	_, err := buf.ReadFrom(http.MaxBytesReader(nil, r.Body, limit))
+	var tooLarge *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooLarge):
 		return nil, badRequest("body_too_large", "", "Request bodies are limited to %d MiB.", limit>>20)
+	case err != nil:
+		return nil, errBodyUnreadable
 	}
 	return buf.Bytes(), nil
 }

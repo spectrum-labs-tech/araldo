@@ -3,6 +3,7 @@
 package api
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -160,19 +162,28 @@ func TestDecodeIsStrict(t *testing.T) {
 		Name string `json:"name"`
 		N    int    `json:"n"`
 	}
-	tests := map[string]string{
-		`{"nme":"x"}`: "parameter_unknown",
-		`{"n":"x"}`:   "parameter_invalid",
-		`{`:           "json_invalid",
+	tests := map[string]struct{ code, param string }{
+		`{"nme":"x"}`:                  {"parameter_unknown", "nme"},
+		`{"n":"x"}`:                    {"parameter_invalid", "n"},
+		`{`:                            {"json_invalid", ""},
+		`{"name":"a"} {"n":1}`:         {"json_invalid", ""}, // a second value
+		`{"name":"a"} trailing`:        {"json_invalid", ""},
+		"{\"name\":\"a\"}\n\t ":        {"", ""}, // only space after it
+		strings.Repeat(" ", maxBody+1): {"body_too_large", ""},
 	}
 	for body, want := range tests {
 		r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
 		err := decode(r, &v)
-		if ae := apperr.As(err); ae.Code != want {
-			t.Errorf("decode(%s) code %q, want %q (%v)", body, ae.Code, want, err)
+		if ae := apperr.As(err); want.code == "" && err != nil || want.code != "" && (ae.Code != want.code || ae.Param != want.param) {
+			t.Errorf("decode(%.40q) = %v, want code %q param %q", body, err, want.code, want.param)
 		}
 	}
-	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
+	// A body that cannot be read is not "too large".
+	r := httptest.NewRequest(http.MethodPost, "/", iotest.ErrReader(errors.New("connection reset")))
+	if err := decode(r, &v); apperr.As(err).Code != "body_unreadable" {
+		t.Errorf("an unreadable body: %v", err)
+	}
+	r = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 	if err := decode(r, &v); err != nil {
 		t.Errorf("empty body: %v", err)
 	}

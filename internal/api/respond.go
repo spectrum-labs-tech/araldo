@@ -3,6 +3,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,6 +72,21 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	if logged, ok := r.Context().Value(loggedKey).(*loggedRequest); ok {
 		logged.code = ae.Code
 	}
+	writeProblem(w, r, ae, status)
+}
+
+// WriteProblem answers r with err as a problem, as the API answers its own
+// errors: for the server's answers under /v1 that no handler gives (a
+// panic, the database down). It logs nothing.
+func WriteProblem(w http.ResponseWriter, r *http.Request, err error) {
+	ae := apperr.As(err)
+	if ae.Kind == apperr.KindUnavailable {
+		w.Header().Set("Retry-After", "30")
+	}
+	writeProblem(w, r, ae, kindStatus[ae.Kind])
+}
+
+func writeProblem(w http.ResponseWriter, r *http.Request, ae *apperr.Error, status int) {
 	p := problem{Type: "about:blank", Title: http.StatusText(status), Status: status, Detail: ae.Message, Code: ae.Code, Param: ae.Param,
 		RequestID: RequestID(r.Context()), Errors: ae.Problems}
 	if p.Code != "" {
@@ -98,34 +114,50 @@ func writeJSON(w http.ResponseWriter, status int, contentType string, v any) {
 
 func ok(w http.ResponseWriter, status int, v any) { writeJSON(w, status, "application/json", v) }
 
+var errBodyUnreadable = badRequest("body_unreadable", "", "Could not read the request body; send it again.")
+
 // decode reads a JSON body strictly: unknown fields are an error, so typos
-// are caught (ADR 0005).
+// are caught (ADR 0005), and so is anything after the one JSON value.
 func decode(r *http.Request, v any) error {
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
+	body, err := readBody(r, maxBody)
 	if err != nil {
-		return badRequest("body_unreadable", "", "Could not read the request body.")
+		return err
 	}
-	if len(body) > maxBody {
-		return badRequest("body_too_large", "", "Request bodies are limited to 1 MiB.")
-	}
-	if len(strings.TrimSpace(string(body))) == 0 {
+	if len(bytes.TrimSpace(body)) == 0 {
 		body = []byte("{}")
 	}
-	dec := json.NewDecoder(strings.NewReader(string(body)))
+	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		var ute *json.UnmarshalTypeError
 		switch {
 		case errors.As(err, &ute):
 			return badRequest("parameter_invalid", ute.Field, "%s must be %s.", ute.Field, ute.Type.String())
-		case strings.HasPrefix(err.Error(), "json: unknown field "):
-			field := strings.Trim(strings.TrimPrefix(err.Error(), "json: unknown field "), `"`)
-			return badRequest("parameter_unknown", field, "Unknown parameter %q.", field)
 		default:
+			if field, ok := unknownField(err); ok {
+				return badRequest("parameter_unknown", field, "Unknown parameter %q.", field)
+			}
 			return badRequest("json_invalid", "", "The body is not valid JSON: %v", err)
 		}
 	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return badRequest("json_invalid", "", "The body must be one JSON object, with nothing after it.")
+	}
 	return nil
+}
+
+// unknownField reads the field a decoder with DisallowUnknownFields
+// refused. encoding/json reports it only in its message, so the message is
+// matched exactly; TestDecode notices if it changes.
+func unknownField(err error) (string, bool) {
+	field, ok := strings.CutPrefix(err.Error(), "json: unknown field ")
+	if !ok {
+		return "", false
+	}
+	if f, err := strconv.Unquote(field); err == nil {
+		field = f
+	}
+	return field, true
 }
 
 // list is a page of objects (ADR 0005).

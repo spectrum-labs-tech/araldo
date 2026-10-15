@@ -258,7 +258,10 @@ func (h *Handler) deleteMedia(w http.ResponseWriter, r *http.Request) error {
 }
 
 // mediaContent serves a file by a signed link (ADR 0021): no API key, so
-// a platform can fetch it.
+// a platform can fetch it. A video of up to a gigabyte takes longer to
+// send than the server's one-minute write timeout, so this response has
+// its own. A file held in memory is served in ranges too; one streamed
+// from object storage is sent whole.
 func (h *Handler) mediaContent(w http.ResponseWriter, r *http.Request) error {
 	q := r.URL.Query()
 	m, rc, err := h.svc.LinkedMedia(r.Context(), r.PathValue("id"), q.Get("expires"), q.Get("signature"), q.Get("for"))
@@ -266,9 +269,17 @@ func (h *Handler) mediaContent(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	defer func() { _ = rc.Close() }()
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(uploadTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return err
+	}
 	w.Header().Set("Content-Type", m.ContentType)
-	w.Header().Set("Content-Length", strconv.FormatInt(m.Size, 10))
 	w.Header().Set("Cache-Control", "private, max-age=300")
+	if rs, ok := rc.(io.ReadSeeker); ok {
+		http.ServeContent(w, r, "", m.CreatedAt, rs)
+		return nil
+	}
+	w.Header().Set("Accept-Ranges", "none")
+	w.Header().Set("Content-Length", strconv.FormatInt(m.Size, 10))
 	_, _ = io.Copy(w, rc)
 	return nil
 }

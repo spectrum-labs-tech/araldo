@@ -317,7 +317,13 @@ func (s *Service) MediaContent(ctx context.Context, a Actor, mediaID uuid.UUID) 
 	return m, rc, err
 }
 
-// openMedia opens the file wherever it is stored.
+// seekableFile is a file held in memory, which can be served in ranges.
+type seekableFile struct{ *bytes.Reader }
+
+func (seekableFile) Close() error { return nil }
+
+// openMedia opens the file wherever it is stored. One in memory (from
+// Postgres, or resized) is also an io.Seeker.
 func (s *Service) openMedia(ctx context.Context, m *model.Media) (io.ReadCloser, error) {
 	switch m.Storage {
 	case model.StoragePostgres:
@@ -325,7 +331,7 @@ func (s *Service) openMedia(ctx context.Context, m *model.Media) (io.ReadCloser,
 		if err != nil {
 			return nil, err
 		}
-		return io.NopCloser(bytes.NewReader(data)), nil
+		return seekableFile{bytes.NewReader(data)}, nil
 	case model.StorageS3:
 		if s.blobs == nil {
 			return nil, fmt.Errorf("media %s is in S3, which is not configured", id.Format(id.Media, m.ID))
@@ -588,7 +594,7 @@ func (s *Service) LinkedMedia(ctx context.Context, ref, expires, signature, forP
 			}
 			fitted := *m
 			fitted.ContentType, fitted.Size, fitted.Width, fitted.Height = info.Type, int64(len(data)), info.Width, info.Height
-			return &fitted, io.NopCloser(bytes.NewReader(data)), nil
+			return &fitted, seekableFile{bytes.NewReader(data)}, nil
 		}
 	}
 	rc, err := s.openMedia(ctx, m)

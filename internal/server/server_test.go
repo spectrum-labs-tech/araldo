@@ -52,6 +52,8 @@ func TestDatabaseGuard(t *testing.T) {
 	}{
 		{"/v1/posts", true, http.StatusOK, "served"},
 		{"/v1/posts", false, http.StatusServiceUnavailable, `"code":"database_unavailable"`},
+		{"/v1/posts", false, http.StatusServiceUnavailable, `"request_id":"req_`},
+		{"/v1/posts", false, http.StatusServiceUnavailable, `"doc_url":"https://`},
 		{"/brands", false, http.StatusServiceUnavailable, "cannot reach its database"},
 		{"/static/app.css", false, http.StatusOK, "served"},
 		{"/healthz", false, http.StatusOK, "ok"},
@@ -104,5 +106,34 @@ func TestRequestSpans(t *testing.T) {
 	}
 	if got["http.request.method"] != "GET" || got["http.route"] != "GET /v1/posts/{id}" || got["http.response.status_code"] != "200" || len(got) != 3 {
 		t.Fatalf("the API span's attributes: %v", got)
+	}
+}
+
+// panicker panics on every request.
+type panicker struct{}
+
+func (panicker) ServeHTTP(http.ResponseWriter, *http.Request) { panic("boom") }
+func (panicker) Route(*http.Request) string                   { return "" }
+
+// TestPanicsAreAnswered checks a panic is answered: under /v1 as a problem
+// with the request's ID, elsewhere as a page.
+func TestPanicsAreAnswered(t *testing.T) {
+	t.Parallel()
+	h := Handler(panicker{}, panicker{}, func(context.Context) error { return nil }, nil, slog.New(slog.NewTextHandler(io.Discard, nil)),
+		tracenoop.NewTracerProvider())
+	tests := []struct{ path, contentType, body string }{
+		{"/v1/posts", "application/problem+json", `"code":"internal_error"`},
+		{"/brands", "text/plain; charset=utf-8", "Request req_"},
+	}
+	for _, tt := range tests {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
+		if rec.Code != http.StatusInternalServerError || rec.Header().Get("Content-Type") != tt.contentType || !strings.Contains(rec.Body.String(), tt.body) {
+			t.Errorf("GET %s = %d %q %q, want 500 %s containing %q", tt.path, rec.Code, rec.Header().Get("Content-Type"), rec.Body.String(),
+				tt.contentType, tt.body)
+		}
+		if tt.contentType == "application/problem+json" && !strings.Contains(rec.Body.String(), `"request_id":"req_`) {
+			t.Errorf("GET %s: no request ID in %s", tt.path, rec.Body.String())
+		}
 	}
 }

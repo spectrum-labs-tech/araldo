@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/spectrum-labs-tech/araldo/internal/api"
+	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/telemetry"
 	"github.com/spectrum-labs-tech/araldo/internal/web"
@@ -82,15 +83,15 @@ func dbGuard(db Health, next http.Handler, isAPI bool) http.Handler {
 		w.Header().Set("Retry-After", "30")
 		w.Header().Set("Cache-Control", "no-store")
 		if isAPI {
-			w.Header().Set("Content-Type", "application/problem+json")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(`{"type":"about:blank","title":"Service Unavailable","status":503,` +
-				`"code":"database_unavailable","detail":"The database is unavailable; try again shortly."}` + "\n"))
+			api.WriteProblem(w, r, errDatabaseDown)
 			return
 		}
 		http.Error(w, "Araldo cannot reach its database right now. Try again in a minute.", http.StatusServiceUnavailable)
 	})
 }
+
+var errDatabaseDown = &apperr.Error{Kind: apperr.KindUnavailable, Code: "database_unavailable",
+	Message: "The database is unavailable; try again shortly."}
 
 // endSpan records the response status on a request's span.
 func endSpan(span trace.Span, sw *statusWriter) {
@@ -179,8 +180,12 @@ func middleware(next http.Handler, log *slog.Logger, tracer trace.Tracer, route 
 					panic(p)
 				}
 				log.ErrorContext(r.Context(), "panic serving request", "panic", p, "path", r.URL.Path, "request_id", rid)
-				if sw.status == 0 {
-					http.Error(sw, "internal error", http.StatusInternalServerError)
+				switch {
+				case sw.status != 0: // too late to answer
+				case strings.HasPrefix(r.URL.Path, "/v1/"):
+					api.WriteProblem(sw, r, errors.New("panic"))
+				default:
+					http.Error(sw, "Something went wrong on our side. Request "+rid+".", http.StatusInternalServerError)
 				}
 			}
 			if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" || strings.HasPrefix(r.URL.Path, "/static/") {

@@ -307,6 +307,14 @@ func TestSignedMediaLinks(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/png" || !bytes.Equal(rec.Body.Bytes(), img) {
 		t.Fatalf("a signed link: %d %q, %d bytes", rec.Code, rec.Header().Get("Content-Type"), rec.Body.Len())
 	}
+	// A range of it, as video players and platforms ask.
+	ranged := httptest.NewRequest(http.MethodGet, u.RequestURI(), nil)
+	ranged.Header.Set("Range", "bytes=0-9")
+	rec = httptest.NewRecorder()
+	c.h.ServeHTTP(rec, ranged)
+	if rec.Code != http.StatusPartialContent || !bytes.Equal(rec.Body.Bytes(), img[:10]) {
+		t.Fatalf("a range: %d, %d bytes", rec.Code, rec.Body.Len())
+	}
 	q := u.Query()
 	tampered := u.Path + "?expires=" + q.Get("expires") + "&signature=" + strings.Repeat("0", len(q.Get("signature")))
 	later := u.Path + "?expires=" + strconv.FormatInt(time.Now().Add(48*time.Hour).Unix(), 10) + "&signature=" + q.Get("signature")

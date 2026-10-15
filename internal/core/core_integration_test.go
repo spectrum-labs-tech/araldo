@@ -168,6 +168,14 @@ func TestPostPublishesThroughTheSandbox(t *testing.T) {
 	if got.Status != model.PostPublished || got.Targets[0].Permalink == "" {
 		t.Fatalf("after publishing: status %s targets %+v", got.Status, got.Targets)
 	}
+	// The sandbox page shows it to its org only.
+	ref := id.Format(id.Target, got.Targets[0].ID)
+	if st, err := w.s.SandboxTarget(ctx, w.owner, ref); err != nil || st.ID != got.Targets[0].ID {
+		t.Fatalf("the sandbox target: %+v, %v", st, err)
+	}
+	if other := newWorld(t); kind(func() error { _, err := other.s.SandboxTarget(ctx, other.owner, ref); return err }()) != apperr.KindNotFound {
+		t.Fatal("another org sees the sandbox target")
+	}
 	events, _, err := w.s.Events(ctx, w.owner, "", store.Page{Limit: 50})
 	if err != nil {
 		t.Fatal(err)

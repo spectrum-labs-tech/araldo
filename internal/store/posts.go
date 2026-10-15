@@ -306,14 +306,6 @@ func (s *Store) Target(ctx context.Context, orgID, id uuid.UUID) (*model.Target,
 	return &t, err
 }
 
-// TargetAnyOrg reads a target by ID alone, for the sandbox page, which
-// shows only what the sandbox "published".
-func (s *Store) TargetAnyOrg(ctx context.Context, id uuid.UUID) (*model.Target, error) {
-	t, err := scanTarget(s.q.QueryRow(ctx, `SELECT `+targetCols+` FROM post_targets t JOIN channels c ON c.id = t.channel_id
-		WHERE t.id = $1 AND NOT t.livemode`, id))
-	return &t, err
-}
-
 // UpdateTargetParts replaces a queued target's text.
 func (s *Store) UpdateTargetParts(ctx context.Context, orgID, id uuid.UUID, parts []string) error {
 	return s.execOne(ctx, `UPDATE post_targets SET parts = $3, updated_at = now() WHERE org_id = $1 AND id = $2 AND status IN ('held', 'queued')`,

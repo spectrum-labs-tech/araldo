@@ -939,12 +939,9 @@ func (s *Server) markPublished(c *reqCtx) error {
 }
 
 func (s *Server) sandboxPost(c *reqCtx) error {
-	t, err := s.svc.SandboxTarget(c.ctx(), c.r.PathValue("id"))
+	t, err := s.svc.SandboxTarget(c.ctx(), c.actor, c.r.PathValue("id"))
 	if err != nil {
 		return err
-	}
-	if t.OrgID != c.actor.OrgID {
-		return apperr.NotFound("post target")
 	}
 	p, err := s.svc.Post(c.ctx(), c.actor, t.PostID)
 	if err != nil {

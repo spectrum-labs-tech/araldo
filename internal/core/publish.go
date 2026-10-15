@@ -441,18 +441,18 @@ func (s *Service) ExpireOverdue(ctx context.Context) (int, error) {
 	return n, err
 }
 
-// SandboxTarget returns a test-mode target for the sandbox page, which
-// shows what the sandbox "published".
-func (s *Service) SandboxTarget(ctx context.Context, ref string) (*model.Target, error) {
+// SandboxTarget returns one of the actor's org's published test-mode
+// targets, for the sandbox page, which shows what the sandbox "published".
+func (s *Service) SandboxTarget(ctx context.Context, a Actor, ref string) (*model.Target, error) {
 	tid, err := ParseID(id.Target, ref, "post target")
 	if err != nil {
 		return nil, err
 	}
-	t, err := s.store.TargetAnyOrg(ctx, tid)
-	if err != nil || t.Status != model.TargetPublished {
+	t, err := s.store.Target(ctx, a.OrgID, tid)
+	if errors.Is(err, store.ErrNotFound) || err == nil && (t.Livemode || t.Status != model.TargetPublished) {
 		return nil, notFoundID("post target", ref)
 	}
-	return t, nil
+	return t, err
 }
 
 // keepLease renews a target's lease while its worker publishes, so a long

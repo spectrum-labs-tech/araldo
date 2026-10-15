@@ -65,6 +65,9 @@ type Server struct {
 	cfg   Config
 	pages map[string]*template.Template
 	mux   *http.ServeMux
+	// cop refuses state-changing requests from other sites, signed-in
+	// forms (which also carry a CSRF token) and signed-out ones alike.
+	cop   *http.CrossOriginProtection
 	login *ipLimiter
 	doc   *apiDoc
 }
@@ -81,11 +84,16 @@ func New(svc *core.Service, log *slog.Logger, cfg Config) (*Server, error) {
 	}
 	s.doc = doc
 	s.routes()
+	s.cop = http.NewCrossOriginProtection()
+	// One-click unsubscribe (RFC 8058) is posted by mail providers; its
+	// token is the only authority it needs.
+	s.cop.AddInsecureBypassPattern("POST /unsubscribe/{token}")
+	s.cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		s.publicError(w, http.StatusForbidden, "This form was sent from another site, so it was refused. Open Araldo and try again there.")
+	}))
 	return s, nil
 }
 
-// ServeHTTP sets a strict Content-Security-Policy with a fresh nonce for
-// the style elements the template editor adds, then routes.
 // Route is the pattern a request matches, such as "GET /posts/{id}",
 // without serving it; "" when none does.
 func (s *Server) Route(r *http.Request) string {
@@ -93,11 +101,14 @@ func (s *Server) Route(r *http.Request) string {
 	return pattern
 }
 
+// ServeHTTP sets a strict Content-Security-Policy with a fresh nonce for
+// the style elements the template editor adds, refuses cross-site form
+// posts, then routes.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	nonce, _ := authn.NewToken()
+	nonce, _ := authn.NewToken() // the token, not its hash
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'nonce-"+nonce+"'; "+
 		"script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-	s.mux.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), nonceKey{}, nonce)))
+	s.cop.Handler(s.mux).ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), nonceKey{}, nonce)))
 }
 
 type nonceKey struct{}

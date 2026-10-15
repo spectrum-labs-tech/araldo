@@ -58,7 +58,7 @@
   <table class="text-sm">
     <thead><tr><th>Month</th><th>Made</th><th>Works until</th><th></th></tr></thead>
     <tbody>{{range $d.Shares}}<tr><td>{{.Month}}</td><td>{{fmtTime .CreatedAt}}</td><td>{{fmtTime .ExpiresAt}}</td>
-      <td><form method="post" action="/reports/shares/{{.ID}}/revoke"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+      <td><form method="post" action="/reports/shares/{{shareID .ID}}/revoke"><input type="hidden" name="csrf" value="{{$.CSRF}}">
         <input type="hidden" name="brand" value="{{brandID $d.Brand.ID}}"><input type="hidden" name="month" value="{{$d.Month}}">
         <button class="btn-danger" aria-label="Withdraw the link to {{.Month}}">Withdraw</button></form></td></tr>{{end}}</tbody>
   </table>

@@ -403,7 +403,7 @@ func (d requestsData) By(r model.APIRequest) string {
 func (s *Server) requests(c *reqCtx) error {
 	q := c.r.URL.Query()
 	pg := core.Page{Limit: 50}
-	if u, err := uuid.Parse(q.Get("after")); err == nil {
+	if u, err := id.Parse(id.Request, q.Get("after")); err == nil {
 		pg.StartingAfter = u
 	}
 	d := requestsData{Keys: map[uuid.UUID]string{}, Class: q.Get("status")}
@@ -419,7 +419,7 @@ func (s *Server) requests(c *reqCtx) error {
 		return err
 	}
 	if d.HasMore && len(d.Requests) > 0 {
-		d.Next = d.Requests[len(d.Requests)-1].ID.String()
+		d.Next = id.Format(id.Request, d.Requests[len(d.Requests)-1].ID)
 	}
 	keys, err := s.svc.APIKeys(c.ctx(), c.actor)
 	if err != nil {
@@ -539,13 +539,9 @@ func (s *Server) deleteOrg(c *reqCtx) error {
 }
 
 func (s *Server) changeMember(c *reqCtx) error {
-	uid, err := uuid.Parse(c.r.PathValue("id"))
+	uid, err := pathUUID(c, id.User, "member")
 	if err != nil {
-		if u, perr := id.Parse(id.User, c.r.PathValue("id")); perr == nil {
-			uid = u
-		} else {
-			return apperr.NotFound("member")
-		}
+		return err
 	}
 	if c.r.PostFormValue("action") == "remove" {
 		if err := s.svc.RemoveMember(c.ctx(), c.actor, c.session, uid); err != nil {

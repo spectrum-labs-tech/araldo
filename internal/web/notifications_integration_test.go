@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/id"
 )
 
 // TestNotificationsInTheDashboard checks the inbox: the header's count,
@@ -28,7 +29,7 @@ func TestNotificationsInTheDashboard(t *testing.T) {
 	}
 
 	page := d.send(httptest.NewRequest(http.MethodGet, "/notifications", nil)).Body.String()
-	m := regexp.MustCompile(`href="/notifications/([0-9a-f-]{36})"[^>]*>(?:<span class="sr-only">Unread: </span>)?Your Araldo password was changed`).FindStringSubmatch(page)
+	m := regexp.MustCompile(`href="/notifications/(ntf_[0-9a-z]+)"[^>]*>(?:<span class="sr-only">Unread: </span>)?Your Araldo password was changed`).FindStringSubmatch(page)
 	if m == nil || !strings.Contains(page, `1<span class="sr-only"> unread</span>`) {
 		t.Fatalf("the inbox:\n%s", page)
 	}
@@ -42,6 +43,17 @@ func TestNotificationsInTheDashboard(t *testing.T) {
 	}
 	if rec := d.send(httptest.NewRequest(http.MethodGet, "/notifications/00000000-0000-0000-0000-000000000000", nil)); rec.Code != http.StatusNotFound {
 		t.Fatalf("someone else's or no notification: %d", rec.Code)
+	}
+	// Emails sent before notifications had prefixed IDs link the bare UUID.
+	bare, err := id.Parse(id.Notification, m[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := d.send(httptest.NewRequest(http.MethodGet, "/notifications/"+bare.String(), nil)); rec.Code != http.StatusSeeOther {
+		t.Fatalf("an older email's link: %d", rec.Code)
+	}
+	if rec := d.send(httptest.NewRequest(http.MethodGet, "/notifications/nonsense", nil)); rec.Code != http.StatusNotFound {
+		t.Fatalf("a malformed link: %d", rec.Code)
 	}
 
 	// Settings: only what is ticked stays on.

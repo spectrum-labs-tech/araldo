@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/bluesky"
 	"github.com/spectrum-labs-tech/araldo/internal/platform/linkedin"
@@ -86,7 +87,7 @@ func TestInstallAppsOffered(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(got, "Provided by this server") || !strings.Contains(got, name) {
 		t.Fatalf("the apps page: %d\n%s", rec.Code, got)
 	}
-	if strings.Contains(got, "install-client") || strings.Contains(got, "/channels/apps/"+app.ID.String()+"/") {
+	if strings.Contains(got, "install-client") || strings.Contains(got, "/channels/apps/"+id.Format(id.ProviderApp, app.ID)+"/") {
 		t.Fatalf("the server's app shows its client ID or can be changed:\n%s", got)
 	}
 }

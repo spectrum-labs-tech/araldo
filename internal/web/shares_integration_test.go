@@ -43,7 +43,7 @@ func TestSharedReport(t *testing.T) {
 	}
 	rec := post("/reports/shares", url.Values{"brand": {brand}, "month": {month}})
 	link := regexp.MustCompile(`https://araldo\.test(/r/[A-Za-z0-9_-]+)`).FindStringSubmatch(rec.Body.String())
-	share := regexp.MustCompile(`/reports/shares/([0-9a-f-]{36})/revoke`).FindStringSubmatch(rec.Body.String())
+	share := regexp.MustCompile(`/reports/shares/(rshare_[0-9a-z]+)/revoke`).FindStringSubmatch(rec.Body.String())
 	if rec.Code != http.StatusOK || link == nil || share == nil {
 		t.Fatalf("making a link: %d\n%s", rec.Code, rec.Body.String())
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
+	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/smtpmail"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
@@ -170,7 +171,7 @@ func (s *Service) deliverNotificationEmail(ctx context.Context, now time.Time, d
 // type in its org; an account notice cannot be turned off.
 func (s *Service) sendNotificationEmail(ctx context.Context, d store.NotificationEmailDue) error {
 	t, _ := notificationType(d.Type)
-	c := mailContent{To: d.To, Subject: d.Subject, ButtonLabel: "Open in Araldo", ButtonURL: s.cfg.BaseURL + "/notifications/" + d.ID.String()}
+	c := mailContent{To: d.To, Subject: d.Subject, ButtonLabel: "Open in Araldo", ButtonURL: s.cfg.BaseURL + "/notifications/" + id.Format(id.Notification, d.ID)}
 	if d.Body != "" {
 		c.Paragraphs = append(c.Paragraphs, d.Body)
 	}

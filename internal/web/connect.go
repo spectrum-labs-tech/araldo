@@ -5,11 +5,10 @@ package web
 import (
 	"strconv"
 
-	"github.com/google/uuid"
-
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
@@ -102,9 +101,9 @@ func (s *Server) createApp(c *reqCtx) error {
 }
 
 func (s *Server) renameApp(c *reqCtx) error {
-	appID, err := uuid.Parse(c.r.PathValue("id"))
+	appID, err := pathUUID(c, id.ProviderApp, "app")
 	if err != nil {
-		return apperr.NotFound("app")
+		return err
 	}
 	app, err := s.svc.RenameProviderApp(c.ctx(), c.actor, appID, c.r.PostFormValue("name"))
 	if err != nil {
@@ -118,9 +117,9 @@ func (s *Server) renameApp(c *reqCtx) error {
 }
 
 func (s *Server) deleteApp(c *reqCtx) error {
-	appID, err := uuid.Parse(c.r.PathValue("id"))
+	appID, err := pathUUID(c, id.ProviderApp, "app")
 	if err != nil {
-		return apperr.NotFound("app")
+		return err
 	}
 	if err := s.svc.DeleteProviderApp(c.ctx(), c.actor, appID); err != nil {
 		return err
@@ -137,7 +136,7 @@ func (s *Server) startConnect(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	appID, err := uuid.Parse(q.Get("app"))
+	appID, err := id.Parse(id.ProviderApp, q.Get("app"))
 	if err != nil {
 		return apperr.Invalid("app_required", "app", "Choose a developer app.")
 	}

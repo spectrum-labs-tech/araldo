@@ -655,12 +655,12 @@ func TestRenameAnApp(t *testing.T) {
 	}
 	rename := func(name string) *httptest.ResponseRecorder {
 		form := url.Values{"csrf": {d.login.Session.CSRFToken}, "name": {name}}
-		r := httptest.NewRequest(http.MethodPost, "/channels/apps/"+app.ID.String()+"/rename", strings.NewReader(form.Encode()))
+		r := httptest.NewRequest(http.MethodPost, "/channels/apps/"+id.Format(id.ProviderApp, app.ID)+"/rename", strings.NewReader(form.Encode()))
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		return d.send(r)
 	}
 	page := d.send(httptest.NewRequest(http.MethodGet, "/channels/apps", nil)).Body.String()
-	if !strings.Contains(page, `action="/channels/apps/`+app.ID.String()+`/rename"`) {
+	if !strings.Contains(page, `action="/channels/apps/`+id.Format(id.ProviderApp, app.ID)+`/rename"`) {
 		t.Fatalf("no way to rename the app:\n%s", page)
 	}
 	for _, issue := range a11yIssues(page, true) {

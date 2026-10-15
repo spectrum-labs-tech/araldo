@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
@@ -133,9 +131,9 @@ func (s *Server) shareReport(c *reqCtx) error {
 }
 
 func (s *Server) unshareReport(c *reqCtx) error {
-	shareID, err := uuid.Parse(c.r.PathValue("id"))
+	shareID, err := pathUUID(c, id.ReportShare, "shared report")
 	if err != nil {
-		return apperr.NotFound("shared report")
+		return err
 	}
 	if err := s.svc.RevokeReportShare(c.ctx(), c.actor, shareID); err != nil {
 		return err

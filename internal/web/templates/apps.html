@@ -11,14 +11,14 @@ redirect URI below, and add its ID and secret here; then connect channels throug
   <tbody>
   {{range $d.Apps}}
   <tr>
-    <td><form method="post" action="/channels/apps/{{.ID}}/rename" class="flex flex-wrap items-center gap-2">
+    <td><form method="post" action="/channels/apps/{{appID .ID}}/rename" class="flex flex-wrap items-center gap-2">
       <input type="hidden" name="csrf" value="{{$.CSRF}}">
       <input name="name" value="{{.Name}}" required maxlength="100" aria-label="Name of {{.Name}}">
       <button>Rename</button></form></td>
     <td><span class="inline-flex items-center gap-1.5">{{icon .Provider}} {{index $d.Names .Provider}}</span></td>
     <td><code>{{.ClientID}}</code></td>
     <td>{{fmtTime .CreatedAt}}</td>
-    <td><form method="post" action="/channels/apps/{{.ID}}/delete" data-confirm="Delete {{.Name}}? Its channels keep working until their tokens need renewing.">
+    <td><form method="post" action="/channels/apps/{{appID .ID}}/delete" data-confirm="Delete {{.Name}}? Its channels keep working until their tokens need renewing.">
       <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger" aria-label="Delete {{.Name}}">Delete</button></form></td>
   </tr>
   {{end}}

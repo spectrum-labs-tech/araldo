@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/smtpmail"
 )
 
@@ -71,7 +72,7 @@ func TestNotificationEmails(t *testing.T) {
 	got := mail.to(w.user.Email)
 	notice := inbox(t, w, w.user.ID, core.NotifyPasswordChanged)[0]
 	if len(got) != 1 || got[0].Subject != "Your Araldo password was changed" || got[0].Headers["List-Unsubscribe"] != "" ||
-		!strings.Contains(got[0].Text, "https://araldo.test/notifications/"+notice.ID.String()) || emailOf(t, notice) != "sent" {
+		!strings.Contains(got[0].Text, "https://araldo.test/notifications/"+id.Format(id.Notification, notice.ID)) || emailOf(t, notice) != "sent" {
 		t.Fatalf("the account notice: %+v", got)
 	}
 	if n := send(); n != 0 {

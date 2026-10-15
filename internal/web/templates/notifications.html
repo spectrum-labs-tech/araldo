@@ -11,7 +11,7 @@
 <ul class="card divide-y divide-line p-0">
   {{range $d.Items}}
   <li class="flex flex-col gap-1 px-4 py-3">
-    <a href="/notifications/{{.ID}}" class="{{if not .ReadAt}}font-semibold{{end}}">{{if not .ReadAt}}<span class="sr-only">Unread: </span>{{end}}{{.Subject}}</a>
+    <a href="/notifications/{{notificationID .ID}}" class="{{if not .ReadAt}}font-semibold{{end}}">{{if not .ReadAt}}<span class="sr-only">Unread: </span>{{end}}{{.Subject}}</a>
     {{with .Body}}<p class="text-sm">{{.}}</p>{{end}}
     <p class="text-sm text-muted">{{with .OrgName}}{{.}} · {{end}}{{ago .CreatedAt}}</p>
   </li>

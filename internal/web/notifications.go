@@ -10,6 +10,7 @@ import (
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
@@ -44,9 +45,12 @@ func (s *Server) notificationsPage(c *reqCtx) error {
 
 // openNotification marks a notification read and follows its link.
 func (s *Server) openNotification(c *reqCtx) error {
-	nid, err := uuid.Parse(c.r.PathValue("id"))
+	nid, err := pathUUID(c, id.Notification, "notification")
 	if err != nil {
-		return apperr.NotFound("notification")
+		// Emails sent before notifications had prefixed IDs link the bare UUID.
+		if nid, err = uuid.Parse(c.r.PathValue("id")); err != nil {
+			return apperr.NotFound("notification")
+		}
 	}
 	n, err := s.svc.OpenNotification(c.ctx(), c.user.ID, nid)
 	if err != nil {

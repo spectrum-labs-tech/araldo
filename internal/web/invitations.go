@@ -4,7 +4,6 @@ package web
 
 import (
 	"context"
-	"crypto/subtle"
 	"net/http"
 	"time"
 
@@ -120,9 +119,8 @@ func (s *Server) inviteSubmit(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	if ss, u := s.activeSession(r); u != nil {
 		// Signed in: accept as this account.
-		got := r.PostFormValue("csrf")
-		if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(ss.CSRFToken)) != 1 {
-			s.renderInvite(w, r, http.StatusForbidden, inviteData{}, "This form expired. Try again.")
+		if !sameToken(r.PostFormValue("csrf"), ss.CSRFToken) {
+			s.renderInvite(w, r, http.StatusForbidden, inviteData{}, formExpired)
 			return
 		}
 		inv, err := s.svc.AcceptInvitation(r.Context(), token, u, api.RequestID(r.Context()))

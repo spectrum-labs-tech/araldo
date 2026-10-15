@@ -242,3 +242,22 @@ func TestConnectRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestSameToken(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		got, want string
+		same      bool
+	}{
+		{"abc", "abc", true},
+		{"abd", "abc", false},
+		{"ab", "abc", false},
+		{"", "", false}, // a session without a token never matches an empty field
+		{"", "abc", false},
+	}
+	for _, tt := range tests {
+		if got := sameToken(tt.got, tt.want); got != tt.same {
+			t.Errorf("sameToken(%q, %q) = %v, want %v", tt.got, tt.want, got, tt.same)
+		}
+	}
+}

@@ -301,7 +301,7 @@ func (s *Server) app(nav string, fn pageFunc) http.HandlerFunc {
 			}
 		}
 		if r.Method == http.MethodPost && !s.checkCSRF(c) {
-			s.renderError(c, http.StatusForbidden, "This form expired. Go back, reload the page and try again.")
+			s.renderError(c, http.StatusForbidden, formExpired)
 			return
 		}
 		if err := fn(c); err != nil {
@@ -383,9 +383,31 @@ func (s *Server) failSignedIn(w http.ResponseWriter, r *http.Request, what strin
 	s.publicError(w, status, msg)
 }
 
+// formExpired is what a form whose CSRF token does not match is told.
+const formExpired = "This form expired. Go back, reload the page and try again."
+
 func (s *Server) checkCSRF(c *reqCtx) bool {
-	got := c.r.PostFormValue("csrf")
-	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(c.session.CSRFToken)) == 1
+	return sameToken(c.r.PostFormValue("csrf"), c.session.CSRFToken)
+}
+
+// sameToken compares a token a request sent with the expected one in
+// constant time; an empty one never matches.
+func sameToken(got, want string) bool {
+	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+// signedInForm is signedIn for a page outside app() that takes a form: a
+// post must carry the session's CSRF token.
+func (s *Server) signedInForm(w http.ResponseWriter, r *http.Request) (*reqCtx, bool) {
+	c, ok := s.signedIn(w, r)
+	if !ok {
+		return nil, false
+	}
+	if r.Method == http.MethodPost && !s.checkCSRF(c) {
+		s.renderError(c, http.StatusForbidden, formExpired)
+		return nil, false
+	}
+	return c, true
 }
 
 func (s *Server) view(c *reqCtx, nav, title string, data any) view {

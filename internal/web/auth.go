@@ -116,12 +116,8 @@ func (s *Server) mfaSubmit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	c, ok := s.signedIn(w, r)
+	c, ok := s.signedInForm(w, r)
 	if !ok {
-		return
-	}
-	if !s.checkCSRF(c) {
-		s.renderError(c, http.StatusForbidden, "This form expired. Reload and try again.")
 		return
 	}
 	_ = s.svc.Logout(r.Context(), c.session.ID)
@@ -140,12 +136,8 @@ func (s *Server) confirmPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) confirmSubmit(w http.ResponseWriter, r *http.Request) {
-	c, ok := s.signedIn(w, r)
+	c, ok := s.signedInForm(w, r)
 	if !ok {
-		return
-	}
-	if !s.checkCSRF(c) {
-		s.renderError(c, http.StatusForbidden, "This form expired. Reload and try again.")
 		return
 	}
 	next := safeNext(r.PostFormValue("next"))
@@ -322,15 +314,11 @@ func (s *Server) switchContext(c *reqCtx) error {
 
 // Onboarding: a signed-in user with no org creates one.
 func (s *Server) onboarding(w http.ResponseWriter, r *http.Request) {
-	c, ok := s.signedIn(w, r)
+	c, ok := s.signedInForm(w, r)
 	if !ok {
 		return
 	}
 	if r.Method == http.MethodPost {
-		if !s.checkCSRF(c) {
-			s.renderError(c, http.StatusForbidden, "This form expired. Reload and try again.")
-			return
-		}
 		o, err := s.svc.CreateOwnOrg(r.Context(), c.user.ID, r.PostFormValue("name"))
 		if err != nil {
 			v := s.view(c, "", "Create your org", nil)

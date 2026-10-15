@@ -76,7 +76,7 @@ func (s *Server) sessionJSON(w http.ResponseWriter, r *http.Request) (*model.Ses
 		return nil, false
 	}
 	ss, _, err := s.svc.Session(r.Context(), ck.Value)
-	if err != nil || ss.State != model.SessionActive || r.Header.Get("X-CSRF-Token") != ss.CSRFToken {
+	if err != nil || ss.State != model.SessionActive || !sameToken(r.Header.Get("X-CSRF-Token"), ss.CSRFToken) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "This page expired. Reload it and try again."})
 		return nil, false
 	}

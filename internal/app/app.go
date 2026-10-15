@@ -95,6 +95,30 @@ func Logger(level string) *slog.Logger {
 	return slog.New(telemetry.LogHandler(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: l})))
 }
 
+// Migrate brings the schema at databaseURL up to date and returns its
+// version, for `araldo migrate`. Unlike Open's startup migration, which
+// runs in the background and only logs a failure, it waits for the
+// migration and fails if it failed or left the schema dirty: the deploy
+// that ran it must see the failure.
+func Migrate(ctx context.Context, databaseURL string) (uint, error) {
+	st, err := store.Open(ctx, databaseURL)
+	if err != nil {
+		return 0, err
+	}
+	defer st.Close()
+	if err := st.Migrate(ctx); err != nil {
+		return 0, err
+	}
+	v, dirty, err := st.SchemaVersion()
+	if err != nil {
+		return 0, fmt.Errorf("store: schema version: %w", err)
+	}
+	if dirty {
+		return v, fmt.Errorf("store: migration %d failed halfway: the schema is dirty", v)
+	}
+	return v, nil
+}
+
 // Open builds the application. It degrades rather than fails: it does not
 // wait for the database (requests get 503 and readiness stays false until
 // Postgres answers, and a startup migration is retried until it succeeds),

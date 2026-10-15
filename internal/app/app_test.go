@@ -47,3 +47,19 @@ func TestTelemetryThatCannotStartIsSkipped(t *testing.T) {
 		}
 	}
 }
+
+// TestMigrateFailsWithoutADatabase checks `araldo migrate` reports a
+// database it cannot use, rather than succeeding as a background
+// migration would.
+func TestMigrateFailsWithoutADatabase(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ name, url string }{
+		{"a malformed URL", "postgres://%zz"},
+		// Nothing listens on port 1 of the loopback: refused at once.
+		{"no server", "postgres://araldo@127.0.0.1:1/araldo?connect_timeout=5"},
+	} {
+		if v, err := Migrate(t.Context(), tt.url); err == nil {
+			t.Errorf("%s: migrated to version %d", tt.name, v)
+		}
+	}
+}

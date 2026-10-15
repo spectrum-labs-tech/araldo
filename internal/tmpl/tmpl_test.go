@@ -213,3 +213,66 @@ func TestOptionalFields(t *testing.T) {
 		})
 	}
 }
+
+func TestLoopsAreBounded(t *testing.T) {
+	t.Parallel()
+	// Data within MaxDataBytes: 30,000 short items.
+	many := `{"items":[` + strings.TrimSuffix(strings.Repeat(`0,`, 30000), ",") + `],"tags":["a","b"]}`
+	tests := []struct {
+		name    string
+		body    string
+		data    string
+		compile string // the problem Compile reports, or ""
+		render  string // the problem Render reports, or ""
+	}{
+		{"a range over a number", `{{range 2000000000}}{{end}}`, `{}`, "template_syntax@body", ""},
+		{"a range over a number in a pipeline", `{{range $i := 2000000000}}{{end}}`, `{}`, "template_syntax@body", ""},
+		{"ranges nested too deep", `{{range .a}}{{range .b}}{{range .c}}{{range .d}}{{end}}{{end}}{{end}}{{end}}`, `{}`, "template_syntax@body", ""},
+		{"a printf too wide", `{{printf "%0999999999d" 1}}`, `{}`, "template_syntax@body", ""},
+		{"a printf width from an argument", `{{printf "%0*d" 999999999 1}}`, `{}`, "template_syntax@body", ""},
+		{"a printf format from the data", `{{printf .f 1}}`, `{"f":"%d"}`, "template_syntax@body", ""},
+		{"nested loops that print nothing", `{{range .items}}{{range $.items}}{{end}}{{end}}`, many, "", "loop_limit@body"},
+		{"a range over a computed number", `{{range len .s}}{{range len $.s}}{{end}}{{end}}`, `{"s":"` + strings.Repeat("x", 200) + `"}`, "", "loop_limit@body"},
+		{"ordinary loops", `{{range .tags}}{{range $.tags}}{{.}}{{end}}{{end}} {{printf "%05.1f" 3.14159}} {{printf "%d%%" 5}}`, many, "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c, err := Compile(Source{Body: tt.body})
+			if tt.compile != "" {
+				if codes := problemCodes(t, err); !strings.Contains(strings.Join(codes, ","), tt.compile) {
+					t.Fatalf("Compile problems %v, want %s", codes, tt.compile)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = renderErr(c, tt.data)
+			if tt.render == "" {
+				if err != nil {
+					t.Fatalf("Render = %v", err)
+				}
+				return
+			}
+			if codes := problemCodes(t, err); len(codes) == 0 || codes[0] != tt.render {
+				t.Fatalf("Render problems %v, want %s", codes, tt.render)
+			}
+		})
+	}
+}
+
+func TestLoopCountIsPerRender(t *testing.T) {
+	t.Parallel()
+	c, err := Compile(Source{Body: `{{range .items}}{{.}}{{end}}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := `{"items":[` + strings.TrimSuffix(strings.Repeat(`1,`, MaxIterations), ",") + `]}`
+	// Each render may use the whole allowance.
+	for range 3 {
+		if err := renderErr(c, data); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

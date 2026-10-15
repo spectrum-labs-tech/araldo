@@ -26,11 +26,19 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
-// Limits (ADR 0010).
+// Limits (ADR 0010). Rendering is bounded in time as well as size: loops
+// nest at most MaxRangeDepth deep and run at most MaxIterations times in
+// all, since a loop that prints nothing would otherwise spin unchecked
+// (text/template cannot be stopped midway).
 const (
 	MaxSourceBytes = 16 << 10
 	MaxDataBytes   = 64 << 10
 	MaxOutputBytes = 64 << 10
+	MaxRangeDepth  = 3
+	MaxIterations  = 10000
+	// maxFormatWidth bounds a printf width or precision, which would
+	// otherwise build a huge string before the output limit sees it.
+	maxFormatWidth = 1000
 )
 
 // Source is a template version as authored.
@@ -107,43 +115,168 @@ func parseBody(name, body string, ps *apperr.Problems) *template.Template {
 		ps.Add("template_syntax", name, "%s", strings.TrimPrefix(err.Error(), "template: "))
 		return nil
 	}
-	if msg := forbidden(t.Root); msg != "" {
+	if msg := forbidden(t.Root, 0); msg != "" {
 		ps.Add("template_syntax", name, "%s", msg)
 		return nil
 	}
+	countLoops(t.Root)
 	return t
 }
 
-// forbidden refuses {{define}}, {{template}} and {{block}}: bodies are
-// single templates, which keeps rendering bounded.
-func forbidden(n parse.Node) string {
+// forbidden refuses {{define}}, {{template}} and {{block}} (bodies are
+// single templates), ranges nested more than MaxRangeDepth deep, ranges
+// over a number, and printf formats wider than maxFormatWidth: what keeps
+// rendering bounded.
+func forbidden(n parse.Node, depth int) string {
 	switch n := n.(type) {
 	case *parse.ListNode:
 		if n == nil {
 			return ""
 		}
 		for _, c := range n.Nodes {
-			if m := forbidden(c); m != "" {
+			if m := forbidden(c, depth); m != "" {
 				return m
 			}
 		}
 	case *parse.TemplateNode:
 		return "{{template}} and {{block}} are not allowed in bodies"
+	case *parse.ActionNode:
+		return forbiddenPipe(n.Pipe, depth)
 	case *parse.IfNode:
-		return first(forbidden(n.List), forbidden(n.ElseList))
-	case *parse.RangeNode:
-		return first(forbidden(n.List), forbidden(n.ElseList))
+		return first(forbiddenPipe(n.Pipe, depth), forbidden(n.List, depth), forbidden(n.ElseList, depth))
 	case *parse.WithNode:
-		return first(forbidden(n.List), forbidden(n.ElseList))
+		return first(forbiddenPipe(n.Pipe, depth), forbidden(n.List, depth), forbidden(n.ElseList, depth))
+	case *parse.RangeNode:
+		if depth+1 > MaxRangeDepth {
+			return fmt.Sprintf("{{range}} may nest at most %d deep", MaxRangeDepth)
+		}
+		if p := n.Pipe; p != nil && len(p.Cmds) > 0 {
+			if last := p.Cmds[len(p.Cmds)-1]; len(last.Args) == 1 {
+				if _, ok := last.Args[0].(*parse.NumberNode); ok {
+					return "{{range}} over a number is not allowed"
+				}
+			}
+		}
+		return first(forbiddenPipe(n.Pipe, depth), forbidden(n.List, depth+1), forbidden(n.ElseList, depth))
 	}
 	return ""
 }
 
-func first(a, b string) string {
-	if a != "" {
-		return a
+// forbiddenPipe checks the printf formats in a pipeline, and the
+// pipelines nested in it.
+func forbiddenPipe(p *parse.PipeNode, depth int) string {
+	if p == nil {
+		return ""
 	}
-	return b
+	for _, cmd := range p.Cmds {
+		for i, arg := range cmd.Args {
+			switch a := arg.(type) {
+			case *parse.PipeNode:
+				if m := forbiddenPipe(a, depth); m != "" {
+					return m
+				}
+			case *parse.IdentifierNode:
+				if a.Ident == "printf" {
+					if i+1 >= len(cmd.Args) {
+						break
+					}
+					f, ok := cmd.Args[i+1].(*parse.StringNode)
+					if !ok {
+						return "printf needs its format written out"
+					}
+					if !boundedFormat(f.Text) {
+						return fmt.Sprintf("printf widths and precisions are limited to %d, and * is not allowed", maxFormatWidth)
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// boundedFormat reports whether every verb in a printf format has a width
+// and precision of at most maxFormatWidth, written out.
+func boundedFormat(f string) bool {
+	for i := 0; i < len(f); i++ {
+		if f[i] != '%' {
+			continue
+		}
+	verb:
+		for i++; i < len(f); i++ {
+			c := f[i]
+			switch {
+			case c == '*':
+				return false
+			case c >= '0' && c <= '9':
+				n := 0
+				for ; i < len(f) && f[i] >= '0' && f[i] <= '9'; i++ {
+					n = n*10 + int(f[i]-'0')
+					if n > maxFormatWidth {
+						return false
+					}
+				}
+				i--
+			case strings.IndexByte("+-# .[]", c) >= 0:
+			default:
+				// The verb ends the directive ("%%" included).
+				break verb
+			}
+		}
+	}
+	return true
+}
+
+// loopCheck is the action put at the start of every {{range}} body; its
+// function counts iterations against MaxIterations (see Render).
+var loopCheck = template.Must(template.New("").Funcs(funcs).Parse("{{" + loopFunc + "}}")).Root.Nodes[0]
+
+const loopFunc = "araldoLoopCheck"
+
+// countLoops puts loopCheck at the start of every {{range}} body.
+func countLoops(n parse.Node) {
+	switch n := n.(type) {
+	case *parse.ListNode:
+		if n == nil {
+			return
+		}
+		for _, c := range n.Nodes {
+			countLoops(c)
+		}
+	case *parse.IfNode:
+		countLoops(n.List)
+		countLoops(n.ElseList)
+	case *parse.WithNode:
+		countLoops(n.List)
+		countLoops(n.ElseList)
+	case *parse.RangeNode:
+		countLoops(n.List)
+		countLoops(n.ElseList)
+		if n.List != nil {
+			n.List.Nodes = append([]parse.Node{loopCheck.Copy()}, n.List.Nodes...)
+		}
+	}
+}
+
+var errTooManyIterations = errors.New("too many loop iterations")
+
+// iterations returns a loop check allowing MaxIterations in one render.
+func iterations() func() (string, error) {
+	n := 0
+	return func() (string, error) {
+		if n++; n > MaxIterations {
+			return "", errTooManyIterations
+		}
+		return "", nil
+	}
+}
+
+func first(msgs ...string) string {
+	for _, m := range msgs {
+		if m != "" {
+			return m
+		}
+	}
+	return ""
 }
 
 type noLoader struct{}
@@ -239,7 +372,7 @@ func (c *Compiled) Render(p platform.Provider, data json.RawMessage, loc *time.L
 	if err != nil {
 		return "", err
 	}
-	t.Funcs(template.FuncMap{"date": dateIn(loc)})
+	t.Funcs(template.FuncMap{"date": dateIn(loc), loopFunc: iterations()})
 	declareOptional(m, c.schema, 0)
 	var out limitedBuffer
 	if err := t.Execute(&out, m); err != nil {
@@ -286,6 +419,9 @@ func renderError(err error) error {
 	if errors.Is(err, errOutputTooLarge) {
 		return apperr.Invalid("output_too_large", "body", "The rendered text is over %d bytes.", MaxOutputBytes)
 	}
+	if errors.Is(err, errTooManyIterations) {
+		return apperr.Invalid("loop_limit", "body", "The template's loops ran more than %d times in all.", MaxIterations)
+	}
 	msg := strings.TrimPrefix(err.Error(), "template: ")
 	if m := missingKeyRE.FindStringSubmatch(msg); m != nil {
 		return apperr.Invalid("variable_missing", "data."+m[1], "The template uses %q, but the data has no such field.", m[1])
@@ -323,6 +459,8 @@ var funcs = template.FuncMap{
 	"urlquery": url.QueryEscape,
 	"thread":   func() string { return platform.ThreadBreak },
 	"date":     dateIn(time.UTC),
+	// Replaced per render with a fresh count (see countLoops).
+	loopFunc: func() string { return "" },
 }
 
 func str(v any) string {

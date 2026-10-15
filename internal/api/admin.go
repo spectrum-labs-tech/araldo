@@ -130,21 +130,11 @@ func (h *Handler) revokeKey(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := h.svc.RevokeAPIKey(r.Context(), actor(r), kid); err != nil {
-		return err
-	}
-	keys, err := h.svc.APIKeys(r.Context(), actor(r))
+	k, err := h.svc.RevokeAPIKey(r.Context(), actor(r), kid)
 	if err != nil {
 		return err
 	}
-	for _, k := range keys {
-		if k.ID == kid {
-			ok(w, http.StatusOK, core.ViewAPIKey(k))
-			return nil
-		}
-	}
-	// A key that revoked itself can no longer list keys; say what happened.
-	ok(w, http.StatusOK, deleted{ID: r.PathValue("id"), Object: "api_key", Deleted: true})
+	ok(w, http.StatusOK, core.ViewAPIKey(k))
 	return nil
 }
 

@@ -42,8 +42,12 @@ func (s *Service) CreateOrg(ctx context.Context, userID uuid.UUID, name string) 
 	return o, err
 }
 
-// Org returns the actor's org.
+// Org returns the actor's org. Any member may read it; an API key, which
+// manages neither the org nor its members, may not.
 func (s *Service) Org(ctx context.Context, a Actor) (*model.Org, error) {
+	if a.IsKey() {
+		return nil, a.permitted(PermOrgWrite)
+	}
 	o, err := s.store.Org(ctx, a.OrgID)
 	return o, notFound(err, "org")
 }
@@ -91,14 +95,29 @@ func (s *Service) UserOrgs(ctx context.Context, userID uuid.UUID) ([]model.Membe
 // Turning off required two-factor authentication needs a recent
 // re-authentication (ADR 0007).
 func (s *Service) UpdateOrg(ctx context.Context, a Actor, ss *model.Session, name string, requireMFA bool) error {
+	return s.PatchOrg(ctx, a, ss, OrgPatch{Name: &name, RequireMFA: &requireMFA})
+}
+
+// OrgPatch changes what it sets of an org, leaving the rest.
+type OrgPatch struct {
+	Name       *string
+	RequireMFA *bool
+}
+
+// PatchOrg changes what p sets of the actor's org, applied to the org as it
+// is when the change is made, with its row locked.
+func (s *Service) PatchOrg(ctx context.Context, a Actor, ss *model.Session, p OrgPatch) error {
 	if err := a.require(PermOrgWrite); err != nil {
 		return err
 	}
-	name = strings.TrimSpace(name)
-	if name == "" || len(name) > 100 {
-		return apperr.Invalid("name_invalid", "name", "An org needs a name of 1 to 100 characters.")
+	if p.Name != nil {
+		name := strings.TrimSpace(*p.Name)
+		if name == "" || len(name) > 100 {
+			return apperr.Invalid("name_invalid", "name", "An org needs a name of 1 to 100 characters.")
+		}
+		p.Name = &name
 	}
-	if requireMFA && a.UserID != nil {
+	if p.RequireMFA != nil && *p.RequireMFA && a.UserID != nil {
 		u, err := s.store.User(ctx, *a.UserID)
 		if err != nil {
 			return err
@@ -108,9 +127,16 @@ func (s *Service) UpdateOrg(ctx context.Context, a Actor, ss *model.Session, nam
 		}
 	}
 	return s.store.InTx(ctx, func(tx *store.Store) error {
-		o, err := tx.Org(ctx, a.OrgID)
+		o, err := tx.OrgForUpdate(ctx, a.OrgID)
 		if err != nil {
-			return err
+			return notFound(err, "org")
+		}
+		name, requireMFA := o.Name, o.RequireMFA
+		if p.Name != nil {
+			name = *p.Name
+		}
+		if p.RequireMFA != nil {
+			requireMFA = *p.RequireMFA
 		}
 		if o.RequireMFA && !requireMFA {
 			if err := s.requireSudoFor(a, ss); err != nil {
@@ -174,7 +200,7 @@ func (s *Service) DeleteOrg(ctx context.Context, a Actor, ss *model.Session, con
 // Members lists an org's members.
 func (s *Service) Members(ctx context.Context, a Actor) ([]model.Membership, error) {
 	if a.IsKey() {
-		return nil, apperr.Forbidden("API keys cannot list members.")
+		return nil, a.permitted(PermMembersWrite) // people only
 	}
 	return s.store.Members(ctx, a.OrgID)
 }
@@ -182,7 +208,7 @@ func (s *Service) Members(ctx context.Context, a Actor) ([]model.Membership, err
 // Member returns one member of the org; any member may look.
 func (s *Service) Member(ctx context.Context, a Actor, userID uuid.UUID) (*model.Membership, error) {
 	if a.IsKey() {
-		return nil, apperr.Forbidden("API keys cannot read members.")
+		return nil, a.permitted(PermMembersWrite) // people only
 	}
 	m, err := s.store.Member(ctx, a.OrgID, userID)
 	return m, notFound(err, "member")
@@ -447,29 +473,68 @@ func (s *Service) CreateBrand(ctx context.Context, a Actor, in BrandInput) (*mod
 	return b, err
 }
 
-// UpdateBrand changes a brand.
+// UpdateBrand changes a brand. An empty slug keeps the brand's.
 func (s *Service) UpdateBrand(ctx context.Context, a Actor, brandID uuid.UUID, in BrandInput) (*model.Brand, error) {
+	p := BrandPatch{Name: &in.Name, Timezone: &in.Timezone, ApprovalPolicy: &in.ApprovalPolicy, UTMDomains: &in.UTMDomains, Slots: in.Slots}
+	if in.Slug != "" {
+		p.Slug = &in.Slug
+	}
+	return s.PatchBrand(ctx, a, brandID, p)
+}
+
+// BrandPatch changes what it sets of a brand, leaving the rest.
+type BrandPatch struct {
+	Name, Slug, Timezone *string
+	ApprovalPolicy       *model.ApprovalPolicy
+	UTMDomains           *[]string
+	// Slots replaces the weekly slots.
+	Slots *[]model.Slot
+}
+
+// PatchBrand changes what p sets of a brand, applied to the brand as it is
+// when the change is made, with its row locked.
+func (s *Service) PatchBrand(ctx context.Context, a Actor, brandID uuid.UUID, p BrandPatch) (*model.Brand, error) {
 	if err := a.require(PermBrandsWrite); err != nil {
 		return nil, err
 	}
-	b, err := s.Brand(ctx, a, brandID)
-	if err != nil {
+	if _, err := s.Brand(ctx, a, brandID); err != nil {
 		return nil, err
 	}
-	if in.Slug == "" {
-		in.Slug = b.Slug
-	}
-	if err := in.check(); err != nil {
-		return nil, err
-	}
-	// Exempting posts from review is for those who review them: a key
-	// could otherwise lift the policy, post, and restore it (ADR 0004).
-	// Asking for more review is anyone's.
-	if in.ApprovalPolicy.Strictness() < b.ApprovalPolicy.Strictness() && !a.Can(PermPostsApprove) {
-		return nil, apperr.Forbidden("Only admins and owners, or keys with posts:approve, can make fewer posts need approval.")
-	}
-	b.Name, b.Slug, b.Timezone, b.ApprovalPolicy, b.UTMDomains = in.Name, in.Slug, in.Timezone, in.ApprovalPolicy, in.UTMDomains
-	err = s.store.InTx(ctx, func(tx *store.Store) error {
+	var b *model.Brand
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.LockBrand(ctx, a.OrgID, brandID); err != nil {
+			return notFound(err, "brand")
+		}
+		var err error
+		if b, err = tx.Brand(ctx, a.OrgID, brandID); err != nil {
+			return notFound(err, "brand")
+		}
+		in := BrandInput{Name: b.Name, Slug: b.Slug, Timezone: b.Timezone, ApprovalPolicy: b.ApprovalPolicy, UTMDomains: b.UTMDomains, Slots: p.Slots}
+		if p.Name != nil {
+			in.Name = *p.Name
+		}
+		if p.Slug != nil {
+			in.Slug = *p.Slug
+		}
+		if p.Timezone != nil {
+			in.Timezone = *p.Timezone
+		}
+		if p.ApprovalPolicy != nil {
+			in.ApprovalPolicy = *p.ApprovalPolicy
+		}
+		if p.UTMDomains != nil {
+			in.UTMDomains = *p.UTMDomains
+		}
+		if err := in.check(); err != nil {
+			return err
+		}
+		// Exempting posts from review is for those who review them: a key
+		// could otherwise lift the policy, post, and restore it (ADR 0004).
+		// Asking for more review is anyone's.
+		if in.ApprovalPolicy.Strictness() < b.ApprovalPolicy.Strictness() && !a.Can(PermPostsApprove) {
+			return apperr.Forbidden("Only admins and owners, or keys with posts:approve, can make fewer posts need approval.")
+		}
+		b.Name, b.Slug, b.Timezone, b.ApprovalPolicy, b.UTMDomains = in.Name, in.Slug, in.Timezone, in.ApprovalPolicy, in.UTMDomains
 		if err := tx.UpdateBrand(ctx, b); err != nil {
 			if errors.Is(err, store.ErrConflict) {
 				return apperr.Invalid("slug_taken", "slug", "Another brand already uses the slug %q.", b.Slug)
@@ -490,7 +555,10 @@ func (s *Service) UpdateBrand(ctx context.Context, a Actor, brandID uuid.UUID, i
 		}
 		return s.audit(ctx, tx, a, "brand.update", id.Format(id.Brand, b.ID), nil)
 	})
-	return b, err
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 // Brand returns one of the actor's brands.
@@ -723,26 +791,33 @@ func (s *Service) CreateKeyWithKey(ctx context.Context, a Actor, in APIKeyInput)
 	return s.createAPIKey(ctx, s.store, a, in)
 }
 
-// RevokeAPIKey stops a key working immediately.
-func (s *Service) RevokeAPIKey(ctx context.Context, a Actor, keyID uuid.UUID) error {
+// RevokeAPIKey stops a key working immediately, and returns it revoked.
+func (s *Service) RevokeAPIKey(ctx context.Context, a Actor, keyID uuid.UUID) (*model.APIKey, error) {
 	if err := a.require(PermKeysWrite); err != nil {
-		return err
+		return nil, err
 	}
-	if a.IsKey() {
-		k, err := s.store.APIKey(ctx, a.OrgID, keyID)
-		if err != nil {
+	var k *model.APIKey
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		var err error
+		if k, err = tx.APIKeyForUpdate(ctx, a.OrgID, keyID); err != nil {
 			return notFound(err, "API key")
 		}
 		if !keyVisible(a, k) {
 			return apperr.NotFound("API key")
 		}
-	}
-	return s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.RevokeAPIKey(ctx, a.OrgID, keyID, s.Now()); err != nil {
-			return notFound(err, "API key")
+			return notFound(err, "API key") // revoked already
 		}
-		return s.audit(ctx, tx, a, "api_key.revoke", id.Format(id.APIKey, keyID), nil)
+		if err := s.audit(ctx, tx, a, "api_key.revoke", id.Format(id.APIKey, keyID), nil); err != nil {
+			return err
+		}
+		k, err = tx.APIKey(ctx, a.OrgID, keyID)
+		return err
 	})
+	if err != nil {
+		return nil, err
+	}
+	return k, nil
 }
 
 // DefaultRollOverlap is how long a rolled key's or webhook secret's old

@@ -328,37 +328,18 @@ func (s *Service) Notifications(ctx context.Context, userID uuid.UUID, before *t
 // person's, from a user token, newest first, after the one named (for the
 // next page), unread ones only if asked. It reports whether there are
 // more.
-func (s *Service) ListNotifications(ctx context.Context, a Actor, after *uuid.UUID, unreadOnly bool, limit int) ([]*model.Notification, bool, error) {
+func (s *Service) ListNotifications(ctx context.Context, a Actor, page Page, unreadOnly bool) ([]*model.Notification, bool, error) {
 	if a.UserID == nil {
-		return nil, false, apperr.Forbidden("Notifications are a person's: use a user token (araldo auth login), not an API key.")
+		return nil, false, errNotificationsArePersonal
 	}
-	var cursor *store.NotificationCursor
-	if after != nil {
-		n, err := s.store.Notification(ctx, *a.UserID, *after)
-		if err != nil {
-			return nil, false, notFound(err, "notification")
-		}
-		cursor = &store.NotificationCursor{At: n.CreatedAt, ID: n.ID}
-	}
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
-	out, err := s.store.Notifications(ctx, *a.UserID, cursor, unreadOnly, limit+1)
-	if err != nil {
-		return nil, false, err
-	}
-	more := len(out) > limit
-	if more {
-		out = out[:limit]
-	}
-	return out, more, nil
+	return s.store.NotificationsPage(ctx, *a.UserID, page, unreadOnly)
 }
 
 // ReadNotification marks one of the actor's notifications read, for the
 // API.
 func (s *Service) ReadNotification(ctx context.Context, a Actor, notificationID uuid.UUID) (*model.Notification, error) {
 	if a.UserID == nil {
-		return nil, apperr.Forbidden("Notifications are a person's: use a user token (araldo auth login), not an API key.")
+		return nil, errNotificationsArePersonal
 	}
 	return s.OpenNotification(ctx, *a.UserID, notificationID)
 }
@@ -375,10 +356,16 @@ func (s *Service) OpenNotification(ctx context.Context, userID, notificationID u
 	return n, notFound(err, "notification")
 }
 
-// ReadAllNotifications marks all of a person's notifications read.
-func (s *Service) ReadAllNotifications(ctx context.Context, userID uuid.UUID) error {
-	return s.store.ReadAllNotifications(ctx, userID, s.Now())
+// ReadAllNotifications marks all of the actor's notifications read: a
+// person's, never an API key's.
+func (s *Service) ReadAllNotifications(ctx context.Context, a Actor) error {
+	if a.UserID == nil {
+		return errNotificationsArePersonal
+	}
+	return s.store.ReadAllNotifications(ctx, *a.UserID, s.Now())
 }
+
+var errNotificationsArePersonal = apperr.Forbidden("Notifications are a person's: use a user token (araldo auth login), not an API key.")
 
 // NotificationChoice is a type and what a person chose for it in an org.
 type NotificationChoice struct {

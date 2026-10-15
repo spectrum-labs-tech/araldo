@@ -1903,6 +1903,7 @@ paths:
       parameters:
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/StartingAfter" }
+        - { $ref: "#/components/parameters/EndingBefore" }
         - { name: unread, in: query, schema: { type: boolean }, description: "Only unread ones." }
       responses:
         "200":
@@ -2181,7 +2182,7 @@ paths:
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       responses:
         "200":
-          description: The revoked key (or, when a key revoked itself, a deletion notice).
+          description: The revoked key, with its revoked_at.
           content: { application/json: { schema: { $ref: "#/components/schemas/APIKey" } } }
         default: { $ref: "#/components/responses/Error" }
 

@@ -175,7 +175,7 @@ func TestNotifications(t *testing.T) {
 	if unread, _ := w.s.UnreadNotifications(ctx, w.user.ID); unread != 1 {
 		t.Fatalf("unread after opening one: %d", unread)
 	}
-	if err := w.s.ReadAllNotifications(ctx, w.user.ID); err != nil {
+	if err := w.s.ReadAllNotifications(ctx, core.AccountActor(w.user.ID, "req_test")); err != nil {
 		t.Fatal(err)
 	}
 	if unread, _ := w.s.UnreadNotifications(ctx, w.user.ID); unread != 0 {

@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/google/uuid"
-
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 )
@@ -15,33 +13,17 @@ import (
 // Notifications (ADR 0034): a person's, through a user token.
 
 func (h *Handler) listNotifications(w http.ResponseWriter, r *http.Request) error {
-	a := actor(r)
-	q := r.URL.Query()
-	limit := 20
-	if v := q.Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > 100 {
-			return badRequest("parameter_invalid", "limit", "limit must be between 1 and 100.")
-		}
-		limit = n
-	}
-	var after *uuid.UUID
-	if v := q.Get("starting_after"); v != "" {
-		u, err := id.Parse(id.Notification, v)
-		if err != nil {
-			return badRequest("parameter_invalid", "starting_after", "starting_after must be a ntf ID.")
-		}
-		after = &u
+	pg, err := page(r, id.Notification)
+	if err != nil {
+		return err
 	}
 	unread := false
-	if v := q.Get("unread"); v != "" {
-		b, err := strconv.ParseBool(v)
-		if err != nil {
+	if v := r.URL.Query().Get("unread"); v != "" {
+		if unread, err = strconv.ParseBool(v); err != nil {
 			return badRequest("parameter_invalid", "unread", "unread is true or false.")
 		}
-		unread = b
 	}
-	ns, more, err := h.svc.ListNotifications(r.Context(), a, after, unread, limit)
+	ns, more, err := h.svc.ListNotifications(r.Context(), actor(r), pg, unread)
 	if err != nil {
 		return err
 	}
@@ -67,11 +49,7 @@ func (h *Handler) readNotification(w http.ResponseWriter, r *http.Request) error
 }
 
 func (h *Handler) readAllNotifications(w http.ResponseWriter, r *http.Request) error {
-	a := actor(r)
-	if a.UserID == nil {
-		return personOnly(a)
-	}
-	if err := h.svc.ReadAllNotifications(r.Context(), *a.UserID); err != nil {
+	if err := h.svc.ReadAllNotifications(r.Context(), actor(r)); err != nil {
 		return err
 	}
 	ok(w, http.StatusOK, map[string]any{"object": "notifications.read_all", "unread": 0})

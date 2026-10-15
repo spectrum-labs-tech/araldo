@@ -594,7 +594,7 @@ func TestAPIKeys(t *testing.T) {
 	if _, _, err := w.s.Posts(ctx, a, core.PostFilter{}, store.Page{}); err != nil {
 		t.Fatalf("read-only key listing: %v", err)
 	}
-	if err := w.s.RevokeAPIKey(ctx, w.owner, k.ID); err != nil {
+	if _, err := w.s.RevokeAPIKey(ctx, w.owner, k.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := w.s.AuthenticateKey(ctx, plain, ""); kind(err) != apperr.KindUnauthorized {
@@ -1886,5 +1886,33 @@ func TestEndpointUpdatesChangeOnlyWhatTheyName(t *testing.T) {
 	}
 	if !failing {
 		t.Fatal("an update that did not enable the endpoint cleared its failure streak")
+	}
+}
+
+// TestPatchesChangeOnlyWhatTheySet checks a partial change to an org or a
+// brand keeps what it leaves out, merged in core with the row locked.
+func TestPatchesChangeOnlyWhatTheySet(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	name := "Renamed " + w.org.Name
+	if err := w.s.PatchOrg(ctx, w.owner, w.session, core.OrgPatch{Name: &name}); err != nil {
+		t.Fatal(err)
+	}
+	o, err := w.s.Org(ctx, w.owner)
+	if err != nil || o.Name != name || o.RequireMFA {
+		t.Fatalf("the org after renaming: %+v, %v", o, err)
+	}
+	tz := "Europe/Rome"
+	b, err := w.s.PatchBrand(ctx, w.owner, w.brand.ID, core.BrandPatch{Timezone: &tz})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Timezone != tz || b.Name != w.brand.Name || b.Slug != w.brand.Slug || len(b.Slots) != len(w.brand.Slots) {
+		t.Fatalf("the brand after changing its time zone: %+v", b)
+	}
+	key := core.Actor{OrgID: w.org.ID, KeyID: ptrID(id.New()), OrgStatus: model.OrgActive}
+	if _, err := w.s.Org(ctx, key); code(err) != "scope_missing" {
+		t.Fatalf("an API key reading the org: %v", err)
 	}
 }

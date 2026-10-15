@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spectrum-labs-tech/araldo/internal/api"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
@@ -65,7 +66,7 @@ func (s *Server) openNotification(c *reqCtx) error {
 }
 
 func (s *Server) readAllNotifications(c *reqCtx) error {
-	if err := s.svc.ReadAllNotifications(c.ctx(), c.user.ID); err != nil {
+	if err := s.svc.ReadAllNotifications(c.ctx(), core.AccountActor(c.user.ID, api.RequestID(c.ctx()))); err != nil {
 		return err
 	}
 	return redirect(c, "/notifications", "All marked read.")

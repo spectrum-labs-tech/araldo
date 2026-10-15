@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -17,19 +16,8 @@ import (
 // never an API key (ADR 0019). Changes that need sudo mode (owners,
 // no longer requiring two-factor) stay in the dashboard.
 
-// personOnly refuses an API key.
-func personOnly(a core.Actor) error {
-	if a.IsKey() {
-		return apperr.Forbidden("API keys cannot manage the org or its members: sign in as yourself with araldo auth login.")
-	}
-	return nil
-}
-
 func (h *Handler) getOrg(w http.ResponseWriter, r *http.Request) error {
 	a := actor(r)
-	if err := personOnly(a); err != nil {
-		return err
-	}
 	o, err := h.svc.Org(r.Context(), a)
 	if err != nil {
 		return err
@@ -40,9 +28,6 @@ func (h *Handler) getOrg(w http.ResponseWriter, r *http.Request) error {
 
 func (h *Handler) updateOrg(w http.ResponseWriter, r *http.Request) error {
 	a := actor(r)
-	if err := personOnly(a); err != nil {
-		return err
-	}
 	var body struct {
 		Name       *string `json:"name"`
 		RequireMFA *bool   `json:"require_mfa"`
@@ -50,21 +35,11 @@ func (h *Handler) updateOrg(w http.ResponseWriter, r *http.Request) error {
 	if err := decode(r, &body); err != nil {
 		return err
 	}
+	if err := h.svc.PatchOrg(r.Context(), a, nil, core.OrgPatch{Name: body.Name, RequireMFA: body.RequireMFA}); err != nil {
+		return err
+	}
 	o, err := h.svc.Org(r.Context(), a)
 	if err != nil {
-		return err
-	}
-	name, mfa := o.Name, o.RequireMFA
-	if body.Name != nil {
-		name = *body.Name
-	}
-	if body.RequireMFA != nil {
-		mfa = *body.RequireMFA
-	}
-	if err := h.svc.UpdateOrg(r.Context(), a, nil, name, mfa); err != nil {
-		return err
-	}
-	if o, err = h.svc.Org(r.Context(), a); err != nil {
 		return err
 	}
 	ok(w, http.StatusOK, core.ViewOrg(o))
@@ -109,9 +84,6 @@ func (h *Handler) updateMember(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	a := actor(r)
-	if err := personOnly(a); err != nil {
-		return err
-	}
 	if err := h.svc.SetMemberRole(r.Context(), a, nil, uid, body.Role); err != nil {
 		return err
 	}
@@ -129,9 +101,6 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	a := actor(r)
-	if err := personOnly(a); err != nil {
-		return err
-	}
 	if err := h.svc.RemoveMember(r.Context(), a, nil, uid); err != nil {
 		return err
 	}
@@ -141,9 +110,6 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request) error {
 
 func (h *Handler) listInvitations(w http.ResponseWriter, r *http.Request) error {
 	a := actor(r)
-	if err := personOnly(a); err != nil {
-		return err
-	}
 	invs, err := h.svc.Invitations(r.Context(), a)
 	if err != nil {
 		return err
@@ -158,9 +124,6 @@ func (h *Handler) listInvitations(w http.ResponseWriter, r *http.Request) error 
 
 func (h *Handler) createInvitation(w http.ResponseWriter, r *http.Request) error {
 	a := actor(r)
-	if err := personOnly(a); err != nil {
-		return err
-	}
 	var body struct {
 		Email     string     `json:"email"`
 		Role      model.Role `json:"role"`
@@ -204,9 +167,6 @@ func (h *Handler) revokeInvitation(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	a := actor(r)
-	if err := personOnly(a); err != nil {
-		return err
-	}
 	if err := h.svc.RevokeInvitation(r.Context(), a, iid); err != nil {
 		return err
 	}

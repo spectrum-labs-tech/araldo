@@ -225,6 +225,18 @@ func TestKeysManageKeys(t *testing.T) {
 		t.Fatalf("revoke: %d %v", status, revoked)
 	}
 
+	// A key revoking itself gets itself back too, not a deletion notice.
+	self := c.keyWith("keys:write")
+	status, me := self.json(http.MethodGet, "/v1/me", nil)
+	selfID, _ := me["api_key"].(map[string]any)["id"].(string)
+	if status != http.StatusOK || selfID == "" {
+		t.Fatalf("me: %d %v", status, me)
+	}
+	status, revoked = self.json(http.MethodPost, "/v1/api_keys/"+selfID+"/revoke", map[string]any{})
+	if status != http.StatusOK || revoked["object"] != "api_key" || revoked["id"] != selfID || revoked["revoked_at"] == nil {
+		t.Fatalf("a key revoking itself: %d %v", status, revoked)
+	}
+
 	// Full access is not administration.
 	if status, got := c.do(http.MethodGet, "/v1/api_keys", "", nil, nil); status != http.StatusForbidden || got["code"] != "scope_missing" {
 		t.Fatalf("a full-access key listing keys: %d %v", status, got)

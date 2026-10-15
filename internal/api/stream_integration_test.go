@@ -154,7 +154,7 @@ func TestEventStreamEndsWithItsCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	events := stream(t, t.Context(), srv, plain, "", "")
-	if err := c.s.RevokeAPIKey(t.Context(), c.owner, k.ID); err != nil {
+	if _, err := c.s.RevokeAPIKey(t.Context(), c.owner, k.ID); err != nil {
 		t.Fatal(err)
 	}
 	select {

@@ -127,7 +127,7 @@ func fakeAraldo(t *testing.T) (*httptest.Server, *map[string]any) {
 		case "GET /v1/members":
 			if !person {
 				w.WriteHeader(http.StatusForbidden)
-				_, _ = io.WriteString(w, `{"code":"forbidden","detail":"API keys cannot manage the org or its members.","status":403}`)
+				_, _ = io.WriteString(w, `{"code":"scope_missing","detail":"This API key lacks the members:write scope.","status":403}`)
 				return
 			}
 			_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"user_1","email":"you@example.com","role":"owner","mfa":true},`+
@@ -397,7 +397,7 @@ func TestMembersAndOrgCommands(t *testing.T) {
 	}
 	// An API key is refused, by the server.
 	t.Setenv("ARALDO_TOKEN", testToken)
-	if code, _, errOut = runCLI(t, "", "members", "list"); code == ExitOK || !strings.Contains(errOut, "API keys cannot manage") {
+	if code, _, errOut = runCLI(t, "", "members", "list"); code == ExitOK || !strings.Contains(errOut, "lacks the members:write scope") {
 		t.Fatalf("members with an API key: exit %d %q", code, errOut)
 	}
 }

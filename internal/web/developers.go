@@ -218,7 +218,7 @@ func (s *Server) revokeKey(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	if err := s.svc.RevokeAPIKey(c.ctx(), c.actor, kid); err != nil {
+	if _, err := s.svc.RevokeAPIKey(c.ctx(), c.actor, kid); err != nil {
 		return err
 	}
 	return redirect(c, "/keys", "Key revoked.")

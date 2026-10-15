@@ -422,6 +422,10 @@ func (s *Service) BeginTOTP(ctx context.Context, ss *model.Session) (secretText,
 	return authn.TOTPSecretText(secret), authn.TOTPURI("Araldo", u.Email, secret), nil
 }
 
+// AccountActor is a person acting on their own account, in no org (their
+// notifications, their sign-in), recorded under requestID.
+func AccountActor(userID uuid.UUID, requestID string) Actor { return accountActor(userID, requestID) }
+
 // accountActor is a person changing their own account, in no org, for
 // the audit log.
 func accountActor(userID uuid.UUID, requestID string) Actor {

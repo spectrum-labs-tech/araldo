@@ -124,7 +124,7 @@ func (h *Handler) routes() {
 	h.handle("GET /v1/invitations", h.listInvitations)
 	h.handle("POST /v1/invitations", h.createInvitation)
 	h.handle("DELETE /v1/invitations/{id}", h.revokeInvitation)
-	h.handle("GET /v1/notifications", h.listNotifications, "limit", "starting_after", "unread")
+	h.handle("GET /v1/notifications", h.listNotifications, paged("unread")...)
 	h.handle("POST /v1/notifications/read_all", h.readAllNotifications)
 	h.handle("POST /v1/notifications/{id}/read", h.readNotification)
 	h.handle("GET /v1/api_keys", h.listKeys)
@@ -228,11 +228,20 @@ func (b brandBody) slots() (*[]model.Slot, error) {
 	return &out, ps.Err("The slots are not valid.")
 }
 
-func (b brandBody) input(base *model.Brand) core.BrandInput {
-	in := core.BrandInput{}
-	if base != nil {
-		in = core.BrandInput{Name: base.Name, Slug: base.Slug, Timezone: base.Timezone, ApprovalPolicy: base.ApprovalPolicy, UTMDomains: base.UTMDomains}
+// patch is the change the body asks of a brand: what it leaves out stays.
+func (b brandBody) patch() core.BrandPatch {
+	p := core.BrandPatch{Name: b.Name, Slug: b.Slug, Timezone: b.Timezone, UTMDomains: b.UTMDomains}
+	if b.ApprovalPolicy != nil {
+		p.ApprovalPolicy = ptrTo(model.ApprovalPolicy(*b.ApprovalPolicy))
 	}
+	return p
+}
+
+func ptrTo[T any](v T) *T { return &v }
+
+// input is a new brand the body describes.
+func (b brandBody) input() core.BrandInput {
+	in := core.BrandInput{}
 	if b.Name != nil {
 		in.Name = *b.Name
 	}
@@ -269,7 +278,7 @@ func (h *Handler) createBrand(w http.ResponseWriter, r *http.Request) error {
 	if err := decode(r, &body); err != nil {
 		return err
 	}
-	in := body.input(nil)
+	in := body.input()
 	var err error
 	if in.Slots, err = body.slots(); err != nil {
 		return err
@@ -301,11 +310,11 @@ func (h *Handler) updateBrand(w http.ResponseWriter, r *http.Request) error {
 	if err := decode(r, &body); err != nil {
 		return err
 	}
-	in := body.input(b)
-	if in.Slots, err = body.slots(); err != nil {
+	p := body.patch()
+	if p.Slots, err = body.slots(); err != nil {
 		return err
 	}
-	b, err = h.svc.UpdateBrand(r.Context(), a, b.ID, in)
+	b, err = h.svc.PatchBrand(r.Context(), a, b.ID, p)
 	if err != nil {
 		return err
 	}

@@ -120,6 +120,23 @@ func (s *Store) Notifications(ctx context.Context, userID uuid.UUID, after *Noti
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Notification, error) { return scanNotification(r) })
 }
 
+// NotificationsPage lists a person's notifications the dashboard shows, a
+// cursor page by ID (ADR 0005), newest first, unread ones only if asked.
+func (s *Store) NotificationsPage(ctx context.Context, userID uuid.UUID, page Page, unreadOnly bool) ([]*model.Notification, bool, error) {
+	where, order, extra := pageClause(page, "n.id", 3)
+	rows, err := s.q.Query(ctx, `SELECT `+notificationCols+` FROM notifications n LEFT JOIN orgs o ON o.id = n.org_id
+		WHERE n.user_id = $1 AND n.shown AND (NOT $2 OR n.read_at IS NULL)`+where+order, append([]any{userID, unreadOnly}, extra...)...)
+	if err != nil {
+		return nil, false, err
+	}
+	ns, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Notification, error) { return scanNotification(r) })
+	if err != nil {
+		return nil, false, err
+	}
+	out, more := trimPage(page, ns)
+	return out, more, nil
+}
+
 // Notification returns one of a person's notifications.
 func (s *Store) Notification(ctx context.Context, userID, id uuid.UUID) (*model.Notification, error) {
 	return scanNotification(s.q.QueryRow(ctx, `SELECT `+notificationCols+` FROM notifications n LEFT JOIN orgs o ON o.id = n.org_id

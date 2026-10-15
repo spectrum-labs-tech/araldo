@@ -65,3 +65,29 @@ func TestNotificationsOverTheAPI(t *testing.T) {
 		t.Fatalf("a bad unread: %d", status)
 	}
 }
+
+// TestNotificationsPageBothWays checks the notifications list pages as
+// every other list does, ending_before included.
+func TestNotificationsPageBothWays(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	as := tokenFor(t, c)
+	// Signing a device in notifies the person; sign in twice more.
+	tokenFor(t, c)
+	tokenFor(t, c)
+	status, all := c.do(http.MethodGet, "/v1/notifications?limit=100", "", nil, as)
+	data, _ := all["data"].([]any)
+	if status != http.StatusOK || len(data) < 3 {
+		t.Fatalf("all: %d %v", status, all)
+	}
+	newest := data[0].(map[string]any)["id"].(string)
+	second := data[1].(map[string]any)["id"].(string)
+	status, older := c.do(http.MethodGet, "/v1/notifications?limit=1&starting_after="+newest, "", nil, as)
+	if got, _ := older["data"].([]any); status != http.StatusOK || len(got) != 1 || got[0].(map[string]any)["id"] != second {
+		t.Fatalf("starting_after the newest: %d %v", status, older)
+	}
+	status, newer := c.do(http.MethodGet, "/v1/notifications?ending_before="+second, "", nil, as)
+	if got, _ := newer["data"].([]any); status != http.StatusOK || len(got) != 1 || got[0].(map[string]any)["id"] != newest {
+		t.Fatalf("ending_before the second: %d %v", status, newer)
+	}
+}

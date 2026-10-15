@@ -75,3 +75,23 @@ func TestCheckGrant(t *testing.T) {
 		}
 	}
 }
+
+// Every admin scope says what it allows, so a new one cannot reach the
+// dashboard with another's description or none.
+func TestAdminScopesAreDescribed(t *testing.T) {
+	t.Parallel()
+	info := AdminScopeInfo()
+	if len(info) != len(AdminScopes) || len(adminScopeDescriptions) != len(AdminScopes) {
+		t.Fatalf("%d admin scopes, %d described, %d descriptions", len(AdminScopes), len(info), len(adminScopeDescriptions))
+	}
+	seen := map[string]bool{}
+	for i, s := range info {
+		if s.Scope != AdminScopes[i] {
+			t.Errorf("scope %d is %s, want %s", i, s.Scope, AdminScopes[i])
+		}
+		if s.Description == "" || seen[s.Description] {
+			t.Errorf("%s: description %q is missing or repeated", s.Scope, s.Description)
+		}
+		seen[s.Description] = true
+	}
+}

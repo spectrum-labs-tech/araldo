@@ -52,8 +52,8 @@
       {{range .Data.Scopes}}<label class="check"><input type="checkbox" name="scopes" value="{{.}}"> <code>{{.}}</code></label>{{end}}
     </fieldset>
     <fieldset><legend>Administration <span class="hint">(only when checked; for tools like Terraform, Slack approvals or audit export)</span></legend>
-      {{range .Data.Admin}}<label class="check"><input type="checkbox" name="admin" value="{{.}}"> <code>{{.}}</code>
-        <span class="text-sm text-muted">{{if eq (printf "%s" .) "keys:write"}}create, roll and revoke keys with no more access than this one{{else if eq (printf "%s" .) "posts:approve"}}approve and reject posts (never its own){{else if eq (printf "%s" .) "ads:write"}}connect and disconnect ad accounts (and, later, spend){{else}}read the audit log{{end}}</span></label>{{end}}
+      {{range .Data.Admin}}<label class="check"><input type="checkbox" name="admin" value="{{.Scope}}"> <code>{{.Scope}}</code>
+        <span class="text-sm text-muted">{{.Description}}</span></label>{{end}}
     </fieldset>
     <div class="grid gap-4 sm:grid-cols-2">
       <label>Expires

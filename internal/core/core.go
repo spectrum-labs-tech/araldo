@@ -174,6 +174,31 @@ var KeyScopes = []Permission{
 // member can create a key holding one.
 var AdminScopes = []Permission{PermKeysWrite, PermPostsApprove, PermAuditRead, PermAdsWrite}
 
+// adminScopeDescriptions say what each admin scope lets a key do, for
+// people choosing them; TestAdminScopesAreDescribed keeps it in step with
+// AdminScopes.
+var adminScopeDescriptions = map[Permission]string{
+	PermKeysWrite:    "create, roll and revoke keys with no more access than this one",
+	PermPostsApprove: "approve and reject posts (never its own)",
+	PermAuditRead:    "read the audit log",
+	PermAdsWrite:     "connect and disconnect ad accounts (and, later, spend)",
+}
+
+// ScopeInfo is a scope with what it lets a key do.
+type ScopeInfo struct {
+	Scope       Permission
+	Description string
+}
+
+// AdminScopeInfo is AdminScopes, in order, each with its description.
+func AdminScopeInfo() []ScopeInfo {
+	out := make([]ScopeInfo, len(AdminScopes))
+	for i, p := range AdminScopes {
+		out[i] = ScopeInfo{Scope: p, Description: adminScopeDescriptions[p]}
+	}
+	return out
+}
+
 var roleMin = map[Permission]model.Role{
 	PermPostsRead: model.RoleViewer, PermTemplatesRead: model.RoleViewer, PermChannelsRead: model.RoleViewer,
 	PermBrandsRead: model.RoleViewer, PermEventsRead: model.RoleViewer, PermWebhooksRead: model.RoleViewer, PermAdsRead: model.RoleViewer,

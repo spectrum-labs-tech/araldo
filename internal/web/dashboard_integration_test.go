@@ -297,6 +297,12 @@ func TestRollKeyKeepsTheOldSecretForADay(t *testing.T) {
 	if _, err := d.s.AuthenticateKey(ctx, oldKey, ""); err != nil {
 		t.Fatalf("the old key during the overlap: %v", err)
 	}
+	// The create form offers each admin scope with what it allows.
+	for _, s := range core.AdminScopeInfo() {
+		if !strings.Contains(page, `value="`+string(s.Scope)+`"> <code>`+string(s.Scope)+`</code>`+"\n        "+`<span class="text-sm text-muted">`+s.Description+`</span>`) {
+			t.Errorf("admin scope %s is not offered with its description", s.Scope)
+		}
+	}
 }
 
 func TestCreatorsLinkToTheirPages(t *testing.T) {

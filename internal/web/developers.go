@@ -24,7 +24,7 @@ type keysData struct {
 	Brands []*model.Brand
 	Scopes []core.Permission
 	// Admin are the explicit-only scopes a member can add (ADR 0019).
-	Admin   []core.Permission
+	Admin   []core.ScopeInfo
 	NewKey  string
 	NewName string
 	// Rolled says NewKey replaced a key whose old secret still works.
@@ -37,7 +37,7 @@ func (s *Server) keysData(c *reqCtx) (*keysData, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &keysData{Scopes: core.KeyScopes, Admin: core.AdminScopes, BaseURL: baseURL(c), Keys: keys}
+	d := &keysData{Scopes: core.KeyScopes, Admin: core.AdminScopeInfo(), BaseURL: baseURL(c), Keys: keys}
 	if d.Brands, err = s.svc.Brands(c.ctx(), c.actor); err != nil {
 		return nil, err
 	}

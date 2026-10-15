@@ -211,21 +211,24 @@ func (s *Service) reportEngagement(ctx context.Context, a Actor, r *Report) erro
 		if err != nil {
 			return err
 		}
-		for _, c := range channels {
-			add := func(p *Pair, n int64) {
-				if i == 0 {
-					p.Now += n
-				} else {
-					p.Before += n
-				}
+		// Totals over every channel, not just the listed ones.
+		c, err := s.store.EngagementTotals(ctx, a.OrgID, a.Livemode, &r.Brand.ID, from, to)
+		if err != nil {
+			return err
+		}
+		add := func(p *Pair, n int64) {
+			if i == 0 {
+				p.Now += n
+			} else {
+				p.Before += n
 			}
-			add(&e.Likes, c.Likes)
-			add(&e.Reposts, c.Reposts)
-			add(&e.Replies, c.Replies)
-			add(&e.Quotes, c.Quotes)
-			if c.Views != nil {
-				add(&e.Views, *c.Views)
-			}
+		}
+		add(&e.Likes, c.Likes)
+		add(&e.Reposts, c.Reposts)
+		add(&e.Replies, c.Replies)
+		add(&e.Quotes, c.Quotes)
+		if c.Views != nil {
+			add(&e.Views, *c.Views)
 		}
 		if i == 0 {
 			e.ByChannel = channels
@@ -278,11 +281,16 @@ func (s *Service) reportAds(ctx context.Context, a Actor, r *Report) error {
 	ad := &ReportAds{}
 	byCurrency := map[string]*ReportSpend{}
 	for i, period := range [][2]time.Time{{r.Since, r.Until}, {r.PrevSince, r.PrevUntil}} {
-		sum, err := s.AdsSummary(ctx, a, AdsFilter{BrandID: &r.Brand.ID, GroupBy: store.AdsByCampaign, Since: period[0], Until: period[1], Limit: 100})
+		// Every campaign, so the totals count them all.
+		f := AdsFilter{BrandID: &r.Brand.ID, GroupBy: store.AdsByCampaign, Since: period[0], Until: period[1]}
+		rows, err := s.store.AdsCampaigns(ctx, a.OrgID, a.Livemode, f)
 		if err != nil {
 			return err
 		}
-		for _, row := range sum.Rows {
+		if err := s.attachSignups(ctx, a, f, rows); err != nil {
+			return err
+		}
+		for _, row := range rows {
 			t := byCurrency[row.Currency]
 			if t == nil {
 				t = &ReportSpend{Currency: row.Currency}
@@ -299,10 +307,7 @@ func (s *Service) reportAds(ctx context.Context, a Actor, r *Report) error {
 			}
 		}
 		if i == 0 {
-			ad.Campaigns = sum.Rows
-			if len(ad.Campaigns) > 10 {
-				ad.Campaigns = ad.Campaigns[:10]
-			}
+			ad.Campaigns = rows[:min(len(rows), 10)]
 		}
 	}
 	for _, t := range byCurrency {

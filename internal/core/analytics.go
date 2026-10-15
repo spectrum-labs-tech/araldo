@@ -241,50 +241,65 @@ func (s *Service) AnalyticsSummary(ctx context.Context, a Actor, f AnalyticsFilt
 	if err != nil {
 		return nil, err
 	}
+	labels, err := s.analyticsLabels(ctx, a, f, rows)
+	if err != nil {
+		return nil, err
+	}
 	sum := &AnalyticsSummary{GroupBy: f.GroupBy, Since: f.Since, Until: f.Until, Totals: totals}
 	for _, r := range rows {
 		row := AnalyticsSummaryRow{AnalyticsRow: r, Label: r.Key}
-		switch f.GroupBy {
-		case store.AnalyticsByPost:
-			row.Label = s.postLabel(ctx, a, r.Key)
-		case store.AnalyticsByCampaign:
-			row.Label = s.issueLabel(ctx, a, r.Key)
+		if l, ok := labels[r.Key]; ok {
+			row.Label = l
 		}
 		sum.Rows = append(sum.Rows, row)
 	}
 	return sum, nil
 }
 
-// postLabel is a post's first text, for a utm_content naming it; the ID
-// itself when the post is not the actor's to see.
-func (s *Service) postLabel(ctx context.Context, a Actor, content string) string {
-	pid, err := id.Parse(id.Post, content)
+// analyticsLabels names the rows' keys that are the actor's posts (their
+// first text, for a utm_content naming one) or newsletter issues (their
+// subject, for a utm_campaign naming one; ADR 0024 decision 10), in one
+// query; a key that is neither, or not the actor's to see, names itself.
+func (s *Service) analyticsLabels(ctx context.Context, a Actor, f AnalyticsFilter, rows []store.AnalyticsRow) (map[string]string, error) {
+	prefix, label := id.Post, func(text string) string {
+		if r := []rune(text); len(r) > 80 {
+			text = string(r[:80]) + "…"
+		}
+		return text
+	}
+	lookup := s.store.PostLabels
+	switch f.GroupBy {
+	case store.AnalyticsByPost:
+	case store.AnalyticsByCampaign:
+		if a.require(PermNewslettersRead) != nil {
+			return nil, nil
+		}
+		prefix, label, lookup = id.Issue, func(subject string) string { return "Newsletter: " + subject }, s.store.IssueSubjects
+	default:
+		return nil, nil
+	}
+	keys := map[uuid.UUID]string{}
+	var ids []uuid.UUID
+	for _, r := range rows {
+		if u, err := id.Parse(prefix, r.Key); err == nil {
+			keys[u] = r.Key
+			ids = append(ids, u)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	found, err := lookup(ctx, a.OrgID, a.Livemode, a.BrandID, ids)
 	if err != nil {
-		return content
+		return nil, err
 	}
-	p, err := s.Post(ctx, a, pid)
-	if err != nil || len(p.Targets) == 0 || len(p.Targets[0].Parts) == 0 {
-		return content
+	out := map[string]string{}
+	for u, text := range found {
+		if text != "" {
+			out[keys[u]] = label(text)
+		}
 	}
-	text := p.Targets[0].Parts[0]
-	if r := []rune(text); len(r) > 80 {
-		text = string(r[:80]) + "…"
-	}
-	return text
-}
-
-// issueLabel is a newsletter issue's subject, for a utm_campaign naming
-// it (ADR 0024 decision 10); the campaign itself otherwise.
-func (s *Service) issueLabel(ctx context.Context, a Actor, campaign string) string {
-	iid, err := id.Parse(id.Issue, campaign)
-	if err != nil {
-		return campaign
-	}
-	is, err := s.Issue(ctx, a, iid)
-	if err != nil {
-		return campaign
-	}
-	return "Newsletter: " + is.Subject
+	return out, nil
 }
 
 // CollectAnalytics reads the sources that are due.

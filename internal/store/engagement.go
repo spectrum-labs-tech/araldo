@@ -162,6 +162,22 @@ type EngagementRow struct {
 	platform.Counts
 }
 
+// EngagementTotals adds up the latest readings of every published target
+// read in the window, without the summary's groups or cap.
+func (s *Store) EngagementTotals(ctx context.Context, orgID uuid.UUID, livemode bool, brandID *uuid.UUID, since, until time.Time) (platform.Counts,
+	error) {
+	var c platform.Counts
+	err := s.q.QueryRow(ctx, `SELECT COALESCE(sum(e.likes), 0), COALESCE(sum(e.reposts), 0), COALESCE(sum(e.replies), 0),
+		COALESCE(sum(e.quotes), 0), sum(e.views)
+		FROM target_engagement e
+		JOIN post_targets t ON t.id = e.target_id
+		JOIN posts p ON p.id = t.post_id
+		WHERE e.org_id = $1 AND t.livemode = $2 AND e.read_at IS NOT NULL
+		AND t.published_at >= $3 AND t.published_at < $4 AND ($5::uuid IS NULL OR p.brand_id = $5)`,
+		orgID, livemode, since, until, brandID).Scan(&c.Likes, &c.Reposts, &c.Replies, &c.Quotes, &c.Views)
+	return c, err
+}
+
 // EngagementSummary adds up the latest readings of published targets that
 // have been read, by group, most engagement first.
 func (s *Store) EngagementSummary(ctx context.Context, orgID uuid.UUID, livemode bool, f EngagementFilter) ([]EngagementRow, error) {

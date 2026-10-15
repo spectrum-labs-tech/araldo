@@ -246,3 +246,43 @@ func (s *Store) AnalyticsByCampaign(ctx context.Context, orgID uuid.UUID, livemo
 		return c, err
 	})
 }
+
+// PostLabels returns, for those of ids that are the org's posts in a mode
+// (and, with brandID, the brand's), the first part of the first target's
+// text, to label rows that name posts.
+func (s *Store) PostLabels(ctx context.Context, orgID uuid.UUID, livemode bool, brandID *uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	rows, err := s.q.Query(ctx, `SELECT DISTINCT ON (t.post_id) t.post_id, COALESCE(t.parts->>0, '')
+		FROM post_targets t JOIN posts p ON p.org_id = t.org_id AND p.id = t.post_id
+		WHERE t.org_id = $1 AND t.post_id = ANY($2) AND p.livemode = $3 AND ($4::uuid IS NULL OR p.brand_id = $4)
+		ORDER BY t.post_id, t.id`, orgID, ids, livemode, brandID)
+	if err != nil {
+		return nil, err
+	}
+	return collectLabels(rows)
+}
+
+// IssueSubjects returns, for those of ids that are the org's newsletter
+// issues in a mode (and, with brandID, the brand's), their subjects.
+func (s *Store) IssueSubjects(ctx context.Context, orgID uuid.UUID, livemode bool, brandID *uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string,
+	error) {
+	rows, err := s.q.Query(ctx, `SELECT id, subject FROM newsletter_issues
+		WHERE org_id = $1 AND id = ANY($2) AND livemode = $3 AND ($4::uuid IS NULL OR brand_id = $4)`, orgID, ids, livemode, brandID)
+	if err != nil {
+		return nil, err
+	}
+	return collectLabels(rows)
+}
+
+func collectLabels(rows pgx.Rows) (map[uuid.UUID]string, error) {
+	out := map[uuid.UUID]string{}
+	var key uuid.UUID
+	var label string
+	_, err := pgx.ForEachRow(rows, []any{&key, &label}, func() error {
+		out[key] = label
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}

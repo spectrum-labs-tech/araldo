@@ -221,3 +221,28 @@ func TestReportShares(t *testing.T) {
 		t.Fatalf("an expired link: %v", err)
 	}
 }
+
+// TestReportTotalsCountEveryCampaign checks a report's ad spend adds up
+// every campaign, not just the hundred a summary lists.
+func TestReportTotalsCountEveryCampaign(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	acct := connectSandboxAds(t, w, w.owner, "Many campaigns", nil)
+	const campaigns, spend = 150, 100
+	yesterday := ads.Date(time.Now(), time.UTC).AddDate(0, 0, -1)
+	if _, err := open(t).Pool().Exec(ctx, `INSERT INTO ad_results (org_id, ad_account_id, campaign_id, campaign_name, day, spend, impressions,
+		clicks, results, read_at) SELECT $1, $2, 'many-' || n, 'Campaign ' || n, $3, $4, 10, 1, 0, now() FROM generate_series(1, $5) AS n`,
+		w.org.ID, acct.ID, yesterday, spend, campaigns); err != nil {
+		t.Fatal(err)
+	}
+	today := ads.Date(time.Now(), time.UTC)
+	r, err := w.s.BrandReport(ctx, w.owner, core.ReportInput{BrandID: w.brand.ID, Since: today.AddDate(0, 0, -6), Until: today.AddDate(0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// At least these; the sandbox network may have been read meanwhile.
+	if r.Ads == nil || len(r.Ads.Totals) != 1 || r.Ads.Totals[0].Spend.Now < campaigns*spend || len(r.Ads.Campaigns) != 10 {
+		t.Fatalf("ads %+v", r.Ads)
+	}
+}

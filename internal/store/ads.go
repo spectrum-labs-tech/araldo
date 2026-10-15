@@ -148,6 +148,19 @@ type AdsRow struct {
 
 // AdsSummary adds up results by group, per currency.
 func (s *Store) AdsSummary(ctx context.Context, orgID uuid.UUID, livemode bool, f AdsFilter) ([]AdsRow, error) {
+	limit := summaryLimit(f.Limit)
+	return s.adsSummary(ctx, orgID, livemode, f, &limit)
+}
+
+// AdsCampaigns is AdsSummary by campaign with every campaign, for totals
+// that must count them all (a report's spend).
+func (s *Store) AdsCampaigns(ctx context.Context, orgID uuid.UUID, livemode bool, f AdsFilter) ([]AdsRow, error) {
+	f.GroupBy = AdsByCampaign
+	return s.adsSummary(ctx, orgID, livemode, f, nil)
+}
+
+// adsSummary is AdsSummary with up to limit rows, or all with none.
+func (s *Store) adsSummary(ctx context.Context, orgID uuid.UUID, livemode bool, f AdsFilter, limit *int) ([]AdsRow, error) {
 	var key, label, network, order string
 	account := "NULL::uuid"
 	switch f.GroupBy {
@@ -178,7 +191,7 @@ func (s *Store) AdsSummary(ctx context.Context, orgID uuid.UUID, livemode bool, 
 		WHERE r.org_id = $1 AND a.livemode = $2 AND ($3::uuid IS NULL OR a.brand_id = $3) AND ($4::uuid IS NULL OR a.id = $4)
 			AND r.day BETWEEN $5 AND $6
 		GROUP BY `+group+` ORDER BY `+order+`, key LIMIT $7`,
-		orgID, livemode, f.BrandID, f.AccountID, f.Since, f.Until, summaryLimit(f.Limit))
+		orgID, livemode, f.BrandID, f.AccountID, f.Since, f.Until, limit)
 	if err != nil {
 		return nil, err
 	}

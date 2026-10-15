@@ -48,11 +48,6 @@ func (s *Store) ReportShares(ctx context.Context, orgID, brandID uuid.UUID, live
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.ReportShare, error) { return scanShare(r) })
 }
 
-// ReportShare returns one of an org's shares.
-func (s *Store) ReportShare(ctx context.Context, orgID, id uuid.UUID) (*model.ReportShare, error) {
-	return scanShare(s.q.QueryRow(ctx, `SELECT `+shareCols+` FROM report_shares WHERE org_id = $1 AND id = $2`, orgID, id))
-}
-
 // RevokeReportShare stops a share working.
 func (s *Store) RevokeReportShare(ctx context.Context, orgID, id uuid.UUID, at time.Time) error {
 	return s.execOne(ctx, `UPDATE report_shares SET revoked_at = $3 WHERE org_id = $1 AND id = $2 AND revoked_at IS NULL`, orgID, id, at)

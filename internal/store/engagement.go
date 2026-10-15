@@ -186,11 +186,7 @@ func (s *Store) EngagementSummary(ctx context.Context, orgID uuid.UUID, livemode
 		GROUP BY %[1]s
 		ORDER BY sum(e.likes + e.reposts + e.replies + e.quotes) DESC, count(*) DESC, %[1]s
 		LIMIT $6`, key, label, provider)
-	limit := f.Limit
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
-	rows, err := s.q.Query(ctx, q, orgID, livemode, f.Since, f.Until, f.BrandID, limit)
+	rows, err := s.q.Query(ctx, q, orgID, livemode, f.Since, f.Until, f.BrandID, summaryLimit(f.Limit))
 	if err != nil {
 		return nil, err
 	}

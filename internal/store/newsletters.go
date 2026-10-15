@@ -374,8 +374,3 @@ func (s *Store) SaveDeliveryRead(ctx context.Context, d *model.IssueDelivery, re
 		WHERE org_id = $1 AND id = $2`, d.OrgID, d.ID, d.Status, d.SentAt, r.Recipients, r.Delivered, r.Opens, r.Clicks, r.Unsubscribes,
 		r.Bounces, r.Complaints, readAt, d.NextReadAt, d.LastError)
 }
-
-// NewsletterDelivery returns one of an org's newsletter deliveries.
-func (s *Store) NewsletterDelivery(ctx context.Context, orgID, id uuid.UUID) (*model.IssueDelivery, error) {
-	return scanDelivery(s.q.QueryRow(ctx, `SELECT `+deliveryCols+` FROM newsletter_deliveries WHERE org_id = $1 AND id = $2`, orgID, id))
-}

@@ -304,26 +304,31 @@ type IdempotencyRecord struct {
 	CreatedAt      time.Time
 }
 
-// BeginIdempotent claims key for a request. If the key exists, it returns
-// the stored record and claimed=false, unless the same request claimed it
-// before abandoned (still in progress from before abandoned, its process
-// gone), when this request takes it over.
-func (s *Store) BeginIdempotent(ctx context.Context, apiKeyID uuid.UUID, key string, fingerprint []byte, since, abandoned time.Time) (*IdempotencyRecord, bool, error) {
+// BeginIdempotent claims key for a request at now. If the key exists, it
+// returns the stored record and claimed=false, unless the same request
+// claimed it before abandoned (still in progress from before abandoned, its
+// process gone), when this request takes it over. A key stored before since
+// has expired and is claimed afresh.
+//
+// created_at is the application's clock, like since and abandoned, so the
+// comparisons never mix clocks.
+func (s *Store) BeginIdempotent(ctx context.Context, apiKeyID uuid.UUID, key string, fingerprint []byte,
+	now, since, abandoned time.Time) (*IdempotencyRecord, bool, error) {
 	// Forget an expired record first, so the key can be reused.
 	if _, err := s.q.Exec(ctx, `DELETE FROM idempotency_keys WHERE api_key_id = $1 AND key = $2 AND created_at < $3`, apiKeyID, key, since); err != nil {
 		return nil, false, err
 	}
-	tag, err := s.q.Exec(ctx, `INSERT INTO idempotency_keys (api_key_id, key, fingerprint, status) VALUES ($1, $2, $3, 'in_progress')
-		ON CONFLICT DO NOTHING`, apiKeyID, key, fingerprint)
+	tag, err := s.q.Exec(ctx, `INSERT INTO idempotency_keys (api_key_id, key, fingerprint, status, created_at) VALUES ($1, $2, $3, 'in_progress', $4)
+		ON CONFLICT DO NOTHING`, apiKeyID, key, fingerprint, now)
 	if err != nil {
 		return nil, false, err
 	}
 	if tag.RowsAffected() == 1 {
 		return nil, true, nil
 	}
-	tag, err = s.q.Exec(ctx, `UPDATE idempotency_keys SET created_at = now()
+	tag, err = s.q.Exec(ctx, `UPDATE idempotency_keys SET created_at = $5
 		WHERE api_key_id = $1 AND key = $2 AND fingerprint = $3 AND status = 'in_progress' AND created_at < $4`,
-		apiKeyID, key, fingerprint, abandoned)
+		apiKeyID, key, fingerprint, abandoned, now)
 	if err != nil {
 		return nil, false, err
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
@@ -77,9 +78,21 @@ func (s *Store) CreateReportMailing(ctx context.Context, orgID, brandID uuid.UUI
 	if err != nil || tag.RowsAffected() == 0 {
 		return false, mapErr(err)
 	}
+	rows, err := s.q.Query(ctx, `SELECT email FROM report_recipients WHERE org_id = $1 AND brand_id = $2`, orgID, brandID)
+	if err != nil {
+		return false, err
+	}
+	emails, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return false, err
+	}
+	ids := make([]uuid.UUID, len(emails)) // UUIDv7, like every other ID
+	for i := range ids {
+		ids[i] = id.New()
+	}
 	_, err = s.q.Exec(ctx, `INSERT INTO report_emails (id, org_id, brand_id, month, email, status, next_attempt_at, created_at)
-		SELECT gen_random_uuid(), org_id, brand_id, $3, email, 'queued', $4, $4 FROM report_recipients WHERE org_id = $1 AND brand_id = $2`,
-		orgID, brandID, month, now)
+		SELECT r.id, $1, $2, $3, r.email, 'queued', $4, $4 FROM unnest($5::uuid[], $6::text[]) AS r(id, email)`,
+		orgID, brandID, month, now, ids, emails)
 	return true, mapErr(err)
 }
 
@@ -133,7 +146,8 @@ func (s *Store) FinishReportEmail(ctx context.Context, id uuid.UUID, owner, stat
 		WHERE id = $1 AND status = 'queued' AND lease_owner = $6`, id, status, reason, sentAt, next, owner)
 }
 
-// ReportEmailStatus returns a recipient's email status for a month, and why.
+// ReportEmailStatus returns a recipient's email status for a month, and
+// why. Only tests read it.
 func (s *Store) ReportEmailStatus(ctx context.Context, orgID, brandID uuid.UUID, month, email string) (status, reason string, err error) {
 	err = s.q.QueryRow(ctx, `SELECT status, reason FROM report_emails WHERE org_id = $1 AND brand_id = $2 AND month = $3 AND email = $4`,
 		orgID, brandID, month, email).Scan(&status, &reason)

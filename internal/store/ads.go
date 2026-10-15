@@ -178,7 +178,7 @@ func (s *Store) AdsSummary(ctx context.Context, orgID uuid.UUID, livemode bool, 
 		WHERE r.org_id = $1 AND a.livemode = $2 AND ($3::uuid IS NULL OR a.brand_id = $3) AND ($4::uuid IS NULL OR a.id = $4)
 			AND r.day BETWEEN $5 AND $6
 		GROUP BY `+group+` ORDER BY `+order+`, key LIMIT $7`,
-		orgID, livemode, f.BrandID, f.AccountID, f.Since, f.Until, f.Limit)
+		orgID, livemode, f.BrandID, f.AccountID, f.Since, f.Until, summaryLimit(f.Limit))
 	if err != nil {
 		return nil, err
 	}

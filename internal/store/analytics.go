@@ -184,7 +184,7 @@ func (s *Store) AnalyticsSummary(ctx context.Context, orgID uuid.UUID, livemode 
 	}
 	rows, err := s.q.Query(ctx, `SELECT `+key+` AS key, COALESCE(sum(r.visitors) FILTER (WHERE r.goal = ''), 0) AS visitors,
 			COALESCE(sum(r.visits) FILTER (WHERE r.goal = ''), 0), COALESCE(sum(r.visitors) FILTER (WHERE r.goal <> ''), 0) AS conversions
-		`+scope+` AND `+where+` GROUP BY 1 ORDER BY `+order+` LIMIT $6`, append(args, f.Limit)...)
+		`+scope+` AND `+where+` GROUP BY 1 ORDER BY `+order+` LIMIT $6`, append(args, summaryLimit(f.Limit))...)
 	if err != nil {
 		return nil, totals, err
 	}

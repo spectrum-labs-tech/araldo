@@ -108,10 +108,6 @@ func (s *Store) SetPassword(ctx context.Context, id uuid.UUID, hash string) erro
 	return s.execOne(ctx, `UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`, id, hash)
 }
 
-func (s *Store) SetUserName(ctx context.Context, id uuid.UUID, name string) error {
-	return s.execOne(ctx, `UPDATE users SET name = $2, updated_at = now() WHERE id = $1`, id, name)
-}
-
 // RecordLoginFailure counts a failed sign-in and locks the account for
 // lock (if non-zero).
 func (s *Store) RecordLoginFailure(ctx context.Context, id uuid.UUID, lockUntil *time.Time) error {
@@ -211,14 +207,6 @@ func (s *Store) DeleteSession(ctx context.Context, id uuid.UUID) error {
 func (s *Store) DeleteOtherSessions(ctx context.Context, userID, keep uuid.UUID) error {
 	_, err := s.q.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1 AND id <> $2`, userID, keep)
 	return err
-}
-
-func (s *Store) Sessions(ctx context.Context, userID uuid.UUID, now time.Time) ([]*model.Session, error) {
-	rows, err := s.q.Query(ctx, `SELECT `+sessionCols+` FROM sessions WHERE user_id = $1 AND expires_at > $2 ORDER BY last_seen_at DESC`, userID, now)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Session, error) { return scanSession(r) })
 }
 
 // PruneSessions deletes expired sessions, a batch at a time.

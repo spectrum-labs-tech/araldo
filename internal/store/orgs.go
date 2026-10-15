@@ -230,10 +230,6 @@ func (s *Store) Brands(ctx context.Context, orgID uuid.UUID) ([]*model.Brand, er
 	return brands, nil
 }
 
-func (s *Store) DeleteBrand(ctx context.Context, orgID, id uuid.UUID) error {
-	return s.execOne(ctx, `DELETE FROM brands WHERE org_id = $1 AND id = $2`, orgID, id)
-}
-
 // Slots.
 
 func (s *Store) Slots(ctx context.Context, orgID, brandID uuid.UUID) ([]model.Slot, error) {

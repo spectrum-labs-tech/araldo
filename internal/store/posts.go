@@ -15,11 +15,16 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
-const postCols = `id, org_id, brand_id, livemode, status, template_id, template_version, data, content, publish_at, publish_by, slot_at,
-	metadata, approval_needed, reviewed_by, reviewed_by_key, reviewed_at, review_note, created_by_user, created_by_key, created_at, updated_at`
+// postColumns are the columns scanPost reads, in order.
+var postColumns = []string{"id", "org_id", "brand_id", "livemode", "status", "template_id", "template_version", "data", "content",
+	"publish_at", "publish_by", "slot_at", "metadata", "approval_needed", "reviewed_by", "reviewed_by_key", "reviewed_at", "review_note",
+	"created_by_user", "created_by_key", "created_at", "updated_at"}
 
-// prefixedPostCols are postCols for a query that names posts p.
-var prefixedPostCols = "p." + strings.ReplaceAll(strings.ReplaceAll(postCols, "\n\t", " "), ", ", ", p.")
+var (
+	postCols = strings.Join(postColumns, ", ")
+	// prefixedPostCols are postCols for a query that names posts p.
+	prefixedPostCols = "p." + strings.Join(postColumns, ", p.")
+)
 
 func scanPost(r pgx.Row) (*model.Post, error) {
 	var p model.Post
@@ -281,12 +286,13 @@ const targetCols = `t.id, t.org_id, t.post_id, t.channel_id, t.livemode, t.provi
 	t.publish_by, COALESCE(t.lease_owner, ''), t.lease_until, t.posted, t.permalink, t.error_code, t.error_message, t.published_at,
 	t.created_at, t.updated_at, c.display_name`
 
-func scanTarget(r pgx.Row) (model.Target, error) {
+// scanTarget reads targetCols, then into extra any columns after them.
+func scanTarget(r pgx.Row, extra ...any) (model.Target, error) {
 	var t model.Target
 	var provider string
-	err := r.Scan(&t.ID, &t.OrgID, &t.PostID, &t.ChannelID, &t.Livemode, &provider, &t.Parts, &t.Status, &t.Attempts, &t.NextAttemptAt,
-		&t.PublishBy, &t.LeaseOwner, &t.LeaseUntil, &t.Posted, &t.Permalink, &t.ErrorCode, &t.ErrorMessage, &t.PublishedAt,
-		&t.CreatedAt, &t.UpdatedAt, &t.ChannelName)
+	err := r.Scan(append([]any{&t.ID, &t.OrgID, &t.PostID, &t.ChannelID, &t.Livemode, &provider, &t.Parts, &t.Status, &t.Attempts,
+		&t.NextAttemptAt, &t.PublishBy, &t.LeaseOwner, &t.LeaseUntil, &t.Posted, &t.Permalink, &t.ErrorCode, &t.ErrorMessage, &t.PublishedAt,
+		&t.CreatedAt, &t.UpdatedAt, &t.ChannelName}, extra...)...)
 	t.Provider = platform.Provider(provider)
 	return t, mapErr(err)
 }
@@ -307,26 +313,6 @@ func (s *Store) Target(ctx context.Context, orgID, id uuid.UUID) (*model.Target,
 		return nil, err
 	}
 	return &t, nil
-}
-
-// UpdateTargetParts replaces a queued target's text.
-func (s *Store) UpdateTargetParts(ctx context.Context, orgID, id uuid.UUID, parts []string) error {
-	return s.execOne(ctx, `UPDATE post_targets SET parts = $3, updated_at = now() WHERE org_id = $1 AND id = $2 AND status IN ('held', 'queued')`,
-		orgID, id, parts)
-}
-
-// SetTargetStatus moves a target to status (from any of from, if given).
-func (s *Store) SetTargetStatus(ctx context.Context, orgID, id uuid.UUID, status model.TargetStatus, from ...model.TargetStatus) error {
-	if len(from) == 0 {
-		return s.execOne(ctx, `UPDATE post_targets SET status = $3, lease_owner = NULL, lease_until = NULL, updated_at = now()
-			WHERE org_id = $1 AND id = $2`, orgID, id, status)
-	}
-	fs := make([]string, len(from))
-	for i, f := range from {
-		fs[i] = string(f)
-	}
-	return s.execOne(ctx, `UPDATE post_targets SET status = $3, lease_owner = NULL, lease_until = NULL, updated_at = now()
-		WHERE org_id = $1 AND id = $2 AND status = ANY($4)`, orgID, id, status, fs)
 }
 
 // ReleaseHeldTargets queues a post's held targets (after approval).
@@ -371,7 +357,7 @@ func (s *Store) ClaimDueTargets(ctx context.Context, orgID *uuid.UUID, owner str
 			ORDER BY t.next_attempt_at LIMIT $4
 			FOR UPDATE OF t SKIP LOCKED
 		)
-		UPDATE post_targets t SET status = 'publishing', lease_owner = $1, lease_until = $3, attempts = t.attempts + 1, updated_at = $2
+		UPDATE post_targets t SET status = 'publishing', lease_owner = $1, lease_until = $3, attempts = t.attempts + 1, updated_at = now()
 		FROM picked WHERE t.id = picked.id AND t.status = 'queued'
 		RETURNING t.id`, owner, now, leaseUntil, limit, orgID)
 	if err != nil {
@@ -388,12 +374,8 @@ func (s *Store) ClaimDueTargets(ctx context.Context, orgID *uuid.UUID, owner str
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ClaimedTarget, error) {
 		var ct ClaimedTarget
-		var provider string
-		t := &ct.Target
-		err := r.Scan(&t.ID, &t.OrgID, &t.PostID, &t.ChannelID, &t.Livemode, &provider, &t.Parts, &t.Status, &t.Attempts, &t.NextAttemptAt,
-			&t.PublishBy, &t.LeaseOwner, &t.LeaseUntil, &t.Posted, &t.Permalink, &t.ErrorCode, &t.ErrorMessage, &t.PublishedAt,
-			&t.CreatedAt, &t.UpdatedAt, &t.ChannelName, &ct.Metadata)
-		t.Provider = platform.Provider(provider)
+		var err error
+		ct.Target, err = scanTarget(r, &ct.Metadata)
 		return ct, err
 	})
 }
@@ -459,7 +441,7 @@ func (s *Store) ReclaimTarget(ctx context.Context, id uuid.UUID, now time.Time, 
 // ExpireOverdueTargets fails queued targets past their deadline.
 func (s *Store) ExpireOverdueTargets(ctx context.Context, now time.Time, limit int) ([]model.Target, error) {
 	rows, err := s.q.Query(ctx, `UPDATE post_targets t SET status = 'failed', error_code = 'expired',
-		error_message = 'Not published before its publish_by deadline.', updated_at = $1
+		error_message = 'Not published before its publish_by deadline.', updated_at = now()
 		FROM channels c WHERE c.id = t.channel_id AND t.id IN (
 			SELECT id FROM post_targets WHERE status IN ('queued', 'held') AND publish_by < $1 ORDER BY publish_by LIMIT $2 FOR UPDATE SKIP LOCKED)
 		RETURNING `+targetCols, now, limit)

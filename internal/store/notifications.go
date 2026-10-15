@@ -156,7 +156,8 @@ func (s *Store) PruneNotifications(ctx context.Context, readCutoff, cutoff time.
 		WHERE read_at IS NOT NULL AND created_at < $2 OR created_at < $3 LIMIT $1)`, readCutoff, cutoff)
 }
 
-// NotificationEmail returns a notification's email status and why.
+// NotificationEmail returns a notification's email status and why. Only
+// tests read it; the dashboard shows notifications, not their emails.
 func (s *Store) NotificationEmail(ctx context.Context, notificationID uuid.UUID) (status, reason string, err error) {
 	err = s.q.QueryRow(ctx, `SELECT status, reason FROM notification_emails WHERE notification_id = $1`, notificationID).Scan(&status, &reason)
 	return status, reason, mapErr(err)

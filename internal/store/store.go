@@ -382,6 +382,18 @@ func (p Page) Size() int {
 	return p.Limit
 }
 
+// summaryLimit is how many rows a summary (ads, analytics, engagement)
+// returns: 20 by default, never more than 100, the most the API accepts.
+func summaryLimit(n int) int {
+	switch {
+	case n <= 0:
+		return 20
+	case n > 100:
+		return 100
+	}
+	return n
+}
+
 // pageClause returns the WHERE fragment, ORDER BY and LIMIT for a page over
 // column col, with args numbered from n. The query fetches one extra row to
 // tell whether more exist; trimPage finishes the job.

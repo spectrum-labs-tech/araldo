@@ -67,7 +67,7 @@ func (s *Service) BeginIdempotent(ctx context.Context, a Actor, key string, fing
 		return nil, apperr.Invalid("idempotency_key_invalid", "Idempotency-Key", "Idempotency keys are at most 255 characters.")
 	}
 	now := s.Now()
-	rec, claimed, err := s.store.BeginIdempotent(ctx, *a.KeyID, key, fingerprint, now.Add(-IdempotencyWindow), now.Add(-idempotencyAbandoned))
+	rec, claimed, err := s.store.BeginIdempotent(ctx, *a.KeyID, key, fingerprint, now, now.Add(-IdempotencyWindow), now.Add(-idempotencyAbandoned))
 	if err != nil || claimed {
 		return nil, err
 	}

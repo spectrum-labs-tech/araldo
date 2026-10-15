@@ -14,6 +14,10 @@
 //	[Label](https://…){.button} a button on a line of its own
 //	**bold**, *italic*, `code`, [text](https://…) and bare https:// links
 //
+// Links and buttons may also be http:// (some sites a newsletter points to
+// have no TLS) or mailto:; any other scheme (javascript:, data:…) is
+// refused.
+//
 // The HTML is table-based with inline styles, 600 pixels wide, with a
 // stylesheet only for dark mode and narrow screens, which clients that
 // drop it can do without.
@@ -198,7 +202,8 @@ type renderer struct {
 	err    error
 }
 
-// safeLink reports whether a link may be followed from an email.
+// safeLink reports whether a link may be followed from an email: a web
+// link (https:// or http://) or a mailto: address.
 func safeLink(u string) bool {
 	l := strings.ToLower(u)
 	return strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "mailto:")
@@ -363,7 +368,7 @@ func (r *renderer) block(b block) (htm, text string) {
 	case bButton:
 		label, labelText := r.inline(b.label)
 		if !safeLink(b.href) {
-			r.fail(b.line, "a button needs an https:// link")
+			r.fail(b.line, "a button needs an https://, http:// or mailto: link")
 			return "", ""
 		}
 		u := r.link(b.href)

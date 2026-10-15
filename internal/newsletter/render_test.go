@@ -158,3 +158,24 @@ func TestContrast(t *testing.T) {
 		t.Fatal("ValidAccent")
 	}
 }
+
+func TestButtonLinks(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		href string
+		ok   bool
+	}{
+		{"https://openb00ks.example/try", true},
+		{"http://openb00ks.example/try", true},
+		{"mailto:hello@openb00ks.example", true},
+		{"javascript:void", false},
+		{"data:text/html,hi", false},
+		{"ftp://openb00ks.example/file", false},
+	}
+	for _, tt := range tests {
+		_, err := Render(Issue{Body: "[Go](" + tt.href + "){.button}"}, opts())
+		if (err == nil) != tt.ok {
+			t.Errorf("%s: %v, want ok %v", tt.href, err, tt.ok)
+		}
+	}
+}

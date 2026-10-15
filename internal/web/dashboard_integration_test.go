@@ -450,6 +450,9 @@ func TestAppsPageLinksPerPlatform(t *testing.T) {
 	if strings.Contains(page, "max-w-xl") {
 		t.Error("the form is still narrower than its card")
 	}
+	if strings.Contains(page, `<li class="done">`) {
+		t.Error("with no app of the org's own, a guide step is ticked off")
+	}
 }
 
 // TestInviteSomeone drives an invitation through the dashboard: the owner
@@ -669,6 +672,11 @@ func TestRenameAnApp(t *testing.T) {
 	}
 	for _, issue := range a11yIssues(page, true) {
 		t.Errorf("/channels/apps with an app: %s", issue)
+	}
+	// Adding the app ticks off registering and adding it; nothing has
+	// connected through it yet, so not the redirect URI or connecting.
+	if n := strings.Count(page, `<li class="done">`); n != 2 {
+		t.Errorf("with an app added, %d guide steps are done, want 2", n)
 	}
 	if rec := rename("Posting and ads"); rec.Code != http.StatusSeeOther {
 		t.Fatalf("renaming: %d", rec.Code)

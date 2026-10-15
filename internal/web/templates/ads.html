@@ -140,5 +140,3 @@
   <li><strong>Results stay 0</strong> without a network's tracking pixel, which Araldo never asks for: count signups in your own analytics.</li>
 </ul>
 {{end}}
-
-{{define "guideMark"}}<span class="guide-mark" aria-hidden="true">{{if eq (index . 1) "true"}}✓{{else}}{{index . 0}}{{end}}</span>{{if eq (index . 1) "true"}}<span class="sr-only">Done:</span>{{end}}{{end}}

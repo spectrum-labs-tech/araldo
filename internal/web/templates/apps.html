@@ -73,10 +73,11 @@ redirect URI below, and add its ID and secret here; then connect channels throug
 {{$d := .Data}}
 <h2>Guide</h2>
 <ol class="guide-steps">
-  <li>{{template "appMark" "1"}}<div><strong>Register an app</strong> on the platform's developer site (below).</div></li>
-  <li>{{template "appMark" "2"}}<div><strong>Give it the redirect URI</strong> shown in the form for that platform. Copy it exactly.</div></li>
-  <li>{{template "appMark" "3"}}<div><strong>Add its client ID and secret</strong> here. The secret is stored encrypted and never shown again.</div></li>
-  <li>{{template "appMark" "4"}}<div><strong>Connect</strong> from <a href="/channels/new">Channels</a>, or from <a href="/ads">Ads</a> for an ad network.</div></li>
+  {{$added := printf "%t" (gt (len $d.Apps) 0)}}{{$used := printf "%t" $d.Used}}
+  <li{{if $d.Apps}} class="done"{{end}}>{{template "guideMark" (list "1" $added)}}<div><strong>Register an app</strong> on the platform's developer site (below).</div></li>
+  <li{{if $d.Used}} class="done"{{end}}>{{template "guideMark" (list "2" $used)}}<div><strong>Give it the redirect URI</strong> shown in the form for that platform. Copy it exactly.</div></li>
+  <li{{if $d.Apps}} class="done"{{end}}>{{template "guideMark" (list "3" $added)}}<div><strong>Add its client ID and secret</strong> here. The secret is stored encrypted and never shown again.</div></li>
+  <li{{if $d.Used}} class="done"{{end}}>{{template "guideMark" (list "4" $used)}}<div><strong>Connect</strong> from <a href="/channels/new">Channels</a>, or from <a href="/ads">Ads</a> for an ad network.</div></li>
 </ol>
 
 <h3>Developer sites</h3>
@@ -94,5 +95,3 @@ redirect URI below, and add its ID and secret here; then connect channels throug
   <li><strong>Deleting an app</strong> leaves its channels working until their tokens need renewing; then they sign in again through another app.</li>
 </ul>
 {{end}}
-
-{{define "appMark"}}<span class="guide-mark" aria-hidden="true">{{.}}</span>{{end}}

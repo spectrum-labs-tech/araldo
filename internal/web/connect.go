@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/google/uuid"
+
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
@@ -31,6 +33,32 @@ type appsData struct {
 	Sites map[platform.Provider]string
 	// Guides say how to register each platform's app.
 	Guides map[platform.Provider]appGuide
+	// Used says a channel or ad account in this mode connected through one
+	// of the org's own apps: the only proof its redirect URI is right, and
+	// the guide's last step.
+	Used bool
+}
+
+// usesOwnApp reports whether any channel or ad account connected through
+// one of apps that is not the install's.
+func usesOwnApp(apps []*model.ProviderApp, chans []*model.Channel, accts []*model.AdAccount) bool {
+	own := map[uuid.UUID]bool{}
+	for _, a := range apps {
+		if !a.Install {
+			own[a.ID] = true
+		}
+	}
+	for _, c := range chans {
+		if c.AppID != nil && own[*c.AppID] {
+			return true
+		}
+	}
+	for _, a := range accts {
+		if a.AppID != nil && !a.InstallApp && own[*a.AppID] {
+			return true
+		}
+	}
+	return false
 }
 
 // developerSites are where each provider's developer apps are registered.
@@ -73,6 +101,18 @@ func (s *Server) appsData(c *reqCtx) (*appsData, error) {
 	}
 	for _, p := range d.Providers {
 		d.Names[p.Provider] = p.Name
+	}
+	if len(d.Apps) > 0 {
+		chans, err := s.svc.Channels(c.ctx(), c.actor, nil)
+		if err != nil {
+			return nil, err
+		}
+		// Someone who may not read ads still sees the channels' part.
+		accts, err := s.svc.AdAccounts(c.ctx(), c.actor, nil)
+		if err != nil && apperr.As(err).Kind != apperr.KindForbidden {
+			return nil, err
+		}
+		d.Used = usesOwnApp(d.Apps, chans, accts)
 	}
 	return d, nil
 }

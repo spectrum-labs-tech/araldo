@@ -1,0 +1,4 @@
+{{/* guideMark is a guide step's badge: its number, or a tick once its
+     state says it is done. Pass (list "<number>" (printf "%t" <done>)), and
+     give the step's <li> class="done" on the same condition. */}}
+{{define "guideMark"}}<span class="guide-mark" aria-hidden="true">{{if eq (index . 1) "true"}}✓{{else}}{{index . 0}}{{end}}</span>{{if eq (index . 1) "true"}}<span class="sr-only">Done:</span>{{end}}{{end}}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -276,4 +277,44 @@ func mustPrepend(t *testing.T, spec string, k KEK) *MasterKeys {
 		t.Fatal(err)
 	}
 	return both
+}
+
+// TestDataKeysAreCachedBriefly checks an unwrapped data key serves from
+// memory for cacheTTL, and is unwrapped from the store again after it.
+func TestDataKeysAreCachedBriefly(t *testing.T) {
+	t.Parallel()
+	st := NewMemStore()
+	kr := newKeyring(t, masterKeys(t, "k1"), st)
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	kr.cache.now = func() time.Time { return now }
+	org := uuid.New()
+	aad := AAD("channels", "credentials", uuid.New())
+	ct, err := kr.Encrypt(t.Context(), org, aad, []byte("secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Spoil the stored key: only the cached copy can open the secret now.
+	st.mu.Lock()
+	for ck, wk := range st.keys {
+		if ck.scope == org {
+			wk.Wrapped = bytes.Repeat([]byte{1}, len(wk.Wrapped))
+			st.keys[ck] = wk
+		}
+	}
+	st.mu.Unlock()
+	for _, tt := range []struct {
+		name  string
+		after time.Duration
+		opens bool
+	}{
+		{"just loaded", 0, true},
+		{"before it expires", cacheTTL - time.Second, true},
+		{"once expired", cacheTTL, false},
+	} {
+		now = time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC).Add(tt.after)
+		_, err := kr.Decrypt(t.Context(), org, aad, ct)
+		if (err == nil) != tt.opens {
+			t.Errorf("%s: Decrypt error %v, want it to open: %t", tt.name, err, tt.opens)
+		}
+	}
 }

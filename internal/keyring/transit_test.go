@@ -268,7 +268,7 @@ func TestUsageReportsUnconfiguredKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kr := &Keyring{master: m, store: st, cache: &keyCache{aead: map[cacheKey]cipher.AEAD{}}}
+	kr := &Keyring{master: m, store: st, cache: newKeyCache()}
 	use, err = kr.Usage(t.Context())
 	if err != nil {
 		t.Fatal(err)

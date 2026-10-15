@@ -302,22 +302,65 @@ type signer struct {
 const signRetry = 15 * time.Second
 
 // keyCache holds unwrapped data keys, shared by a keyring and the copies
-// With makes.
+// With makes, for cacheTTL each (ADR 0008: "cached briefly"), so a key
+// stays in memory only while it is in use, and a master key change or a
+// shredded scope is seen by every process within that time.
 type keyCache struct {
 	mu   sync.Mutex
-	aead map[cacheKey]cipher.AEAD
+	aead map[cacheKey]cachedKey
+	now  func() time.Time
 }
+
+// cacheTTL is how long an unwrapped data key is kept after it was loaded.
+const cacheTTL = 10 * time.Minute
 
 type cacheKey struct {
 	scope   uuid.UUID
 	version int
 }
 
+type cachedKey struct {
+	aead    cipher.AEAD
+	expires time.Time
+}
+
+func newKeyCache() *keyCache {
+	return &keyCache{aead: map[cacheKey]cachedKey{}, now: time.Now}
+}
+
+// get returns a cached key that has not expired.
+func (c *keyCache) get(ck cacheKey) (cipher.AEAD, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.aead[ck]
+	if !ok {
+		return nil, false
+	}
+	if !c.now().Before(e.expires) {
+		delete(c.aead, ck)
+		return nil, false
+	}
+	return e.aead, true
+}
+
+// put caches a key for cacheTTL, dropping any others that have expired.
+func (c *keyCache) put(ck cacheKey, aead cipher.AEAD) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := c.now()
+	for k, e := range c.aead {
+		if !now.Before(e.expires) {
+			delete(c.aead, k)
+		}
+	}
+	c.aead[ck] = cachedKey{aead: aead, expires: now.Add(cacheTTL)}
+}
+
 // New returns a keyring using master keys m (nil when none are configured)
 // and data keys in st. It reaches neither: Check does, and so does each
 // operation when it needs a key.
 func New(m *MasterKeys, st Store) *Keyring {
-	return &Keyring{master: m, store: st, cache: &keyCache{aead: map[cacheKey]cipher.AEAD{}}, sign: &signer{}}
+	return &Keyring{master: m, store: st, cache: newKeyCache(), sign: &signer{}}
 }
 
 // Check reports whether secrets can be sealed and opened: the primary
@@ -519,10 +562,7 @@ func (k *Keyring) create(ctx context.Context, scope uuid.UUID, version int) (Wra
 }
 
 func (k *Keyring) version(ctx context.Context, scope uuid.UUID, version int) (cipher.AEAD, error) {
-	k.cache.mu.Lock()
-	aead, ok := k.cache.aead[cacheKey{scope, version}]
-	k.cache.mu.Unlock()
-	if ok {
+	if aead, ok := k.cache.get(cacheKey{scope, version}); ok {
 		return aead, nil
 	}
 	wk, err := k.store.DataKey(ctx, scope, version)
@@ -534,12 +574,9 @@ func (k *Keyring) version(ctx context.Context, scope uuid.UUID, version int) (ci
 
 func (k *Keyring) load(ctx context.Context, wk WrappedKey) (cipher.AEAD, error) {
 	ck := cacheKey{wk.Scope, wk.Version}
-	k.cache.mu.Lock()
-	if aead, ok := k.cache.aead[ck]; ok {
-		k.cache.mu.Unlock()
+	if aead, ok := k.cache.get(ck); ok {
 		return aead, nil
 	}
-	k.cache.mu.Unlock()
 	if k.master == nil {
 		return nil, unavailable(errNoMasterKeys)
 	}
@@ -551,9 +588,7 @@ func (k *Keyring) load(ctx context.Context, wk WrappedKey) (cipher.AEAD, error) 
 	if err != nil {
 		return nil, err
 	}
-	k.cache.mu.Lock()
-	k.cache.aead[ck] = aead
-	k.cache.mu.Unlock()
+	k.cache.put(ck, aead)
 	return aead, nil
 }
 

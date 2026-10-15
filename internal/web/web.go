@@ -797,8 +797,7 @@ var funcs = template.FuncMap{
 		}
 		return "neutral"
 	},
-	"hasPrefix": strings.HasPrefix,
-	"inc":       func(i int) int { return i + 1 },
+	"inc": func(i int) int { return i + 1 },
 	"deref": func(p *int) int {
 		if p == nil {
 			return 0

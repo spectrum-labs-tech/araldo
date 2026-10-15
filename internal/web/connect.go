@@ -194,11 +194,11 @@ func connected(c *reqCtx, res *core.ConnectResult) error {
 	case len(res.AdAccounts) == 1:
 		return redirect(c, "/ads", "Connected "+res.AdAccounts[0].Name+". Its results are read within a few minutes, then daily.")
 	case len(res.AdAccounts) > 1:
-		return redirect(c, "/ads", "Connected "+itoa(len(res.AdAccounts))+" ad accounts. Their results are read within a few minutes, then daily.")
+		return redirect(c, "/ads", "Connected "+strconv.Itoa(len(res.AdAccounts))+" ad accounts. Their results are read within a few minutes, then daily.")
 	case len(res.Channels) == 1:
 		return redirect(c, "/channels", "Connected "+res.Channels[0].DisplayName+".")
 	}
-	return redirect(c, "/channels", "Connected "+itoa(len(res.Channels))+" channels.")
+	return redirect(c, "/channels", "Connected "+strconv.Itoa(len(res.Channels))+" channels.")
 }
 
 func firstNonEmpty(vals ...string) string {
@@ -209,8 +209,6 @@ func firstNonEmpty(vals ...string) string {
 	}
 	return ""
 }
-
-func itoa(n int) string { return strconv.Itoa(n) }
 
 // connectRefused is the notice for a platform that sent the member back
 // with an OAuth error. Fixed text by error code: the callback's address,

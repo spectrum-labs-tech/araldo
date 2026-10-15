@@ -6,6 +6,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
 func TestKeyExpiry(t *testing.T) {
@@ -104,5 +106,27 @@ func TestSafeNext(t *testing.T) {
 		if got := safeNext(in); got != want {
 			t.Errorf("safeNext(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestBrandLoc(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		brand *model.Brand
+		want  string
+	}{
+		{"no brand", nil, "UTC"},
+		{"no zone", &model.Brand{}, "UTC"},
+		{"unknown zone", &model.Brand{Timezone: "Mars/Olympus"}, "UTC"},
+		{"a zone", &model.Brand{Timezone: "America/New_York"}, "America/New_York"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := brandLoc(tt.brand).String(); got != tt.want {
+				t.Fatalf("brandLoc = %s, want %s", got, tt.want)
+			}
+		})
 	}
 }

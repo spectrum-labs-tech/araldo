@@ -793,7 +793,12 @@ func movable(p *model.Post) bool {
 	return true
 }
 
+// brandLoc is the brand's time zone: UTC when it has none, an unknown one,
+// or there is no brand.
 func brandLoc(b *model.Brand) *time.Location {
+	if b == nil {
+		return time.UTC
+	}
 	if l, err := time.LoadLocation(b.Timezone); err == nil {
 		return l
 	}

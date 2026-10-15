@@ -232,9 +232,8 @@ func (s *Server) issueData(c *reqCtx, is *model.Issue, brandRef string) (*issueD
 	}
 	switch {
 	case is != nil:
-		d.Brand, err = s.svc.Brand(c.ctx(), c.actor, is.BrandID)
 		d.Subject, d.Preview, d.Body = is.Subject, is.PreviewText, is.Body
-		if is.SendAt != nil {
+		if d.Brand, err = s.svc.Brand(c.ctx(), c.actor, is.BrandID); err == nil && is.SendAt != nil {
 			d.SendAt = is.SendAt.In(brandLoc(d.Brand)).Format("2006-01-02T15:04")
 		}
 	case brandRef != "":

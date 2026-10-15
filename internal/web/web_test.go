@@ -261,3 +261,54 @@ func TestSameToken(t *testing.T) {
 		}
 	}
 }
+
+func TestIPLimiter(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	l := newIPLimiter(2, time.Minute)
+	l.tracked = 3
+	for i, want := range []bool{true, true, false} {
+		if got := l.allow("a", now); got != want {
+			t.Fatalf("attempt %d from a = %v, want %v", i+1, got, want)
+		}
+	}
+	if !l.allow("b", now) || !l.allow("c", now) {
+		t.Fatal("other addresses are held back")
+	}
+	// Full, and nothing has expired: a new address waits, and a is still
+	// held back instead of everyone's count being reset.
+	if l.allow("d", now) {
+		t.Fatal("a new address got in while the limiter was full")
+	}
+	if l.allow("a", now.Add(time.Second)) {
+		t.Fatal("a's count was reset")
+	}
+	// A window later the old addresses are forgotten and room is made.
+	later := now.Add(2 * time.Minute)
+	if !l.allow("d", later) || !l.allow("a", later) {
+		t.Fatal("expired addresses were not forgotten")
+	}
+}
+
+func TestClientIP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		header, value, want string
+	}{
+		{"", "", "192.0.2.1"},
+		{"CF-Connecting-IP", "203.0.113.7", "203.0.113.7"},
+		{"X-Forwarded-For", "198.51.100.9, 203.0.113.7", "203.0.113.7"}, // the client wrote the first
+		{"X-Forwarded-For", "", "192.0.2.1"},
+	}
+	for _, tt := range tests {
+		s := &Server{cfg: Config{ClientIPHeader: tt.header}}
+		r := httptest.NewRequest(http.MethodPost, "/login", nil)
+		r.RemoteAddr = "192.0.2.1:4242"
+		if tt.header != "" && tt.value != "" {
+			r.Header.Set(tt.header, tt.value)
+		}
+		if got := s.clientIP(r); got != tt.want {
+			t.Errorf("clientIP with %s %q = %q, want %q", tt.header, tt.value, got, tt.want)
+		}
+	}
+}

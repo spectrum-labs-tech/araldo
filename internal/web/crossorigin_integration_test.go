@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/spectrum-labs-tech/araldo/internal/web"
 )
 
 // TestCrossSitePostsAreRefused checks that a form posted from another site
@@ -61,6 +63,34 @@ func TestCrossSitePostsAreRefused(t *testing.T) {
 			}
 			if refused != tt.refused {
 				t.Fatalf("%s: %d, refused = %v, want %v\n%s", tt.path, rec.Code, refused, tt.refused, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestOversizedFormsAreNotRead checks that a form post is read only up to
+// MaxForm: valid credentials after a megabyte of padding are never seen.
+func TestOversizedFormsAreNotRead(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	creds := "&email=" + url.QueryEscape(d.login.User.Email) + "&password=" + url.QueryEscape("correct horse battery")
+	for _, tt := range []struct {
+		name    string
+		padding int
+		signsIn bool
+	}{
+		{"within the limit", 1000, true},
+		{"past the limit", web.MaxForm, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			body := "pad=" + strings.Repeat("x", tt.padding) + creds
+			r := httptest.NewRequest(http.MethodPost, "https://araldo.test/login", strings.NewReader(body))
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			d.srv.ServeHTTP(rec, r)
+			if signedIn := rec.Code == http.StatusSeeOther; signedIn != tt.signsIn || rec.Code >= 500 {
+				t.Fatalf("%d bytes of padding: %d, signed in = %v, want %v", tt.padding, rec.Code, signedIn, tt.signsIn)
 			}
 		})
 	}

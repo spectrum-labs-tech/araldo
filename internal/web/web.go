@@ -55,7 +55,8 @@ type Config struct {
 	// plain-HTTP development.
 	SecureCookies bool
 	// ClientIPHeader names a trusted proxy header holding the client IP
-	// (for example CF-Connecting-IP), used for sign-in rate limits.
+	// (for example CF-Connecting-IP), used for sign-in rate limits; for a
+	// list, its last address (see clientIP).
 	ClientIPHeader string
 }
 
@@ -102,6 +103,10 @@ func (s *Server) Route(r *http.Request) string {
 	return pattern
 }
 
+// MaxForm bounds a form or JSON post that carries no files: room for a
+// long template or newsletter, far short of what Go would otherwise read.
+const MaxForm = 1 << 20
+
 // ServeHTTP sets a strict Content-Security-Policy with a fresh nonce for
 // the style elements the template editor adds, refuses cross-site form
 // posts, then routes.
@@ -109,6 +114,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	nonce, _ := authn.NewToken() // the token, not its hash
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'nonce-"+nonce+"'; "+
 		"script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	if r.Method == http.MethodPost && !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		// Uploads are bounded in app(), at MaxPostForm.
+		r.Body = http.MaxBytesReader(w, r.Body, MaxForm)
+	}
 	s.cop.Handler(s.mux).ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), nonceKey{}, nonce)))
 }
 
@@ -567,10 +576,13 @@ func safeNext(next string) string {
 	return next
 }
 
+// clientIP is the address sign-in limits count. With a trusted proxy
+// header, it is the header's last address: the one that proxy added. A
+// list's earlier entries (X-Forwarded-For) are whatever the client sent.
 func (s *Server) clientIP(r *http.Request) string {
 	if s.cfg.ClientIPHeader != "" {
 		if v := r.Header.Get(s.cfg.ClientIPHeader); v != "" {
-			return strings.TrimSpace(strings.Split(v, ",")[0])
+			return strings.TrimSpace(v[strings.LastIndex(v, ",")+1:])
 		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -586,17 +598,31 @@ type ipLimiter struct {
 	max    int
 	window time.Duration
 	hits   map[string][]time.Time
+	// tracked caps how many addresses it remembers.
+	tracked int
 }
 
 func newIPLimiter(max int, window time.Duration) *ipLimiter {
-	return &ipLimiter{max: max, window: window, hits: map[string][]time.Time{}}
+	return &ipLimiter{max: max, window: window, hits: map[string][]time.Time{}, tracked: 50_000}
 }
 
+// allow reports whether ip may try again, and counts the attempt. When it
+// remembers as many addresses as it may, it forgets those with no attempt
+// in the window; if that frees nothing (attempts from more addresses than
+// that, within a minute) a new address is refused until some expire,
+// rather than everyone's count being reset.
 func (l *ipLimiter) allow(ip string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if len(l.hits) > 50_000 {
-		clear(l.hits)
+	if _, known := l.hits[ip]; !known && len(l.hits) >= l.tracked {
+		for k, ts := range l.hits {
+			if len(ts) == 0 || now.Sub(ts[len(ts)-1]) >= l.window {
+				delete(l.hits, k)
+			}
+		}
+		if len(l.hits) >= l.tracked {
+			return false
+		}
 	}
 	recent := l.hits[ip][:0]
 	for _, t := range l.hits[ip] {

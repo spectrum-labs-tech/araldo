@@ -45,7 +45,9 @@ type Config struct {
 	// are kept apart because every org chooses those URLs.
 	PrivateWebhooks netguard.Policy
 	// ClientIPHeader is a trusted proxy header with the client IP
-	// (ARALDO_CLIENT_IP_HEADER, for example CF-Connecting-IP).
+	// (ARALDO_CLIENT_IP_HEADER, for example CF-Connecting-IP). For a list
+	// such as X-Forwarded-For, its last address counts: the one the
+	// trusted proxy added.
 	ClientIPHeader string
 	// LogLevel is debug, info, warn or error (ARALDO_LOG_LEVEL).
 	LogLevel string

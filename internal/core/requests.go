@@ -4,7 +4,6 @@ package core
 
 import (
 	"context"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -24,41 +23,44 @@ const (
 	requestLogBuffer = 4096
 	requestLogBatch  = 200
 	requestLogEvery  = 500 * time.Millisecond
+	// requestLogFlush bounds writing what is queued once the writer stops.
+	requestLogFlush = 10 * time.Second
 )
 
-// requestLog writes logged requests in batches, in the background.
+// requestLog holds logged requests until RunRequestLog writes them.
 type requestLog struct {
-	once    sync.Once
 	ch      chan model.APIRequest
 	dropped atomic.Int64
 }
 
-// LogRequest queues a request for the log. It never blocks: with the
-// buffer full, the request is dropped and counted. The writer outlives the
-// request that starts it, so it keeps its context's values, not its end.
+func newRequestLog() requestLog {
+	return requestLog{ch: make(chan model.APIRequest, requestLogBuffer)}
+}
+
+// LogRequest queues a request for the log, which RunRequestLog writes. It
+// never blocks: with the buffer full, the request is dropped and counted.
 func (s *Service) LogRequest(ctx context.Context, r model.APIRequest) {
-	s.requests.once.Do(func() {
-		s.requests.ch = make(chan model.APIRequest, requestLogBuffer)
-		go s.writeRequestLog(context.WithoutCancel(ctx))
-	})
 	select {
 	case s.requests.ch <- r:
 	default:
 		if n := s.requests.dropped.Add(1); n == 1 || n%1000 == 0 {
-			s.log.Warn("the request log is behind; dropping requests from it", "dropped", n)
+			s.log.WarnContext(ctx, "the request log is behind; dropping requests from it", "dropped", n)
 		}
 	}
 }
 
-func (s *Service) writeRequestLog(ctx context.Context) {
+// RunRequestLog writes queued requests to the log in batches until ctx
+// ends, then writes what is still queued, so stopping the server after its
+// last request (as the composition root does) loses none of them.
+func (s *Service) RunRequestLog(ctx context.Context) {
 	batch := make([]model.APIRequest, 0, requestLogBatch)
 	tick := time.NewTicker(requestLogEvery)
 	defer tick.Stop()
-	flush := func() {
+	flush := func(ctx context.Context) {
 		if len(batch) == 0 {
 			return
 		}
-		wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		wctx, cancel := context.WithTimeout(ctx, requestLogFlush)
 		defer cancel()
 		if err := s.store.InsertAPIRequests(wctx, batch); err != nil {
 			s.log.WarnContext(wctx, "writing the request log failed; those requests are not logged", "requests", len(batch), "err", err)
@@ -69,10 +71,23 @@ func (s *Service) writeRequestLog(ctx context.Context) {
 		select {
 		case r := <-s.requests.ch:
 			if batch = append(batch, r); len(batch) == requestLogBatch {
-				flush()
+				flush(ctx)
 			}
 		case <-tick.C:
-			flush()
+			flush(ctx)
+		case <-ctx.Done():
+			last := context.WithoutCancel(ctx)
+			for {
+				select {
+				case r := <-s.requests.ch:
+					if batch = append(batch, r); len(batch) == requestLogBatch {
+						flush(last)
+					}
+				default:
+					flush(last)
+					return
+				}
+			}
 		}
 	}
 }

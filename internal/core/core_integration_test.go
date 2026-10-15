@@ -1832,3 +1832,23 @@ func TestCancelingAPartlyPublishedPost(t *testing.T) {
 		t.Fatalf("after canceling the rest: %s, want partially_published", got.Status)
 	}
 }
+
+// TestRequestLogIsWrittenOnStop checks requests still queued when the
+// writer stops are written, not lost with the process.
+func TestRequestLogIsWrittenOnStop(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	const n = 250 // more than one batch
+	for range n {
+		w.s.LogRequest(ctx, model.APIRequest{ID: id.New(), OrgID: w.org.ID, Method: "GET", Route: "GET /v1/brands", Path: "/v1/brands",
+			Status: 200, CreatedAt: time.Now()})
+	}
+	stopped, stop := context.WithCancel(ctx)
+	stop()
+	w.s.RunRequestLog(stopped) // returns once what was queued is written
+	logged, _, err := w.s.APIRequests(ctx, memberActor(t, w, false), store.RequestFilter{}, store.Page{Limit: 100})
+	if err != nil || len(logged) != 100 {
+		t.Fatalf("logged %d requests (a page of at most 100), want a full page: %v", len(logged), err)
+	}
+}

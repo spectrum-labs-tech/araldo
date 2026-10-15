@@ -22,7 +22,8 @@ can answer it.
 2. **It is written in the background**, in batches, so a request never
    waits on it. When the database falls behind and the buffer fills,
    requests go unlogged (and the server says so in its own logs) rather
-   than slowing the API.
+   than slowing the API. When the server stops, it finishes its last requests and then
+   writes what is still queued before it exits.
 3. **It is kept 14 days**, then pruned.
 4. **Admins and owners read it** in the dashboard, under Developers →
    Request log, in the mode they are in, filtered by outcome. The request

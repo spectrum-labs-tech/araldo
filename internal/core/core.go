@@ -124,7 +124,7 @@ func New(st *store.Store, keys *keyring.Keyring, platforms *platform.Registry, l
 		MediaHTTP:  mediaClient(netguard.Client(cfg.PrivateWebhooks, mediaFetchTimeout)),
 		SSOHTTP:    netguard.Client(cfg.PrivateWebhooks, ssoHTTPTimeout),
 		LookupTXT:  net.DefaultResolver.LookupTXT,
-		blobs:      cfg.Blobs, metrics: noopMetrics(), tracer: tracenoop.NewTracerProvider().Tracer("")}
+		blobs:      cfg.Blobs, metrics: noopMetrics(), tracer: tracenoop.NewTracerProvider().Tracer(""), requests: newRequestLog()}
 }
 
 // Store exposes the store to the composition root (health checks).

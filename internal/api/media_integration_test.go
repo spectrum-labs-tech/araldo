@@ -81,6 +81,7 @@ func newClient(t *testing.T, opts ...func(*core.Config)) *client {
 	}
 	kr := keyring.New(mk, shared)
 	s := core.New(shared, kr, platform.NewRegistry(sandbox.New("https://araldo.test")), log, cfg)
+	go s.RunRequestLog(t.Context())
 	ctx := t.Context()
 	email := fmt.Sprintf("api-%s@example.com", uuid.NewString()[:8])
 	u, err := s.CreateUser(ctx, email, "Owner", "correct horse battery")

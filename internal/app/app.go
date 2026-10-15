@@ -310,14 +310,24 @@ func (a *App) Handler() (http.Handler, error) {
 	return server.Handler(api.New(a.Svc, a.Log), dash, a.Svc.Ready, a.DB, a.Log, a.tracers), nil
 }
 
-// Serve runs the HTTP server until ctx ends.
+// Serve runs the HTTP server until ctx ends, and the request log's writer
+// until the server has finished its last request and the log is written.
 func (a *App) Serve(ctx context.Context) error {
 	a.start(ctx)
 	h, err := a.Handler()
 	if err != nil {
 		return err
 	}
-	return server.Serve(ctx, a.Cfg.Listen, h, a.Log)
+	logCtx, stopLog := context.WithCancel(context.WithoutCancel(ctx))
+	logged := make(chan struct{})
+	go func() {
+		defer close(logged)
+		a.Svc.RunRequestLog(logCtx)
+	}()
+	err = server.Serve(ctx, a.Cfg.Listen, h, a.Log)
+	stopLog()
+	<-logged
+	return err
 }
 
 // RunWorker publishes, delivers webhooks and runs periodic tasks until ctx

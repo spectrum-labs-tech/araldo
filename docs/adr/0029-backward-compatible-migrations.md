@@ -55,7 +55,20 @@ GitHub, GitLab and Stripe treat this as a rule with tooling behind it
    are never edited.
 5. **Down migrations** stay as they are: written, never run automatically.
    Rolling back is running the previous release on the newer schema, which
-   rule 1 makes safe.
+   rule 1 makes safe. New ones use `IF EXISTS`, so a down that half ran
+   can run again; `000025` and `000029` to `000036` shipped without it and
+   are not edited.
+6. **Data is changed by background tasks, not migrations** (amended
+   2026-10-15). A migration is one transaction, so an `UPDATE` or `DELETE`
+   over a table holds a lock on every row it touches until the whole file
+   commits, blocking writes to those rows for as long as the scan takes.
+   `000028` (masking stored errors) did that across a dozen tables; it
+   shipped and is not edited. Rewriting existing rows is an `opsched` task
+   working in short batches (`id IN (SELECT ... LIMIT n)`, each its own
+   statement), which new code runs alongside writing the new shape. A
+   migration may touch rows only when it can be sure they are few, such
+   as `000054` deleting the credentials an org deletion orphaned before
+   `000053` gave them a foreign key.
 
 ## Alternatives considered
 

@@ -218,3 +218,34 @@ func TestPostStatusCountsAreCapped(t *testing.T) {
 		})
 	}
 }
+
+// TestSSOSessionsGoWithTheirOrg checks a session that came through an org's
+// single sign-on, which reaches that org only, is deleted with the org
+// rather than left pointing at nothing, while the person's other sessions
+// stay.
+func TestSSOSessionsGoWithTheirOrg(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	st := testStore(ctx, t)
+	b, u := newBrand(ctx, t, st), newUser(ctx, t, st)
+	viaSSO := &model.Session{ID: id.New(), UserID: u.ID, CSRFToken: "csrf", State: "active", ExpiresAt: time.Now().Add(time.Hour), SSOOrg: &b.OrgID}
+	if err := st.CreateSession(ctx, viaSSO, []byte(uuid.NewString())); err != nil {
+		t.Fatal(err)
+	}
+	plain := newSession(ctx, t, st, u, time.Now().Add(time.Hour))
+	// Deleting it is what this test is about; the org is its own.
+	if err := st.DeleteOrg(ctx, b.OrgID); err != nil {
+		t.Fatal(err)
+	}
+	if sessionExists(ctx, t, st, viaSSO.ID) {
+		t.Error("a session through the deleted org's single sign-on survived it")
+	}
+	if !sessionExists(ctx, t, st, plain) {
+		t.Error("deleting the org deleted an unrelated session")
+	}
+	missing := id.New()
+	orphan := &model.Session{ID: id.New(), UserID: u.ID, CSRFToken: "csrf", State: "active", ExpiresAt: time.Now().Add(time.Hour), SSOOrg: &missing}
+	if err := st.CreateSession(ctx, orphan, []byte(uuid.NewString())); !errors.Is(err, ErrReferenced) {
+		t.Errorf("a session through an org that does not exist: %v, want ErrReferenced", err)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"syscall"
@@ -19,6 +20,9 @@ import (
 
 // Policy says which non-public addresses a client may reach. The zero
 // Policy allows none.
+//
+// Cloud metadata services (see metadata) are refused under every policy
+// unless Nets names their exact address.
 type Policy struct {
 	// All allows every non-public address except link-local ones, where
 	// cloud metadata services answer: for development, and self-hosters
@@ -66,7 +70,14 @@ func ParsePolicy(s string) (Policy, error) {
 
 // Allows reports whether the policy lets a client connect to ip.
 func (p Policy) Allows(ip net.IP) bool {
-	if Public(ip) {
+	a, ok := addr(ip)
+	if !ok {
+		return false
+	}
+	if metadata[a] {
+		return p.names(a)
+	}
+	if public(a) {
 		return true
 	}
 	for _, n := range p.Nets {
@@ -74,23 +85,114 @@ func (p Policy) Allows(ip net.IP) bool {
 			return true
 		}
 	}
-	return p.All && ip != nil && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast()
+	return p.All && !a.IsLinkLocalUnicast() && !a.IsLinkLocalMulticast()
+}
+
+// names reports whether Nets lists a by itself, as one address.
+func (p Policy) names(a netip.Addr) bool {
+	for _, n := range p.Nets {
+		ones, bits := n.Mask.Size()
+		if ones == bits && n.Contains(net.IP(a.AsSlice())) {
+			return true
+		}
+	}
+	return false
+}
+
+// metadata are the addresses where cloud metadata services answer with
+// the machine's credentials. Some are not link-local (AWS's IPv6 one is a
+// unique local address, Alibaba's is in the shared range, Azure's is
+// public), so excluding link-local is not enough.
+var metadata = map[netip.Addr]bool{
+	netip.MustParseAddr("169.254.169.254"): true, // AWS, GCP, Azure, Oracle, DigitalOcean…
+	netip.MustParseAddr("169.254.170.2"):   true, // AWS ECS task credentials
+	netip.MustParseAddr("fd00:ec2::254"):   true, // AWS over IPv6
+	netip.MustParseAddr("100.100.100.200"): true, // Alibaba Cloud
+	netip.MustParseAddr("168.63.129.16"):   true, // Azure's platform endpoint
+}
+
+// addr converts ip, an IPv4-mapped IPv6 address to IPv4.
+func addr(ip net.IP) (netip.Addr, bool) {
+	a, ok := netip.AddrFromSlice(ip)
+	return a.Unmap(), ok
 }
 
 // Public reports whether ip is a public unicast address.
 func Public(ip net.IP) bool {
-	return ip != nil && !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() &&
-		!ip.IsUnspecified() && !ip.IsMulticast() && !ip.IsInterfaceLocalMulticast() && !isSharedOrReserved(ip)
+	a, ok := addr(ip)
+	return ok && public(a)
 }
 
-// isSharedOrReserved covers ranges net.IP has no method for: carrier-grade
-// NAT (100.64.0.0/10, which includes tailnets) and 0.0.0.0/8.
-func isSharedOrReserved(ip net.IP) bool {
-	if v4 := ip.To4(); v4 != nil {
-		return v4[0] == 0 || v4[0] == 100 && v4[1]&0xc0 == 64
+func public(a netip.Addr) bool {
+	for _, p := range nonPublic {
+		if p.Contains(a) {
+			return false
+		}
 	}
-	return false
+	// Addresses that carry an IPv4 address reach it: through a NAT64
+	// gateway, or a 6to4 relay.
+	if v4, ok := embeddedV4(a); ok {
+		return public(v4)
+	}
+	return !metadata[a]
 }
+
+// embeddedV4 returns the IPv4 address a NAT64 (64:ff9b::/96) or 6to4
+// (2002::/16) address carries.
+func embeddedV4(a netip.Addr) (netip.Addr, bool) {
+	b := a.As16()
+	switch {
+	case nat64.Contains(a):
+		return netip.AddrFrom4([4]byte(b[12:16])), true
+	case sixToFour.Contains(a):
+		return netip.AddrFrom4([4]byte(b[2:6])), true
+	}
+	return netip.Addr{}, false
+}
+
+var (
+	nat64     = netip.MustParsePrefix("64:ff9b::/96")
+	sixToFour = netip.MustParsePrefix("2002::/16")
+)
+
+// nonPublic are the ranges no public host has (IANA's special-purpose
+// registries, RFC 6890): private, shared, loopback, link-local,
+// documentation, benchmarking, reserved and multicast addresses.
+var nonPublic = func() []netip.Prefix {
+	var out []netip.Prefix
+	for _, s := range []string{
+		"0.0.0.0/8",       // "this network"
+		"10.0.0.0/8",      // private
+		"100.64.0.0/10",   // carrier-grade NAT, tailnets
+		"127.0.0.0/8",     // loopback
+		"169.254.0.0/16",  // link-local, cloud metadata
+		"172.16.0.0/12",   // private
+		"192.0.0.0/24",    // IETF protocol assignments
+		"192.0.2.0/24",    // documentation
+		"192.88.99.0/24",  // 6to4 relay anycast
+		"192.168.0.0/16",  // private
+		"198.18.0.0/15",   // benchmarking
+		"198.51.100.0/24", // documentation
+		"203.0.113.0/24",  // documentation
+		"224.0.0.0/4",     // multicast
+		"240.0.0.0/4",     // reserved, and broadcast
+		"::/96",           // unspecified, loopback, IPv4-compatible
+		"::ffff:0:0:0/96", // IPv4-translated
+		"64:ff9b:1::/48",  // NAT64 for local use
+		"100::/64",        // discard
+		"2001::/23",       // IETF protocol assignments, Teredo included
+		"2001:db8::/32",   // documentation
+		"3fff::/20",       // documentation
+		"5f00::/16",       // segment routing
+		"fc00::/7",        // unique local
+		"fe80::/10",       // link-local
+		"fec0::/10",       // site-local, deprecated
+		"ff00::/8",        // multicast
+	} {
+		out = append(out, netip.MustParsePrefix(s))
+	}
+	return out
+}()
 
 // UploadClient is Client for requests whose bodies may take long to send,
 // such as a video uploaded to a platform: no limit on a whole request,

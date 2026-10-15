@@ -477,13 +477,26 @@ const MediaLinkTTL = time.Hour
 // for platforms that fetch images themselves. Without a signing key (no
 // master keys, or their key service down) it is empty.
 func (s *Service) MediaLink(ctx context.Context, m *model.Media) string {
+	return s.expiringLink(ctx, m, "")
+}
+
+// expiringLink is a signed link to m's file that works for MediaLinkTTL:
+// to the file itself, or with p, to its copy resized for p. Empty without
+// master keys or a base URL.
+func (s *Service) expiringLink(ctx context.Context, m *model.Media, p platform.Provider) string {
 	key := s.linkKey(ctx)
 	if key == nil || s.cfg.BaseURL == "" {
 		return ""
 	}
 	exp := s.Now().Add(MediaLinkTTL).Unix()
-	return s.cfg.BaseURL + "/v1/media/" + id.Format(id.Media, m.ID) + "/content?expires=" + strconv.FormatInt(exp, 10) +
-		"&signature=" + mediaSignature(key, m.ID, exp)
+	q := url.Values{"expires": {strconv.FormatInt(exp, 10)}}
+	if p != "" {
+		q.Set("for", string(p))
+		q.Set("signature", mediaSignature(key, m.ID, exp, p))
+	} else {
+		q.Set("signature", mediaSignature(key, m.ID, exp))
+	}
+	return s.cfg.BaseURL + "/v1/media/" + id.Format(id.Media, m.ID) + "/content?" + q.Encode()
 }
 
 // linkKey is the key media links are signed with, or nil (logged) while it
@@ -507,13 +520,7 @@ func (s *Service) signingKey(ctx context.Context) ([]byte, error) {
 // mediaLinkFor is MediaLink for the copy of an image resized for a
 // platform; the platform is signed with the rest.
 func (s *Service) mediaLinkFor(ctx context.Context, m *model.Media, p platform.Provider) string {
-	key := s.linkKey(ctx)
-	if key == nil || s.cfg.BaseURL == "" {
-		return ""
-	}
-	exp := s.Now().Add(MediaLinkTTL).Unix()
-	return s.cfg.BaseURL + "/v1/media/" + id.Format(id.Media, m.ID) + "/content?expires=" + strconv.FormatInt(exp, 10) +
-		"&for=" + url.QueryEscape(string(p)) + "&signature=" + mediaSignature(key, m.ID, exp, p)
+	return s.expiringLink(ctx, m, p)
 }
 
 func mediaSignature(key []byte, mediaID uuid.UUID, expires int64, forProvider ...platform.Provider) string {

@@ -840,7 +840,8 @@ func (s *Service) ScheduleIssue(ctx context.Context, a Actor, issueID uuid.UUID,
 // moveIssue changes a scheduled issue's send time: queued deliveries are
 // handed off on the new schedule, and handed-off ones are moved at their
 // providers first. If a provider refuses, the ones already moved are moved
-// back and nothing changes.
+// back and nothing changes; one that cannot be moved back needs attention,
+// since its campaign no longer sends when the issue says.
 func (s *Service) moveIssue(ctx context.Context, a Actor, cur *model.Issue, sendAt time.Time) (*model.Issue, error) {
 	if busy, err := s.store.HandoffInFlight(ctx, a.OrgID, cur.ID, s.Now()); err != nil || busy {
 		if err != nil {
@@ -856,11 +857,7 @@ func (s *Service) moveIssue(ctx context.Context, a Actor, cur *model.Issue, send
 		if err := s.atProvider(ctx, a.OrgID, d, func(m email.Mailer, c platform.Credentials) error {
 			return m.Reschedule(ctx, c, d.CampaignID, sendAt)
 		}); err != nil {
-			for _, back := range moved {
-				_ = s.atProvider(ctx, a.OrgID, back, func(m email.Mailer, c platform.Credentials) error {
-					return m.Reschedule(ctx, c, back.CampaignID, *cur.SendAt)
-				})
-			}
+			s.moveBack(ctx, a, cur, moved, sendAt)
 			return nil, err
 		}
 		moved = append(moved, d)
@@ -887,6 +884,43 @@ func (s *Service) moveIssue(ctx context.Context, a Actor, cur *model.Issue, send
 		return s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, "newsletter.rescheduled", ViewIssue(out))
 	})
 	return out, err
+}
+
+// moveBack returns moved deliveries' campaigns to the issue's send time
+// after a move failed part way. One that will not go back is flagged, and
+// logged: its campaign sends at sendAt, not when the issue says.
+func (s *Service) moveBack(ctx context.Context, a Actor, cur *model.Issue, moved []model.IssueDelivery, sendAt time.Time) {
+	var stuck []model.IssueDelivery
+	for _, back := range moved {
+		err := s.atProvider(ctx, a.OrgID, back, func(m email.Mailer, c platform.Credentials) error {
+			return m.Reschedule(ctx, c, back.CampaignID, *cur.SendAt)
+		})
+		if err != nil {
+			s.log.ErrorContext(ctx, "moving a newsletter's campaign back failed; it needs attention", "issue", id.Format(id.Issue, cur.ID),
+				"delivery", id.Format(id.IssueDelivery, back.ID), "err", err)
+			stuck = append(stuck, back)
+		}
+	}
+	if len(stuck) == 0 {
+		return
+	}
+	err := s.store.InTx(context.WithoutCancel(ctx), func(tx *store.Store) error {
+		is, err := s.lockIssue(ctx, tx, a, cur.ID)
+		if err != nil {
+			return err
+		}
+		for _, d := range stuck {
+			why := fmt.Sprintf("Moving the issue failed part way: this campaign is set to send at %s and could not be moved back to %s; check it at %s.",
+				sendAt.UTC().Format(time.RFC3339), cur.SendAt.UTC().Format(time.RFC3339), d.AccountName)
+			if err := tx.FlagDelivery(ctx, a.OrgID, d.ID, why); err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+		}
+		return s.refreshIssue(ctx, tx, is, a.RequestID, "")
+	})
+	if err != nil {
+		s.log.ErrorContext(ctx, "flagging a newsletter's stuck campaigns failed", "issue", id.Format(id.Issue, cur.ID), "err", err)
+	}
 }
 
 var errHandoffInFlight = apperr.Conflict("handoff_in_progress", "The issue is being handed to its providers right now; try again in a minute.")
@@ -956,6 +990,15 @@ func (s *Service) stopIssue(ctx context.Context, a Actor, issueID uuid.UUID, can
 		if err := s.atProvider(ctx, a.OrgID, d, func(m email.Mailer, c platform.Credentials) error {
 			return m.Cancel(ctx, c, d.CampaignID)
 		}); err != nil {
+			return nil, err
+		}
+		// Recorded at once, in case a later one fails: this campaign is gone,
+		// so the delivery is canceled, or queued to be handed off again.
+		to, handoff := model.DeliveryCanceled, (*time.Time)(nil)
+		if !cancel && cur.SendAt != nil {
+			to, handoff = model.DeliveryQueued, ptr(cur.SendAt.Add(-HandoffAhead))
+		}
+		if err := s.store.StopCampaign(context.WithoutCancel(ctx), a.OrgID, d.ID, to, handoff); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return nil, err
 		}
 	}
@@ -1188,16 +1231,18 @@ func (s *Service) handOffNewsletters(ctx context.Context, orgID *uuid.UUID) (int
 	if err != nil {
 		return 0, err
 	}
+	n := 0
 	for _, d := range due {
 		if err := s.handOff(ctx, d, owner, now); err != nil {
 			if errors.Is(err, store.ErrNotFound) { // its lease ran out and another worker has it
 				s.log.WarnContext(ctx, "a newsletter hand-off outlived its lease", "delivery", id.Format(id.IssueDelivery, d.ID))
 				continue
 			}
-			return 0, err
+			return n, err
 		}
+		n++
 	}
-	return len(due), nil
+	return n, nil
 }
 
 func (s *Service) mailProviders() []string {
@@ -1339,12 +1384,14 @@ func (s *Service) readNewsletterResults(ctx context.Context, orgID *uuid.UUID) (
 	if err != nil {
 		return 0, err
 	}
+	n := 0
 	for _, d := range due {
 		if err := s.readDelivery(ctx, d, now); err != nil {
-			return 0, err
+			return n, err
 		}
+		n++
 	}
-	return len(due), nil
+	return n, nil
 }
 
 // readDelivery asks the provider how a delivery stands. A failure is

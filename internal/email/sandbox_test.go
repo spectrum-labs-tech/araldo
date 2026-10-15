@@ -53,6 +53,13 @@ func TestSandboxSimulations(t *testing.T) {
 			t.Errorf("%q: found %q", tt.simulate, id)
 		}
 	}
+	stuck := platform.Credentials{"simulate": "stuck"}
+	if err := s.Cancel(ctx, stuck, "x"); platform.KindOf(err) != platform.Transient {
+		t.Fatalf("stuck cancel: %v", err)
+	}
+	if err := s.Reschedule(ctx, stuck, "x", time.Now()); platform.KindOf(err) != platform.Transient {
+		t.Fatalf("stuck reschedule: %v", err)
+	}
 	if cp, _ := s.Campaign(ctx, platform.Credentials{"simulate": "stopped"}, "x"); cp.Status != CampaignStopped {
 		t.Fatalf("stopped: %+v", cp)
 	}

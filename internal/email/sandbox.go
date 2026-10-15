@@ -35,7 +35,8 @@ func (SandboxMailer) Unsubscribe() string {
 func (SandboxMailer) Fields() []platform.Field {
 	return []platform.Field{
 		{Name: "simulate", Label: "Simulate", Optional: true,
-			Help: "auth_revoked fails as if the key were revoked; uncertain loses the answer to a hand-off; stopped reports campaigns as stopped in the provider"},
+			Help: "auth_revoked fails as if the key were revoked; uncertain loses the answer to a hand-off; stopped reports campaigns as stopped in the provider; " +
+				"stuck refuses to move or cancel campaigns"},
 	}
 }
 
@@ -78,10 +79,21 @@ func (SandboxMailer) Find(_ context.Context, c platform.Credentials, tag string)
 	return "", nil
 }
 
-func (SandboxMailer) Reschedule(context.Context, platform.Credentials, string, time.Time) error {
+func (SandboxMailer) Reschedule(_ context.Context, c platform.Credentials, _ string, _ time.Time) error {
+	return stuck(c)
+}
+
+func (SandboxMailer) Cancel(_ context.Context, c platform.Credentials, _ string) error {
+	return stuck(c)
+}
+
+// stuck refuses changing a campaign when the account simulates it.
+func stuck(c platform.Credentials) error {
+	if c["simulate"] == "stuck" {
+		return platform.Errorf(platform.Transient, "the sandbox cannot change the campaign right now (simulated)")
+	}
 	return nil
 }
-func (SandboxMailer) Cancel(context.Context, platform.Credentials, string) error { return nil }
 
 func (SandboxMailer) Campaign(_ context.Context, c platform.Credentials, campaignID string) (Campaign, error) {
 	if c["simulate"] == "stopped" {

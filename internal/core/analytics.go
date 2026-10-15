@@ -302,12 +302,14 @@ func (s *Service) collectAnalytics(ctx context.Context, orgID *uuid.UUID) (int, 
 	if err != nil {
 		return 0, err
 	}
+	n := 0
 	for _, as := range due {
 		if err := s.readAnalyticsSource(ctx, as, now); err != nil {
-			return 0, err
+			return n, err
 		}
+		n++
 	}
-	return len(due), nil
+	return n, nil
 }
 
 // readAnalyticsSource reads one source's recent days. A failure is recorded

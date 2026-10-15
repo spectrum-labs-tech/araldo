@@ -554,3 +554,50 @@ func TestNewsletterHandoffLeaseOwner(t *testing.T) {
 		t.Errorf("the worker holding the lease could not retry: %v", err)
 	}
 }
+
+// TestNewsletterCancelStoppedPartWay checks a cancel that fails part way
+// records the campaigns it did remove: their deliveries are canceled, not
+// left handed off with no campaign behind them.
+func TestNewsletterCancelStoppedPartWay(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	setTheme(t, w)
+	fine := connectSandboxMail(t, w, "news@araldo.dev", nil)
+	stuck := connectSandboxMail(t, w, "stuck@araldo.dev", map[string]string{"simulate": "stuck"})
+	is, err := w.s.CreateIssue(ctx, w.owner, core.IssueInput{BrandID: w.brand.ID, Subject: "October", Body: "Hello",
+		// In this order, which is the order they are stopped in (by
+		// account name, the same, then by ID, made in order).
+		Deliveries: []core.DeliveryInput{{MailAccountID: fine.ID}, {MailAccountID: stuck.ID}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.s.ScheduleIssue(ctx, w.owner, is.ID, time.Now().Add(10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	status := func() map[uuid.UUID]model.DeliveryStatus {
+		got, err := w.s.Issue(ctx, w.owner, is.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[uuid.UUID]model.DeliveryStatus{}
+		for _, d := range got.Deliveries {
+			out[*d.MailAccountID] = d.Status
+		}
+		return out
+	}
+	waitFor(t, "both deliveries handed off", func() {
+		if _, err := core.HandOffNewslettersOrg(w.s, w.org.ID); err != nil {
+			t.Fatal(err)
+		}
+	}, func() bool {
+		st := status()
+		return st[fine.ID] == model.DeliveryHandedOff && st[stuck.ID] == model.DeliveryHandedOff
+	})
+	if _, err := w.s.CancelIssue(ctx, w.owner, is.ID); err == nil {
+		t.Fatal("canceling with a stuck provider succeeded")
+	}
+	if st := status(); st[fine.ID] != model.DeliveryCanceled || st[stuck.ID] != model.DeliveryHandedOff {
+		t.Fatalf("after a cancel stopped part way: %v, want the removed campaign canceled and the stuck one handed off", st)
+	}
+}

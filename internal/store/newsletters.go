@@ -301,6 +301,22 @@ func (s *Store) ResetDeliveries(ctx context.Context, orgID, issueID uuid.UUID) e
 	return err
 }
 
+// StopCampaign records that a handed-off delivery's campaign was removed
+// at its provider: the delivery moves to status to (queued again with
+// handoffAt, or canceled), its campaign forgotten. It is ErrNotFound if
+// the delivery was not handed off.
+func (s *Store) StopCampaign(ctx context.Context, orgID, id uuid.UUID, to model.DeliveryStatus, handoffAt *time.Time) error {
+	return s.execOne(ctx, `UPDATE newsletter_deliveries SET status = $3, handoff_at = $4, campaign_id = '', last_error = '', next_read_at = NULL,
+		updated_at = now() WHERE org_id = $1 AND id = $2 AND status = 'handed_off'`, orgID, id, to, handoffAt)
+}
+
+// FlagDelivery marks a handed-off delivery as needing someone to look at
+// its provider, and why. It is ErrNotFound if it was not handed off.
+func (s *Store) FlagDelivery(ctx context.Context, orgID, id uuid.UUID, why string) error {
+	return s.execOne(ctx, `UPDATE newsletter_deliveries SET status = 'needs_attention', last_error = $3, next_read_at = NULL, updated_at = now()
+		WHERE org_id = $1 AND id = $2 AND status = 'handed_off'`, orgID, id, why)
+}
+
 // HandoffInFlight reports whether one of an issue's deliveries is being
 // handed to its provider right now.
 func (s *Store) HandoffInFlight(ctx context.Context, orgID, issueID uuid.UUID, now time.Time) (bool, error) {

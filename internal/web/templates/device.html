@@ -11,7 +11,7 @@
     <dt>Asked</dt><dd>{{fmtTime .CreatedAt}}</dd>
   </dl>
   <p class="my-3">It will act as you, <strong>{{$.User.Email}}</strong>, in each of your orgs, with your role there, until you sign it out here. Approve only a code you just saw in your own terminal: someone who sends you a code is asking for your account.</p>
-  <form method="post" action="/device" class="flex flex-wrap items-center gap-2">
+  <form method="post" action="/device" class="controls">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <input type="hidden" name="code" value="{{.UserCode}}">
     <button class="btn-primary" name="action" value="approve">Approve</button>

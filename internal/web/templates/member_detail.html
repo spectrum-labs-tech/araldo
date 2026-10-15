@@ -1,6 +1,6 @@
 {{define "content"}}
 {{$m := .Data.Member}}
-<p class="mb-1 text-sm text-muted"><a href="/org">Organization</a> / <code>{{userID $m.UserID}}</code></p>
+<p class="crumbs"><a href="/org">Organization</a> / <code>{{userID $m.UserID}}</code></p>
 <h1>{{if $m.UserName}}{{$m.UserName}}{{else}}{{$m.UserEmail}}{{end}}{{if .Data.IsYou}} <span class="pill neutral">you</span>{{end}}</h1>
 
 <dl class="facts">

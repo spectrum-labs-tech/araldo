@@ -1,6 +1,6 @@
 {{define "content"}}
 {{$f := .Data}}
-<p class="mb-1 text-sm text-muted"><a href="/channels">Channels</a></p>
+<p class="crumbs"><a href="/channels">Channels</a></p>
 <h1>{{if $f.Channel}}Reconnect {{$f.Channel.DisplayName}}{{else}}Connect a channel{{end}}</h1>
 {{if not $f.Brands}}<p>First <a href="/brands/new">create a brand</a>.</p>{{else}}
 {{if and (not $f.Provider) (not $f.Channel)}}
@@ -12,7 +12,7 @@
 {{if .Livemode}}<p class="mt-3 text-sm text-muted">Some platforms connect through a <a href="/channels/apps">developer app</a> you register with them.</p>{{end}}
 {{else}}
 {{if $f.Provider.OAuth}}
-<form method="get" action="/connect/{{$f.Provider.Provider}}/start" class="flex max-w-xl flex-col gap-4">
+<form method="get" action="/connect/{{$f.Provider.Provider}}/start" class="form-stack">
   <p><strong>{{$f.Provider.Name}}</strong> {{if not $f.Channel}}<a class="text-sm" href="/channels/new">change</a>{{end}}</p>
   {{if $f.Apps}}
   {{if $f.Channel}}<input type="hidden" name="brand" value="{{brandID $f.Channel.BrandID}}">{{else}}
@@ -31,7 +31,7 @@
 {{if $f.Provider.Fields}}
 {{if $f.Provider.OAuth}}<h2 class="mt-8">Or enter credentials by hand</h2>
 <p class="max-w-xl text-sm text-muted">Without a sign-in, paste credentials from {{$f.Provider.Name}}'s developer portal. They are not renewed for you.</p>{{end}}
-<form method="post" action="{{if $f.Channel}}/channels/{{chanID $f.Channel.ID}}/reconnect{{else}}/channels{{end}}" class="flex max-w-xl flex-col gap-4">
+<form method="post" action="{{if $f.Channel}}/channels/{{chanID $f.Channel.ID}}/reconnect{{else}}/channels{{end}}" class="form-stack">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <input type="hidden" name="provider" value="{{$f.Provider.Provider}}">
   <p><strong>{{$f.Provider.Name}}</strong> {{if not $f.Channel}}<a class="text-sm" href="/channels/new">change</a>{{end}}</p>
@@ -44,7 +44,7 @@
     {{if eq .Name "emulates"}}
     <label>{{.Label}}
       <select name="field_emulates">{{range $f.Emulable}}<option value="{{.}}" {{if eq (printf "%s" .) (index $f.Values "emulates")}}selected{{end}}>{{.}}</option>{{end}}</select>
-      <span class="text-sm font-normal text-muted">{{.Help}}</span></label>
+      <span class="hint">{{.Help}}</span></label>
     {{else}}{{template "providerField" (fieldInput . $f.Values)}}{{end}}
   {{end}}
   <p class="text-sm text-muted">Araldo checks these with {{$f.Provider.Name}} before saving them, and stores secrets encrypted.</p>

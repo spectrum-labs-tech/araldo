@@ -1,7 +1,7 @@
 {{define "content"}}
 {{$k := .Data.Key}}
-<p class="mb-1 text-sm text-muted">{{if .Data.CanManage}}<a href="/keys">API keys</a> / {{end}}<code>{{keyID $k.ID}}</code></p>
-<div class="mb-2 flex flex-wrap items-start justify-between gap-4">
+<p class="crumbs">{{if .Data.CanManage}}<a href="/keys">API keys</a> / {{end}}<code>{{keyID $k.ID}}</code></p>
+<div class="page-head">
   <h1>{{$k.Name}}
     {{if $k.RevokedAt}}<span class="pill bad">revoked</span>{{else if expired $k.ExpiresAt}}<span class="pill bad">expired</span>{{else}}<span class="pill good">active</span>{{end}}</h1>
   {{if and .Data.CanManage (not $k.RevokedAt) (not (expired $k.ExpiresAt))}}

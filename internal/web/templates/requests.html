@@ -3,7 +3,7 @@
 <h1>Request log</h1>
 <p class="mb-4 text-muted">Every API request made with this org's keys and CLI sign-ins in {{if .Livemode}}live{{else}}test{{end}} mode,
   kept for 14 days. Bodies are not kept: find a request by its ID in your own logs.</p>
-<form method="get" action="/logs" class="mb-4 flex flex-wrap items-center gap-2">
+<form method="get" action="/logs" class="mb-4 controls">
   <label class="sr-only" for="status">Outcome</label>
   <select id="status" name="status">
     <option value="">All outcomes</option>

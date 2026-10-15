@@ -1,25 +1,25 @@
 {{define "content"}}
 {{$f := .Data}}
-<p class="mb-1 text-sm text-muted"><a href="/brands">Brands</a>{{if $f.Brand}} / <code>{{brandID $f.Brand.ID}}</code>{{end}}</p>
+<p class="crumbs"><a href="/brands">Brands</a>{{if $f.Brand}} / <code>{{brandID $f.Brand.ID}}</code>{{end}}</p>
 <h1>{{if $f.Brand}}{{$f.Brand.Name}}{{else}}New brand{{end}}</h1>
-<form method="post" action="{{if $f.Brand}}/brands/{{brandID $f.Brand.ID}}{{else}}/brands{{end}}" class="flex max-w-xl flex-col gap-4">
+<form method="post" action="{{if $f.Brand}}/brands/{{brandID $f.Brand.ID}}{{else}}/brands{{end}}" class="form-stack">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label>Name <input name="name" value="{{$f.Name}}" required maxlength="100" placeholder="Open B00KS"></label>
-  <label>Slug <input name="slug" value="{{$f.Slug}}" pattern="[a-z0-9][a-z0-9\-]*" placeholder="made from the name"> <span class="text-sm font-normal text-muted">API callers can use it instead of the ID.</span></label>
-  <label>Time zone <span class="text-sm font-normal text-muted">slots and dates in posts use it</span>
+  <label>Slug <input name="slug" value="{{$f.Slug}}" pattern="[a-z0-9][a-z0-9\-]*" placeholder="made from the name"> <span class="hint">API callers can use it instead of the ID.</span></label>
+  <label>Time zone <span class="hint">slots and dates in posts use it</span>
     <select name="timezone" required>
       {{range $f.Zones}}<optgroup label="{{.Region}}">{{range .Zones}}<option value="{{.}}" {{if eq . $f.Timezone}}selected{{end}}>{{.}}</option>{{end}}</optgroup>{{end}}
     </select></label>
-  <label>Approvals <span class="text-sm font-normal text-muted">the default for this brand's posts; a template can override it</span>
+  <label>Approvals <span class="hint">the default for this brand's posts; a template can override it</span>
     <select name="approval_policy">
       <option value="none" {{if eq $f.Policy "none"}}selected{{end}}>None: posts go out as scheduled</option>
       <option value="required_for_editors_and_keys" {{if eq $f.Policy "required_for_editors_and_keys"}}selected{{end}}>Required for editors and API keys</option>
       <option value="required_for_all" {{if eq $f.Policy "required_for_all"}}selected{{end}}>Required for every post</option>
     </select></label>
-  <label>Tag links with UTM parameters <span class="text-sm font-normal text-muted">links to these sites (and their subdomains) say which post and network a visit came from; one per line, or leave empty</span>
+  <label>Tag links with UTM parameters <span class="hint">links to these sites (and their subdomains) say which post and network a visit came from; one per line, or leave empty</span>
     <textarea name="utm_domains" rows="2" class="font-mono" placeholder="example.com">{{$f.UTMDomains}}</textarea></label>
   {{if $f.Brand}}
-  <label>Publishing slots <span class="text-sm font-normal text-muted">one per line, in the brand's time zone: <code>mon 09:00</code>, <code>weekdays 13:00</code>, <code>daily 18:30</code></span>
+  <label>Publishing slots <span class="hint">one per line, in the brand's time zone: <code>mon 09:00</code>, <code>weekdays 13:00</code>, <code>daily 18:30</code></span>
     <textarea name="slots" rows="8" class="font-mono">{{$f.Slots}}</textarea></label>
   <p class="text-sm text-muted"><code>"publish_at": "next_slot"</code> takes the earliest free slot.</p>
   {{end}}
@@ -33,11 +33,11 @@
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <label>Logo
       <select name="logo"><option value="">None: the brand's name</option>{{range $f.Theme.Images}}<option value="{{mediaID .ID}}" {{if eq $f.Theme.Logo (mediaID .ID)}}selected{{end}}>{{if .Filename}}{{.Filename}}{{else}}{{mediaID .ID}}{{end}}{{if .Alt}}: {{.Alt}}{{end}}</option>{{end}}</select>
-      <span class="text-sm font-normal text-muted">From the brand's media library; shown 40 pixels tall.</span></label>
+      <span class="hint">From the brand's media library; shown 40 pixels tall.</span></label>
     <label>Accent color <input type="color" name="accent" value="{{$f.Theme.Accent}}">
-      <span class="text-sm font-normal text-muted">Links and buttons; dark enough to read on white.</span></label>
+      <span class="hint">Links and buttons; dark enough to read on white.</span></label>
     <label>Postal address <textarea name="postal_address" rows="3" maxlength="300" placeholder="1 Main St&#10;Denver, CO 80202">{{$f.Theme.PostalAddress}}</textarea></label>
-    <label>Footer line <span class="text-sm font-normal text-muted">(optional)</span> <input name="footer" value="{{$f.Theme.Footer}}" maxlength="300" placeholder="You signed up at example.com."></label>
+    <label>Footer line <span class="hint">(optional)</span> <input name="footer" value="{{$f.Theme.Footer}}" maxlength="300" placeholder="You signed up at example.com."></label>
     <div><button class="btn-primary">Save theme</button></div>
   </form>
 </section>

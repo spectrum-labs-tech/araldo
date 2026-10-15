@@ -4,7 +4,7 @@
 <section class="card secret" role="alert">
   <h2>Copy your new key now</h2>
   <p class="mb-2">This is the only time <strong>{{.Data.NewName}}</strong> is shown in full. Araldo keeps only a hash.{{if .Data.Rolled}} The old secret keeps working for 24 hours, so deploy this one before then.{{end}}</p>
-  <div class="flex flex-wrap items-center gap-2"><code id="new-key" class="copy-box">{{.Data.NewKey}}</code> <button type="button" data-copy="new-key">Copy</button></div>
+  <div class="controls"><code id="new-key" class="copy-box">{{.Data.NewKey}}</code> <button type="button" data-copy="new-key">Copy</button></div>
   <p class="mt-3 text-sm">Try it:</p>
   <pre class="json whitespace-pre-wrap">curl {{.Data.BaseURL}}/v1/posts \
   -H "Authorization: Bearer {{.Data.NewKey}}" \
@@ -41,19 +41,18 @@
 
 <section class="card">
   <h2>Create a {{if .Livemode}}live{{else}}test{{end}} key</h2>
-  {{$radio := "flex-row items-center gap-1.5 font-normal"}}
-  <form method="post" action="/keys" class="flex max-w-xl flex-col gap-4">
+  <form method="post" action="/keys" class="form-stack">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <label>Name <input name="name" required maxlength="100" placeholder="araldo.dev production"></label>
     <fieldset class="flex flex-wrap gap-5"><legend>Access</legend>
-      <label class="{{$radio}}"><input type="radio" name="access" value="full" checked data-toggle="access"> Full</label>
-      <label class="{{$radio}}"><input type="radio" name="access" value="restricted" data-toggle="access"> Restricted</label>
+      <label class="check"><input type="radio" name="access" value="full" checked data-toggle="access"> Full</label>
+      <label class="check"><input type="radio" name="access" value="restricted" data-toggle="access"> Restricted</label>
     </fieldset>
     <fieldset data-when="access=restricted"><legend>Scopes</legend>
-      {{range .Data.Scopes}}<label class="{{$radio}}"><input type="checkbox" name="scopes" value="{{.}}"> <code>{{.}}</code></label>{{end}}
+      {{range .Data.Scopes}}<label class="check"><input type="checkbox" name="scopes" value="{{.}}"> <code>{{.}}</code></label>{{end}}
     </fieldset>
-    <fieldset><legend>Administration <span class="text-sm font-normal text-muted">(only when checked; for tools like Terraform, Slack approvals or audit export)</span></legend>
-      {{range .Data.Admin}}<label class="{{$radio}}"><input type="checkbox" name="admin" value="{{.}}"> <code>{{.}}</code>
+    <fieldset><legend>Administration <span class="hint">(only when checked; for tools like Terraform, Slack approvals or audit export)</span></legend>
+      {{range .Data.Admin}}<label class="check"><input type="checkbox" name="admin" value="{{.}}"> <code>{{.}}</code>
         <span class="text-sm text-muted">{{if eq (printf "%s" .) "keys:write"}}create, roll and revoke keys with no more access than this one{{else if eq (printf "%s" .) "posts:approve"}}approve and reject posts (never its own){{else if eq (printf "%s" .) "ads:write"}}connect and disconnect ad accounts (and, later, spend){{else}}read the audit log{{end}}</span></label>{{end}}
     </fieldset>
     <div class="grid gap-4 sm:grid-cols-2">

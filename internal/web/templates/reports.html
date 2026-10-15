@@ -23,7 +23,7 @@
   <p class="mb-3">Early each month, the report for the month before goes to these addresses, members or not, with a link that works for 30 days. Live mode only.{{if not $d.MailEnabled}} This server sends no email yet, so nothing goes out until its operator sets it up.{{end}}</p>
   {{if $d.Recipients}}
   <ul class="mb-3 flex flex-col gap-2">
-    {{range $d.Recipients}}<li class="flex flex-wrap items-center gap-2">{{.Email}}
+    {{range $d.Recipients}}<li class="controls">{{.Email}}
       <form method="post" action="/reports/recipients" data-confirm="Stop sending the report to {{.Email}}?"><input type="hidden" name="csrf" value="{{$.CSRF}}">
         <input type="hidden" name="brand" value="{{brandID $d.Brand.ID}}"><input type="hidden" name="action" value="remove"><input type="hidden" name="email" value="{{.Email}}">
         <button class="btn-danger" aria-label="Stop sending to {{.Email}}">Remove</button></form></li>{{end}}
@@ -42,7 +42,7 @@
   <h2>Share this report</h2>
   {{with $d.ShareLink}}
   <p>Send this link to whoever should see {{$d.Brand.Name}}'s {{fmtPeriod $r.Since $r.Until}}. Anyone holding it can read the report, without an account, for 30 days. It is shown only now.</p>
-  <p class="flex flex-wrap items-center gap-2"><code id="share-link" class="copy-box">{{.}}</code>
+  <p class="controls"><code id="share-link" class="copy-box">{{.}}</code>
     <button type="button" data-copy="share-link">Copy</button></p>
   {{else}}
   <p class="text-sm text-muted">A link to this month's report, for a client or anyone outside the org: read-only, for 30 days, and you can withdraw it.</p>

@@ -1,13 +1,12 @@
 {{define "content"}}
 <h1>New post</h1>
 {{if not .Data.Brands}}<p>First <a href="/brands/new">create a brand</a> and connect a channel.</p>{{else}}
-{{$radio := "flex-row items-center gap-1.5 font-normal"}}
 <form method="post" action="/posts" enctype="multipart/form-data" class="flex flex-col gap-4">
   <input type="hidden" name="csrf" value="{{.CSRF}}">
   <fieldset class="flex flex-wrap gap-5">
     <legend>Content</legend>
-    <label class="{{$radio}}"><input type="radio" name="mode" value="content" {{if eq (index .Data.Form "mode") "content"}}checked{{end}} data-toggle="mode"> Write it</label>
-    <label class="{{$radio}}"><input type="radio" name="mode" value="template" {{if eq (index .Data.Form "mode") "template"}}checked{{end}} data-toggle="mode"> From a template</label>
+    <label class="check"><input type="radio" name="mode" value="content" {{if eq (index .Data.Form "mode") "content"}}checked{{end}} data-toggle="mode"> Write it</label>
+    <label class="check"><input type="radio" name="mode" value="template" {{if eq (index .Data.Form "mode") "template"}}checked{{end}} data-toggle="mode"> From a template</label>
   </fieldset>
 
   <div data-when="mode=content" class="flex flex-col gap-4">
@@ -35,7 +34,7 @@
   </div>
 
   <fieldset class="flex flex-col gap-3">
-    <legend>Images and video <span class="text-sm font-normal text-muted">(JPEG, PNG, GIF or WebP images, or one MP4 video; preview checks each platform's limits)</span></legend>
+    <legend>Images and video <span class="hint">(JPEG, PNG, GIF or WebP images, or one MP4 video; preview checks each platform's limits)</span></legend>
     {{if .Data.Media}}
     <div class="thumbs">
       {{range .Data.Media}}
@@ -46,35 +45,35 @@
         <span class="text-xs text-muted">{{.Width}}×{{.Height}} · {{fileSize .Size}}</span>{{end}}
         <input type="hidden" name="media" value="{{mediaID .ID}}">
         <label class="text-sm">Alt text <input name="alt_{{mediaID .ID}}" value="{{.Alt}}" maxlength="1000"></label>
-        <label class="{{$radio}} text-sm"><input type="checkbox" name="remove_media" value="{{mediaID .ID}}"> Remove</label>
+        <label class="check text-sm"><input type="checkbox" name="remove_media" value="{{mediaID .ID}}"> Remove</label>
       </div>
       {{end}}
     </div>
     {{end}}
     <label>Add images <input type="file" name="images" accept="image/jpeg,image/png,image/gif,image/webp" multiple></label>
     <label>Or add an image or video from a link <input type="url" name="media_url" value="{{index .Data.Form "media_url"}}" placeholder="https://example.com/launch.mp4">
-      <span class="text-sm font-normal text-muted">Araldo fetches it; a video streams into storage, up to this install's limit.</span></label>
+      <span class="hint">Araldo fetches it; a video streams into storage, up to this install's limit.</span></label>
     <label>Alt text for the new images <input name="new_alt" value="{{index .Data.Form "new_alt"}}" maxlength="1000" placeholder="What the image shows, for people who cannot see it"></label>
   </fieldset>
 
   <fieldset>
-    <legend>Channels <span class="text-sm font-normal text-muted">(none checked: every active channel of the brand)</span></legend>
+    <legend>Channels <span class="hint">(none checked: every active channel of the brand)</span></legend>
     {{if .Data.Channels}}
-    {{range .Data.Channels}}<label class="{{$radio}}"><input type="checkbox" name="channels" value="{{chanID .ID}}" {{if contains $.Data.Chosen (chanID .ID)}}checked{{end}} {{if ne .Status "active"}}disabled{{end}}>
+    {{range .Data.Channels}}<label class="check"><input type="checkbox" name="channels" value="{{chanID .ID}}" {{if contains $.Data.Chosen (chanID .ID)}}checked{{end}} {{if ne .Status "active"}}disabled{{end}}>
       {{.DisplayName}} <span class="text-muted">({{.Provider}}{{if .Emulates}} → {{.Emulates}}{{end}})</span></label>{{end}}
     {{else}}<p class="text-muted">No channels in this mode. <a href="/channels/new">Connect one</a>.</p>{{end}}
   </fieldset>
 
   <fieldset class="flex flex-wrap gap-5">
     <legend>When</legend>
-    <label class="{{$radio}}"><input type="radio" name="publish" value="now" {{if eq (index .Data.Form "publish") "now"}}checked{{end}}> Now</label>
-    <label class="{{$radio}}"><input type="radio" name="publish" value="next_slot" {{if eq (index .Data.Form "publish") "next_slot"}}checked{{end}}> Next free slot</label>
-    <label class="{{$radio}}"><input type="radio" name="publish" value="at" {{if eq (index .Data.Form "publish") "at"}}checked{{end}}> At</label>
+    <label class="check"><input type="radio" name="publish" value="now" {{if eq (index .Data.Form "publish") "now"}}checked{{end}}> Now</label>
+    <label class="check"><input type="radio" name="publish" value="next_slot" {{if eq (index .Data.Form "publish") "next_slot"}}checked{{end}}> Next free slot</label>
+    <label class="check"><input type="radio" name="publish" value="at" {{if eq (index .Data.Form "publish") "at"}}checked{{end}}> At</label>
     <span class="flex flex-wrap items-center gap-1.5"><input type="datetime-local" name="publish_at" value="{{index .Data.Form "publish_at"}}" aria-label="Date and time, in the brand's time zone">
       <span class="text-sm text-muted" aria-hidden="true">(brand's time zone)</span></span>
   </fieldset>
 
-  <div class="flex flex-wrap items-center gap-2">
+  <div class="controls">
     <button name="action" value="preview">Preview</button>
     <button class="btn-primary" name="action" value="create">Schedule</button>
   </div>

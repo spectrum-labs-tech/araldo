@@ -24,7 +24,7 @@
     <h2 class="mt-10 border-b border-line pb-2 text-xl">{{.Name}}</h2>
     {{range .Ops}}
     <section id="{{.Anchor}}" class="card scroll-mt-4">
-      <div class="mb-2 flex flex-wrap items-center gap-2">
+      <div class="mb-2 controls">
         <span class="method method-{{.Method}}">{{.Method}}</span>
         <code class="text-base font-semibold">{{.Path}}</code>
         {{if .Public}}<span class="pill">no key needed</span>{{end}}

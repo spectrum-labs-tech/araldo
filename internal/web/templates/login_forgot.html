@@ -6,7 +6,7 @@
 {{else}}
 <h1>Reset your password</h1>
 <p class="mb-4">Enter your email and we will send you a link to choose a new password.</p>
-<form method="post" action="/login/forgot" class="flex max-w-xl flex-col gap-4">
+<form method="post" action="/login/forgot" class="form-stack">
   <label>Email <input type="email" name="email" value="{{.Data.Email}}" autocomplete="username" required autofocus></label>
   <div><button class="btn-primary">Send the link</button></div>
 </form>

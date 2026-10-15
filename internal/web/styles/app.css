@@ -237,6 +237,33 @@
     @apply w-48;
   }
 
+  /* Page parts */
+  /* The trail above a detail page's title. */
+  .crumbs {
+    @apply mb-1 text-sm text-muted;
+  }
+  /* A page's title with its main actions beside it. */
+  .page-head {
+    @apply mb-2 flex flex-wrap items-start justify-between gap-4;
+  }
+
+  /* Forms */
+  .form-stack {
+    @apply flex max-w-xl flex-col gap-4;
+  }
+  /* A row of buttons and short fields. */
+  .controls {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  /* A label's or legend's explanation, under or after its name. */
+  .hint {
+    @apply text-sm font-normal text-muted;
+  }
+  /* A checkbox or radio button with its label on one line. */
+  label.check {
+    @apply flex-row items-center gap-1.5 font-normal;
+  }
+
   /* Blocks */
   .card {
     @apply my-4 rounded-lg border border-line bg-panel px-5 py-4;
@@ -342,6 +369,11 @@
   /* Pills and tags */
   .pill {
     @apply inline-block rounded-full bg-subtle px-2 py-px text-xs font-semibold whitespace-nowrap text-muted;
+  }
+  /* Neither good nor bad (draft, queued, canceled; see statusClass):
+     muted on subtle, which TestContrast checks. */
+  .pill.neutral {
+    @apply bg-subtle text-muted;
   }
   .pill.good {
     @apply bg-good-bg text-good;

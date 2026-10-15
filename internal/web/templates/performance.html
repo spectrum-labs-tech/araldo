@@ -73,14 +73,14 @@
   {{$p := .Data.Provider}}
   <h3 class="mt-4">Connect a site</h3>
   {{if gt (len .Data.Providers) 1}}<nav class="choices" aria-label="Provider">{{range .Data.Providers}}<a class="chip" href="/performance?provider={{.Provider}}" {{if eq .Provider $p.Provider}}aria-current="true"{{end}}>{{.Name}}</a>{{end}}</nav>{{end}}
-  <form method="post" action="/performance/analytics" class="flex max-w-xl flex-col gap-4">
+  <form method="post" action="/performance/analytics" class="form-stack">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <input type="hidden" name="provider" value="{{$p.Provider}}">
     <label>Brand
       {{template "brandSelect" (brandOptions .Data.Brands $.Data.Brand "")}}
     </label>
     {{range $p.Fields}}{{template "providerField" (fieldInput . $.Data.Values)}}{{end}}
-    <label>Goals that count as signups <span class="text-sm font-normal text-muted">(comma-separated, as {{$p.Name}} names them)</span>
+    <label>Goals that count as signups <span class="hint">(comma-separated, as {{$p.Name}} names them)</span>
       <input name="goals" value="{{index .Data.Values "goals"}}" placeholder="Waitlist Signup"></label>
     <p class="text-sm text-muted">Araldo reads counts by link tag, never visitors, and stores the key encrypted.</p>
     <div><button class="btn-primary">Connect</button></div>

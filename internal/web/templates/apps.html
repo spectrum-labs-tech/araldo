@@ -1,6 +1,6 @@
 {{define "content"}}
 {{$d := .Data}}
-<p class="mb-1 text-sm text-muted"><a href="/channels">Channels</a></p>
+<p class="crumbs"><a href="/channels">Channels</a></p>
 <h1>Developer apps</h1>
 <p class="mb-4 text-muted">Some platforms connect through a developer app you register with them. Register the app, give it the
 redirect URI below, and add its ID and secret here; then connect channels through it. Secrets are stored encrypted.</p>
@@ -11,7 +11,7 @@ redirect URI below, and add its ID and secret here; then connect channels throug
   <tbody>
   {{range $d.Apps}}
   <tr>
-    <td><form method="post" action="/channels/apps/{{appID .ID}}/rename" class="flex flex-wrap items-center gap-2">
+    <td><form method="post" action="/channels/apps/{{appID .ID}}/rename" class="controls">
       <input type="hidden" name="csrf" value="{{$.CSRF}}">
       <input name="name" value="{{.Name}}" required maxlength="100" aria-label="Name of {{.Name}}">
       <button>Rename</button></form></td>
@@ -50,7 +50,7 @@ redirect URI below, and add its ID and secret here; then connect channels throug
     {{range $d.Providers}}
     <div data-when="provider={{.Provider}}" class="flex flex-col gap-1 text-sm">
       <span class="text-muted">{{.Name}} redirect URI</span>
-      <span class="flex flex-wrap items-center gap-2"><code id="redirect-{{.Provider}}" class="copy-box">{{index $d.Redirects .Provider}}</code>
+      <span class="controls"><code id="redirect-{{.Provider}}" class="copy-box">{{index $d.Redirects .Provider}}</code>
         <button type="button" data-copy="redirect-{{.Provider}}" aria-label="Copy the {{.Name}} redirect URI">Copy</button></span>
       {{with index $d.Sites .Provider}}<span>Register the app at <a href="{{.}}" rel="noopener" target="_blank">{{.}}</a></span>{{end}}
       {{with index $d.Guides .Provider}}

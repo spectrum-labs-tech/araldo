@@ -59,7 +59,7 @@
   {{if gt (len $d.Networks) 1}}<nav class="choices" aria-label="Network">{{range $d.Networks}}<a class="chip" href="/ads?network={{.Network}}" {{if eq .Network $d.Network.Network}}aria-current="true"{{end}}>{{.Name}}</a>{{end}}</nav>{{end}}
   {{if $d.Network.OAuth}}
   {{if $d.Apps}}
-  <form method="get" action="/connect/{{$d.Network.Provider}}/start" class="flex max-w-xl flex-col gap-4">
+  <form method="get" action="/connect/{{$d.Network.Provider}}/start" class="form-stack">
     <label>Brand
       {{template "brandSelect" (brandOptions $d.Brands $d.Brand "")}}
     </label>
@@ -70,7 +70,7 @@
   </form>
   {{else}}<p>{{$d.Network.Name}} connects through a developer app. <a href="/channels/apps">Add your {{$d.Network.Name}} Ads app</a> first.</p>{{end}}
   {{else}}
-  <form method="post" action="/ads/accounts" class="flex max-w-xl flex-col gap-4">
+  <form method="post" action="/ads/accounts" class="form-stack">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <input type="hidden" name="network" value="{{$d.Network.Network}}">
     <label>Brand
@@ -120,7 +120,7 @@
   <label>Landing page <input name="tag_url" type="url" value="{{$d.Tag.URL}}" placeholder="https://example.com/pricing" required></label>
   <label>Network <input name="tag_source" value="{{$d.Tag.Source}}" placeholder="reddit"></label>
   <label>Campaign <input name="tag_campaign" value="{{$d.Tag.Campaign}}" placeholder="alpha-launch" required></label>
-  <label>Ad <span class="font-normal text-muted">(optional)</span> <input name="tag_content" value="{{$d.Tag.Content}}" placeholder="localllama-1"></label>
+  <label>Ad <span class="hint">(optional)</span> <input name="tag_content" value="{{$d.Tag.Content}}" placeholder="localllama-1"></label>
   <div><button>Build link</button></div>
 </form>
 {{if $d.Tag.Err}}<div class="alert" role="alert">{{$d.Tag.Err}}</div>{{end}}

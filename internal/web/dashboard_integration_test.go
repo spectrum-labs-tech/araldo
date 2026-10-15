@@ -447,7 +447,7 @@ func TestAppsPageLinksPerPlatform(t *testing.T) {
 			t.Errorf("the guide's developer site for %s is not tied to the choice", p)
 		}
 	}
-	if strings.Contains(page, "max-w-xl") {
+	if strings.Contains(page, "max-w-xl") || strings.Contains(page, "form-stack") {
 		t.Error("the form is still narrower than its card")
 	}
 	if strings.Contains(page, `<li class="done">`) {

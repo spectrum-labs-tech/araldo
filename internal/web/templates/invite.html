@@ -23,7 +23,7 @@
   <form method="post" action="/invite/{{$d.Token}}" class="flex flex-col gap-4">
     <label>Email <input type="email" value="{{$i.Email}}" autocomplete="username" readonly></label>
     <label>Your name <input name="name" value="{{$d.Name}}" maxlength="100" autocomplete="name"></label>
-    <label>Password <span class="text-sm font-normal text-muted">at least 12 characters</span>
+    <label>Password <span class="hint">at least 12 characters</span>
       <input type="password" name="password" minlength="12" autocomplete="new-password" required></label>
     <label>Password again <input type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
     <div><button class="btn-primary">Create account and join</button></div>

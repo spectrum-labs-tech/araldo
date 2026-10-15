@@ -7,10 +7,10 @@
 <section class="card">
   <h2>Identity provider</h2>
   <p class="mb-3">Register Araldo with your provider as a web application, with this redirect URI:</p>
-  <p class="mb-4 flex flex-wrap items-center gap-2"><code id="sso-redirect" class="copy-box">{{$d.CallbackURL}}</code>
+  <p class="mb-4 controls"><code id="sso-redirect" class="copy-box">{{$d.CallbackURL}}</code>
     <button type="button" data-copy="sso-redirect">Copy</button></p>
   {{$c := $d.Connection}}
-  <form method="post" action="/org/sso" class="flex max-w-xl flex-col gap-4">
+  <form method="post" action="/org/sso" class="form-stack">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <label>Issuer URL <input type="url" name="issuer" value="{{with $c}}{{.Issuer}}{{end}}" placeholder="https://idp.example/realms/acme" required></label>
     <label>Client ID <input name="client_id" value="{{with $c}}{{.ClientID}}{{end}}" required maxlength="500" autocomplete="off"></label>
@@ -52,7 +52,7 @@
     </tbody>
   </table>
   {{end}}
-  <form method="post" action="/org/sso/domains" class="mt-4 flex max-w-xl flex-col gap-4">
+  <form method="post" action="/org/sso/domains" class="mt-4 form-stack">
     <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="add">
     <label>Domain <input name="domain" placeholder="acme.example" required maxlength="253"></label>
     <div><button>Add domain</button></div>

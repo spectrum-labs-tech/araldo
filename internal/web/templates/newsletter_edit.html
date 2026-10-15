@@ -1,7 +1,7 @@
 {{define "content"}}
 {{$d := .Data}}
 {{$is := $d.Issue}}
-<p class="mb-1 text-sm text-muted"><a href="/newsletters">Newsletters</a>{{if $is}} / <code>{{issueID $is.ID}}</code>{{end}}</p>
+<p class="crumbs"><a href="/newsletters">Newsletters</a>{{if $is}} / <code>{{issueID $is.ID}}</code>{{end}}</p>
 <h1>{{if $is}}{{$is.Subject}}{{else}}New issue{{end}}</h1>
 
 {{if not $d.Brand}}
@@ -45,20 +45,20 @@
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <input type="hidden" name="brand" value="{{brandID $d.Brand.ID}}">
   <label>Subject <input name="subject" value="{{$d.Subject}}" required maxlength="200" placeholder="Three builds worth copying"></label>
-  <label>Preview text <span class="text-sm font-normal text-muted">(optional) the line inboxes show after the subject</span>
+  <label>Preview text <span class="hint">(optional) the line inboxes show after the subject</span>
     <input name="preview_text" value="{{$d.Preview}}" maxlength="200" placeholder="And the part that took the longest"></label>
-  <label>Body <span class="text-sm font-normal text-muted">Markdown; see the guide for buttons and images</span>
+  <label>Body <span class="hint">Markdown; see the guide for buttons and images</span>
     <textarea name="body" rows="18" class="font-mono" required>{{$d.Body}}</textarea></label>
   <fieldset>
     <legend>Send through</legend>
     {{range $d.Accounts}}{{$ac := .}}
     <div class="mb-3">
-      <label class="flex-row items-center gap-2"><input type="checkbox" name="account" value="{{mailAccountID .Account.ID}}" {{if .Use}}checked{{end}}>
+      <label class="check font-semibold"><input type="checkbox" name="account" value="{{mailAccountID .Account.ID}}" {{if .Use}}checked{{end}}>
         {{.Account.Name}} <span class="font-normal text-muted">{{.Account.FromEmail}}</span></label>
       {{if .AudienceErr}}<p class="text-sm text-muted">{{.AudienceErr}}</p>
       {{else}}<fieldset class="ml-6 border-0 p-0">
         <legend class="sr-only">Audiences at {{.Account.Name}}</legend>
-        {{range .Audiences}}<label class="flex-row items-center gap-2 font-normal"><input type="checkbox" name="{{$ac.Field}}" value="{{.ID}}" {{if contains $ac.Chosen .ID}}checked{{end}}>
+        {{range .Audiences}}<label class="check"><input type="checkbox" name="{{$ac.Field}}" value="{{.ID}}" {{if contains $ac.Chosen .ID}}checked{{end}}>
           {{.Name}} <span class="text-muted">{{.Kind}}{{if ge .Size 0}}, {{.Size}}{{end}}</span></label>{{end}}
       </fieldset>{{end}}
     </div>
@@ -94,7 +94,7 @@
   <form method="post" action="/newsletters/{{issueID $is.ID}}/action" class="flex flex-wrap items-end gap-3">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <input type="hidden" name="action" value="schedule">
-    <label>Send at <input type="datetime-local" name="send_at" value="{{$d.SendAt}}" required> <span class="text-sm font-normal text-muted">{{$d.Brand.Timezone}}</span></label>
+    <label>Send at <input type="datetime-local" name="send_at" value="{{$d.SendAt}}" required> <span class="hint">{{$d.Brand.Timezone}}</span></label>
     <button class="btn-primary">{{if eq (printf "%s" $is.Status) "draft"}}Schedule{{else}}Move{{end}}</button>
   </form>
   {{if ne (printf "%s" $is.Status) "draft"}}
@@ -112,7 +112,7 @@
   <h2>Review</h2>
   <form method="post" action="/newsletters/{{issueID $is.ID}}/action" class="flex max-w-xl flex-col gap-3">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
-    <label>Note <span class="text-sm font-normal text-muted">(optional) shown to the author</span><textarea name="note" rows="2"></textarea></label>
+    <label>Note <span class="hint">(optional) shown to the author</span><textarea name="note" rows="2"></textarea></label>
     <div class="flex gap-3"><button class="btn-primary" name="action" value="approve">Approve</button> <button name="action" value="reject">Reject</button></div>
   </form>
 </section>

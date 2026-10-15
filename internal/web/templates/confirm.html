@@ -14,7 +14,7 @@
 {{end}}
 {{if and (or .User.MFAEnabled (not .User.HasPasskey)) (or .User.PasswordHash (not .Session.SSOOrg))}}
 <p class="mb-4">{{if .User.HasPasskey}}Or use your{{else}}This action needs your{{end}} password{{if .User.MFAEnabled}} and a code from your authenticator{{end}}. You won't be asked again for 10 minutes.</p>
-<form method="post" action="/confirm" class="flex max-w-xl flex-col gap-4">
+<form method="post" action="/confirm" class="form-stack">
   <input type="hidden" name="csrf" value="{{.CSRF}}">
   <input type="hidden" name="next" value="{{.Data.Next}}">
   <label>Password <input type="password" name="password" autocomplete="current-password" required autofocus></label>

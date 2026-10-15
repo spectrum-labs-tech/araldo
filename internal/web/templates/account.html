@@ -25,7 +25,7 @@
   <h2>Two-factor authentication</h2>
   {{if .User.MFAEnabled}}
     <p class="mb-3"><span class="pill good">on</span> Authenticator app. {{$d.RecoveryLeft}} recovery codes left.</p>
-    <div class="flex flex-wrap items-center gap-2">
+    <div class="controls">
       <form method="post" action="/account/recovery-codes"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>New recovery codes</button></form>
       {{if or (not .RequireMFA) .User.HasPasskey}}<form method="post" action="/account/mfa/disable" data-confirm="Turn off two-factor authentication?"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="btn-danger">Turn off</button></form>{{end}}
     </div>
@@ -35,7 +35,7 @@
         {{if $d.QR}}<div><img class="my-2 max-w-full rounded-md [image-rendering:pixelated]" src="{{dataURL $d.QR}}" alt="QR code for your authenticator app"></div>{{end}}
         <p class="text-sm">Or type this key: <code class="copy-box">{{$d.SecretText}}</code></p></li>
       <li>Enter the 6-digit code it shows:
-        <form method="post" action="/account/mfa/confirm" class="mt-1 flex flex-wrap items-center gap-2">
+        <form method="post" action="/account/mfa/confirm" class="mt-1 controls">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <input name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="6" autofocus aria-label="Code">
           <button class="btn-primary">Turn on</button>
@@ -97,10 +97,10 @@
 <section class="card">
   <h2>Password</h2>
   <p class="mb-3 text-sm text-muted">Changing it signs you out everywhere else, the CLI included.</p>
-  <form method="post" action="/account/password" class="flex max-w-xl flex-col gap-4">
+  <form method="post" action="/account/password" class="form-stack">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <label>Current password <input type="password" name="current_password" autocomplete="current-password" required></label>
-    <label>New password <span class="text-sm font-normal text-muted">at least 12 characters</span><input type="password" name="new_password" autocomplete="new-password" minlength="12" required></label>
+    <label>New password <span class="hint">at least 12 characters</span><input type="password" name="new_password" autocomplete="new-password" minlength="12" required></label>
     <label>Confirm new password <input type="password" name="confirm_password" autocomplete="new-password" minlength="12" required></label>
     <div><button class="btn-primary">Change password</button></div>
   </form>

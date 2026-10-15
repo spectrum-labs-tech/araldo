@@ -1,9 +1,9 @@
 {{define "content"}}
 {{$f := .Data}}
-<p class="mb-1 text-sm text-muted"><a href="/templates">Templates</a>{{if $f.Template}} / <code>{{tmplID $f.Template.ID}}</code>{{end}}</p>
+<p class="crumbs"><a href="/templates">Templates</a>{{if $f.Template}} / <code>{{tmplID $f.Template.ID}}</code>{{end}}</p>
 <div class="mb-4 flex flex-wrap items-start justify-between gap-4">
   <h1 class="mb-0">{{if $f.Template}}<code>{{$f.Template.Key}}</code> <span class="text-base font-normal text-muted">v{{$f.Version.Version}} of {{$f.Template.LatestVersion}}</span>{{else}}New template{{end}}</h1>
-  {{if $f.Template}}<div class="flex flex-wrap items-center gap-2">
+  {{if $f.Template}}<div class="controls">
     <a class="btn" href="/posts/new?template={{tmplID $f.Template.ID}}">Use in a post</a>
     <form method="post" action="/templates/{{tmplID $f.Template.ID}}/delete" data-confirm="Delete this template? Posts made from it keep their text.">
       <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger">Delete</button></form>
@@ -27,7 +27,7 @@
         <option value="not_required" {{if eq $f.Approval "not_required"}}selected{{end}}>Never needs approval</option>
         <option value="required" {{if eq $f.Approval "required"}}selected{{end}}>Always needs approval</option>
       </select>
-      {{if not $f.CanApprove}}<span class="text-sm font-normal text-muted">Only admins and owners can change this.</span>{{end}}</label>
+      {{if not $f.CanApprove}}<span class="hint">Only admins and owners can change this.</span>{{end}}</label>
   </div>
 
   <section data-tabs>
@@ -60,7 +60,7 @@
 
   <div class="grid gap-4 xl:grid-cols-2">
     <label>Variables (JSON Schema) <textarea name="variables" rows="10" class="font-mono" data-editor="json">{{$f.Variables}}</textarea></label>
-    <label>Example data <span class="font-normal text-muted">(checks and the preview use it)</span><textarea name="example" rows="10" class="font-mono" data-editor="json">{{$f.Example}}</textarea></label>
+    <label>Example data <span class="hint">(checks and the preview use it)</span><textarea name="example" rows="10" class="font-mono" data-editor="json">{{$f.Example}}</textarea></label>
   </div>
   <div><button class="btn-primary">{{if $f.Template}}Save{{else}}Create template{{end}}</button>
     {{if $f.Template}}<span class="ml-2 text-sm text-muted">Changing the text makes version {{inc $f.Template.LatestVersion}}; queued posts keep theirs.</span>{{end}}</div>

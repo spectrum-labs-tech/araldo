@@ -4,7 +4,7 @@
 <section class="card secret" role="alert">
   <h2>Copy the signing secret now</h2>
   <p class="mb-2">Deliveries to <code>{{.Data.SecretFor}}</code> are signed with this secret. It is not shown again (you can roll a new one).</p>
-  <div class="flex flex-wrap items-center gap-2"><code id="secret" class="copy-box">{{.Data.Secret}}</code> <button type="button" data-copy="secret">Copy</button></div>
+  <div class="controls"><code id="secret" class="copy-box">{{.Data.Secret}}</code> <button type="button" data-copy="secret">Copy</button></div>
   <p class="mt-2 text-sm text-muted">Verify <code>Araldo-Signature: t=…,v1=…</code>: HMAC-SHA256 of <code>t + "." + body</code> with this secret.</p>
 </section>
 {{end}}
@@ -23,14 +23,13 @@
 
 <section class="card">
   <h2>Add an endpoint</h2>
-  {{$check := "flex-row items-center gap-1.5 font-normal"}}
-  <form method="post" action="/webhooks" class="flex max-w-xl flex-col gap-4">
+  <form method="post" action="/webhooks" class="form-stack">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <label>URL <input type="url" name="url" value="{{.Data.Form.URL}}" required placeholder="https://example.com/araldo/webhooks"></label>
     <label>Description <input name="description" value="{{.Data.Form.Description}}" maxlength="500"></label>
     <fieldset><legend>Events</legend>
-      <label class="{{$check}}"><input type="checkbox" name="all" value="1" checked> Every event</label>
-      <details><summary>Or choose</summary>{{range .Data.EventTypes}}<label class="{{$check}}"><input type="checkbox" name="events" value="{{.}}"> <code>{{.}}</code></label>{{end}}</details>
+      <label class="check"><input type="checkbox" name="all" value="1" checked> Every event</label>
+      <details><summary>Or choose</summary>{{range .Data.EventTypes}}<label class="check"><input type="checkbox" name="events" value="{{.}}"> <code>{{.}}</code></label>{{end}}</details>
     </fieldset>
     <div><button class="btn-primary">Add endpoint</button></div>
   </form>

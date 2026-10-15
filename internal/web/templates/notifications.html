@@ -1,8 +1,8 @@
 {{define "content"}}
 {{$d := .Data}}
-<div class="mb-2 flex flex-wrap items-start justify-between gap-4">
+<div class="page-head">
   <h1>Notifications</h1>
-  <div class="flex flex-wrap items-center gap-2">
+  <div class="controls">
     {{if .Unread}}<form method="post" action="/notifications/read"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>Mark all read</button></form>{{end}}
     <a class="btn" href="/notifications/settings">Settings</a>
   </div>

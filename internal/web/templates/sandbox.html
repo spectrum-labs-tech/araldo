@@ -1,5 +1,5 @@
 {{define "content"}}
-<p class="mb-1 text-sm text-muted"><a href="/posts/{{postID .Data.PostID}}">Back to the post</a></p>
+<p class="crumbs"><a href="/posts/{{postID .Data.PostID}}">Back to the post</a></p>
 <h1>Sandbox post</h1>
 <p class="text-muted">Published to the test-mode sandbox channel <strong>{{.Data.ChannelName}}</strong> {{fmtTime .Data.PublishedAt}}. Nothing was posted anywhere real.</p>
 <div class="max-w-xl">

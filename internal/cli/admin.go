@@ -87,7 +87,7 @@ func adminActor(ctx context.Context, org, as string, live bool, command string, 
 				a.Close()
 				return nil, core.Actor{}, nil, err
 			}
-			m, err := pickOrg(ms, "")
+			m, err := onlyOrg(ms)
 			if err != nil {
 				a.Close()
 				return nil, core.Actor{}, nil, err

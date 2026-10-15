@@ -4,14 +4,17 @@ package api
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -66,7 +69,7 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case apperr.KindForbidden:
 		// A refused action is audited like a change (ADR 0004).
 		if a, ok := r.Context().Value(actorKey).(core.Actor); ok {
-			h.svc.RecordDenial(r.Context(), a, first(r.Pattern, r.Method+" "+r.URL.Path), ae.Code)
+			h.svc.RecordDenial(r.Context(), a, cmp.Or(r.Pattern, r.Method+" "+r.URL.Path), ae.Code)
 		}
 	}
 	if logged, ok := r.Context().Value(loggedKey).(*loggedRequest); ok {
@@ -168,16 +171,45 @@ type list struct {
 	URL     string `json:"url"`
 }
 
+// limitParam reads limit, 1 to 100; 0 when it is not given.
+func limitParam(q url.Values) (int, error) {
+	v := q.Get("limit")
+	if v == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 || n > 100 {
+		return 0, badRequest("parameter_invalid", "limit", "limit must be between 1 and 100.")
+	}
+	return n, nil
+}
+
+// window reads since and until, each optional, as dates (time.DateOnly)
+// or instants (time.RFC3339).
+func window(q url.Values, layout string, since, until *time.Time) error {
+	want := "a date (YYYY-MM-DD)"
+	if layout == time.RFC3339 {
+		want = "an RFC 3339 time"
+	}
+	for name, dst := range map[string]*time.Time{"since": since, "until": until} {
+		if v := q.Get(name); v != "" {
+			t, err := time.Parse(layout, v)
+			if err != nil {
+				return badRequest("parameter_invalid", name, "%s must be %s.", name, want)
+			}
+			*dst = t
+		}
+	}
+	return nil
+}
+
 // page reads limit, starting_after and ending_before.
 func page(r *http.Request, prefix id.Prefix) (core.Page, error) {
 	q := r.URL.Query()
 	var p core.Page
-	if v := q.Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > 100 {
-			return p, badRequest("parameter_invalid", "limit", "limit must be between 1 and 100.")
-		}
-		p.Limit = n
+	var err error
+	if p.Limit, err = limitParam(q); err != nil {
+		return p, err
 	}
 	parse := func(name string) (uuid.UUID, error) {
 		v := q.Get(name)
@@ -190,7 +222,6 @@ func page(r *http.Request, prefix id.Prefix) (core.Page, error) {
 		}
 		return u, nil
 	}
-	var err error
 	if p.StartingAfter, err = parse("starting_after"); err != nil {
 		return p, err
 	}

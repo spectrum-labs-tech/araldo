@@ -5,6 +5,7 @@
 package config
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -111,7 +112,7 @@ type S3 struct {
 // Araldo runs, but cannot use stored credentials (see app.Open).
 func Load() (Config, error) {
 	c := Config{
-		DatabaseURL: first(os.Getenv("ARALDO_DATABASE_URL"), os.Getenv("DATABASE_URL")),
+		DatabaseURL: cmp.Or(os.Getenv("ARALDO_DATABASE_URL"), os.Getenv("DATABASE_URL")),
 		MasterKeys:  os.Getenv("ARALDO_MASTER_KEYS"),
 		Transit: Transit{
 			Addr:     os.Getenv("ARALDO_TRANSIT_ADDR"),
@@ -122,21 +123,21 @@ func Load() (Config, error) {
 			AuthPath: os.Getenv("ARALDO_TRANSIT_AUTH_PATH"),
 			JWTFile:  os.Getenv("ARALDO_TRANSIT_JWT_FILE"),
 		},
-		BaseURL:        strings.TrimRight(first(os.Getenv("ARALDO_BASE_URL"), "http://localhost:8080"), "/"),
+		BaseURL:        strings.TrimRight(cmp.Or(os.Getenv("ARALDO_BASE_URL"), "http://localhost:8080"), "/"),
 		SignupURL:      os.Getenv("ARALDO_SIGNUP_URL"),
 		BillingURL:     os.Getenv("ARALDO_BILLING_URL"),
 		BillingLinkKey: os.Getenv("ARALDO_BILLING_LINK_KEY"),
-		Listen:         first(os.Getenv("ARALDO_LISTEN"), ":8080"),
+		Listen:         cmp.Or(os.Getenv("ARALDO_LISTEN"), ":8080"),
 		ClientIPHeader: os.Getenv("ARALDO_CLIENT_IP_HEADER"),
-		LogLevel:       first(os.Getenv("ARALDO_LOG_LEVEL"), "info"),
+		LogLevel:       cmp.Or(os.Getenv("ARALDO_LOG_LEVEL"), "info"),
 		AutoMigrate:    true,
 		S3: S3{
 			Endpoint:        os.Getenv("ARALDO_S3_ENDPOINT"),
 			Bucket:          os.Getenv("ARALDO_S3_BUCKET"),
-			Region:          first(os.Getenv("ARALDO_S3_REGION"), "auto"),
+			Region:          cmp.Or(os.Getenv("ARALDO_S3_REGION"), "auto"),
 			AccessKeyID:     os.Getenv("ARALDO_S3_ACCESS_KEY_ID"),
 			SecretAccessKey: os.Getenv("ARALDO_S3_SECRET_ACCESS_KEY"),
-			Prefix:          first(os.Getenv("ARALDO_S3_PREFIX"), "media/"),
+			Prefix:          cmp.Or(os.Getenv("ARALDO_S3_PREFIX"), "media/"),
 		},
 		SMTP: SMTP{
 			Host:     os.Getenv("ARALDO_SMTP_HOST"),
@@ -236,15 +237,6 @@ func Load() (Config, error) {
 		errs = append(errs, errors.New("ARALDO_S3_BUCKET needs ARALDO_S3_ENDPOINT, ARALDO_S3_ACCESS_KEY_ID and ARALDO_S3_SECRET_ACCESS_KEY"))
 	}
 	return c, errors.Join(errs...)
-}
-
-func first(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func boolEnv(name string, def bool) (bool, error) {

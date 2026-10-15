@@ -447,7 +447,7 @@ func (h *Handler) deleteChannel(w http.ResponseWriter, r *http.Request) error {
 	if err := h.svc.DeleteChannel(r.Context(), actor(r), cid); err != nil {
 		return err
 	}
-	ok(w, http.StatusOK, deleted{ID: r.PathValue("id"), Object: "channel", Deleted: true})
+	ok(w, http.StatusOK, deleted{ID: id.Format(id.Channel, cid), Object: "channel", Deleted: true})
 	return nil
 }
 
@@ -593,7 +593,7 @@ func (h *Handler) deleteTemplate(w http.ResponseWriter, r *http.Request) error {
 	if err := h.svc.DeleteTemplate(r.Context(), actor(r), tid); err != nil {
 		return err
 	}
-	ok(w, http.StatusOK, deleted{ID: r.PathValue("id"), Object: "template", Deleted: true})
+	ok(w, http.StatusOK, deleted{ID: id.Format(id.Template, tid), Object: "template", Deleted: true})
 	return nil
 }
 
@@ -977,7 +977,7 @@ func (h *Handler) deleteEndpoint(w http.ResponseWriter, r *http.Request) error {
 	if err := h.svc.DeleteEndpoint(r.Context(), actor(r), eid); err != nil {
 		return err
 	}
-	ok(w, http.StatusOK, deleted{ID: r.PathValue("id"), Object: "webhook_endpoint", Deleted: true})
+	ok(w, http.StatusOK, deleted{ID: id.Format(id.WebhookEndpoint, eid), Object: "webhook_endpoint", Deleted: true})
 	return nil
 }
 

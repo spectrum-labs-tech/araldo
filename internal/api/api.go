@@ -137,8 +137,6 @@ func (h *Handler) public(pattern string, fn handlerFunc, query ...string) {
 	h.open[pattern] = true
 }
 
-// ServeHTTP authenticates, rate limits and applies idempotency, then
-// routes.
 // Route is the pattern a request matches, such as "GET /v1/posts/{id}",
 // without serving it; "" when none does.
 func (h *Handler) Route(r *http.Request) string {
@@ -146,6 +144,8 @@ func (h *Handler) Route(r *http.Request) string {
 	return pattern
 }
 
+// ServeHTTP authenticates, rate limits and applies idempotency, then
+// routes.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, pattern := h.mux.Handler(r)
 	if pattern == "" {
@@ -209,8 +209,6 @@ func (h *Handler) noRoute(w http.ResponseWriter, r *http.Request) {
 		Message: fmt.Sprintf("There is no %s; see /v1/openapi.yaml for the routes.", r.URL.Path)})
 }
 
-// authenticate reads the request's credential: on the operator API an
-// operator key, anywhere else an API key or user token.
 // logRequest puts a finished request in its org's request log.
 func (h *Handler) logRequest(r *http.Request, a core.Actor, pattern string, sw *statusWriter, logged *loggedRequest, started time.Time) {
 	h.svc.LogRequest(r.Context(), model.APIRequest{ID: id.New(), OrgID: a.OrgID, Livemode: a.Livemode, Method: r.Method, Route: pattern,
@@ -244,6 +242,8 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 // Unwrap lets http.ResponseController reach the connection, for streams.
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
+// authenticate reads the request's credential: on the operator API an
+// operator key, anywhere else an API key or user token.
 func (h *Handler) authenticate(r *http.Request, operator bool) (core.Actor, error) {
 	auth := r.Header.Get("Authorization")
 	token, ok := strings.CutPrefix(auth, "Bearer ")

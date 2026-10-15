@@ -4,6 +4,7 @@ package api
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -98,7 +99,7 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) error {
 	// A reconnecting client resumes after the last event it saw (the SSE
 	// Last-Event-ID header, or starting_after); otherwise the stream starts now.
 	cursor := id.Before(time.Now())
-	if last := first(r.Header.Get("Last-Event-ID"), r.URL.Query().Get("starting_after")); last != "" {
+	if last := cmp.Or(r.Header.Get("Last-Event-ID"), r.URL.Query().Get("starting_after")); last != "" {
 		u, err := id.Parse(id.Event, last)
 		if err != nil {
 			return badRequest("parameter_invalid", "starting_after", "%q is not an event ID.", last)
@@ -171,13 +172,4 @@ func writeEvent(w http.ResponseWriter, typ string, v core.EventView) error {
 	}
 	_, err = fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", v.ID, typ, b) //nolint:gosec // G705: text/event-stream of JSON, never HTML
 	return err
-}
-
-func first(vs ...string) string {
-	for _, v := range vs {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

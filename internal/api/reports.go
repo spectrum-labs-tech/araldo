@@ -19,14 +19,8 @@ func (h *Handler) report(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	in := core.ReportInput{BrandID: b.ID, Month: q.Get("month")}
-	for name, dst := range map[string]*time.Time{"since": &in.Since, "until": &in.Until} {
-		if v := q.Get(name); v != "" {
-			t, err := time.Parse(time.DateOnly, v)
-			if err != nil {
-				return badRequest("parameter_invalid", name, "%s must be a date (YYYY-MM-DD).", name)
-			}
-			*dst = t
-		}
+	if err := window(q, time.DateOnly, &in.Since, &in.Until); err != nil {
+		return err
 	}
 	rep, err := h.svc.BrandReport(r.Context(), a, in)
 	if err != nil {

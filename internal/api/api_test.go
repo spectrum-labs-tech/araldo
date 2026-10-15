@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -269,6 +270,37 @@ func TestUnknownRoutesGetAProblem(t *testing.T) {
 			rec.Header().Get("Content-Type") != "application/problem+json" {
 			t.Errorf("%s %s = %d %q (Allow %q, %s)", tt.method, tt.path, rec.Code, rec.Body.String(), rec.Header().Get("Allow"),
 				rec.Header().Get("Content-Type"))
+		}
+	}
+}
+
+func TestWindowAndLimit(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		query, layout string
+		ok            bool
+	}{
+		{"since=2026-10-01&until=2026-10-31", time.DateOnly, true},
+		{"since=2026-10-01T00:00:00Z", time.RFC3339, true},
+		{"", time.DateOnly, true},
+		{"since=October", time.DateOnly, false},
+		{"until=2026-10-01", time.RFC3339, false},
+	}
+	for _, tt := range tests {
+		q, _ := url.ParseQuery(tt.query)
+		var since, until time.Time
+		if err := window(q, tt.layout, &since, &until); (err == nil) != tt.ok {
+			t.Errorf("window(%q, %s) = %v, want ok %v", tt.query, tt.layout, err, tt.ok)
+		}
+	}
+	for v, want := range map[string]int{"": 0, "1": 1, "100": 100} {
+		if n, err := limitParam(url.Values{"limit": {v}}); err != nil || n != want {
+			t.Errorf("limit %q = %d, %v; want %d", v, n, err, want)
+		}
+	}
+	for _, v := range []string{"0", "101", "x"} {
+		if _, err := limitParam(url.Values{"limit": {v}}); apperr.As(err).Code != "parameter_invalid" {
+			t.Errorf("limit %q: %v", v, err)
 		}
 	}
 }

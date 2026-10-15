@@ -36,6 +36,8 @@ func TestRun(t *testing.T) {
 		{name: "apikeys needs a subcommand", args: []string{"admin", "apikeys"}, wantCode: ExitUsage, wantStderr: "apikeys create"},
 		{name: "apikeys unknown subcommand", args: []string{"admin", "apikeys", "list"}, wantCode: ExitUsage, wantStderr: `unknown apikeys command "list"`},
 		{name: "apikeys create needs a name", args: []string{"admin", "apikeys", "create", "--org", "Araldo"}, wantCode: ExitUsage, wantStderr: "--name is required"},
+		{name: "apikeys create refuses a negative expiry", args: []string{"admin", "apikeys", "create", "--name", "x", "--expires", "-1h"},
+			wantCode: ExitUsage, wantStderr: "--expires is a length of time"},
 		{name: "members needs a subcommand", args: []string{"admin", "members"}, wantCode: ExitUsage, wantStderr: "members list | add | role | remove"},
 		{name: "members add needs a target", args: []string{"admin", "members", "add", "--role", "editor"}, wantCode: ExitUsage, wantStderr: "--email"},
 		{name: "members role needs a real role", args: []string{"admin", "members", "role", "--email", "b@example.com", "--role", "boss"}, wantCode: ExitUsage, wantStderr: "--role is owner, admin, editor or viewer"},
@@ -64,36 +66,28 @@ func TestRun(t *testing.T) {
 	}
 }
 
-func TestPickOrg(t *testing.T) {
+func TestOnlyOrg(t *testing.T) {
 	t.Parallel()
-	a := model.Membership{OrgID: uuid.New(), OrgName: "Spectrum Labs"}
+	a := model.Membership{OrgID: uuid.New(), OrgName: "Araldo"}
 	b := model.Membership{OrgID: uuid.New(), OrgName: "Other"}
 	tests := []struct {
-		name      string
-		ms        []model.Membership
-		org       string
-		want      uuid.UUID
-		wantUsage bool
-		wantErr   bool
+		name string
+		ms   []model.Membership
+		ok   bool
 	}{
-		{name: "the only org", ms: []model.Membership{a}, want: a.OrgID},
-		{name: "by name, ignoring case", ms: []model.Membership{a, b}, org: "spectrum labs", want: a.OrgID},
-		{name: "several orgs need --org", ms: []model.Membership{a, b}, wantUsage: true, wantErr: true},
-		{name: "no orgs", ms: nil, wantUsage: true, wantErr: true},
-		{name: "unknown name", ms: []model.Membership{a, b}, org: "Nope", wantErr: true},
+		{"the only org", []model.Membership{a}, true},
+		{"several orgs need --org", []model.Membership{a, b}, false},
+		{"no orgs", nil, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, err := pickOrg(tt.ms, tt.org)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("err = %v, want error %v", err, tt.wantErr)
+			m, err := onlyOrg(tt.ms)
+			if tt.ok && (err != nil || m.OrgID != a.OrgID) {
+				t.Fatalf("onlyOrg = %v, %v; want %v", m.OrgID, err, a.OrgID)
 			}
-			if errors.Is(err, errUsage) != tt.wantUsage {
-				t.Errorf("usage error = %v, want %v", errors.Is(err, errUsage), tt.wantUsage)
-			}
-			if err == nil && m.OrgID != tt.want {
-				t.Errorf("org = %v, want %v", m.OrgID, tt.want)
+			if !tt.ok && !errors.Is(err, errUsage) {
+				t.Fatalf("onlyOrg = %v, want a usage error", err)
 			}
 		})
 	}

@@ -121,7 +121,7 @@ func (h *Handler) deleteMailAccount(w http.ResponseWriter, r *http.Request) erro
 	if err := h.svc.DeleteMailAccount(r.Context(), actor(r), mid); err != nil {
 		return err
 	}
-	ok(w, http.StatusOK, deleted{ID: r.PathValue("id"), Object: "mail_account", Deleted: true})
+	ok(w, http.StatusOK, deleted{ID: id.Format(id.MailAccount, mid), Object: "mail_account", Deleted: true})
 	return nil
 }
 

@@ -4,7 +4,6 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -91,7 +90,7 @@ func (h *Handler) deleteAdAccount(w http.ResponseWriter, r *http.Request) error 
 	if err := h.svc.DeleteAdAccount(r.Context(), actor(r), aid); err != nil {
 		return err
 	}
-	ok(w, http.StatusOK, deleted{ID: r.PathValue("id"), Object: "ad_account", Deleted: true})
+	ok(w, http.StatusOK, deleted{ID: id.Format(id.AdAccount, aid), Object: "ad_account", Deleted: true})
 	return nil
 }
 
@@ -99,21 +98,12 @@ func (h *Handler) adsSummary(w http.ResponseWriter, r *http.Request) error {
 	a := actor(r)
 	q := r.URL.Query()
 	f := core.AdsFilter{GroupBy: core.AdsGroup(q.Get("group_by"))}
-	for name, dst := range map[string]*time.Time{"since": &f.Since, "until": &f.Until} {
-		if v := q.Get(name); v != "" {
-			t, err := time.Parse(time.DateOnly, v)
-			if err != nil {
-				return badRequest("parameter_invalid", name, "%s must be a date (YYYY-MM-DD).", name)
-			}
-			*dst = t
-		}
+	if err := window(q, time.DateOnly, &f.Since, &f.Until); err != nil {
+		return err
 	}
-	if v := q.Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > 100 {
-			return badRequest("parameter_invalid", "limit", "limit must be between 1 and 100.")
-		}
-		f.Limit = n
+	var err error
+	if f.Limit, err = limitParam(q); err != nil {
+		return err
 	}
 	if ref := q.Get("brand"); ref != "" {
 		b, err := h.svc.ResolveBrand(r.Context(), a, ref)

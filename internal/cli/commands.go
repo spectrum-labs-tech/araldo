@@ -376,6 +376,9 @@ func runAPIKeys(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if name == "" {
 		return usageErr("--name is required")
 	}
+	if expires < 0 {
+		return usageErr("--expires is a length of time from now, like 8760h; leave it out for a key that never expires")
+	}
 	a, actor, o, err := adminActor(ctx, org, email, live, "araldo admin apikeys create", stderr)
 	if err != nil {
 		return err
@@ -402,21 +405,12 @@ func runAPIKeys(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	return nil
 }
 
-// pickOrg chooses the membership named org, or the only one when org is
-// empty.
-func pickOrg(ms []model.Membership, org string) (model.Membership, error) {
-	if org == "" {
-		if len(ms) != 1 {
-			return model.Membership{}, usageErr("the member belongs to %d orgs; name one with --org", len(ms))
-		}
-		return ms[0], nil
+// onlyOrg is the member's one org; with more, or none, --org must name one.
+func onlyOrg(ms []model.Membership) (model.Membership, error) {
+	if len(ms) != 1 {
+		return model.Membership{}, usageErr("the member belongs to %d orgs; name one with --org", len(ms))
 	}
-	for _, m := range ms {
-		if strings.EqualFold(m.OrgName, org) {
-			return m, nil
-		}
-	}
-	return model.Membership{}, fmt.Errorf("the member does not belong to an org named %q", org)
+	return ms[0], nil
 }
 
 func splitList(s string) []string {

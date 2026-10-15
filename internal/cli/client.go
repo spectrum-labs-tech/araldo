@@ -4,6 +4,7 @@ package cli
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -50,7 +51,7 @@ func connect(t target) (*apiclient.Client, hosts.Credential, error) {
 		return nil, hosts.Credential{}, err
 	}
 	c := apiclient.New(cred.URL, cred.Token, "araldo-cli/"+buildinfo.Version)
-	c.Org = first(t.org, cred.Org)
+	c.Org = cmp.Or(t.org, cred.Org)
 	return c, cred, nil
 }
 
@@ -155,17 +156,8 @@ func runAuth(ctx context.Context, args []string, stdout, stderr io.Writer) error
 	return usageErr("unknown auth command %q", args[0])
 }
 
-func first(vs ...string) string {
-	for _, v := range vs {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 func authLogin(ctx context.Context, t target, withToken, insecure bool, stdout, stderr io.Writer) error {
-	t.hostname = first(t.hostname, os.Getenv("ARALDO_HOST"))
+	t.hostname = cmp.Or(t.hostname, os.Getenv("ARALDO_HOST"))
 	if t.hostname == "" {
 		return usageErr("--hostname is required: the Araldo server to sign in to, e.g. araldo.example.com")
 	}
@@ -208,7 +200,7 @@ func authLogin(ctx context.Context, t target, withToken, insecure bool, stdout, 
 	if err != nil {
 		return err
 	}
-	where, err := store.SignIn(name, base, first(userOf(m), m.account()), token, m.Livemode, insecure)
+	where, err := store.SignIn(name, base, cmp.Or(userOf(m), m.account()), token, m.Livemode, insecure)
 	if err != nil {
 		return err
 	}
@@ -257,7 +249,7 @@ func problemDetail(ae *apiclient.APIError) string {
 func deviceSignIn(ctx context.Context, base string, live bool, stderr io.Writer) (string, error) {
 	c := apiclient.New(base, "", "araldo-cli/"+buildinfo.Version)
 	device, _ := os.Hostname()
-	raw, err := c.Do(ctx, http.MethodPost, "/v1/auth/device", nil, map[string]any{"device_name": "araldo CLI on " + first(device, "this computer"), "livemode": live}, "")
+	raw, err := c.Do(ctx, http.MethodPost, "/v1/auth/device", nil, map[string]any{"device_name": "araldo CLI on " + cmp.Or(device, "this computer"), "livemode": live}, "")
 	if err != nil {
 		return "", fmt.Errorf("starting the sign-in: %w", err)
 	}
@@ -323,7 +315,7 @@ func authLogout(ctx context.Context, hostname string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	name := first(hostname, f.Default)
+	name := cmp.Or(hostname, f.Default)
 	if name != "" {
 		if name, _, err = hosts.Name(name); err != nil {
 			return usageErr("%v", err)
@@ -372,7 +364,7 @@ func authStatus(ctx context.Context, hostname string, stdout io.Writer) error {
 		return nil
 	}
 	names := []string{}
-	if n := first(hostname, os.Getenv("ARALDO_HOST")); n != "" {
+	if n := cmp.Or(hostname, os.Getenv("ARALDO_HOST")); n != "" {
 		name, _, err := hosts.Name(n)
 		if err != nil {
 			return usageErr("%v", err)

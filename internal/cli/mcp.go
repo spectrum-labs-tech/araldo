@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"io"
@@ -37,6 +38,6 @@ func runMCP(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		return usageErr("ARALDO_URL %q is not an absolute URL", base)
 	}
 	client := mcp.NewClient(base, key)
-	client.Org = first(org, os.Getenv("ARALDO_ORG"))
+	client.Org = cmp.Or(org, os.Getenv("ARALDO_ORG"))
 	return mcp.NewServer(client).Serve(ctx, stdin, stdout)
 }

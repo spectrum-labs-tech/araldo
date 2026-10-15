@@ -4,7 +4,6 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/core"
@@ -52,21 +51,12 @@ func (h *Handler) engagementSummary(w http.ResponseWriter, r *http.Request) erro
 	a := actor(r)
 	q := r.URL.Query()
 	f := core.EngagementFilter{GroupBy: core.EngagementGroup(q.Get("group_by"))}
-	for name, dst := range map[string]*time.Time{"since": &f.Since, "until": &f.Until} {
-		if v := q.Get(name); v != "" {
-			t, err := time.Parse(time.RFC3339, v)
-			if err != nil {
-				return badRequest("parameter_invalid", name, "%s must be an RFC 3339 time.", name)
-			}
-			*dst = t
-		}
+	if err := window(q, time.RFC3339, &f.Since, &f.Until); err != nil {
+		return err
 	}
-	if v := q.Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > 100 {
-			return badRequest("parameter_invalid", "limit", "limit must be between 1 and 100.")
-		}
-		f.Limit = n
+	var err error
+	if f.Limit, err = limitParam(q); err != nil {
+		return err
 	}
 	if ref := q.Get("brand"); ref != "" {
 		b, err := h.svc.ResolveBrand(r.Context(), a, ref)

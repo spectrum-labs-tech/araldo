@@ -637,6 +637,38 @@ func (l *ipLimiter) allow(ip string, now time.Time) bool {
 	return true
 }
 
+// statusPills is the pill each status shows as. Statuses of different
+// things share values ("failed" is a post's, a target's, an issue's), so one
+// entry serves them all. Webhook deliveries and scheduled tasks report the
+// plain words at the end.
+var statusPills = func() map[string]string {
+	m := map[string]string{}
+	for class, statuses := range map[string][]string{
+		"good": {string(model.PostPublished), string(model.TargetPublished), string(model.ChannelActive), string(model.AdAccountActive),
+			string(model.OrgActive), string(model.IssueSent), string(model.DeliverySent), model.EndpointEnabled, "succeeded", "ok"},
+		"bad": {string(model.PostFailed), string(model.PostRejected), string(model.TargetFailed), string(model.TargetNeedsAttention),
+			string(model.ChannelNeedsReauth), string(model.ChannelDisabled), string(model.AdAccountNeedsReauth), string(model.IssueFailed),
+			string(model.DeliveryFailed), string(model.DeliveryNeedsAttention), model.EndpointDisabled},
+		"warn": {string(model.PostPendingApproval), string(model.PostPublishing), string(model.PostPartiallyPublished),
+			string(model.IssuePendingApproval), string(model.IssueSending), string(model.IssuePartiallySent), string(model.DeliveryHeld),
+			string(model.DeliveryHandedOff), string(model.TargetPublishing), "pending", "delivering"},
+	} {
+		for _, st := range statuses {
+			m[st] = class
+		}
+	}
+	return m
+}()
+
+// statusClass is the pill class for a status: good, bad, warn, or neutral
+// for one that is neither (draft, queued, canceled).
+func statusClass(s any) string {
+	if class, ok := statusPills[fmt.Sprint(s)]; ok {
+		return class
+	}
+	return "neutral"
+}
+
 // Template helpers.
 var funcs = template.FuncMap{
 	"fmtTime": func(t any) string {
@@ -789,18 +821,8 @@ var funcs = template.FuncMap{
 		}
 		return *p
 	},
-	"statusClass": func(s any) string {
-		switch fmt.Sprint(s) {
-		case "published", "active", "enabled", "succeeded", "ok", "sent":
-			return "good"
-		case "failed", "rejected", "needs_reauth", "disabled", "needs_attention":
-			return "bad"
-		case "pending_approval", "held", "publishing", "partially_published", "pending", "delivering", "sending", "partially_sent", "handed_off":
-			return "warn"
-		}
-		return "neutral"
-	},
-	"inc": func(i int) int { return i + 1 },
+	"statusClass": statusClass,
+	"inc":         func(i int) int { return i + 1 },
 	"deref": func(p *int) int {
 		if p == nil {
 			return 0

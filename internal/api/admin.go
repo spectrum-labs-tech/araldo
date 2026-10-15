@@ -13,9 +13,6 @@ import (
 // Administration by API key (ADR 0019): keys managing keys, approval and
 // the audit log, each behind an explicit-only scope.
 
-// defaultRollOverlap is how long a rolled key's old secret keeps working.
-const defaultRollOverlap = 24 * time.Hour
-
 // me tells a credential who it is (ADR 0028), whatever its scopes.
 func (h *Handler) me(w http.ResponseWriter, r *http.Request) error {
 	v, err := h.svc.Me(r.Context(), actor(r))
@@ -75,7 +72,7 @@ type rollBody struct {
 
 func (b rollBody) overlap() (time.Duration, error) {
 	if b.OverlapHours == nil {
-		return defaultRollOverlap, nil
+		return core.DefaultRollOverlap, nil
 	}
 	if *b.OverlapHours < 0 || *b.OverlapHours > 168 {
 		return 0, badRequest("parameter_invalid", "overlap_hours", "overlap_hours is between 0 and 168.")

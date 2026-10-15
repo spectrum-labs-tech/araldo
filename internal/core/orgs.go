@@ -655,6 +655,16 @@ func keyVisible(a Actor, k *model.APIKey) bool {
 }
 
 // APIKeys lists the org's keys (a key sees those of its mode and brand).
+// APIKeysInMode lists the actor's visible keys in its mode (test or live),
+// revoked ones included, as the dashboard shows them.
+func (s *Service) APIKeysInMode(ctx context.Context, a Actor) ([]*model.APIKey, error) {
+	keys, err := s.APIKeys(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(keys, func(k *model.APIKey) bool { return k.Livemode != a.Livemode }), nil
+}
+
 func (s *Service) APIKeys(ctx context.Context, a Actor) ([]*model.APIKey, error) {
 	if err := a.requireToRead(PermKeysWrite); err != nil {
 		return nil, err
@@ -718,6 +728,11 @@ func (s *Service) RevokeAPIKey(ctx context.Context, a Actor, keyID uuid.UUID) er
 		return s.audit(ctx, tx, a, "api_key.revoke", id.Format(id.APIKey, keyID), nil)
 	})
 }
+
+// DefaultRollOverlap is how long a rolled key's or webhook secret's old
+// value keeps working unless the caller says otherwise: long enough to
+// deploy the new one.
+const DefaultRollOverlap = 24 * time.Hour
 
 // RollAPIKey issues a replacement key with the same settings and lets the
 // old one keep working for overlap (at most 7 days). A member needs a recent

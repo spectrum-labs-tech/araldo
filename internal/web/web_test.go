@@ -330,3 +330,19 @@ func TestProviderFields(t *testing.T) {
 		t.Fatalf("no declared fields read %v, %v", f, v)
 	}
 }
+
+func TestStatusClass(t *testing.T) {
+	t.Parallel()
+	for class, statuses := range map[string][]any{
+		"good":    {model.PostPublished, model.ChannelActive, model.IssueSent, model.EndpointEnabled, "succeeded", "ok"},
+		"bad":     {model.PostFailed, model.TargetNeedsAttention, model.ChannelNeedsReauth, model.EndpointDisabled, model.DeliveryNeedsAttention},
+		"warn":    {model.PostPendingApproval, model.DeliveryHeld, model.IssuePartiallySent, model.DeliveryHandedOff, "delivering"},
+		"neutral": {model.PostScheduled, model.IssueDraft, model.TargetCanceled, "something new"},
+	} {
+		for _, st := range statuses {
+			if got := statusClass(st); got != class {
+				t.Errorf("statusClass(%v) = %s, want %s", st, got, class)
+			}
+		}
+	}
+}

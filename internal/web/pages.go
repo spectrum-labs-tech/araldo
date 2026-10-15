@@ -233,12 +233,12 @@ func (s *Server) home(c *reqCtx) error {
 		return err
 	}
 	if c.actor.Can(core.PermKeysWrite) {
-		keys, err := s.svc.APIKeys(c.ctx(), c.actor)
+		keys, err := s.svc.APIKeysInMode(c.ctx(), c.actor)
 		if err != nil {
 			return err
 		}
 		for _, k := range keys {
-			if k.Livemode == c.actor.Livemode && k.RevokedAt == nil {
+			if k.RevokedAt == nil {
 				d.Keys++
 			}
 		}
@@ -252,7 +252,7 @@ func (s *Server) home(c *reqCtx) error {
 			return err
 		}
 		for _, e := range eps {
-			if e.Status == "disabled" && e.DisabledReason != "" {
+			if e.Status == model.EndpointDisabled && e.DisabledReason != "" {
 				d.Disabled = append(d.Disabled, e)
 			}
 		}

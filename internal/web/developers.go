@@ -33,16 +33,11 @@ type keysData struct {
 }
 
 func (s *Server) keysData(c *reqCtx) (*keysData, error) {
-	keys, err := s.svc.APIKeys(c.ctx(), c.actor)
+	keys, err := s.svc.APIKeysInMode(c.ctx(), c.actor)
 	if err != nil {
 		return nil, err
 	}
-	d := &keysData{Scopes: core.KeyScopes, Admin: core.AdminScopes, BaseURL: baseURL(c)}
-	for _, k := range keys {
-		if k.Livemode == c.actor.Livemode {
-			d.Keys = append(d.Keys, k)
-		}
-	}
+	d := &keysData{Scopes: core.KeyScopes, Admin: core.AdminScopes, BaseURL: baseURL(c), Keys: keys}
 	if d.Brands, err = s.svc.Brands(c.ctx(), c.actor); err != nil {
 		return nil, err
 	}
@@ -197,17 +192,13 @@ func (s *Server) memberDetail(c *reqCtx) error {
 	return s.page(c, "member_detail", "org", title, d)
 }
 
-// RollOverlap is how long a rolled key's old secret keeps working, so the
-// new one can be deployed without downtime.
-const RollOverlap = 24 * time.Hour
-
-// rollKey replaces a key's secret; the old one works for RollOverlap.
+// rollKey replaces a key's secret; the old one works for core.DefaultRollOverlap.
 func (s *Server) rollKey(c *reqCtx) error {
 	kid, err := pathUUID(c, id.APIKey, "API key")
 	if err != nil {
 		return err
 	}
-	plain, k, err := s.svc.RollAPIKey(c.ctx(), c.actor, c.session, kid, RollOverlap)
+	plain, k, err := s.svc.RollAPIKey(c.ctx(), c.actor, c.session, kid, core.DefaultRollOverlap)
 	if err != nil {
 		if core.NeedsReauth(err) {
 			return redirect(c, "/confirm?next=/keys", "Confirm your password to roll a key.")
@@ -315,7 +306,7 @@ func (s *Server) rollWebhook(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	secret, err := s.svc.RollEndpointSecret(c.ctx(), c.actor, eid, RollOverlap)
+	secret, err := s.svc.RollEndpointSecret(c.ctx(), c.actor, eid, core.DefaultRollOverlap)
 	if err != nil {
 		return err
 	}

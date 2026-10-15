@@ -841,6 +841,12 @@ type SSODomain struct {
 	CreatedAt  time.Time
 }
 
+// A webhook endpoint's statuses.
+const (
+	EndpointEnabled  = "enabled"
+	EndpointDisabled = "disabled"
+)
+
 // WebhookEndpoint receives events.
 type WebhookEndpoint struct {
 	ID          uuid.UUID
@@ -854,7 +860,7 @@ type WebhookEndpoint struct {
 	// PreviousSecretUntil, after the secret is rolled.
 	PreviousSecret      []byte
 	PreviousSecretUntil *time.Time
-	Status              string
+	Status              string // EndpointEnabled or EndpointDisabled
 	DisabledReason      string
 	FailingSince        *time.Time
 	CreatedAt           time.Time

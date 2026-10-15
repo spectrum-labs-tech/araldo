@@ -109,7 +109,7 @@ func (s *Service) CreateEndpoint(ctx context.Context, a Actor, in EndpointInput)
 		return nil, "", err
 	}
 	w := &model.WebhookEndpoint{ID: id.New(), OrgID: a.OrgID, Livemode: a.Livemode, URL: strings.TrimSpace(in.URL),
-		Description: strings.TrimSpace(in.Description), EventTypes: in.EventTypes, Status: "enabled", CreatedAt: s.Now()}
+		Description: strings.TrimSpace(in.Description), EventTypes: in.EventTypes, Status: model.EndpointEnabled, CreatedAt: s.Now()}
 	secret := newWebhookSecret()
 	sealed, err := s.keys.Encrypt(ctx, a.OrgID, secretAAD(w.ID), []byte(secret))
 	if err != nil {
@@ -175,9 +175,9 @@ func (s *Service) UpdateEndpoint(ctx context.Context, a Actor, endpointID uuid.U
 	}
 	w.URL, w.Description, w.EventTypes = strings.TrimSpace(in.URL), strings.TrimSpace(in.Description), in.EventTypes
 	if in.Enabled != nil {
-		w.Status, w.DisabledReason = "disabled", "Disabled by a person."
+		w.Status, w.DisabledReason = model.EndpointDisabled, "Disabled by a person."
 		if *in.Enabled {
-			w.Status, w.DisabledReason = "enabled", ""
+			w.Status, w.DisabledReason = model.EndpointEnabled, ""
 		}
 	}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {

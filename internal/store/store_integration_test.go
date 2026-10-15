@@ -161,3 +161,60 @@ func TestNotificationEmailLeaseOwner(t *testing.T) {
 		t.Errorf("email status %q, %v; want sent", status, err)
 	}
 }
+
+// newBrand creates an org with a brand, both randomly named.
+func newBrand(ctx context.Context, t *testing.T, st *Store) *model.Brand {
+	t.Helper()
+	o := &model.Org{ID: id.New(), Name: "Store test " + uuid.NewString()}
+	if err := st.CreateOrg(ctx, o); err != nil {
+		t.Fatal(err)
+	}
+	b := &model.Brand{ID: id.New(), OrgID: o.ID, Name: "Brand", Slug: "brand", Timezone: "UTC", ApprovalPolicy: "none"}
+	if err := st.CreateBrand(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// TestPostStatusCountsAreCapped checks the counts stop past PostCountCap,
+// and are exact below it.
+func TestPostStatusCountsAreCapped(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	st := testStore(ctx, t)
+	for _, tt := range []struct {
+		name      string
+		scheduled int
+		canceled  int
+		wantTotal int
+	}{
+		{"under the cap", 3, 2, 5},
+		{"over the cap", PostCountCap, 10, PostCountCap + 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			b := newBrand(ctx, t, st)
+			for status, n := range map[string]int{"scheduled": tt.scheduled, "canceled": tt.canceled} {
+				if _, err := st.q.Exec(ctx, `INSERT INTO posts (id, org_id, brand_id, livemode, status, publish_at, publish_by)
+					SELECT gen_random_uuid(), $1, $2, false, $3, now(), now() + interval '1 day' FROM generate_series(1, $4)`,
+					b.OrgID, b.ID, status, n); err != nil {
+					t.Fatal(err)
+				}
+			}
+			counts, err := st.PostStatusCounts(ctx, b.OrgID, false, PostFilter{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			total := 0
+			for _, n := range counts {
+				total += n
+			}
+			if total != tt.wantTotal {
+				t.Errorf("counts %v add up to %d, want %d", counts, total, tt.wantTotal)
+			}
+			if tt.wantTotal <= PostCountCap && (counts[model.PostScheduled] != tt.scheduled || counts[model.PostCanceled] != tt.canceled) {
+				t.Errorf("counts %v, want %d scheduled and %d canceled", counts, tt.scheduled, tt.canceled)
+			}
+		})
+	}
+}

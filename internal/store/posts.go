@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -203,11 +204,22 @@ func (s *Store) posts(ctx context.Context, orgID uuid.UUID, livemode bool, f Pos
 	return posts, more, nil
 }
 
+// PostCountCap is the most posts PostStatusCounts counts.
+const PostCountCap = 1000
+
 // PostStatusCounts counts the posts f matches, ignoring its status, by
+// status: of the newest PostCountCap+1 at most, so a page of posts costs
+// the same however many an org has, and a text search, which reads every
+// post's text, stops early. Counts adding up to more than PostCountCap
+// mean "more than PostCountCap", and are only the newest posts' split by
 // status.
+//
+// A trigram index (pg_trgm) would make the search itself fast, but needs
+// an extension Araldo does not otherwise ask of its database.
 func (s *Store) PostStatusCounts(ctx context.Context, orgID uuid.UUID, livemode bool, f PostFilter) (map[model.PostStatus]int, error) {
 	cond, fargs := postWhere(f, false)
-	rows, err := s.q.Query(ctx, `SELECT p.status, count(*) FROM posts p`+cond+` GROUP BY p.status`, append([]any{orgID, livemode}, fargs...)...)
+	rows, err := s.q.Query(ctx, `SELECT status, count(*) FROM (SELECT p.status FROM posts p`+cond+
+		fmt.Sprintf(` ORDER BY p.id DESC LIMIT %d) m GROUP BY status`, PostCountCap+1), append([]any{orgID, livemode}, fargs...)...)
 	if err != nil {
 		return nil, err
 	}

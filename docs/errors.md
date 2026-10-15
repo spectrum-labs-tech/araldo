@@ -211,6 +211,10 @@ every problem in `errors`, each with its own `code` and `param`.
 - **provider_unsupported**: this install cannot read that analytics tool.
 - **analytics_source_connected**: that site is already connected to the
   brand.
+- **base_url_invalid** (`fields.base_url`): a self-hosted Plausible's
+  address must start with `https://`; `http://` works only for this
+  machine (`localhost`, `127.0.0.1`), since the API key goes with every
+  request.
 - **goal_invalid**, **goals_too_many**: goal names are at most 120
   characters, and a source has at most 20.
 - **group_by_invalid**: group a summary by `post`, `source`, `medium`,

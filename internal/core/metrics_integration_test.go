@@ -58,9 +58,10 @@ func instrumented(t *testing.T, instrument func(metric.MeterProvider) error) *sd
 	return reader
 }
 
-// The status gauge counts the targets this test creates: one waiting for
-// its time, one published, one canceled. Narrowed to this test's org, the
-// counts are exact; database-wide, they include at least these rows.
+// The status gauge counts the open targets this test creates: one waiting
+// for its time, one waiting for approval; published and canceled ones are
+// not counted. Narrowed to this test's org, the counts are exact;
+// database-wide, they include at least these rows.
 func TestTargetStatusGauge(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -95,9 +96,16 @@ func TestTargetStatusGauge(t *testing.T) {
 	if _, err := w.s.CancelPost(ctx, w.owner, canceled.ID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := w.s.UpdateBrand(ctx, w.owner, w.brand.ID, core.BrandInput{Name: w.brand.Name, Timezone: w.brand.Timezone,
+		ApprovalPolicy: model.ApprovalAll}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "held"}, PublishAt: later}); err != nil {
+		t.Fatal(err)
+	}
 
 	got := gauges(t, scoped)
-	want := map[string]int64{"test/queued": 1, "test/published": 1, "test/canceled": 1}
+	want := map[string]int64{"test/queued": 1, "test/held": 1}
 	for k, v := range got["araldo.post_targets"] {
 		if v != want[k] {
 			t.Errorf("araldo.post_targets{%s} = %d, want %d", k, v, want[k])
@@ -109,7 +117,7 @@ func TestTargetStatusGauge(t *testing.T) {
 	}
 
 	// Database-wide, as production reports it: other tests' rows come and
-	// go, but these three stay where they are.
+	// go, but these stay where they are.
 	global := instrumented(t, w.s.Instrument)
 	all := gauges(t, global)["araldo.post_targets"]
 	for k := range want {

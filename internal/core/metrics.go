@@ -26,11 +26,13 @@ import (
 // outcome, error kind, task name. Never an org, brand, channel, post or
 // target ID, never content, never an error message.
 
-// TargetStatuses are the post target statuses the status gauge reports,
-// zero included, so a series never vanishes when its count drops to zero.
+// TargetStatuses are the post target statuses the status gauge reports:
+// the open ones, work still to do, zero included, so a series never
+// vanishes when its count drops to zero. Finished targets (published,
+// failed, canceled) only grow, and counting them would read all history;
+// araldo.publish.attempts counts outcomes as they happen.
 var TargetStatuses = []model.TargetStatus{
 	model.TargetQueued, model.TargetPublishing, model.TargetHeld, model.TargetNeedsAttention,
-	model.TargetFailed, model.TargetPublished, model.TargetCanceled,
 }
 
 // Attribute keys.

@@ -174,9 +174,19 @@ func splitFields(what string, defs []platform.Field, fields map[string]string) (
 	return settings, secrets, ps.Err("The channel settings are not valid.")
 }
 
+// fieldErrors are the codes a provider refuses a connection with because
+// of a field's value rather than the credentials, by field: told as that
+// field's problem, not as refused credentials.
+var fieldErrors = map[string]string{
+	"base_url_invalid": "base_url", // Plausible: https only, but for localhost
+}
+
 func connectError(p platform.Provider, err error) error {
 	var pe *platform.Error
 	if errors.As(err, &pe) {
+		if field, ok := fieldErrors[pe.Code]; ok && pe.Kind == platform.Rejected {
+			return &apperr.Error{Kind: apperr.KindInvalid, Code: pe.Code, Param: "fields." + field, Message: upperFirst(pe.Msg) + "."}
+		}
 		switch pe.Kind {
 		case platform.AuthRevoked, platform.Rejected:
 			return &apperr.Error{Kind: apperr.KindInvalid, Code: "connect_failed", Param: "fields",

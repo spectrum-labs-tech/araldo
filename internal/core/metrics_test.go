@@ -191,7 +191,7 @@ func TestDatabaseGauges(t *testing.T) {
 		counts: []store.TargetCount{
 			{Status: model.TargetQueued, Livemode: true, Count: 5, Due: 2, OldestDue: &oldest},
 			{Status: model.TargetNeedsAttention, Livemode: true, Count: 1},
-			{Status: model.TargetPublished, Livemode: false, Count: 40},
+			{Status: model.TargetHeld, Livemode: false, Count: 40},
 			{Status: model.TargetQueued, Livemode: false, Count: 3, Due: 1, OldestDue: &newer},
 		},
 		tasks: []opsched.TaskStatus{
@@ -214,9 +214,9 @@ func TestDatabaseGauges(t *testing.T) {
 	}{
 		{"araldo.post_targets", "mode=live,status=queued", 5},
 		{"araldo.post_targets", "mode=live,status=needs_attention", 1},
-		{"araldo.post_targets", "mode=live,status=failed", 0},
-		{"araldo.post_targets", "mode=test,status=published", 40},
-		{"araldo.post_targets", "mode=test,status=canceled", 0},
+		{"araldo.post_targets", "mode=live,status=publishing", 0},
+		{"araldo.post_targets", "mode=test,status=held", 40},
+		{"araldo.post_targets", "mode=test,status=needs_attention", 0},
 		{"araldo.post_targets.due", "mode=live", 2},
 		{"araldo.post_targets.due", "mode=test", 1},
 		{"araldo.post_targets.oldest_due.age", "mode=live", 90},

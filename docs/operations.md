@@ -726,7 +726,9 @@ individual visitors, and adds no tracking script.
 
 **Plausible** (hosted or self-hosted Community Edition): a Stats API key
 from Account settings → API keys, the site's domain, and your install's
-address if you self-host. The `analytics.collect` task reads the last 30
+address if you self-host. The address must be `https://` (`http://` only
+for one on the same machine, `localhost`): the API key goes with every
+request, so anything else is refused as `base_url_invalid`. The `analytics.collect` task reads the last 30
 days at first, then daily, re-reading the last 7 because tools revise
 them.
 
@@ -888,7 +890,7 @@ never by message. `mode` is `live` or `test`.
 
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
-| `araldo_post_targets` | gauge | `status`, `mode` | Post targets in each status (`queued`, `publishing`, `held`, `needs_attention`, `failed`, `published`, `canceled`), zeros included. |
+| `araldo_post_targets` | gauge | `status`, `mode` | Open post targets in each status (`queued`, `publishing`, `held`, `needs_attention`), zeros included. Finished ones (published, failed, canceled) are not counted: `araldo_publish_attempts_total` counts outcomes as they happen. |
 | `araldo_post_targets_due` | gauge | `mode` | Queued targets the publisher could claim now: due, on an active channel not held by a rate limit. |
 | `araldo_post_targets_oldest_due_age_seconds` | gauge | `mode` | How long the oldest of those has been due; 0 when none is. |
 | `araldo_task_last_success_timestamp_seconds` | gauge | `task` | Unix time of each background task's last successful run. |

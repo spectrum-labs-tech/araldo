@@ -28,6 +28,8 @@ func TestConnectError(t *testing.T) {
 		{"unreachable", &platform.Error{Kind: platform.Transient}, apperr.KindUnavailable, "provider_unavailable", false},
 		{"rate limited", &platform.Error{Kind: platform.RateLimited}, apperr.KindUnavailable, "provider_unavailable", false},
 		{"unsure", &platform.Error{Kind: platform.Uncertain}, apperr.KindUnavailable, "provider_unavailable", false},
+		{"a field's value", &platform.Error{Kind: platform.Rejected, Code: "base_url_invalid", Msg: "the URL must start with https://"},
+			apperr.KindInvalid, "base_url_invalid", false},
 		{"not a platform error", other, 0, "", true},
 	}
 	for _, tt := range tests {
@@ -43,6 +45,9 @@ func TestConnectError(t *testing.T) {
 			var ae *apperr.Error
 			if !errors.As(got, &ae) || ae.Kind != tt.kind || ae.Code != tt.code {
 				t.Fatalf("got %#v, want kind %v code %s", got, tt.kind, tt.code)
+			}
+			if tt.code == "base_url_invalid" && (ae.Param != "fields.base_url" || ae.Message != "The URL must start with https://.") {
+				t.Fatalf("a field's value: param %q message %q", ae.Param, ae.Message)
 			}
 		})
 	}

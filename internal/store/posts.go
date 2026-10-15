@@ -549,15 +549,21 @@ type TargetCount struct {
 	OldestDue *time.Time
 }
 
-// TargetCounts counts targets by status and mode in one round trip, across
+// TargetCounts counts open targets (queued, publishing, held, needing
+// attention) by status and mode in one round trip, across
 // every org when orgID is nil (metrics, ADR 0014) or in one org. Due
 // targets are those the publisher would claim now: queued, past their next
 // attempt, on an active channel not held by a rate limit.
 func (s *Store) TargetCounts(ctx context.Context, orgID *uuid.UUID, now time.Time) ([]TargetCount, error) {
 	rows, err := s.q.Query(ctx, `
 		WITH counts AS (
+			-- Open targets only, each half on its partial index
+			-- (post_targets_live_idx, post_targets_overdue_idx).
 			SELECT status, livemode, count(*) AS n FROM post_targets
-			WHERE ($1::uuid IS NULL OR org_id = $1) GROUP BY status, livemode
+			WHERE status IN ('queued', 'publishing', 'needs_attention') AND ($1::uuid IS NULL OR org_id = $1) GROUP BY status, livemode
+			UNION ALL
+			SELECT status, livemode, count(*) AS n FROM post_targets
+			WHERE status IN ('queued', 'held') AND status = 'held' AND ($1::uuid IS NULL OR org_id = $1) GROUP BY status, livemode
 		), due AS (
 			SELECT t.livemode, count(*) AS n, min(t.next_attempt_at) AS oldest
 			FROM post_targets t JOIN channels c ON c.id = t.channel_id

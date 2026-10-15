@@ -4,6 +4,7 @@ package reddit
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,6 +23,7 @@ type fakeReddit struct {
 	srv     *httptest.Server
 	reports []map[string]any
 	evil    bool // send a next page off the Ads API
+	loop    bool // send the same next page for ever
 }
 
 func (f *fakeReddit) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +54,7 @@ func (f *fakeReddit) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.reports = append(f.reports, body)
-		if page == "" {
+		if page == "" || f.loop {
 			next := f.srv.URL + "/api/ad_accounts/t2_openb00ks/reports?page=2"
 			if f.evil {
 				next = "https://evil.example/steal"
@@ -169,5 +171,17 @@ func TestMinorUnits(t *testing.T) {
 		if got := minorUnits(json.Number(tt.micros), tt.currency); got != tt.want {
 			t.Errorf("minorUnits(%s, %s) = %d, want %d", tt.micros, tt.currency, got, tt.want)
 		}
+	}
+}
+
+func TestReportPagesAreBounded(t *testing.T) {
+	t.Parallel()
+	f, n := setup(t)
+	f.loop = true
+	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	_, err := n.Report(t.Context(), app, platform.Credentials{"refresh_token": "refresh", "account_id": "t2_openb00ks"}, day, day)
+	var pe *platform.Error
+	if !errors.As(err, &pe) || pe.Code != "too_many_pages" || len(f.reports) != maxPages {
+		t.Fatalf("a looping next_url: %v after %d pages", err, len(f.reports))
 	}
 }

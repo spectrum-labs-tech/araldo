@@ -102,3 +102,41 @@ func TestReport(t *testing.T) {
 		t.Fatalf("conversion query %v: filtered to the goals, over the window", goal)
 	}
 }
+
+func TestBaseURL(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		in, want string
+	}{
+		{"", DefaultURL},
+		{"https://stats.araldo.dev/", "https://stats.araldo.dev"},
+		{"http://localhost:8000", "http://localhost:8000"},
+		{"http://127.0.0.1:8000", "http://127.0.0.1:8000"},
+		{"http://[::1]:8000", "http://[::1]:8000"},
+		// The API key would cross the network in the clear.
+		{"http://stats.araldo.dev", ""},
+		{"http://10.0.0.5", ""},
+		{"https://user:pass@stats.araldo.dev", ""},
+		{"ftp://stats.araldo.dev", ""},
+	}
+	for _, tt := range tests {
+		got, err := base(platform.Credentials{"base_url": tt.in})
+		if tt.want == "" {
+			if platform.KindOf(err) != platform.Rejected {
+				t.Errorf("base(%q) = %q, %v; want a rejection", tt.in, got, err)
+			}
+			continue
+		}
+		if err != nil || got != tt.want {
+			t.Errorf("base(%q) = %q, %v; want %q", tt.in, got, err, tt.want)
+		}
+	}
+}
+
+func TestNewPagesSmallEnough(t *testing.T) {
+	t.Parallel()
+	// A page as wide as the response limit allows: about 4 KiB a row.
+	if s := New(nil); s.PageSize <= 0 || s.PageSize*4<<10 > maxResponse {
+		t.Fatalf("page size %d does not fit in %d bytes", s.PageSize, maxResponse)
+	}
+}

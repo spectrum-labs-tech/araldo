@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -225,5 +226,35 @@ func TestReportLosingAccess(t *testing.T) {
 				t.Fatalf("got %#v, want AuthRevoked %s", err, tt.code)
 			}
 		})
+	}
+}
+
+// A busy property's page is larger than the 1 MiB most platform answers
+// are held to.
+func TestLargePage(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("x", 1000)
+	tests := []struct {
+		rows int
+		ok   bool
+	}{{1500, true}, {10000, false}}
+	for _, tt := range tests {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			rows := make([]string, tt.rows)
+			for i := range rows {
+				rows[i] = `{"dimensionValues":[{"value":"20261001"},{"value":"` + long + `"}],"metricValues":[{"value":"1"}]}`
+			}
+			_, _ = fmt.Fprintf(w, `{"rowCount":%d,"rows":[%s]}`, tt.rows, strings.Join(rows, ","))
+		}))
+		s := New(srv.Client())
+		s.APIURL, s.PageSize = srv.URL, tt.rows
+		out, err := s.run(t.Context(), platform.Credentials{"property_id": "123"}, "at", request{Metrics: names("totalUsers")})
+		srv.Close()
+		if tt.ok && (err != nil || len(out.Rows) != tt.rows) {
+			t.Errorf("%d rows: %v", tt.rows, err)
+		}
+		if !tt.ok && platform.KindOf(err) != platform.Transient {
+			t.Errorf("%d rows: %v, want a transient error past the limit", tt.rows, err)
+		}
 	}
 }

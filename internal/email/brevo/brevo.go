@@ -9,7 +9,6 @@ package brevo
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -60,8 +59,7 @@ func (m *Mailer) call(ctx context.Context, c platform.Credentials, method, path 
 
 // notFound reports Brevo's answer for a campaign that does not exist.
 func notFound(err error) bool {
-	var pe *platform.Error
-	return errors.As(err, &pe) && strings.HasPrefix(pe.Msg, "HTTP 404")
+	return platform.HTTPStatus(err) == http.StatusNotFound
 }
 
 func (m *Mailer) Verify(ctx context.Context, c platform.Credentials, from email.Address) (email.Account, error) {

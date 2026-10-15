@@ -11,6 +11,7 @@
 package ga4
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -51,8 +52,17 @@ type Source struct {
 
 // New returns the GA4 source.
 func New(client *http.Client) *Source {
-	return &Source{Client: client, TokenURL: TokenURL, APIURL: APIURL, PageSize: 100000, Now: time.Now}
+	return &Source{Client: client, TokenURL: TokenURL, APIURL: APIURL, PageSize: pageSize, Now: time.Now}
 }
+
+// pageSize rows of six dimensions and two metrics stay well under
+// maxResponse even with long campaign names; the report pages through the
+// rest. (runReport takes up to 250,000 rows a page,
+// https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/runReport.)
+const pageSize = 2000
+
+// maxResponse bounds one page of a report.
+const maxResponse = 8 << 20
 
 func (s *Source) Provider() analytics.Provider { return "ga4" }
 func (s *Source) Name() string                 { return "Google Analytics 4" }
@@ -178,9 +188,16 @@ func (s *Source) run(ctx context.Context, c platform.Credentials, tok string, q 
 	all := &response{}
 	for q.Limit, q.Offset = s.PageSize, 0; ; q.Offset += s.PageSize {
 		var out response
-		err := platform.JSON(ctx, s.Client, http.MethodPost, s.APIURL+"/v1beta/properties/"+prop+":runReport", headers, q, &out)
+		body, err := json.Marshal(q)
+		if err != nil {
+			return nil, &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+		}
+		// A report is a read sent as a POST: repeating it is safe.
+		err = platform.Call(platform.RetrySafe(ctx), s.Client, platform.Request{Method: http.MethodPost,
+			URL: s.APIURL + "/v1beta/properties/" + prop + ":runReport", Header: headers, Body: bytes.NewReader(body), Length: int64(len(body)),
+			ContentType: "application/json", MaxBody: maxResponse}, &out)
 		var pe *platform.Error
-		if errors.As(err, &pe) && strings.HasPrefix(pe.Msg, "HTTP 403") {
+		if errors.As(err, &pe) && pe.Status == http.StatusForbidden {
 			pe.Code, pe.Msg = "no_access", "the service account cannot read property "+prop+
 				": add its email as a Viewer in GA4 → Admin → Property access management, and enable the Google Analytics Data API in its project"
 		}

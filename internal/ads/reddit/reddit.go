@@ -10,6 +10,7 @@ package reddit
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
@@ -26,7 +27,15 @@ const (
 	DefaultAuth = "https://www.reddit.com/api/v1"
 	scopes      = "adsread"
 	pageSize    = "1000"
+	// maxPages bounds how many next_url links a read follows: a hundred
+	// thousand rows, far past any account's, so a link that loops ends.
+	maxPages = 100
 )
+
+// tooManyPages ends a read that would follow more than maxPages links.
+func tooManyPages() error {
+	return &platform.Error{Kind: platform.Rejected, Code: "too_many_pages", Msg: fmt.Sprintf("Reddit kept answering with another page after %d", maxPages)}
+}
 
 // Network reads Reddit Ads.
 type Network struct {
@@ -177,7 +186,10 @@ func (n *Network) Report(ctx context.Context, app platform.App, c platform.Crede
 	}}
 	var out []ads.Result
 	next := n.API + "/ad_accounts/" + url.PathEscape(id) + "/reports?page.size=" + pageSize
-	for next != "" {
+	for pages := 0; next != ""; pages++ {
+		if pages == maxPages {
+			return nil, tooManyPages()
+		}
 		var page struct {
 			Data struct {
 				Metrics []metric `json:"metrics"`
@@ -213,7 +225,10 @@ func (n *Network) Report(ctx context.Context, app platform.App, c platform.Crede
 func (n *Network) list(ctx context.Context, tok, path string, out any) error {
 	var all []json.RawMessage
 	next := n.API + path + "?page.size=" + pageSize
-	for next != "" {
+	for pages := 0; next != ""; pages++ {
+		if pages == maxPages {
+			return tooManyPages()
+		}
 		var page struct {
 			Data       []json.RawMessage `json:"data"`
 			Pagination struct {

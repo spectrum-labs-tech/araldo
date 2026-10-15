@@ -7,8 +7,10 @@
 package plausible
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -29,7 +31,15 @@ type Source struct {
 }
 
 // New returns the Plausible source.
-func New(client *http.Client) *Source { return &Source{Client: client, PageSize: 10000} }
+func New(client *http.Client) *Source { return &Source{Client: client, PageSize: pageSize} }
+
+// pageSize rows of five dimensions stay well under maxResponse even with
+// long campaign names; the query pages through the rest. (The Stats API
+// takes up to 10,000 a page, https://plausible.io/docs/stats-api#pagination.)
+const pageSize = 2000
+
+// maxResponse bounds one page of a query.
+const maxResponse = 8 << 20
 
 func (s *Source) Provider() analytics.Provider { return "plausible" }
 func (s *Source) Name() string                 { return "Plausible" }
@@ -49,10 +59,28 @@ func base(c platform.Credentials) (string, error) {
 		b = DefaultURL
 	}
 	u, err := url.Parse(b)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return "", &platform.Error{Kind: platform.Rejected, Code: "base_url_invalid", Msg: "the Plausible URL must start with https://"}
+	// The API key goes with every request: never in the clear, except to
+	// this machine.
+	if err != nil || u.Host == "" || u.User != nil || !secure(u) {
+		return "", &platform.Error{Kind: platform.Rejected, Code: "base_url_invalid",
+			Msg: "the Plausible URL must start with https:// (http:// only for localhost)"}
 	}
 	return b, nil
+}
+
+// secure reports whether u keeps the API key private: https, or http to
+// this machine.
+func secure(u *url.URL) bool {
+	return u.Scheme == "https" || u.Scheme == "http" && loopback(u.Hostname())
+}
+
+// loopback reports whether host is this machine.
+func loopback(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 type query struct {
@@ -86,7 +114,13 @@ func (s *Source) run(ctx context.Context, c platform.Credentials, q query) ([]re
 		var out struct {
 			Results []result `json:"results"`
 		}
-		if err := platform.JSON(ctx, s.Client, http.MethodPost, b+"/api/v2/query", headers, q, &out); err != nil {
+		body, err := json.Marshal(q)
+		if err != nil {
+			return nil, &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
+		}
+		// A query is a read sent as a POST: repeating it is safe.
+		if err := platform.Call(platform.RetrySafe(ctx), s.Client, platform.Request{Method: http.MethodPost, URL: b + "/api/v2/query",
+			Header: headers, Body: bytes.NewReader(body), Length: int64(len(body)), ContentType: "application/json", MaxBody: maxResponse}, &out); err != nil {
 			return nil, err
 		}
 		all = append(all, out.Results...)

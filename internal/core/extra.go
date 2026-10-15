@@ -173,6 +173,9 @@ func (s *Service) TaskStatuses(ctx context.Context, a Actor) ([]opsched.TaskStat
 	return s.store.Tasks(ctx)
 }
 
+// QueueStats is a publishing queue's counts.
+type QueueStats = store.QueueStats
+
 // QueueStats summarizes the actor's publishing queue (its org and mode).
 func (s *Service) QueueStats(ctx context.Context, a Actor) (store.QueueStats, error) {
 	if err := a.require(PermPostsRead); err != nil {

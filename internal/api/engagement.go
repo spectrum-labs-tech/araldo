@@ -10,7 +10,6 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
-	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
 // Engagement (ADR 0018).
@@ -52,7 +51,7 @@ type summaryRowView struct {
 func (h *Handler) engagementSummary(w http.ResponseWriter, r *http.Request) error {
 	a := actor(r)
 	q := r.URL.Query()
-	f := core.EngagementFilter{GroupBy: store.EngagementGroup(q.Get("group_by"))}
+	f := core.EngagementFilter{GroupBy: core.EngagementGroup(q.Get("group_by"))}
 	for name, dst := range map[string]*time.Time{"since": &f.Since, "until": &f.Until} {
 		if v := q.Get(name); v != "" {
 			t, err := time.Parse(time.RFC3339, v)
@@ -82,7 +81,7 @@ func (h *Handler) engagementSummary(w http.ResponseWriter, r *http.Request) erro
 	}
 	group := f.GroupBy
 	if group == "" {
-		group = store.GroupByPost
+		group = core.GroupByPost
 	}
 	out := make([]summaryRowView, 0, len(rows))
 	for _, row := range rows {

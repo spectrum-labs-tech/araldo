@@ -15,7 +15,6 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/opsched"
-	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
 // API keys.
@@ -162,7 +161,7 @@ func (s *Server) keyDetail(c *reqCtx) error {
 		}
 	}
 	if k.Livemode == c.actor.Livemode {
-		d.Posts, _, err = s.svc.Posts(c.ctx(), c.actor, core.PostFilter{CreatedByKey: &k.ID}, store.Page{Limit: 20})
+		d.Posts, _, err = s.svc.Posts(c.ctx(), c.actor, core.PostFilter{CreatedByKey: &k.ID}, core.Page{Limit: 20})
 		if err != nil {
 			return err
 		}
@@ -187,7 +186,7 @@ func (s *Server) memberDetail(c *reqCtx) error {
 		return err
 	}
 	d := memberDetailData{Member: m, IsYou: uid == c.user.ID}
-	d.Posts, _, err = s.svc.Posts(c.ctx(), c.actor, core.PostFilter{CreatedByUser: &uid}, store.Page{Limit: 20})
+	d.Posts, _, err = s.svc.Posts(c.ctx(), c.actor, core.PostFilter{CreatedByUser: &uid}, core.Page{Limit: 20})
 	if err != nil {
 		return err
 	}
@@ -287,7 +286,7 @@ func (s *Server) webhookDetail(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	ds, _, err := s.svc.Deliveries(c.ctx(), c.actor, eid, store.Page{Limit: 50})
+	ds, _, err := s.svc.Deliveries(c.ctx(), c.actor, eid, core.Page{Limit: 50})
 	if err != nil {
 		return err
 	}
@@ -324,7 +323,7 @@ func (s *Server) rollWebhook(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	ds, _, err := s.svc.Deliveries(c.ctx(), c.actor, eid, store.Page{Limit: 50})
+	ds, _, err := s.svc.Deliveries(c.ctx(), c.actor, eid, core.Page{Limit: 50})
 	if err != nil {
 		return err
 	}
@@ -365,7 +364,7 @@ type eventsData struct {
 
 func (s *Server) events(c *reqCtx) error {
 	q := c.r.URL.Query()
-	pg := store.Page{Limit: 50}
+	pg := core.Page{Limit: 50}
 	if u, err := id.Parse(id.Event, q.Get("after")); err == nil {
 		pg.StartingAfter = u
 	}
@@ -403,12 +402,12 @@ func (d requestsData) By(r model.APIRequest) string {
 
 func (s *Server) requests(c *reqCtx) error {
 	q := c.r.URL.Query()
-	pg := store.Page{Limit: 50}
+	pg := core.Page{Limit: 50}
 	if u, err := uuid.Parse(q.Get("after")); err == nil {
 		pg.StartingAfter = u
 	}
 	d := requestsData{Keys: map[uuid.UUID]string{}, Class: q.Get("status")}
-	var f store.RequestFilter
+	var f core.RequestFilter
 	switch d.Class {
 	case "2xx", "4xx", "5xx":
 		f.StatusClass = int(d.Class[0] - '0')
@@ -570,7 +569,7 @@ func ownerErr(c *reqCtx, err error, what string) error {
 }
 
 func (s *Server) audit(c *reqCtx) error {
-	pg := store.Page{Limit: 100}
+	pg := core.Page{Limit: 100}
 	if u, err := id.Parse(id.Event, c.r.URL.Query().Get("after")); err == nil {
 		pg.StartingAfter = u
 	}

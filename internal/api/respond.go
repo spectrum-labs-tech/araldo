@@ -17,7 +17,6 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
-	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
 // maxBody bounds request bodies.
@@ -138,9 +137,9 @@ type list struct {
 }
 
 // page reads limit, starting_after and ending_before.
-func page(r *http.Request, prefix id.Prefix) (store.Page, error) {
+func page(r *http.Request, prefix id.Prefix) (core.Page, error) {
 	q := r.URL.Query()
-	var p store.Page
+	var p core.Page
 	if v := q.Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 || n > 100 {

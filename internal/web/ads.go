@@ -12,7 +12,6 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
-	"github.com/spectrum-labs-tech/araldo/internal/store"
 	"github.com/spectrum-labs-tech/araldo/internal/utm"
 )
 
@@ -109,11 +108,11 @@ func (s *Server) adsData(c *reqCtx) (*adsData, error) {
 	for _, a := range d.Accounts {
 		d.HasResults = d.HasResults || a.ReadAt != nil
 	}
-	f.GroupBy = store.AdsByCampaign
+	f.GroupBy = core.AdsByCampaign
 	if d.Campaigns, err = s.svc.AdsSummary(c.ctx(), c.actor, f); err != nil {
 		return nil, err
 	}
-	f.GroupBy = store.AdsByDay
+	f.GroupBy = core.AdsByDay
 	if d.Daily, err = s.svc.AdsSummary(c.ctx(), c.actor, f); err != nil {
 		return nil, err
 	}

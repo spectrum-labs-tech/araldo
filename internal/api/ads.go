@@ -12,7 +12,6 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
-	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
 // Ads (ADR 0023).
@@ -99,7 +98,7 @@ func (h *Handler) deleteAdAccount(w http.ResponseWriter, r *http.Request) error 
 func (h *Handler) adsSummary(w http.ResponseWriter, r *http.Request) error {
 	a := actor(r)
 	q := r.URL.Query()
-	f := core.AdsFilter{GroupBy: store.AdsGroup(q.Get("group_by"))}
+	f := core.AdsFilter{GroupBy: core.AdsGroup(q.Get("group_by"))}
 	for name, dst := range map[string]*time.Time{"since": &f.Since, "until": &f.Until} {
 		if v := q.Get(name); v != "" {
 			t, err := time.Parse(time.DateOnly, v)

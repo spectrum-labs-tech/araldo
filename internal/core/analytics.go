@@ -198,6 +198,12 @@ func (s *Service) DeleteAnalyticsSource(ctx context.Context, a Actor, sourceID u
 // AnalyticsFilter narrows an analytics summary.
 type AnalyticsFilter = store.AnalyticsFilter
 
+// AnalyticsGroup is how an analytics summary groups counts.
+type AnalyticsGroup = store.AnalyticsGroup
+
+// AnalyticsByPost groups analytics by the post that brought the visits.
+const AnalyticsByPost = store.AnalyticsByPost
+
 // AnalyticsSummaryRow is one group: its label (a post's first text, or the
 // tag's value) and counts.
 type AnalyticsSummaryRow struct {

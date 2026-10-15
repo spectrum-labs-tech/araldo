@@ -12,7 +12,6 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/analytics"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
-	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
 // Web analytics (ADR 0025).
@@ -101,7 +100,7 @@ func (h *Handler) deleteAnalyticsSource(w http.ResponseWriter, r *http.Request) 
 func (h *Handler) analyticsSummary(w http.ResponseWriter, r *http.Request) error {
 	a := actor(r)
 	q := r.URL.Query()
-	f := core.AnalyticsFilter{GroupBy: store.AnalyticsGroup(q.Get("group_by"))}
+	f := core.AnalyticsFilter{GroupBy: core.AnalyticsGroup(q.Get("group_by"))}
 	for name, dst := range map[string]*time.Time{"since": &f.Since, "until": &f.Until} {
 		if v := q.Get(name); v != "" {
 			t, err := time.Parse(time.DateOnly, v)

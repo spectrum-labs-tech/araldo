@@ -184,6 +184,17 @@ func (s *Service) DeleteAdAccount(ctx context.Context, a Actor, accountID uuid.U
 // AdsFilter narrows an ads summary.
 type AdsFilter = store.AdsFilter
 
+// AdsGroup is how an ads summary groups results.
+type AdsGroup = store.AdsGroup
+
+// Ads summary groupings.
+const (
+	AdsByBrand    = store.AdsByBrand
+	AdsByAccount  = store.AdsByAccount
+	AdsByCampaign = store.AdsByCampaign
+	AdsByDay      = store.AdsByDay
+)
+
 // AdsSummary is results added up by group over days Since through Until.
 type AdsSummary struct {
 	GroupBy      store.AdsGroup

@@ -207,6 +207,16 @@ type EngagementFilter = store.EngagementFilter
 // EngagementRow is one group in a summary.
 type EngagementRow = store.EngagementRow
 
+// EngagementGroup is how a summary groups targets.
+type EngagementGroup = store.EngagementGroup
+
+// Engagement summary groupings.
+const (
+	GroupByPost     = store.GroupByPost
+	GroupByChannel  = store.GroupByChannel
+	GroupByTemplate = store.GroupByTemplate
+)
+
 // EngagementSummary adds up the latest engagement of targets published in
 // a window, grouped by post, channel or template, most engaging first.
 func (s *Service) EngagementSummary(ctx context.Context, a Actor, f EngagementFilter) ([]EngagementRow, error) {

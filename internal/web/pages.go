@@ -27,7 +27,6 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/newsletter"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
-	"github.com/spectrum-labs-tech/araldo/internal/store"
 	"github.com/spectrum-labs-tech/araldo/internal/tmpl"
 )
 
@@ -209,7 +208,7 @@ type homeData struct {
 	Channels []*model.Channel
 	Posts    []*model.Post
 	Keys     int
-	Queue    store.QueueStats
+	Queue    core.QueueStats
 	Steps    []step
 	// Disabled are webhook endpoints turned off after failing for days.
 	Disabled []*model.WebhookEndpoint
@@ -229,7 +228,7 @@ func (s *Server) home(c *reqCtx) error {
 	if d.Channels, err = s.svc.Channels(c.ctx(), c.actor, nil); err != nil {
 		return err
 	}
-	if d.Posts, _, err = s.svc.Posts(c.ctx(), c.actor, core.PostFilter{}, store.Page{Limit: 8}); err != nil {
+	if d.Posts, _, err = s.svc.Posts(c.ctx(), c.actor, core.PostFilter{}, core.Page{Limit: 8}); err != nil {
 		return err
 	}
 	if c.actor.Can(core.PermKeysWrite) {
@@ -324,7 +323,7 @@ func (s *Server) posts(c *reqCtx) error {
 		}
 		f.BrandID = &b.ID
 	}
-	pg := store.Page{Limit: postsPageSize}
+	pg := core.Page{Limit: postsPageSize}
 	if u, err := id.Parse(id.Post, q.Get("starting_after")); err == nil {
 		pg.StartingAfter = u
 	} else if u, err := id.Parse(id.Post, q.Get("ending_before")); err == nil {
@@ -616,8 +615,8 @@ func (s *Server) performanceData(c *reqCtx) (*performanceData, error) {
 		}
 		f.BrandID = &b.ID
 	}
-	for group, dst := range map[store.EngagementGroup]*[]core.EngagementRow{
-		store.GroupByPost: &d.Posts, store.GroupByChannel: &d.Channels, store.GroupByTemplate: &d.Templates,
+	for group, dst := range map[core.EngagementGroup]*[]core.EngagementRow{
+		core.GroupByPost: &d.Posts, core.GroupByChannel: &d.Channels, core.GroupByTemplate: &d.Templates,
 	} {
 		f.GroupBy = group
 		if *dst, err = s.svc.EngagementSummary(c.ctx(), c.actor, f); err != nil {
@@ -628,7 +627,7 @@ func (s *Server) performanceData(c *reqCtx) (*performanceData, error) {
 		return nil, err
 	}
 	until := ads.Date(now, time.UTC)
-	if d.Signups, err = s.svc.AnalyticsSummary(c.ctx(), c.actor, core.AnalyticsFilter{GroupBy: store.AnalyticsByPost, BrandID: f.BrandID,
+	if d.Signups, err = s.svc.AnalyticsSummary(c.ctx(), c.actor, core.AnalyticsFilter{GroupBy: core.AnalyticsByPost, BrandID: f.BrandID,
 		Since: until.AddDate(0, 0, -(d.Days - 1)), Until: until, Limit: 20}); err != nil {
 		return nil, err
 	}
@@ -833,7 +832,7 @@ func (s *Server) swapCandidates(c *reqCtx, p *model.Post) ([]*model.Post, error)
 		return nil, nil
 	}
 	for _, status := range []model.PostStatus{model.PostScheduled, model.PostPendingApproval} {
-		posts, _, err := s.svc.Posts(c.ctx(), c.actor, core.PostFilter{BrandID: &p.BrandID, Status: string(status)}, store.Page{Limit: 100})
+		posts, _, err := s.svc.Posts(c.ctx(), c.actor, core.PostFilter{BrandID: &p.BrandID, Status: string(status)}, core.Page{Limit: 100})
 		if err != nil {
 			return nil, err
 		}
@@ -1509,7 +1508,7 @@ func (s *Server) brandForm(c *reqCtx, b *model.Brand) (brandForm, error) {
 		f.Theme.Logo = id.Format(id.Media, *b.EmailTheme.LogoMediaID)
 	}
 	if c.actor.Can(core.PermPostsRead) {
-		if f.Theme.Images, _, err = s.svc.MediaList(c.ctx(), c.actor, core.MediaFilter{BrandID: &b.ID}, store.Page{Limit: 100}); err != nil {
+		if f.Theme.Images, _, err = s.svc.MediaList(c.ctx(), c.actor, core.MediaFilter{BrandID: &b.ID}, core.Page{Limit: 100}); err != nil {
 			return brandForm{}, err
 		}
 	}

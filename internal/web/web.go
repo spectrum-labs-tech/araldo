@@ -36,7 +36,6 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/media"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
-	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
 // MaxPostForm bounds the new-post form, which can carry four images at
@@ -728,7 +727,7 @@ var funcs = template.FuncMap{
 	},
 	"costPer": core.CostPer,
 	"rowID": func(group string, u *uuid.UUID) string {
-		return core.EngagementRowID(store.EngagementGroup(group), u)
+		return core.EngagementRowID(core.EngagementGroup(group), u)
 	},
 	// engagement adds up a post's latest readings; "" before any.
 	"engagement": func(ts []model.Target) string {

@@ -72,6 +72,9 @@ type Config struct {
 	Mail smtpmail.Sender
 }
 
+// Page is a cursor page request (ADR 0005).
+type Page = store.Page
+
 // Service is the application.
 type Service struct {
 	store     *store.Store

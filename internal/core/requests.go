@@ -77,6 +77,9 @@ func (s *Service) writeRequestLog(ctx context.Context) {
 	}
 }
 
+// RequestFilter narrows the request log.
+type RequestFilter = store.RequestFilter
+
 // APIRequests lists the actor's org's logged requests in its mode, newest
 // first. Those who manage API keys read them.
 func (s *Service) APIRequests(ctx context.Context, a Actor, f store.RequestFilter, p store.Page) ([]model.APIRequest, bool, error) {

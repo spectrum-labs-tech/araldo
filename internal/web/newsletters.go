@@ -17,7 +17,6 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/newsletter"
-	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
 // Newsletters (ADR 0024).
@@ -76,7 +75,7 @@ func (s *Server) newslettersData(c *reqCtx) (*newslettersData, error) {
 		}
 		f.BrandID = &b.ID
 	}
-	if d.Issues, d.More, err = s.svc.Issues(c.ctx(), c.actor, f, store.Page{Limit: 50}); err != nil {
+	if d.Issues, d.More, err = s.svc.Issues(c.ctx(), c.actor, f, core.Page{Limit: 50}); err != nil {
 		return nil, err
 	}
 	for _, is := range d.Issues {

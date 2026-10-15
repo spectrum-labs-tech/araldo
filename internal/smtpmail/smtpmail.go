@@ -58,8 +58,10 @@ type Message struct {
 	Subject string
 	Text    string
 	HTML    string
-	// Headers are added as given (List-Unsubscribe, for one); a name or
-	// value with a line break is refused.
+	// Headers are added as given (List-Unsubscribe, for one). A name that
+	// is not a valid header name, one the message sets itself (From, To,
+	// Subject…) or one that adds recipients, or a value with a line break,
+	// is refused.
 	Headers map[string]string
 }
 
@@ -193,7 +195,32 @@ func (c *Client) Send(ctx context.Context, m Message) error {
 	if err := w.Close(); err != nil {
 		return classify(err)
 	}
-	return classify(cl.Quit())
+	// The server has accepted the message: a failed goodbye must not make
+	// the caller send it again.
+	_ = cl.Quit()
+	return nil
+}
+
+// reserved are the headers build sets itself, and those that would add
+// recipients or redirect replies; Message.Headers may not set them.
+var reserved = map[string]bool{
+	"from": true, "to": true, "cc": true, "bcc": true, "subject": true, "date": true, "message-id": true,
+	"mime-version": true, "content-type": true, "content-transfer-encoding": true, "return-path": true,
+	"sender": true, "reply-to": true,
+}
+
+// validName reports whether name is a header field name (RFC 5322 §3.6.8:
+// printable ASCII but the colon).
+func validName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		if c := name[i]; c < 33 || c > 126 || c == ':' {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Client) tlsConfig() *tls.Config {
@@ -232,6 +259,12 @@ func (c *Client) build(to *mail.Address, m Message) ([]byte, error) {
 		}
 	}
 	for name, value := range m.Headers {
+		if !validName(name) {
+			return nil, fmt.Errorf("the header name %q is not valid", name)
+		}
+		if reserved[strings.ToLower(name)] {
+			return nil, fmt.Errorf("the header %q is set by the message itself", name)
+		}
 		if err := header(name, value); err != nil {
 			return nil, err
 		}

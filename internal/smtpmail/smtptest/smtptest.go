@@ -47,6 +47,9 @@ type Options struct {
 	// RejectRcpt, when set, answers RCPT TO with this reply ("550 no such
 	// user", "451 try later").
 	RejectRcpt string
+	// DropOnQuit hangs up on QUIT without answering, as a server can after
+	// it has queued the message.
+	DropOnQuit bool
 }
 
 // Server is a running test server.
@@ -197,7 +200,9 @@ func (s *Server) session(conn net.Conn) {
 			cur = Mail{Auth: cur.Auth}
 			reply("250 ok")
 		case "QUIT":
-			reply("221 bye")
+			if !s.opts.DropOnQuit {
+				reply("221 bye")
+			}
 			return
 		default:
 			reply("502 unknown")

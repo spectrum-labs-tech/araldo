@@ -126,3 +126,53 @@ func TestNewChecksTheConfig(t *testing.T) {
 		}
 	}
 }
+
+// Once the server has queued the message, a failed goodbye is not a
+// failed send: retrying would deliver it twice.
+func TestQuitFailureAfterDelivery(t *testing.T) {
+	t.Parallel()
+	srv := smtptest.New(t, smtptest.Options{Mode: smtptest.StartTLS, Username: "user", Password: "pass", DropOnQuit: true})
+	if err := client(t, srv, smtpmail.StartTLS, "user", "pass").Send(t.Context(), msg); err != nil {
+		t.Fatalf("Send = %v", err)
+	}
+	if len(srv.Mail()) != 1 {
+		t.Fatalf("received %d messages", len(srv.Mail()))
+	}
+}
+
+func TestHeadersAreChecked(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		headers map[string]string
+		ok      bool
+	}{
+		{"list unsubscribe", map[string]string{"List-Unsubscribe": "<https://araldo.example/u>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}, true},
+		{"a custom header", map[string]string{"X-Araldo-Notification": "post.failed"}, true},
+		{"an extra recipient", map[string]string{"Bcc": "eve@evil.example"}, false},
+		{"another sender", map[string]string{"from": "ceo@araldo.example"}, false},
+		{"another subject", map[string]string{"SUBJECT": "Urgent"}, false},
+		{"replies elsewhere", map[string]string{"Reply-To": "eve@evil.example"}, false},
+		{"a space in the name", map[string]string{"X Bad": "x"}, false},
+		{"a non-ASCII name", map[string]string{"X-É": "x"}, false},
+		{"an empty name", map[string]string{"": "x"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			srv := smtptest.New(t, smtptest.Options{Mode: smtptest.StartTLS, Username: "user", Password: "pass"})
+			m := msg
+			m.Headers = tt.headers
+			err := client(t, srv, smtpmail.StartTLS, "user", "pass").Send(t.Context(), m)
+			if tt.ok {
+				if err != nil || len(srv.Mail()) != 1 {
+					t.Fatalf("Send = %v, %d received", err, len(srv.Mail()))
+				}
+				return
+			}
+			if !smtpmail.IsPermanent(err) || len(srv.Mail()) != 0 {
+				t.Fatalf("Send = %v, %d received; want a permanent refusal", err, len(srv.Mail()))
+			}
+		})
+	}
+}

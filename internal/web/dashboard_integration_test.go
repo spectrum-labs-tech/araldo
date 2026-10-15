@@ -245,13 +245,21 @@ func TestPerformancePage(t *testing.T) {
 		t.Fatalf("performance before readings: %d\n%s", rec.Code, rec.Body)
 	}
 
-	// The collector's work, on this test's own target.
+	// The collector's work, on this test's own target. Collectors in other
+	// tests read due targets in every org and may overwrite it with the
+	// sandbox's counts, so it is recorded as the last reading (no next
+	// one) until the page shows it.
 	views := int64(900)
-	if err := d.st.RecordEngagement(ctx, tg.OrgID, tg.ID, time.Now(), platform.Counts{Likes: 41, Reposts: 7, Replies: 3, Quotes: 1, Views: &views}, nil); err != nil {
-		t.Fatal(err)
+	var page string
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		if err := d.st.RecordEngagement(ctx, tg.OrgID, tg.ID, time.Now(), platform.Counts{Likes: 41, Reposts: 7, Replies: 3, Quotes: 1, Views: &views}, nil); err != nil {
+			t.Fatal(err)
+		}
+		rec = d.send(httptest.NewRequest(http.MethodGet, "/performance?days=7&brand="+id.Format(id.Brand, d.brand.ID), nil))
+		if page = rec.Body.String(); rec.Code == http.StatusOK && strings.Contains(page, `<td class="text-right">52</td>`) || time.Now().After(deadline) {
+			break
+		}
 	}
-	rec = d.send(httptest.NewRequest(http.MethodGet, "/performance?days=7&brand="+id.Format(id.Brand, d.brand.ID), nil))
-	page := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.Contains(page, "Launch day for the new site") || !strings.Contains(page, `<td class="text-right">52</td>`) ||
 		!strings.Contains(page, "Written by hand") || !strings.Contains(page, "Sandbox Bluesky") {
 		t.Fatalf("performance with a reading: %d\n%s", rec.Code, page)

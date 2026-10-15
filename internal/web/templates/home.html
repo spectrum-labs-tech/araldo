@@ -36,9 +36,9 @@
     <tbody>
     {{range .Data.Posts}}
       <tr>
-        <td><a href="/posts/{{postID .ID}}">{{with index .Targets 0}}{{index .Parts 0 | printf "%.80s"}}{{end}}</a></td>
+        <td>{{template "postLink" .}}</td>
         <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
-        <td>{{if .PublishAt}}{{fmtTime .PublishAt}}{{else}}<span class="text-muted">Next slot when approved</span>{{end}}</td>
+        <td>{{template "postWhen" .}}</td>
         <td>{{len .Targets}}</td>
       </tr>
     {{end}}

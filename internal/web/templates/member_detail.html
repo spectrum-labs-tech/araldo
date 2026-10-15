@@ -12,14 +12,5 @@
 {{if .Data.IsYou}}<p class="text-sm text-muted">Change your name, password or two-factor settings on <a href="/account">your account</a>.</p>{{end}}
 
 <h2 class="mt-6">Posts they made</h2>
-{{if .Data.Posts}}
-<table>
-  <thead><tr><th>Post</th><th>Status</th><th>Publish at</th></tr></thead>
-  <tbody>{{range .Data.Posts}}<tr>
-    <td><a href="/posts/{{postID .ID}}">{{with index .Targets 0}}{{index .Parts 0 | printf "%.90s"}}{{else}}(no text){{end}}</a></td>
-    <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
-    <td>{{if .PublishAt}}{{fmtTime .PublishAt}}{{else}}<span class="text-muted">Next slot when approved</span>{{end}}</td>
-  </tr>{{end}}</tbody>
-</table>
-{{else}}<p class="text-muted">None in this mode.</p>{{end}}
+{{template "post_list" .Data.Posts}}
 {{end}}

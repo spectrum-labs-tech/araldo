@@ -1,0 +1,20 @@
+{{/* Posts in lists: the overview, the posts page, and the posts a key or
+     member made. */}}
+
+{{/* postLink links to a post, by the start of its first channel's text. */}}
+{{define "postLink"}}<a href="/posts/{{postID .ID}}">{{with index .Targets 0}}{{index .Parts 0 | printf "%.90s"}}{{else}}(no text){{end}}</a>{{end}}
+
+{{/* postWhen is when a post publishes. */}}
+{{define "postWhen"}}{{if .PublishAt}}{{fmtTime .PublishAt}}{{else}}<span class="text-muted">Next slot when approved</span>{{end}}{{end}}
+
+{{/* post_list is a table of posts, or says there are none. */}}
+{{define "post_list"}}{{if .}}
+<table>
+  <thead><tr><th>Post</th><th>Status</th><th>Publish at</th></tr></thead>
+  <tbody>{{range .}}<tr>
+    <td>{{template "postLink" .}}</td>
+    <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
+    <td>{{template "postWhen" .}}</td>
+  </tr>{{end}}</tbody>
+</table>
+{{else}}<p class="text-muted">None in this mode.</p>{{end}}{{end}}

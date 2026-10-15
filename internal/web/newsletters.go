@@ -482,9 +482,13 @@ func (s *Server) renderPreview(c *reqCtx) error {
 			return s.writePreview(c, r.HTML)
 		}
 	}
-	c.w.WriteHeader(http.StatusUnprocessableEntity)
-	return s.writePreview(c, `<!DOCTYPE html><html lang="en"><body style="font-family:sans-serif;padding:16px;color:#b91c1c">`+
-		template.HTMLEscapeString(apperr.As(err).Message)+problems(err)+`</body></html>`)
+	status, msg, fault := s.serverFault(c.w, c.r, "previewing a newsletter", err)
+	html := template.HTMLEscapeString(msg)
+	if !fault {
+		status, html = http.StatusUnprocessableEntity, template.HTMLEscapeString(apperr.As(err).Message)+problems(err)
+	}
+	c.w.WriteHeader(status)
+	return s.writePreview(c, `<!DOCTYPE html><html lang="en"><body style="font-family:sans-serif;padding:16px;color:#b91c1c">`+html+`</body></html>`)
 }
 
 // problems lists an error's problems as HTML.

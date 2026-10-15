@@ -152,11 +152,14 @@ func (s *Server) inviteSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.svc.Login(r.Context(), u.Email, password, r.UserAgent(), s.clientIP(r))
 	if err != nil {
+		s.log.WarnContext(r.Context(), "signing in a new invitee", "err", err)
 		s.redirectNotice(w, r, "/login", "Your account is ready: sign in.")
 		return
 	}
 	s.setSessionCookie(w, res.Token, res.Session.ExpiresAt.Add(core.SessionAbsolute))
-	_ = s.svc.SwitchContext(r.Context(), res.Session, inv.OrgID, false)
+	if err := s.svc.SwitchContext(r.Context(), res.Session, inv.OrgID, false); err != nil {
+		s.log.WarnContext(r.Context(), "switching to the joined org", "err", err)
+	}
 	s.redirectNotice(w, r, "/", "Welcome to "+inv.OrgName+".")
 }
 

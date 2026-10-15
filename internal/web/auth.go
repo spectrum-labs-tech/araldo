@@ -120,7 +120,17 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = s.svc.Logout(r.Context(), c.session.ID)
+	if err := s.svc.Logout(r.Context(), c.session.ID); err != nil {
+		// Keep the cookie: clearing it would look like signing out while the
+		// session stays valid on the server.
+		status, msg, fault := s.serverFault(w, r, "signing out", err)
+		if !fault {
+			s.log.ErrorContext(r.Context(), "signing out", "err", err)
+			status, msg = http.StatusInternalServerError, "Something went wrong on our side."
+		}
+		s.renderError(c, status, msg+" You are still signed in: try signing out again.")
+		return
+	}
 	s.clearSessionCookie(w)
 	s.redirectNotice(w, r, "/login", "Signed out.")
 }
@@ -326,7 +336,9 @@ func (s *Server) onboarding(w http.ResponseWriter, r *http.Request) {
 			s.render(w, http.StatusUnprocessableEntity, "onboarding", v)
 			return
 		}
-		_ = s.svc.SwitchContext(r.Context(), c.session, o.ID, false)
+		if err := s.svc.SwitchContext(r.Context(), c.session, o.ID, false); err != nil {
+			s.log.WarnContext(r.Context(), "switching to the new org", "err", err)
+		}
 		s.redirectNotice(w, r, "/brands/new", "Org created. Now add your first brand.")
 		return
 	}

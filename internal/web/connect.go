@@ -165,7 +165,7 @@ func (s *Server) connectCallback(c *reqCtx) error {
 		if _, ok := ads.NetworkOf(provider); ok {
 			back = "/ads"
 		}
-		return redirect(c, back, "Not connected: "+firstNonEmpty(q.Get("error_description"), e)+".")
+		return redirect(c, back, connectRefused(e))
 	}
 	res, err := s.svc.FinishConnect(c.ctx(), c.actor, provider, q.Get("state"), q.Get("code"))
 	if err != nil {
@@ -211,3 +211,16 @@ func firstNonEmpty(vals ...string) string {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// connectRefused is the notice for a platform that sent the member back
+// with an OAuth error. Fixed text by error code: the callback's address,
+// error_description included, is anyone's to write.
+func connectRefused(code string) string {
+	switch code {
+	case "access_denied":
+		return "Not connected: you declined, or the platform did not allow it."
+	case "temporarily_unavailable", "server_error":
+		return "Not connected: the platform had a problem. Try again in a few minutes."
+	}
+	return "Not connected: the platform refused the connection. Try again, or check the app's settings with the platform."
+}

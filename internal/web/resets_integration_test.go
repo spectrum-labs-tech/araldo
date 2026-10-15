@@ -82,7 +82,7 @@ func TestPasswordResetInTheDashboard(t *testing.T) {
 		t.Fatalf("passwords that differ: %d", rec.Code)
 	}
 	rec = post(link, url.Values{"password": {"a whole new password"}, "confirm_password": {"a whole new password"}})
-	if rec.Code != http.StatusSeeOther || !strings.HasPrefix(rec.Header().Get("Location"), "/login?notice=") {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login" || !strings.Contains(noticeOf(rec), "password is changed") {
 		t.Fatalf("setting the password: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	if rec := get(link); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "Ask for a new link") {

@@ -40,7 +40,7 @@ func TestReportRecipientsInTheDashboard(t *testing.T) {
 		t.Fatal("the page does not list the address")
 	}
 	if rec := post(url.Values{"email": {"client@example.com"}}); rec.Code != http.StatusSeeOther ||
-		!strings.Contains(rec.Header().Get("Location"), "already+gets") {
+		!strings.Contains(noticeOf(rec), "already gets") {
 		t.Fatalf("adding it twice: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	if rec := post(url.Values{"email": {"client@example.com"}, "action": {"remove"}}); rec.Code != http.StatusSeeOther {

@@ -7,6 +7,7 @@ package web_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"html"
 	"image"
@@ -133,6 +134,17 @@ func newDashWith(t *testing.T, configure func(*core.Config), extra ...platform.A
 		return rec
 	}
 	return &dash{s: s, st: st, login: login, owner: owner, brand: b, send: send, srv: srv}
+}
+
+// noticeOf is the one-time notice a response sets for the next page.
+func noticeOf(rec *httptest.ResponseRecorder) string {
+	for _, ck := range rec.Result().Cookies() {
+		if ck.Name == "araldo_notice" && ck.MaxAge > 0 {
+			b, _ := base64.RawURLEncoding.DecodeString(ck.Value)
+			return string(b)
+		}
+	}
+	return ""
 }
 
 // TestPostFormCarriesImages drives the new-post form as a browser would: an
@@ -475,7 +487,7 @@ func TestInviteSomeone(t *testing.T) {
 		t.Fatalf("mismatched passwords: %d", rec.Code)
 	}
 	rec = post(anon, link, url.Values{"name": {"Invitee"}, "password": {"a long enough password"}, "confirm": {"a long enough password"}})
-	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.Contains(loc, "notice=Welcome") || len(rec.Result().Cookies()) == 0 {
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || loc != "/" || !strings.HasPrefix(noticeOf(rec), "Welcome") || strings.Contains(loc, "notice") {
 		t.Fatalf("creating the account: %d %q", rec.Code, loc)
 	}
 	u, err := d.s.UserByEmail(t.Context(), invitee)
@@ -511,7 +523,7 @@ func TestApproveADevice(t *testing.T) {
 	// Outside the password window, the password comes first, then back here.
 	d.s.Now = func() time.Time { return time.Now().Add(time.Hour) }
 	rec := d.send(httptest.NewRequest(http.MethodGet, "/device", nil))
-	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/confirm?next=/device&") {
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || loc != "/confirm?next=/device" || noticeOf(rec) == "" {
 		t.Fatalf("outside the window: %d %q", rec.Code, loc)
 	}
 	d.s.Now = time.Now
@@ -541,7 +553,7 @@ func TestApproveADevice(t *testing.T) {
 	}
 
 	rec = post("/device", url.Values{"code": {start.UserCode}, "action": {"approve"}})
-	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.Contains(loc, "is+signed+in") {
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.Contains(noticeOf(rec), "is signed in") {
 		t.Fatalf("approving: %d %q", rec.Code, loc)
 	}
 	if _, _, err := d.s.PollDevice(ctx, start.DeviceCode); err != nil {
@@ -611,7 +623,7 @@ func TestDeleteTheOrg(t *testing.T) {
 		t.Fatalf("a wrong name: %d", rec.Code)
 	}
 	rec := post(o.Name)
-	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.Contains(loc, "was+deleted") {
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || loc != "/" || !strings.Contains(noticeOf(rec), "was deleted") {
 		t.Fatalf("deleting: %d %q", rec.Code, loc)
 	}
 	if _, err := d.s.Org(t.Context(), d.owner); apperr.As(err).Kind != apperr.KindNotFound {
@@ -702,7 +714,7 @@ func TestConnectTheCLI(t *testing.T) {
 	d.s.Now = func() time.Time { return time.Now().Add(time.Hour) }
 	rec := d.send(httptest.NewRequest(http.MethodGet, "/cli?device=chris-laptop", nil))
 	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther ||
-		!strings.HasPrefix(loc, "/confirm?next="+url.QueryEscape("/cli?device=chris-laptop")+"&") {
+		loc != "/confirm?next="+url.QueryEscape("/cli?device=chris-laptop") || noticeOf(rec) == "" {
 		t.Fatalf("outside the window: %d %q", rec.Code, loc)
 	}
 	d.s.Now = time.Now
@@ -734,7 +746,7 @@ func TestConnectTheCLI(t *testing.T) {
 	// keeps asking for one through the password confirmation.
 	d.s.Now = func() time.Time { return time.Now().Add(time.Hour) }
 	rec = d.send(httptest.NewRequest(http.MethodGet, "/cli?device=chris-laptop&mode=live", nil))
-	if loc := rec.Header().Get("Location"); !strings.HasPrefix(loc, "/confirm?next="+url.QueryEscape("/cli?device=chris-laptop&mode=live")+"&") {
+	if loc := rec.Header().Get("Location"); loc != "/confirm?next="+url.QueryEscape("/cli?device=chris-laptop&mode=live") {
 		t.Fatalf("live, outside the window: %d %q", rec.Code, loc)
 	}
 	d.s.Now = time.Now

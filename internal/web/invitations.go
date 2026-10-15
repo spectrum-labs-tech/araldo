@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/api"
@@ -134,7 +133,7 @@ func (s *Server) inviteSubmit(w http.ResponseWriter, r *http.Request) {
 		if err := s.svc.SwitchContext(r.Context(), ss, inv.OrgID, false); err != nil {
 			s.log.WarnContext(r.Context(), "switching to the joined org", "err", err)
 		}
-		http.Redirect(w, r, "/?notice="+url.QueryEscape("You joined "+inv.OrgName+"."), http.StatusSeeOther)
+		s.redirectNotice(w, r, "/", "You joined "+inv.OrgName+".")
 		return
 	}
 	// Not signed in: make the invitee's account, then sign them in.
@@ -155,12 +154,12 @@ func (s *Server) inviteSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.svc.Login(r.Context(), u.Email, password, r.UserAgent(), s.clientIP(r))
 	if err != nil {
-		http.Redirect(w, r, "/login?notice="+url.QueryEscape("Your account is ready: sign in."), http.StatusSeeOther)
+		s.redirectNotice(w, r, "/login", "Your account is ready: sign in.")
 		return
 	}
 	s.setSessionCookie(w, res.Token, res.Session.ExpiresAt.Add(core.SessionAbsolute))
 	_ = s.svc.SwitchContext(r.Context(), res.Session, inv.OrgID, false)
-	http.Redirect(w, r, "/?notice="+url.QueryEscape("Welcome to "+inv.OrgName+"."), http.StatusSeeOther)
+	s.redirectNotice(w, r, "/", "Welcome to "+inv.OrgName+".")
 }
 
 func (s *Server) inviteErr(w http.ResponseWriter, r *http.Request, err error, d inviteData) {

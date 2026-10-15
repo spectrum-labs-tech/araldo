@@ -5,7 +5,6 @@ package web
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
@@ -109,5 +108,5 @@ func (s *Server) resetSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.clearSessionCookie(w)
-	http.Redirect(w, r, "/login?notice="+url.QueryEscape("Your password is changed. Sign in with it."), http.StatusSeeOther)
+	s.redirectNotice(w, r, "/login", "Your password is changed. Sign in with it.")
 }

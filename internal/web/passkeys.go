@@ -227,7 +227,8 @@ func (s *Server) addPasskey(w http.ResponseWriter, r *http.Request) {
 		s.jsonFail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"next": "/account?notice=" + url.QueryEscape("Added the passkey "+p.Name+".")})
+	setNotice(w, s.cfg.SecureCookies, "Added the passkey "+p.Name+".")
+	writeJSON(w, http.StatusOK, map[string]string{"next": "/account"})
 }
 
 func (s *Server) deletePasskey(c *reqCtx) error {

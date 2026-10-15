@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -196,5 +197,48 @@ func TestChooseBrand(t *testing.T) {
 				t.Fatalf("chooseBrand = %+v, want an invalid %s", ae, tt.wantCode)
 			}
 		})
+	}
+}
+
+// TestNotice checks that a notice reaches the next page once, through a
+// cookie, and that one in the address is never shown.
+func TestNotice(t *testing.T) {
+	t.Parallel()
+	set := httptest.NewRecorder()
+	setNotice(set, true, "Saved: Spring launch.")
+	cks := set.Result().Cookies()
+	if len(cks) != 1 || !cks[0].HttpOnly || !cks[0].Secure || cks[0].MaxAge <= 0 {
+		t.Fatalf("the notice cookie: %+v", cks)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/?notice=Your+account+is+locked", nil)
+	r.AddCookie(cks[0])
+	w := httptest.NewRecorder()
+	if got := takeNotice(w, r, true); got != "Saved: Spring launch." {
+		t.Fatalf("takeNotice = %q", got)
+	}
+	if cleared := w.Result().Cookies(); len(cleared) != 1 || cleared[0].MaxAge >= 0 {
+		t.Fatalf("the notice was not cleared: %+v", cleared)
+	}
+	if got := takeNotice(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/?notice=Your+account+is+locked", nil), true); got != "" {
+		t.Fatalf("a notice in the address was shown: %q", got)
+	}
+	bad := httptest.NewRequest(http.MethodGet, "/", nil)
+	bad.AddCookie(&http.Cookie{Name: noticeCookie, Value: "not base64!"})
+	if got := takeNotice(httptest.NewRecorder(), bad, true); got != "" {
+		t.Fatalf("a malformed notice was shown: %q", got)
+	}
+	empty := httptest.NewRecorder()
+	setNotice(empty, true, "")
+	if len(empty.Result().Cookies()) != 0 {
+		t.Fatal("an empty notice set a cookie")
+	}
+}
+
+func TestConnectRefused(t *testing.T) {
+	t.Parallel()
+	for _, code := range []string{"access_denied", "server_error", "<script>alert(1)</script>", ""} {
+		if got := connectRefused(code); strings.Contains(got, code) && code != "" || !strings.HasPrefix(got, "Not connected:") {
+			t.Errorf("connectRefused(%q) = %q", code, got)
+		}
 	}
 }

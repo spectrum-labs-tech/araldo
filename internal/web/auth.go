@@ -28,7 +28,7 @@ type loginData struct {
 
 func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 	v := s.view(nil, "", "Sign in", loginData{Next: r.URL.Query().Get("next")})
-	v.Notice = r.URL.Query().Get("notice")
+	v.Notice = takeNotice(w, r, s.cfg.SecureCookies)
 	s.render(w, http.StatusOK, "login", v)
 }
 
@@ -70,7 +70,7 @@ func (s *Server) pendingSession(w http.ResponseWriter, r *http.Request) (*model.
 	ss, _, err := s.svc.Session(r.Context(), ck.Value)
 	if err != nil {
 		s.clearSessionCookie(w)
-		http.Redirect(w, r, "/login?notice="+url.QueryEscape("Your sign-in expired; start again."), http.StatusSeeOther)
+		s.redirectNotice(w, r, "/login", "Your sign-in expired; start again.")
 		return nil, false
 	}
 	if ss.State != model.SessionPendingMFA {
@@ -126,7 +126,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.svc.Logout(r.Context(), c.session.ID)
 	s.clearSessionCookie(w)
-	http.Redirect(w, r, "/login?notice="+url.QueryEscape("Signed out."), http.StatusSeeOther)
+	s.redirectNotice(w, r, "/login", "Signed out.")
 }
 
 // confirm is sudo mode: re-enter the password (and code) before sensitive
@@ -339,7 +339,7 @@ func (s *Server) onboarding(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = s.svc.SwitchContext(r.Context(), c.session, o.ID, false)
-		http.Redirect(w, r, "/brands/new?notice="+url.QueryEscape("Org created. Now add your first brand."), http.StatusSeeOther)
+		s.redirectNotice(w, r, "/brands/new", "Org created. Now add your first brand.")
 		return
 	}
 	s.render(w, http.StatusOK, "onboarding", s.view(c, "", "Create your org", nil))

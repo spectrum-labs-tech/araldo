@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"embed"
+	"encoding/base64"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -152,6 +153,43 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, token string, expires t
 		SameSite: http.SameSiteLaxMode, Expires: expires})
 }
 
+// noticeCookie carries a one-time notice ("Saved.") to the page after a
+// redirect. A cookie, not the address: a notice in the query string could
+// be written by anyone who sends someone a link.
+const noticeCookie = "araldo_notice"
+
+// setNotice shows msg on the next page this browser loads.
+func setNotice(w http.ResponseWriter, secure bool, msg string) {
+	if msg == "" {
+		return
+	}
+	//nolint:gosec // G124: Secure is off only for local plain-HTTP development (ARALDO_INSECURE_COOKIES)
+	http.SetCookie(w, &http.Cookie{Name: noticeCookie, Value: base64.RawURLEncoding.EncodeToString([]byte(msg)), Path: "/", HttpOnly: true,
+		Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 60})
+}
+
+// takeNotice reads the notice set for this page, once.
+func takeNotice(w http.ResponseWriter, r *http.Request, secure bool) string {
+	ck, err := r.Cookie(noticeCookie)
+	if err != nil {
+		return ""
+	}
+	//nolint:gosec // G124: as above
+	http.SetCookie(w, &http.Cookie{Name: noticeCookie, Value: "", Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	msg, err := base64.RawURLEncoding.DecodeString(ck.Value)
+	if err != nil || len(msg) > 500 {
+		return ""
+	}
+	return string(msg)
+}
+
+// redirectNotice redirects to a local path, with a notice for the page
+// there.
+func (s *Server) redirectNotice(w http.ResponseWriter, r *http.Request, path, notice string) {
+	setNotice(w, s.cfg.SecureCookies, notice)
+	http.Redirect(w, r, path, http.StatusSeeOther) //nolint:gosec // G710: callers pass local paths
+}
+
 func (s *Server) clearSessionCookie(w http.ResponseWriter) {
 	//nolint:gosec // G124: as above
 	http.SetCookie(w, &http.Cookie{Name: s.sessionCookie(), Value: "", Path: "/", HttpOnly: true, Secure: s.cfg.SecureCookies,
@@ -214,6 +252,8 @@ type reqCtx struct {
 	org     *model.Org
 	// unread counts the person's unread notifications, for the header.
 	unread int
+	// secure is whether cookies are Secure (the notice cookie's too).
+	secure bool
 }
 
 func (c *reqCtx) ctx() context.Context { return c.r.Context() }
@@ -293,7 +333,7 @@ func (s *Server) signedIn(w http.ResponseWriter, r *http.Request) (*reqCtx, bool
 		http.Redirect(w, r, "/login/mfa", http.StatusSeeOther)
 		return nil, false
 	}
-	c := &reqCtx{w: w, r: r, user: u, session: ss}
+	c := &reqCtx{w: w, r: r, user: u, session: ss, secure: s.cfg.SecureCookies}
 	if n, err := s.svc.UnreadNotifications(r.Context(), u.ID); err == nil {
 		c.unread = n
 	}
@@ -354,7 +394,7 @@ func (s *Server) view(c *reqCtx, nav, title string, data any) view {
 		v.User, v.Session, v.Org, v.Orgs, v.CSRF = c.user, c.session, c.member, c.orgs, c.session.CSRFToken
 		v.Nonce = cspNonce(c.r)
 		v.Livemode = c.session.Livemode
-		v.Notice = c.r.URL.Query().Get("notice")
+		v.Notice = takeNotice(c.w, c.r, c.secure)
 		if c.org != nil {
 			v.RequireMFA = c.org.RequireMFA
 			if c.org.Status != model.OrgActive {
@@ -485,13 +525,7 @@ func (s *Server) renderError(c *reqCtx, status int, msg string) {
 }
 
 func redirect(c *reqCtx, path, notice string) error {
-	if notice != "" {
-		sep := "?"
-		if strings.Contains(path, "?") {
-			sep = "&"
-		}
-		path += sep + "notice=" + url.QueryEscape(notice)
-	}
+	setNotice(c.w, c.secure, notice)
 	http.Redirect(c.w, c.r, path, http.StatusSeeOther) //nolint:gosec // G710: callers pass local paths (through safeNext when user-supplied)
 	return nil
 }

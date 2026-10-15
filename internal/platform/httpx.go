@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -19,12 +20,49 @@ import (
 	"time"
 )
 
-// maxBody bounds how much of a platform response is read.
+// maxBody bounds how much of a platform response is read, unless a
+// Request asks for more.
 const maxBody = 1 << 20
+
+// maxErrorBody bounds how much of an error response an *Error keeps.
+const maxErrorBody = 8 << 10
+
+type retrySafeKey struct{}
+
+// RetrySafe marks requests made with the returned context as preparatory:
+// they publish nothing (an upload, a container to publish later, a read
+// sent as a POST), so a failure after sending is Transient rather than
+// Uncertain, and the post can be tried again. Never use it for the request
+// that makes a post public, nor for any request after that one.
+func RetrySafe(ctx context.Context) context.Context {
+	return context.WithValue(ctx, retrySafeKey{}, true)
+}
+
+// retrySafe reports whether repeating req cannot publish twice: a read, or
+// a request marked with RetrySafe.
+func retrySafe(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+	if req.Method == http.MethodGet || req.Method == http.MethodHead {
+		return true
+	}
+	safe, _ := req.Context().Value(retrySafeKey{}).(bool)
+	return safe
+}
+
+// afterSending is the kind of a failure once req may have been received.
+func afterSending(req *http.Request) Kind {
+	if retrySafe(req) {
+		return Transient
+	}
+	return Uncertain
+}
 
 // Do sends req and classifies transport failures: a request that failed
 // before it was fully written cannot have been received (Transient); one
-// that failed afterwards might have been (Uncertain, ADR 0011).
+// that failed afterwards might have been (Uncertain, ADR 0011), unless
+// repeating it is safe (see RetrySafe).
 func Do(client *http.Client, req *http.Request) (*http.Response, error) {
 	var wrote atomic.Bool
 	trace := &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) { wrote.Store(true) }}
@@ -35,9 +73,78 @@ func Do(client *http.Client, req *http.Request) (*http.Response, error) {
 	}
 	kind := Transient
 	if wrote.Load() {
-		kind = Uncertain
+		kind = afterSending(req)
 	}
 	return nil, &Error{Kind: kind, Code: "network", Msg: "request to " + req.URL.Host + " failed", Err: redactURL(err)}
+}
+
+// Request is one call to a platform.
+type Request struct {
+	Method, URL string
+	Header      map[string]string
+	// Body, if not nil, is sent as ContentType, Length bytes of it.
+	Body        io.Reader
+	Length      int64
+	ContentType string
+	// MaxBody bounds the response read; 0 means 1 MiB. A longer response
+	// is an error, never silently cut.
+	MaxBody int64
+}
+
+// Response is a platform's answer, read in full.
+type Response struct {
+	Status int
+	Header http.Header
+	Body   []byte
+	resp   *http.Response
+}
+
+// Err classifies a non-2xx response (see Classify); nil for a 2xx.
+func (r *Response) Err() error {
+	if r.Status >= 200 && r.Status <= 299 {
+		return nil
+	}
+	return Classify(r.resp, r.Body)
+}
+
+// Fetch sends r with Araldo's User-Agent and reads the whole response,
+// whatever its status. An error is a *Error: a transport failure as Do
+// classifies it, or a response that cannot be read or is longer than
+// MaxBody (Uncertain once sent, unless repeating the request is safe).
+func Fetch(ctx context.Context, client *http.Client, r Request) (*Response, error) {
+	req, err := http.NewRequestWithContext(ctx, r.Method, r.URL, r.Body)
+	if err != nil {
+		return nil, &Error{Kind: Rejected, Code: "request", Err: redactURL(err)}
+	}
+	if r.Body != nil {
+		req.ContentLength = r.Length
+	}
+	if r.ContentType != "" {
+		req.Header.Set("Content-Type", r.ContentType)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "Araldo (+https://github.com/spectrum-labs-tech/araldo)")
+	for k, v := range r.Header {
+		req.Header.Set(k, v)
+	}
+	resp, err := Do(client, req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	limit := r.MaxBody
+	if limit <= 0 {
+		limit = maxBody
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, &Error{Kind: afterSending(req), Code: "network", Msg: "reading the response from " + req.URL.Host, Err: err}
+	}
+	if int64(len(raw)) > limit {
+		return nil, &Error{Kind: afterSending(req), Code: "response_too_large", Status: resp.StatusCode,
+			Msg: fmt.Sprintf("the response from %s is longer than %d bytes", req.URL.Host, limit)}
+	}
+	return &Response{Status: resp.StatusCode, Header: resp.Header, Body: raw, resp: resp}, nil
 }
 
 // JSON sends a JSON request and decodes a JSON response into out (if not
@@ -69,41 +176,38 @@ func Send(ctx context.Context, client *http.Client, method, url string, headers 
 // bytes, such as a video (ADR 0027).
 func SendStream(ctx context.Context, client *http.Client, method, url string, headers map[string]string, body io.Reader, length int64,
 	contentType string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
-	if err != nil {
-		return &Error{Kind: Rejected, Code: "request", Err: redactURL(err)}
-	}
-	if body != nil {
-		req.ContentLength = length
-	}
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Araldo (+https://github.com/spectrum-labs-tech/araldo)")
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := Do(client, req)
+	return Call(ctx, client, Request{Method: method, URL: url, Header: headers, Body: body, Length: length, ContentType: contentType}, out)
+}
+
+// Call sends r and decodes a JSON response into out (if not nil). A
+// non-2xx response becomes a classified *Error.
+func Call(ctx context.Context, client *http.Client, r Request, out any) error {
+	resp, err := Fetch(ctx, client, r)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
-	if err != nil {
-		return &Error{Kind: Uncertain, Code: "network", Msg: "reading response", Err: err}
+	if err := resp.Err(); err != nil {
+		return err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return Classify(resp, raw)
-	}
-	if out != nil && len(raw) > 0 {
-		if err := json.Unmarshal(raw, out); err != nil {
+	if out != nil && len(resp.Body) > 0 {
+		if err := json.Unmarshal(resp.Body, out); err != nil {
 			// The platform accepted the request; we just cannot read its
 			// answer, so whether it took effect is unknown.
-			return &Error{Kind: Uncertain, Code: "decode", Msg: "unreadable response", Err: err}
+			return &Error{Kind: afterSending(resp.resp.Request), Code: "decode", Msg: "unreadable response", Err: err}
 		}
 	}
 	return nil
+}
+
+// RequireID returns nil if id is set, and otherwise an Uncertain error: the
+// platform accepted the post but did not say which one it is, so it may be
+// public, and it is neither recorded as published without a reference nor
+// retried blindly (ADR 0011).
+func RequireID(id, what string) error {
+	if id != "" {
+		return nil
+	}
+	return &Error{Kind: Uncertain, Code: "no_id", Msg: what + " answered without an ID"}
 }
 
 // StreamFile is a file sent in a multipart request as it is read, such as
@@ -185,31 +289,45 @@ func Multipart(fields [][2]string, files []File) (body []byte, contentType strin
 
 // ServerError classifies a 5xx response. A read can be retried (Transient),
 // but a write may have been carried out before the platform failed: X and
-// Meta are known to save a post and answer 500. So a 5xx to any other method
-// is Uncertain, and a non-idempotent platform is not retried (ADR 0011).
+// Meta are known to save a post and answer 500. So a 5xx to any other
+// method is Uncertain, and a non-idempotent platform is not retried
+// (ADR 0011), unless the request was marked RetrySafe.
 func ServerError(resp *http.Response, code, msg string) *Error {
-	kind := Uncertain
-	if resp.Request != nil && (resp.Request.Method == http.MethodGet || resp.Request.Method == http.MethodHead) {
-		kind = Transient
-	}
-	return &Error{Kind: kind, Code: code, Msg: msg}
+	return &Error{Kind: afterSending(resp.Request), Code: code, Msg: msg, Status: resp.StatusCode}
 }
 
-// Classify turns an error response into a *Error.
+// Classify turns an error response into a *Error, keeping its status and
+// the start of its body for adapters that read a platform's own codes.
 func Classify(resp *http.Response, body []byte) *Error {
 	msg := fmt.Sprintf("HTTP %d: %s", resp.StatusCode, snippet(body))
+	var e *Error
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
-		return &Error{Kind: RateLimited, Code: "rate_limited", Msg: msg, RetryAfter: RetryAfter(resp.Header, time.Now())}
+		e = &Error{Kind: RateLimited, Code: "rate_limited", Msg: msg, RetryAfter: RetryAfter(resp.Header, time.Now())}
 	case resp.StatusCode == http.StatusUnauthorized:
-		return &Error{Kind: AuthRevoked, Code: "unauthorized", Msg: msg}
+		e = &Error{Kind: AuthRevoked, Code: "unauthorized", Msg: msg}
 	case resp.StatusCode >= 500:
-		e := ServerError(resp, "server_error", msg)
+		e = ServerError(resp, "server_error", msg)
 		e.RetryAfter = RetryAfter(resp.Header, time.Now())
-		return e
 	default:
-		return &Error{Kind: Rejected, Code: "rejected", Msg: msg}
+		e = &Error{Kind: Rejected, Code: "rejected", Msg: msg}
 	}
+	e.Status = resp.StatusCode
+	if len(body) > maxErrorBody {
+		body = body[:maxErrorBody]
+	}
+	e.Body = bytes.Clone(body)
+	return e
+}
+
+// HTTPStatus is err's HTTP status, if it is a *Error from a response; 0
+// otherwise.
+func HTTPStatus(err error) int {
+	var pe *Error
+	if errors.As(err, &pe) {
+		return pe.Status
+	}
+	return 0
 }
 
 // RetryAfter reads a Retry-After header (seconds or an HTTP date), or

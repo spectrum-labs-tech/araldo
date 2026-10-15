@@ -178,6 +178,25 @@ type Adapter interface {
 	Idempotent() bool
 }
 
+// IdempotencyWindower is implemented by Idempotent adapters whose platform
+// remembers a key only for a while (Mastodon, an hour). After the window a
+// retry is a new post, so an uncertain attempt is retried only within it.
+type IdempotencyWindower interface {
+	IdempotencyWindow() time.Duration
+}
+
+// RetryUncertain reports whether an uncertain attempt on a may be retried
+// at now, when the target's key was first sent at first: never on a
+// platform that is not idempotent, and only within the window on one that
+// forgets keys (ADR 0011). Otherwise the target needs a person.
+func RetryUncertain(a Adapter, first, now time.Time) bool {
+	if !a.Idempotent() {
+		return false
+	}
+	w, ok := a.(IdempotencyWindower)
+	return !ok || now.Sub(first) < w.IdempotencyWindow()
+}
+
 // Kind classifies a failure; the publisher acts on it (ADR 0011).
 type Kind string
 
@@ -198,6 +217,12 @@ type Error struct {
 	Code string
 	Msg  string
 	Err  error
+	// Status is the HTTP status of the response that failed, 0 if there
+	// was none.
+	Status int
+	// Body is the start of that response, for adapters that read a
+	// platform's own error codes. It is never part of Error().
+	Body []byte
 }
 
 // Error is the error's text, scrubbed of credentials (see Scrub): it is

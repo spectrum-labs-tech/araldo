@@ -26,18 +26,22 @@ func TestJSONClassifiesResponses(t *testing.T) {
 		header map[string]string
 		want   Kind
 		retry  time.Duration
+		safe   bool
 	}{
-		{http.MethodPost, 429, map[string]string{"Retry-After": "7"}, RateLimited, 7 * time.Second},
-		{http.MethodPost, 401, nil, AuthRevoked, 0},
-		{http.MethodPost, 400, nil, Rejected, 0},
-		{http.MethodPost, 422, nil, Rejected, 0},
-		{http.MethodPost, 500, nil, Uncertain, 0},
-		{http.MethodPost, 503, map[string]string{"Retry-After": "3"}, Uncertain, 3 * time.Second},
-		{http.MethodPost, 502, nil, Uncertain, 0},
-		{http.MethodPut, 504, nil, Uncertain, 0},
-		{http.MethodGet, 500, nil, Transient, 0},
-		{http.MethodGet, 503, map[string]string{"Retry-After": "3"}, Transient, 3 * time.Second},
-		{http.MethodGet, 502, nil, Transient, 0},
+		{http.MethodPost, 429, map[string]string{"Retry-After": "7"}, RateLimited, 7 * time.Second, false},
+		{http.MethodPost, 401, nil, AuthRevoked, 0, false},
+		{http.MethodPost, 400, nil, Rejected, 0, false},
+		{http.MethodPost, 422, nil, Rejected, 0, false},
+		{http.MethodPost, 500, nil, Uncertain, 0, false},
+		{http.MethodPost, 503, map[string]string{"Retry-After": "3"}, Uncertain, 3 * time.Second, false},
+		{http.MethodPost, 502, nil, Uncertain, 0, false},
+		{http.MethodPut, 504, nil, Uncertain, 0, false},
+		{http.MethodGet, 500, nil, Transient, 0, false},
+		{http.MethodGet, 503, map[string]string{"Retry-After": "3"}, Transient, 3 * time.Second, false},
+		{http.MethodGet, 502, nil, Transient, 0, false},
+		// A preparatory write (an upload) publishes nothing.
+		{http.MethodPost, 500, nil, Transient, 0, true},
+		{http.MethodPost, 400, nil, Rejected, 0, true},
 	}
 	for _, tt := range tests {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -51,10 +55,14 @@ func TestJSONClassifiesResponses(t *testing.T) {
 		if tt.method != http.MethodGet {
 			in = map[string]string{"a": "b"}
 		}
-		err := JSON(t.Context(), srv.Client(), tt.method, srv.URL, nil, in, nil)
+		ctx := t.Context()
+		if tt.safe {
+			ctx = RetrySafe(ctx)
+		}
+		err := JSON(ctx, srv.Client(), tt.method, srv.URL, nil, in, nil)
 		srv.Close()
 		var pe *Error
-		if !errors.As(err, &pe) || pe.Kind != tt.want || pe.RetryAfter != tt.retry {
+		if !errors.As(err, &pe) || pe.Kind != tt.want || pe.RetryAfter != tt.retry || pe.Status != tt.status || string(pe.Body) != `{"error":"nope"}` {
 			t.Errorf("%s HTTP %d: err = %v, want kind %s retry %s", tt.method, tt.status, err, tt.want, tt.retry)
 		}
 	}
@@ -154,5 +162,87 @@ func TestMultipartStream(t *testing.T) {
 	if form.Value["chat_id"][0] != "1" || form.Value["caption"][0] != "hi" || string(data) != "12345" ||
 		form.File["video"][0].Header.Get("Content-Type") != "video/mp4" {
 		t.Fatalf("form %+v, file %q", form.Value, data)
+	}
+}
+
+func TestFetchBoundsAndKeepsErrors(t *testing.T) {
+	t.Parallel()
+	long := `{"error":{"message":"` + strings.Repeat("x", 500) + `","code":190}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/big":
+			_, _ = w.Write([]byte(strings.Repeat("a", 2000)))
+		case "/fail":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(long))
+		default:
+			if r.Header.Get("User-Agent") == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Location", "/next")
+			_, _ = w.Write([]byte("ok"))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	tests := []struct {
+		name    string
+		method  string
+		path    string
+		max     int64
+		safe    bool
+		kind    Kind // "" means no error from Fetch
+		status  int
+		errBody string
+	}{
+		{"ok", http.MethodPost, "/ok", 0, false, "", 200, ""},
+		{"error status keeps the whole body", http.MethodPost, "/fail", 0, false, "", 400, long},
+		{"too large write", http.MethodPost, "/big", 1000, false, Uncertain, 0, ""},
+		{"too large read", http.MethodGet, "/big", 1000, false, Transient, 0, ""},
+		{"too large preparatory write", http.MethodPost, "/big", 1000, true, Transient, 0, ""},
+		{"a larger limit", http.MethodGet, "/big", 4000, false, "", 200, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			if tt.safe {
+				ctx = RetrySafe(ctx)
+			}
+			resp, err := Fetch(ctx, srv.Client(), Request{Method: tt.method, URL: srv.URL + tt.path, MaxBody: tt.max})
+			if tt.kind != "" {
+				if KindOf(err) != tt.kind {
+					t.Fatalf("err = %v, want %s", err, tt.kind)
+				}
+				return
+			}
+			if err != nil || resp.Status != tt.status {
+				t.Fatalf("Fetch = %+v, %v", resp, err)
+			}
+			if tt.errBody == "" {
+				if resp.Err() != nil {
+					t.Fatalf("Err() = %v", resp.Err())
+				}
+				return
+			}
+			var pe *Error
+			if !errors.As(resp.Err(), &pe) || pe.Status != tt.status || string(pe.Body) != tt.errBody || HTTPStatus(resp.Err()) != tt.status {
+				t.Fatalf("Err() = %+v", resp.Err())
+			}
+		})
+	}
+}
+
+func TestRequireID(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		id   string
+		want Kind
+	}{{"1", ""}, {"", Uncertain}}
+	for _, tt := range tests {
+		err := RequireID(tt.id, "the platform")
+		if (err == nil) != (tt.want == "") || err != nil && KindOf(err) != tt.want {
+			t.Errorf("RequireID(%q) = %v", tt.id, err)
+		}
 	}
 }

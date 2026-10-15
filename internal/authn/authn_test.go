@@ -45,14 +45,75 @@ func TestWeakHashAsksForRehash(t *testing.T) {
 
 func TestVerifyRejectsMalformedHashes(t *testing.T) {
 	t.Parallel()
+	const salt16, sum32 = "AAAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	for _, h := range []string{
 		"", "plain", "$argon2i$v=19$m=1,t=1,p=1$AAAA$AAAA",
-		"$argon2id$v=19$m=0,t=1,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-		"$argon2id$v=19$m=99999999,t=1,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"$argon2id$v=19$m=0,t=1,p=1$" + salt16 + "$" + sum32,
+		"$argon2id$v=19$m=99999999,t=1,p=1$" + salt16 + "$" + sum32,
+		"$argon2id$v=19$m=2097152,t=1,p=1$" + salt16 + "$" + sum32, // 2 GiB
+		"$argon2id$v=19$m=1024,t=65,p=1$" + salt16 + "$" + sum32,
+		"$argon2id$v=19$m=1024,t=1,p=65$" + salt16 + "$" + sum32,
+		"$argon2id$v=19$m=1024,t=1,p=255$" + salt16 + "$" + sum32,
+		"$argon2id$v=19$m=1024,t=1,p=1$$" + sum32,               // no salt
+		"$argon2id$v=19$m=1024,t=1,p=1$AAAAAAAAAAA$" + sum32,    // an 8-byte salt
+		"$argon2id$v=19$m=1024,t=1,p=1$" + salt16 + "$AAAAAAAA", // a 6-byte sum
+		"$argon2id$v=19$m=1024,t=1,p=1$" + salt16 + "$" + strings.Repeat("A", 128),
 	} {
 		if _, _, err := VerifyPassword("x", h); !errors.Is(err, ErrBadHash) {
 			t.Errorf("VerifyPassword(%q) err = %v, want ErrBadHash", h, err)
 		}
+	}
+}
+
+// TestVerifyAcceptsHashesAraldoMade checks the bounds keep every hash
+// Araldo has written readable: today's defaults, and older, weaker ones.
+func TestVerifyAcceptsHashesAraldoMade(t *testing.T) {
+	t.Parallel()
+	for _, p := range []Argon2Params{DefaultArgon2, {Memory: 1024, Time: 1, Threads: 1}, {Memory: 64 * 1024, Time: 3, Threads: 4}} {
+		h, err := hashWith("a long enough password", p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok, _, err := VerifyPassword("a long enough password", h); err != nil || !ok {
+			t.Errorf("hash with %+v: %t, %v", p, ok, err)
+		}
+	}
+}
+
+// TestArgonRunsAreBounded checks a password check waits while every
+// argon2 slot is taken, and runs once one is free.
+func TestArgonRunsAreBounded(t *testing.T) {
+	t.Parallel()
+	h, err := hashWith("a long enough password", Argon2Params{Memory: 1024, Time: 1, Threads: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range cap(argonSlots) {
+		argonSlots <- struct{}{}
+	}
+	done := make(chan bool)
+	go func() {
+		ok, _, _ := VerifyPassword("a long enough password", h)
+		done <- ok
+	}()
+	select {
+	case <-done:
+		t.Fatal("a check ran while every slot was taken")
+	case <-time.After(50 * time.Millisecond):
+	}
+	for range cap(argonSlots) {
+		<-argonSlots
+	}
+	if ok := <-done; !ok {
+		t.Error("the check, once a slot was free, failed")
+	}
+}
+
+func TestSpendPasswordTime(t *testing.T) {
+	t.Parallel()
+	SpendPasswordTime("whatever")
+	if _, _, _, err := parseHash(dummyHash()); err != nil {
+		t.Errorf("the dummy hash does not parse: %v", err)
 	}
 }
 

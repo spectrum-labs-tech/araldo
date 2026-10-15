@@ -11,7 +11,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -47,6 +49,32 @@ const (
 	hashLen = 32
 )
 
+// Bounds a stored hash's parameters must keep, so a hash written into the
+// database by mistake or malice cannot make one check take gigabytes or
+// minutes. Every hash Araldo has made is well inside them: 19 MiB, two
+// passes, one thread, a 16-byte salt and a 32-byte sum.
+const (
+	maxMemory  = 1 << 20 // KiB: 1 GiB
+	maxTime    = 64
+	maxThreads = 64
+	minSaltLen = 16
+	minSumLen  = 16
+	maxSumLen  = 64
+)
+
+// argonSlots bounds how many argon2 computations run at once. Each holds
+// its memory (19 MiB by default) for its whole run, so a burst of sign-ins
+// would otherwise take as much memory as it has requests; past the number
+// of CPUs they only queue for the processor anyway.
+var argonSlots = make(chan struct{}, max(2, runtime.GOMAXPROCS(0)))
+
+// argonKey is argon2.IDKey, waiting for a free slot first.
+func argonKey(pw, salt []byte, p Argon2Params, n uint32) []byte {
+	argonSlots <- struct{}{}
+	defer func() { <-argonSlots }()
+	return argon2.IDKey(pw, salt, p.Time, p.Memory, p.Threads, n)
+}
+
 // ValidatePassword checks a new password's length.
 func ValidatePassword(pw string) error {
 	n := utf8.RuneCountInString(pw)
@@ -69,7 +97,7 @@ func hashWith(pw string, p Argon2Params) (string, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	sum := argon2.IDKey([]byte(pw), salt, p.Time, p.Memory, p.Threads, hashLen)
+	sum := argonKey([]byte(pw), salt, p, hashLen)
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s", argon2.Version, p.Memory, p.Time, p.Threads,
 		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(sum)), nil
 }
@@ -81,7 +109,7 @@ func VerifyPassword(pw, encoded string) (ok, rehash bool, err error) {
 	if err != nil {
 		return false, false, err
 	}
-	got := argon2.IDKey([]byte(pw), salt, p.Time, p.Memory, p.Threads, uint32(len(sum))) //nolint:gosec // length of our own 32-byte hash
+	got := argonKey([]byte(pw), salt, p, uint32(len(sum))) //nolint:gosec // parseHash bounds it to maxSumLen
 	if subtle.ConstantTimeCompare(got, sum) != 1 {
 		return false, false, nil
 	}
@@ -89,12 +117,16 @@ func VerifyPassword(pw, encoded string) (ok, rehash bool, err error) {
 }
 
 // dummyHash is verified against when an account does not exist, so sign-in
-// takes the same time either way.
-var dummyHash, _ = HashPassword("araldo-timing-equalizer")
+// takes the same time either way. It is made on first use, not on every
+// start of every command, which may never check a password.
+var dummyHash = sync.OnceValue(func() string {
+	h, _ := HashPassword("araldo-timing-equalizer")
+	return h
+})
 
 // SpendPasswordTime does the work of one password check and discards it.
 func SpendPasswordTime(pw string) {
-	_, _, _ = VerifyPassword(pw, dummyHash)
+	_, _, _ = VerifyPassword(pw, dummyHash())
 }
 
 func parseHash(encoded string) (Argon2Params, []byte, []byte, error) {
@@ -110,15 +142,15 @@ func parseHash(encoded string) (Argon2Params, []byte, []byte, error) {
 	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &p.Memory, &p.Time, &p.Threads); err != nil {
 		return Argon2Params{}, nil, nil, ErrBadHash
 	}
-	if p.Memory == 0 || p.Time == 0 || p.Threads == 0 || p.Memory > 1<<21 || p.Time > 64 {
+	if p.Memory == 0 || p.Time == 0 || p.Threads == 0 || p.Memory > maxMemory || p.Time > maxTime || p.Threads > maxThreads {
 		return Argon2Params{}, nil, nil, ErrBadHash
 	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
-	if err != nil {
+	if err != nil || len(salt) < minSaltLen {
 		return Argon2Params{}, nil, nil, ErrBadHash
 	}
 	sum, err := base64.RawStdEncoding.DecodeString(parts[5])
-	if err != nil || len(sum) < 16 {
+	if err != nil || len(sum) < minSumLen || len(sum) > maxSumLen {
 		return Argon2Params{}, nil, nil, ErrBadHash
 	}
 	return p, salt, sum, nil

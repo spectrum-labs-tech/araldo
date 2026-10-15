@@ -69,8 +69,9 @@
     <legend>When</legend>
     <label class="{{$radio}}"><input type="radio" name="publish" value="now" {{if eq (index .Data.Form "publish") "now"}}checked{{end}}> Now</label>
     <label class="{{$radio}}"><input type="radio" name="publish" value="next_slot" {{if eq (index .Data.Form "publish") "next_slot"}}checked{{end}}> Next free slot</label>
-    <label class="{{$radio}}"><input type="radio" name="publish" value="at" {{if eq (index .Data.Form "publish") "at"}}checked{{end}}> At
-      <input type="datetime-local" name="publish_at" value="{{index .Data.Form "publish_at"}}"> <span class="text-sm text-muted">(brand's time zone)</span></label>
+    <label class="{{$radio}}"><input type="radio" name="publish" value="at" {{if eq (index .Data.Form "publish") "at"}}checked{{end}}> At</label>
+    <span class="flex flex-wrap items-center gap-1.5"><input type="datetime-local" name="publish_at" value="{{index .Data.Form "publish_at"}}" aria-label="Date and time, in the brand's time zone">
+      <span class="text-sm text-muted" aria-hidden="true">(brand's time zone)</span></span>
   </fieldset>
 
   <div class="flex flex-wrap items-center gap-2">

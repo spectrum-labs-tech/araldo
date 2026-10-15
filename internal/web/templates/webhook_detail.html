@@ -6,7 +6,7 @@
   <h1 class="break-all">{{$e.URL}}</h1>
   <span class="pill {{statusClass $e.Status}}">{{$e.Status}}</span>
 </div>
-{{if $e.DisabledReason}}<p class="alert">{{$e.DisabledReason}}</p>{{end}}
+{{if $e.DisabledReason}}<p class="alert" role="status">{{$e.DisabledReason}}</p>{{end}}
 {{if .Data.Secret}}
 <section class="card secret" role="alert">
   <h2>New signing secret</h2>

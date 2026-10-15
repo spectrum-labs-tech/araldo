@@ -36,8 +36,8 @@ func TestNewslettersInTheDashboard(t *testing.T) {
 		return rec.Body.String()
 	}
 	if got := get("/newsletters"); !strings.Contains(got, "No mail accounts are connected.") || !strings.Contains(got, `action="/mail-accounts"`) ||
-		strings.Contains(got, `<li class="done">`) {
-		t.Fatalf("an empty page offers the connect form, nothing done:\n%s", got)
+		strings.Contains(got, `<li class="done">`) || !strings.Contains(got, `<a class="btn btn-primary" href="/newsletters/new`) {
+		t.Fatalf("an empty page offers the connect form and a new issue, nothing done:\n%s", got)
 	}
 
 	// Connecting leads to choosing the account's audiences.

@@ -10,7 +10,7 @@
   <tbody>
   {{range .Data.Channels}}
   <tr>
-    <td><strong>{{.DisplayName}}</strong>{{if .Handle}} <span class="text-muted">{{.Handle}}</span>{{end}}{{if .ProfileURL}} <a href="{{safeURL .ProfileURL}}" target="_blank" rel="noopener">↗</a>{{end}}
+    <td><strong>{{.DisplayName}}</strong>{{if .Handle}} <span class="text-muted">{{.Handle}}</span>{{end}}{{if .ProfileURL}} <a href="{{safeURL .ProfileURL}}" target="_blank" rel="noopener"><span aria-hidden="true">↗</span><span class="sr-only">Open {{.DisplayName}}'s profile (new tab)</span></a>{{end}}
       <div class="text-sm text-muted"><code>{{chanID .ID}}</code></div></td>
     <td><span class="inline-flex items-center gap-1.5">{{icon (or .Emulates .Provider)}} {{.Provider}}{{if .Emulates}} → {{.Emulates}}{{end}}</span></td>
     <td>{{index $.Data.Brands .BrandID}}</td>

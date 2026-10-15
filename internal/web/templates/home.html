@@ -17,7 +17,7 @@
 <section class="card">
   <h2>Get started</h2>
   <ol class="list-decimal space-y-1 pl-5">
-    {{range .Data.Steps}}<li><a href="{{.Href}}" class="{{if .Done}}text-muted line-through{{end}}">{{.Label}}</a>{{if .Done}} <span class="font-bold text-good" aria-label="done">✓</span>{{end}}</li>{{end}}
+    {{range .Data.Steps}}<li>{{if .Done}}<span class="sr-only">Done:</span> {{end}}<a href="{{.Href}}" class="{{if .Done}}text-muted line-through{{end}}">{{.Label}}</a>{{if .Done}} <span class="font-bold text-good" aria-hidden="true">✓</span>{{end}}</li>{{end}}
   </ol>
 </section>
 {{end}}

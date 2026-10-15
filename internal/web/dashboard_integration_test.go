@@ -413,6 +413,10 @@ func TestPostsListFiltersAndPages(t *testing.T) {
 	if !strings.Contains(page, `class="chip no-underline hover:no-underline" aria-current="true">scheduled`) {
 		t.Fatal("the chosen status chip is not marked current")
 	}
+	// Each target's status is said in words, not only by the pill's color.
+	if !regexp.MustCompile(`<span class="sr-only"> \([^)<]+\): [a-z_]+</span>`).MatchString(page) {
+		t.Fatal("a target's status is shown only by color")
+	}
 	if page := get("/posts?status=failed"); rows(page) != 0 || !strings.Contains(page, "No posts match") {
 		t.Fatal("an empty filter does not say so")
 	}

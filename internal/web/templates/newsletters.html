@@ -8,7 +8,7 @@
     <select name="brand"><option value="">All brands</option>{{range $d.Brands}}<option value="{{brandID .ID}}" {{if eq $d.Brand (brandID .ID)}}selected{{end}}>{{.Name}}</option>{{end}}</select>
   </label>
   <button>Show</button>
-  {{if $d.CanWrite}}<a class="btn-primary" href="/newsletters/new{{if $d.Brand}}?brand={{$d.Brand}}{{end}}">New issue</a>{{end}}
+  {{if $d.CanWrite}}<a class="btn btn-primary" href="/newsletters/new{{if $d.Brand}}?brand={{$d.Brand}}{{end}}">New issue</a>{{end}}
 </form>
 
 <section class="card">

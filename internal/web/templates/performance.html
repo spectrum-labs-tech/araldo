@@ -40,7 +40,7 @@
   {{if .Data.Channels}}
   <table class="text-sm">
     <thead><tr><th>Channel</th><th>Posts</th>{{template "countsHead"}}</tr></thead>
-    <tbody>{{range .Data.Channels}}<tr><td class="inline-flex items-center gap-1">{{icon .Provider}} {{.Label}}</td><td>{{.Posts}}</td>{{template "counts" .}}</tr>{{end}}</tbody>
+    <tbody>{{range .Data.Channels}}<tr><td><span class="inline-flex items-center gap-1">{{icon .Provider}} {{.Label}}</span></td><td>{{.Posts}}</td>{{template "counts" .}}</tr>{{end}}</tbody>
   </table>
   {{else}}<p class="text-muted">No channel has been read yet.</p>{{end}}
 </section>

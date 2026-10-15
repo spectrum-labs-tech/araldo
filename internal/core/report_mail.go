@@ -126,7 +126,8 @@ func (s *Service) mailReports(ctx context.Context, orgID *uuid.UUID) (int, error
 }
 
 // planReportMailings makes, once per brand and month, the share link and
-// the emails to send.
+// the emails to send. A brand that cannot be planned now (its org's key
+// unreachable, say) is logged and tried again next run; the others go on.
 func (s *Service) planReportMailings(ctx context.Context, orgID *uuid.UUID) error {
 	now := s.Now()
 	brands, err := s.store.ReportBrands(ctx, orgID)
@@ -138,33 +139,47 @@ func (s *Service) planReportMailings(ctx context.Context, orgID *uuid.UUID) erro
 		if !due {
 			continue
 		}
-		if done, err := s.store.HasReportMailing(ctx, b.OrgID, b.BrandID, month); err != nil || done {
-			if err != nil {
-				return err
-			}
-			continue
-		}
-		a := reportActor(b.OrgID)
-		token, sh, err := s.CreateReportShare(ctx, a, b.BrandID, month)
-		if err != nil {
-			s.log.WarnContext(ctx, "sharing a monthly report", "brand", id.Format(id.Brand, b.BrandID), "month", month, "err", err)
-			continue
-		}
-		sealed, err := s.keys.Encrypt(ctx, b.OrgID, shareTokenAAD(sh.ID), []byte(token))
-		if err != nil {
-			return err
-		}
-		created, err := s.store.CreateReportMailing(ctx, b.OrgID, b.BrandID, month, sh.ID, sealed, now)
-		if err != nil {
-			return err
-		}
-		if !created { // another worker mailed it meanwhile
-			if err := s.RevokeReportShare(ctx, a, sh.ID); err != nil {
-				return err
-			}
+		if err := s.planReportMailing(ctx, b.OrgID, b.BrandID, month, now); err != nil {
+			s.log.WarnContext(ctx, "planning a monthly report's mailing failed; trying again next run", "brand", id.Format(id.Brand, b.BrandID),
+				"month", month, "err", err)
 		}
 	}
 	return nil
+}
+
+// errMailedAlready rolls back a mailing another worker made first.
+var errMailedAlready = errors.New("core: the report was mailed already")
+
+// planReportMailing makes one brand's month's share link and emails: the
+// token is sealed first, then the share and the mailing are written
+// together, so a failure leaves no share without its mailing.
+func (s *Service) planReportMailing(ctx context.Context, orgID, brandID uuid.UUID, month string, now time.Time) error {
+	if done, err := s.store.HasReportMailing(ctx, orgID, brandID, month); err != nil || done {
+		return err
+	}
+	a := reportActor(orgID)
+	sh, token, hash, err := s.newReportShare(ctx, a, brandID, month)
+	if err != nil {
+		return err
+	}
+	sealed, err := s.keys.Encrypt(ctx, orgID, shareTokenAAD(sh.ID), []byte(token))
+	if err != nil {
+		return err
+	}
+	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := s.recordReportShare(ctx, tx, a, sh, hash); err != nil {
+			return err
+		}
+		created, err := tx.CreateReportMailing(ctx, orgID, brandID, month, sh.ID, sealed, now)
+		if err == nil && !created {
+			return errMailedAlready // another worker mailed it meanwhile
+		}
+		return err
+	})
+	if errors.Is(err, errMailedAlready) {
+		return nil
+	}
+	return err
 }
 
 // sendReportEmails sends the report emails due, retrying failures as
@@ -216,7 +231,7 @@ func (s *Service) deliverReportEmail(ctx context.Context, now time.Time, d store
 	if r == nil {
 		if r, err = s.BrandReport(ctx, reportActor(d.OrgID), ReportInput{BrandID: d.BrandID, Month: d.Month}); err != nil {
 			s.log.WarnContext(ctx, "computing a monthly report", "brand", id.Format(id.Brand, d.BrandID), "err", err)
-			return "queued", truncate(err.Error(), 500), ptr(now.Add(notificationEmailRetry[min(d.Attempts, len(notificationEmailRetry))-1])), nil
+			return "queued", truncate(err.Error(), 500), ptr(now.Add(retryAfter(d.Attempts))), nil
 		}
 		reports[key] = r
 	}
@@ -243,7 +258,7 @@ func (s *Service) deliverReportEmail(ctx context.Context, now time.Time, d store
 		if smtpmail.IsPermanent(err) || d.Attempts >= notificationEmailAttempts {
 			return "failed", reason, nil, nil
 		}
-		return "queued", reason, ptr(now.Add(notificationEmailRetry[min(d.Attempts, len(notificationEmailRetry))-1])), nil
+		return "queued", reason, ptr(now.Add(retryAfter(d.Attempts))), nil
 	}
 	return "sent", "", nil, nil
 }

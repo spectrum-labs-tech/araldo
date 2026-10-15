@@ -5,6 +5,7 @@
 package core_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -100,5 +101,36 @@ func TestDailySummary(t *testing.T) {
 		if c.Email || !c.InApp {
 			t.Errorf("after unsubscribing from the summary, %s: in app %v, email %v", c.Key, c.InApp, c.Email)
 		}
+	}
+}
+
+// TestDailySummaryIsWhole checks a daily summary takes in every org
+// notification waiting, not just those in the batch that found it.
+func TestDailySummaryIsWhole(t *testing.T) {
+	t.Parallel()
+	mail := &flakySender{}
+	w := newWorld(t, withMail(mail))
+	ctx := t.Context()
+	now := time.Date(2026, 11, 10, 20, 0, 0, 0, time.UTC) // 13:00 in Denver
+	w.s.Now = func() time.Time { return now }
+	if err := w.s.SetNotificationEmailSetting(ctx, w.user.ID, core.EmailSetting{Digest: true, Timezone: "America/Denver"}); err != nil {
+		t.Fatal(err)
+	}
+	const many = 130 // more than one batch
+	for i := range many {
+		if err := core.NotifyOrg(w.s, w.org.ID, true, core.NotifyPostApproval, fmt.Sprintf("Post %d waits", i), "", []uuid.UUID{w.user.ID}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now = time.Date(2026, 11, 11, 15, 0, 0, 0, time.UTC) // 8:00 in Denver the next day
+	if n, err := core.SendNotificationEmailsTo(w.s, w.user.ID); err != nil || n != 1 {
+		t.Fatalf("sent %d, %v; want one summary", n, err)
+	}
+	sent := mail.to(w.user.Email)
+	if len(sent) != 1 {
+		t.Fatalf("sent %d emails, want one summary", len(sent))
+	}
+	if want := fmt.Sprintf("Araldo: %d things since yesterday", many); sent[0].Subject != want {
+		t.Fatalf("the summary is %q, want %q", sent[0].Subject, want)
 	}
 }

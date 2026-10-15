@@ -227,15 +227,29 @@ func (s *Store) TurnOffOrgEmails(ctx context.Context, userID uuid.UUID, types []
 // (userID) or everyone, for owner: each counts an attempt and is not due
 // again until lease, so another worker leaves it while this one sends.
 func (s *Store) ClaimNotificationEmails(ctx context.Context, userID *uuid.UUID, owner string, now, lease time.Time, limit int) ([]NotificationEmailDue, error) {
+	return s.claimNotificationEmails(ctx, userID, false, owner, now, lease, limit)
+}
+
+// ClaimOrgNotificationEmails is ClaimNotificationEmails for one person's
+// org notifications only: the rest of a daily summary whose first ones
+// were claimed, so it goes out whole.
+func (s *Store) ClaimOrgNotificationEmails(ctx context.Context, userID uuid.UUID, owner string, now, lease time.Time, limit int) ([]NotificationEmailDue,
+	error) {
+	return s.claimNotificationEmails(ctx, &userID, true, owner, now, lease, limit)
+}
+
+func (s *Store) claimNotificationEmails(ctx context.Context, userID *uuid.UUID, orgOnly bool, owner string, now, lease time.Time,
+	limit int) ([]NotificationEmailDue, error) {
 	rows, err := s.q.Query(ctx, `UPDATE notification_emails e SET attempts = e.attempts + 1, next_attempt_at = $2, lease_owner = $5
 		FROM notifications n JOIN users u ON u.id = n.user_id LEFT JOIN orgs o ON o.id = n.org_id
 		WHERE e.notification_id = n.id AND e.notification_id IN (
 			SELECT x.notification_id FROM notification_emails x JOIN notifications y ON y.id = x.notification_id
 			WHERE x.status = 'queued' AND x.next_attempt_at <= $1 AND ($4::uuid IS NULL OR y.user_id = $4)
+				AND (NOT $6 OR y.org_id IS NOT NULL)
 			ORDER BY x.next_attempt_at LIMIT $3 FOR UPDATE OF x SKIP LOCKED)
 		RETURNING n.id, n.user_id, n.org_id, COALESCE(o.name, ''), n.type, n.subject, n.body, n.link, n.created_at, u.email, e.attempts,
 			COALESCE((SELECT digest FROM notification_settings ns WHERE ns.user_id = n.user_id), false)`,
-		now, lease, limit, userID, owner)
+		now, lease, limit, userID, owner, orgOnly)
 	if err != nil {
 		return nil, err
 	}

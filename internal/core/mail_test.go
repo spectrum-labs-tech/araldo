@@ -5,6 +5,7 @@ package core
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMailMessage(t *testing.T) {
@@ -60,5 +61,25 @@ func TestMailMessage(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRetryAfter(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		attempts int
+		want     time.Duration
+	}{
+		{-1, time.Minute}, // never panics
+		{0, time.Minute},
+		{1, time.Minute},
+		{2, 5 * time.Minute},
+		{6, 12 * time.Hour},
+		{50, 12 * time.Hour}, // the last wait repeats
+	}
+	for _, tt := range tests {
+		if got := retryAfter(tt.attempts); got != tt.want {
+			t.Errorf("retryAfter(%d) = %v, want %v", tt.attempts, got, tt.want)
+		}
 	}
 }

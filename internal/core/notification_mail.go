@@ -40,6 +40,15 @@ const (
 // all.
 var notificationEmailRetry = []time.Duration{time.Minute, 5 * time.Minute, 30 * time.Minute, 2 * time.Hour, 6 * time.Hour, 12 * time.Hour}
 
+// digestMost bounds what one daily summary takes in.
+const digestMost = 500
+
+// retryAfter is the wait after the attempts-th failed try (counting from
+// 1; anything less counts as the first), the last wait repeating.
+func retryAfter(attempts int) time.Duration {
+	return notificationEmailRetry[min(max(attempts, 1), len(notificationEmailRetry))-1]
+}
+
 // SendNotificationEmails sends the notification emails due.
 func (s *Service) SendNotificationEmails(ctx context.Context) (int, error) {
 	return s.sendNotificationEmails(ctx, nil)
@@ -76,7 +85,18 @@ func (s *Service) sendNotificationEmails(ctx context.Context, userID *uuid.UUID)
 		}
 	}
 	for _, u := range order {
+		// The rest of the person's summary, past this batch, goes with it:
+		// one summary a day, not one per batch.
+		rest, err := s.store.ClaimOrgNotificationEmails(ctx, u, owner, now, now.Add(notificationEmailLease), digestMost)
+		if err != nil {
+			return n, err
+		}
 		group := digests[u]
+		for _, d := range rest {
+			if d.Digest {
+				group = append(group, d)
+			}
+		}
 		status, reason, next, err := s.deliverDigest(ctx, now, group)
 		if err != nil {
 			return n, err
@@ -145,7 +165,7 @@ func (s *Service) deliverDigest(ctx context.Context, now time.Time, group []stor
 		if smtpmail.IsPermanent(err) || attempts >= notificationEmailAttempts {
 			return "failed", reason, nil, nil
 		}
-		return "queued", reason, ptr(now.Add(notificationEmailRetry[min(attempts, len(notificationEmailRetry))-1])), nil
+		return "queued", reason, ptr(now.Add(retryAfter(attempts))), nil
 	}
 	return "sent", "", nil, nil
 }
@@ -172,7 +192,7 @@ func (s *Service) deliverNotificationEmail(ctx context.Context, now time.Time, d
 		if smtpmail.IsPermanent(err) || d.Attempts >= notificationEmailAttempts {
 			return "failed", reason, nil, nil
 		}
-		return "queued", reason, ptr(now.Add(notificationEmailRetry[min(d.Attempts, len(notificationEmailRetry))-1])), nil
+		return "queued", reason, ptr(now.Add(retryAfter(d.Attempts))), nil
 	}
 	return "sent", "", nil, nil
 }

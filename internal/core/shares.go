@@ -30,32 +30,48 @@ var errShareInvalid = apperr.NotFound("shared report")
 // CreateReportShare makes a link to a brand's report for month (YYYY-MM)
 // and returns its token, shown once. Admins and owners share.
 func (s *Service) CreateReportShare(ctx context.Context, a Actor, brandID uuid.UUID, month string) (string, *model.ReportShare, error) {
-	if err := a.require(PermMembersWrite); err != nil {
-		return "", nil, err
-	}
-	b, err := s.Brand(ctx, a, brandID)
+	sh, token, hash, err := s.newReportShare(ctx, a, brandID, month)
 	if err != nil {
 		return "", nil, err
 	}
-	if _, _, err := reportPeriod(ReportInput{Month: month}, b, s.Now()); err != nil || month == "" {
-		if err == nil {
-			err = apperr.Invalid("month_invalid", "month", "Share a month, as YYYY-MM.")
-		}
-		return "", nil, err
-	}
-	token, hash := authn.NewToken()
-	sh := &model.ReportShare{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, Month: month, CreatedBy: a.UserID,
-		ExpiresAt: s.Now().Add(ReportShareTTL), CreatedAt: s.Now()}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
-		if err := tx.CreateReportShare(ctx, sh, hash); err != nil {
-			return err
-		}
-		return s.audit(ctx, tx, a, "report.share", id.Format(id.ReportShare, sh.ID), map[string]any{"brand": id.Format(id.Brand, b.ID), "month": month})
+		return s.recordReportShare(ctx, tx, a, sh, hash)
 	})
 	if err != nil {
 		return "", nil, err
 	}
 	return token, sh, nil
+}
+
+// newReportShare checks a share of a brand's month and makes it, not yet
+// stored, with its token and the token's hash.
+func (s *Service) newReportShare(ctx context.Context, a Actor, brandID uuid.UUID, month string) (*model.ReportShare, string, []byte, error) {
+	if err := a.require(PermMembersWrite); err != nil {
+		return nil, "", nil, err
+	}
+	b, err := s.Brand(ctx, a, brandID)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	if _, _, err := reportPeriod(ReportInput{Month: month}, b, s.Now()); err != nil || month == "" {
+		if err == nil {
+			err = apperr.Invalid("month_invalid", "month", "Share a month, as YYYY-MM.")
+		}
+		return nil, "", nil, err
+	}
+	token, hash := authn.NewToken()
+	sh := &model.ReportShare{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, Month: month, CreatedBy: a.UserID,
+		ExpiresAt: s.Now().Add(ReportShareTTL), CreatedAt: s.Now()}
+	return sh, token, hash, nil
+}
+
+// recordReportShare stores a share made by newReportShare, in tx.
+func (s *Service) recordReportShare(ctx context.Context, tx *store.Store, a Actor, sh *model.ReportShare, hash []byte) error {
+	if err := tx.CreateReportShare(ctx, sh, hash); err != nil {
+		return err
+	}
+	return s.audit(ctx, tx, a, "report.share", id.Format(id.ReportShare, sh.ID), map[string]any{"brand": id.Format(id.Brand, sh.BrandID),
+		"month": sh.Month})
 }
 
 // ReportShares lists a brand's open share links in the actor's mode.

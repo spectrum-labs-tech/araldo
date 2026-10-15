@@ -90,27 +90,16 @@ func (a *Adapter) sendStream(ctx context.Context, c platform.Credentials, method
 }
 
 func (a *Adapter) do(ctx context.Context, u string, body io.Reader, length int64, contentType string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, body)
-	if err != nil {
-		return &platform.Error{Kind: platform.Rejected, Code: "request", Err: err}
-	}
-	req.ContentLength = length
-	req.Header.Set("Content-Type", contentType)
-	resp, err := platform.Do(a.Client, req)
+	resp, err := platform.Fetch(ctx, a.Client, platform.Request{Method: http.MethodPost, URL: u, Body: body, Length: length, ContentType: contentType})
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return &platform.Error{Kind: platform.Uncertain, Code: "network", Err: err}
-	}
 	var r reply
-	if json.Unmarshal(raw, &r) != nil {
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return &platform.Error{Kind: platform.Uncertain, Code: "decode", Msg: "unreadable response"}
+	if json.Unmarshal(resp.Body, &r) != nil {
+		if err := resp.Err(); err != nil {
+			return err
 		}
-		return platform.Classify(resp, raw)
+		return resp.ServerError("decode", "unreadable response")
 	}
 	if !r.OK {
 		switch code := r.ErrorCode; {
@@ -121,14 +110,14 @@ func (a *Adapter) do(ctx context.Context, u string, body io.Reader, length int64
 		case code == http.StatusForbidden, strings.Contains(r.Description, "chat not found"):
 			return &platform.Error{Kind: platform.AuthRevoked, Code: "forbidden", Msg: "the bot cannot post in this chat: " + r.Description}
 		case code >= 500:
-			return platform.ServerError(resp, "server_error", r.Description)
+			return resp.ServerError("server_error", r.Description)
 		default:
 			return &platform.Error{Kind: platform.Rejected, Code: "rejected", Msg: r.Description}
 		}
 	}
 	if out != nil {
 		if err := json.Unmarshal(r.Result, out); err != nil {
-			return &platform.Error{Kind: platform.Uncertain, Code: "decode", Err: err}
+			return resp.ServerError("decode", "unreadable result")
 		}
 	}
 	return nil
@@ -179,6 +168,9 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		}
 		if err != nil {
 			return res, err
+		}
+		if m.MessageID == 0 {
+			return res, platform.RequireID("", "Telegram")
 		}
 		ref := platform.RemoteRef{ID: fmt.Sprint(m.MessageID)}
 		if m.Chat.Username != "" {

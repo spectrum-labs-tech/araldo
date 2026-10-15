@@ -62,6 +62,9 @@ func TestErrors(t *testing.T) {
 		{400, `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`, platform.AuthRevoked, 0},
 		{400, `{"ok":false,"error_code":400,"description":"Bad Request: message is too long"}`, platform.Rejected, 0},
 		{502, `bad gateway`, platform.Uncertain, 0},
+		// Sent, but which message it became is unknown.
+		{200, `{"ok":true,"result":{"chat":{"id":1}}}`, platform.Uncertain, 0},
+		{200, `{"ok":true,"result":"nonsense"}`, platform.Uncertain, 0},
 	}
 	for _, tt := range tests {
 		a := server(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -193,5 +196,20 @@ func TestPublishVideo(t *testing.T) {
 	if fields["caption"] != "watch this" || fields["width"] != "1080" || fields["height"] != "1920" || fields["duration"] != "12" ||
 		fields["supports_streaming"] != "true" || file != "video1.mp4:video/mp4:mp4 bytes" || length <= 0 {
 		t.Fatalf("fields %v, file %q, length %d", fields, file, length)
+	}
+}
+
+func TestSendsUserAgent(t *testing.T) {
+	t.Parallel()
+	var ua string
+	a := server(t, func(w http.ResponseWriter, r *http.Request) {
+		ua = r.Header.Get("User-Agent")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":7,"chat":{"id":1}}}`))
+	})
+	if _, err := a.Publish(t.Context(), platform.Credentials{"bot_token": "SECRET", "chat_id": "1"}, platform.Payload{Parts: []string{"x"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(ua, "Araldo") {
+		t.Fatalf("User-Agent %q", ua)
 	}
 }

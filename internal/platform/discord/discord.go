@@ -99,9 +99,12 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 			err = platform.JSON(ctx, a.Client, http.MethodPost, u+"?wait=true", nil, body, &m)
 		}
 		if err != nil {
-			if platform.KindOf(err) == platform.Rejected && strings.Contains(err.Error(), "404") {
+			if platform.HTTPStatus(err) == http.StatusNotFound {
 				err = platform.Errorf(platform.AuthRevoked, "the webhook no longer exists")
 			}
+			return res, err
+		}
+		if err := platform.RequireID(m.ID, "Discord"); err != nil {
 			return res, err
 		}
 		ref := platform.RemoteRef{ID: m.ID, Extra: map[string]string{"channel_id": m.ChannelID}}

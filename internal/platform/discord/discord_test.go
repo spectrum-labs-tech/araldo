@@ -152,3 +152,34 @@ func TestPublishVideo(t *testing.T) {
 		t.Fatalf("file %q, payload %v", file, payload)
 	}
 }
+
+func TestPublishOutcomes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		status int
+		body   string
+		want   platform.Kind
+	}{
+		{"a message without an ID is uncertain", http.StatusOK, `{}`, platform.Uncertain},
+		{"a deleted webhook", http.StatusNotFound, `{"message":"Unknown Webhook","code":10015}`, platform.AuthRevoked},
+		// A 400 whose text happens to contain 404 is not a missing webhook.
+		{"a refusal mentioning 404", http.StatusBadRequest, `{"message":"Invalid Form Body: content 404 times","code":50035}`, platform.Rejected},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			t.Cleanup(srv.Close)
+			a := New(srv.Client())
+			a.AllowAnyHost = true
+			_, err := a.Publish(t.Context(), platform.Credentials{"webhook_url": srv.URL + "/api/webhooks/1/x"}, platform.Payload{Parts: []string{"x"}}, nil)
+			if platform.KindOf(err) != tt.want {
+				t.Fatalf("Publish = %v, want %s", err, tt.want)
+			}
+		})
+	}
+}

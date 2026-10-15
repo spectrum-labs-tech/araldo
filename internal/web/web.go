@@ -721,10 +721,10 @@ var funcs = template.FuncMap{
 		s := (ms + 500) / 1000
 		return fmt.Sprintf("%d:%02d", s/60, s%60)
 	},
-	"stat": func(label string, p core.Pair, lowerBetter string) statCard {
+	"stat": func(label string, p core.Pair, lowerBetter bool) statCard {
 		return statCard{Label: label, Pair: p, LowerBetter: lowerBetter}
 	},
-	"moneyStat": func(label string, p core.Pair, currency, lowerBetter string) statCard {
+	"moneyStat": func(label string, p core.Pair, currency string, lowerBetter bool) statCard {
 		return statCard{Label: label, Pair: p, Currency: currency, LowerBetter: lowerBetter}
 	},
 	// reportView is a report for the reportBody partial; public leaves out

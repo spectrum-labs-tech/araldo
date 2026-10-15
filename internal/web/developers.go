@@ -226,12 +226,15 @@ func (s *Server) revokeKey(c *reqCtx) error {
 
 // Webhooks.
 
+// endpointForm is the new-endpoint form, kept across a problem.
+type endpointForm struct{ URL, Description string }
+
 type webhooksData struct {
 	Endpoints  []*model.WebhookEndpoint
 	EventTypes []string
 	Secret     string
 	SecretFor  string
-	Form       map[string]string
+	Form       endpointForm
 }
 
 func (s *Server) webhooks(c *reqCtx) error {
@@ -239,7 +242,7 @@ func (s *Server) webhooks(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	return s.page(c, "webhooks", "developers", "Webhooks", webhooksData{Endpoints: eps, EventTypes: core.EventTypes, Form: map[string]string{}})
+	return s.page(c, "webhooks", "developers", "Webhooks", webhooksData{Endpoints: eps, EventTypes: core.EventTypes})
 }
 
 func (s *Server) createWebhook(c *reqCtx) error {
@@ -247,17 +250,17 @@ func (s *Server) createWebhook(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	d := webhooksData{Endpoints: eps, EventTypes: core.EventTypes, Form: map[string]string{"url": c.r.PostFormValue("url"), "description": c.r.PostFormValue("description")}}
+	d := webhooksData{Endpoints: eps, EventTypes: core.EventTypes, Form: endpointForm{URL: c.r.PostFormValue("url"), Description: c.r.PostFormValue("description")}}
 	types := c.r.PostForm["events"]
 	if len(types) == 0 || c.r.PostFormValue("all") == "1" {
 		types = []string{"*"}
 	}
-	ep, secret, err := s.svc.CreateEndpoint(c.ctx(), c.actor, core.EndpointInput{URL: d.Form["url"], Description: d.Form["description"], EventTypes: types})
+	ep, secret, err := s.svc.CreateEndpoint(c.ctx(), c.actor, core.EndpointInput{URL: d.Form.URL, Description: d.Form.Description, EventTypes: types})
 	if err != nil {
 		return s.formErr(c, "webhooks", "developers", "Webhooks", d, err)
 	}
 	d.Endpoints = append(d.Endpoints, ep)
-	d.Secret, d.SecretFor, d.Form = secret, ep.URL, map[string]string{}
+	d.Secret, d.SecretFor, d.Form = secret, ep.URL, endpointForm{}
 	return s.page(c, "webhooks", "developers", "Webhooks", d)
 }
 
@@ -432,7 +435,10 @@ func (s *Server) eventDetail(c *reqCtx) error {
 		return err
 	}
 	b, _ := json.MarshalIndent(core.ViewEvent(e), "", "  ")
-	return s.page(c, "event_detail", "developers", e.Type, map[string]any{"Event": e, "JSON": string(b)})
+	return s.page(c, "event_detail", "developers", e.Type, struct {
+		Event *model.Event
+		JSON  string
+	}{e, string(b)})
 }
 
 // Org.

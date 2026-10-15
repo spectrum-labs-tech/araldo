@@ -146,7 +146,7 @@ func (s *Server) startConnect(c *reqCtx) error {
 		return err
 	}
 	name := s.svc.ProviderName(platform.Provider(c.r.PathValue("provider")))
-	return s.page(c, "connect_redirect", "channels", "Sign in with "+name, map[string]string{"URL": target, "Name": name})
+	return s.page(c, "connect_redirect", "channels", "Sign in with "+name, struct{ URL, Name string }{target, name})
 }
 
 type chooseData struct {

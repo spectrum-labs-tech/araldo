@@ -9,8 +9,8 @@ nothing links into the dashboard. Its data is a reportView. */}}
 <section class="card">
   <h2>Publishing</h2>
   <div class="stats">
-    {{template "stat" (stat "Posts published" .Published "")}}
-    {{template "stat" (stat "Failed" .Failed "true")}}
+    {{template "stat" (stat "Posts published" .Published false)}}
+    {{template "stat" (stat "Failed" .Failed true)}}
   </div>
   {{if .ByNetwork}}
   <table class="text-sm">
@@ -26,11 +26,11 @@ nothing links into the dashboard. Its data is a reportView. */}}
   <h2>Engagement</h2>
   <p class="mt-0 text-sm text-muted">The latest readings of posts published in the period.</p>
   <div class="stats">
-    {{template "stat" (stat "Interactions" .Interactions "")}}
-    {{template "stat" (stat "Likes" .Likes "")}}
-    {{template "stat" (stat "Reposts" .Reposts "")}}
-    {{template "stat" (stat "Replies" .Replies "")}}
-    {{if or .Views.Now .Views.Before}}{{template "stat" (stat "Views" .Views "")}}{{end}}
+    {{template "stat" (stat "Interactions" .Interactions false)}}
+    {{template "stat" (stat "Likes" .Likes false)}}
+    {{template "stat" (stat "Reposts" .Reposts false)}}
+    {{template "stat" (stat "Replies" .Replies false)}}
+    {{if or .Views.Now .Views.Before}}{{template "stat" (stat "Views" .Views false)}}{{end}}
   </div>
   {{if .TopPosts}}
   <h3>Top posts</h3>
@@ -54,9 +54,9 @@ nothing links into the dashboard. Its data is a reportView. */}}
 <section class="card">
   <h2>Web traffic</h2>
   <div class="stats">
-    {{template "stat" (stat "Visitors" .Visitors "")}}
-    {{template "stat" (stat "Signups" .Signups "")}}
-    {{template "stat" (stat "Came untagged" .Untagged "")}}
+    {{template "stat" (stat "Visitors" .Visitors false)}}
+    {{template "stat" (stat "Signups" .Signups false)}}
+    {{template "stat" (stat "Came untagged" .Untagged false)}}
   </div>
   {{if .Sources}}
   <h3>Top sources</h3>
@@ -78,10 +78,10 @@ nothing links into the dashboard. Its data is a reportView. */}}
   <h2>Ads</h2>
   {{range .Totals}}
   <div class="stats">
-    {{template "moneyStat" (moneyStat "Spend" .Spend .Currency "")}}
-    {{template "stat" (stat "Clicks" .Clicks "")}}
-    {{template "stat" (stat "Signups" .Signups "")}}
-    {{template "moneyStat" (moneyStat "Cost per signup" .CostPerSignup .Currency "true")}}
+    {{template "moneyStat" (moneyStat "Spend" .Spend .Currency false)}}
+    {{template "stat" (stat "Clicks" .Clicks false)}}
+    {{template "stat" (stat "Signups" .Signups false)}}
+    {{template "moneyStat" (moneyStat "Cost per signup" .CostPerSignup .Currency true)}}
   </div>
   {{end}}
   {{if .Campaigns}}
@@ -98,10 +98,10 @@ nothing links into the dashboard. Its data is a reportView. */}}
 <section class="card">
   <h2>Newsletters</h2>
   <div class="stats">
-    {{template "stat" (stat "Issues sent" .Issues "")}}
-    {{template "stat" (stat "Delivered" .Delivered "")}}
-    {{template "stat" (stat "Clicks" .Clicks "")}}
-    {{template "stat" (stat "Unsubscribes" .Unsubscribes "true")}}
+    {{template "stat" (stat "Issues sent" .Issues false)}}
+    {{template "stat" (stat "Delivered" .Delivered false)}}
+    {{template "stat" (stat "Clicks" .Clicks false)}}
+    {{template "stat" (stat "Unsubscribes" .Unsubscribes true)}}
   </div>
   {{if .Sent}}
   <table class="text-sm">

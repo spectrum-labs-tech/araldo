@@ -26,8 +26,8 @@
   {{$check := "flex-row items-center gap-1.5 font-normal"}}
   <form method="post" action="/webhooks" class="flex max-w-xl flex-col gap-4">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <label>URL <input type="url" name="url" value="{{index .Data.Form "url"}}" required placeholder="https://example.com/araldo/webhooks"></label>
-    <label>Description <input name="description" value="{{index .Data.Form "description"}}" maxlength="500"></label>
+    <label>URL <input type="url" name="url" value="{{.Data.Form.URL}}" required placeholder="https://example.com/araldo/webhooks"></label>
+    <label>Description <input name="description" value="{{.Data.Form.Description}}" maxlength="500"></label>
     <fieldset><legend>Events</legend>
       <label class="{{$check}}"><input type="checkbox" name="all" value="1" checked> Every event</label>
       <details><summary>Or choose</summary>{{range .Data.EventTypes}}<label class="{{$check}}"><input type="checkbox" name="events" value="{{.}}"> <code>{{.}}</code></label>{{end}}</details>

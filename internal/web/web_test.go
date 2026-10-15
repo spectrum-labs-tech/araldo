@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
+	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
@@ -343,6 +344,26 @@ func TestStatusClass(t *testing.T) {
 			if got := statusClass(st); got != class {
 				t.Errorf("statusClass(%v) = %s, want %s", st, got, class)
 			}
+		}
+	}
+}
+
+func TestChangeClass(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		now, before int64
+		lowerBetter bool
+		want        string
+	}{
+		{10, 10, false, "neutral"},
+		{12, 10, false, "good"},
+		{8, 10, false, "bad"},
+		{12, 10, true, "bad"}, // more failures
+		{8, 10, true, "good"},
+	}
+	for _, tt := range tests {
+		if got := changeClass(core.Pair{Now: tt.now, Before: tt.before}, tt.lowerBetter); got != tt.want {
+			t.Errorf("changeClass(%d from %d, lowerBetter %v) = %s, want %s", tt.now, tt.before, tt.lowerBetter, got, tt.want)
 		}
 	}
 }

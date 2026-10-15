@@ -185,13 +185,13 @@ func change(p core.Pair) string {
 }
 
 // changeClass colors a change: good when it moved the way that is better,
-// bad the other way. lowerBetter is "true" for failures, costs and
+// bad the other way. lowerBetter is set for failures, costs and
 // unsubscribes.
-func changeClass(p core.Pair, lowerBetter string) string {
+func changeClass(p core.Pair, lowerBetter bool) string {
 	switch {
 	case p.Now == p.Before:
 		return "neutral"
-	case (p.Now > p.Before) == (lowerBetter != "true"):
+	case (p.Now > p.Before) != lowerBetter:
 		return "good"
 	}
 	return "bad"
@@ -202,7 +202,7 @@ type statCard struct {
 	Label       string
 	Pair        core.Pair
 	Currency    string
-	LowerBetter string
+	LowerBetter bool
 }
 
 // fmtPeriod names a period: "September 2026", or "Sep 10 – Sep 16, 2026".

@@ -76,7 +76,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email, ip string) er
 		return err
 	}
 	return s.sendMail(ctx, mailContent{To: u.Email, Subject: "Reset your Araldo password",
-		Paragraphs: []string{"Someone asked to reset the password of your Araldo account. If it was you, choose a new one with this link within 30 minutes.",
+		Paragraphs: []string{"Someone asked to reset the password of your Araldo account. If it was you, choose a new one with this link within " + spell(PasswordResetTTL) + ".",
 			"Setting it signs you out everywhere, the araldo CLI included."},
 		ButtonLabel: "Choose a new password", ButtonURL: s.cfg.BaseURL + "/login/reset/" + token,
 		Footer: "If you did not ask for this, ignore this email: your password stays as it is."})

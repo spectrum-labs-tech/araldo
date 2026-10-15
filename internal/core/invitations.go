@@ -50,7 +50,7 @@ func (s *Service) EmailInvitation(ctx context.Context, a Actor, inv *model.Invit
 	}
 	return s.sendMail(ctx, mailContent{To: inv.Email, Subject: "Join " + inv.OrgName + " on Araldo",
 		Paragraphs: []string{invited,
-			"Accept with this link within 7 days. If you have no Araldo account yet, you make one as you accept."},
+			"Accept with this link within " + spell(InvitationTTL) + ". If you have no Araldo account yet, you make one as you accept."},
 		ButtonLabel: "Accept the invitation", ButtonURL: link,
 		Footer: "If you did not expect this, you can ignore this email: nothing happens unless you accept."})
 }

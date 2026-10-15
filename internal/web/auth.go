@@ -44,14 +44,12 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.svc.Login(r.Context(), data.Email, r.PostFormValue("password"), r.UserAgent(), s.clientIP(r))
+	if status, msg, fault := s.serverFault(w, r, "sign-in failed", err); fault {
+		fail(status, msg)
+		return
+	}
 	if err != nil {
-		ae := apperr.As(err)
-		if ae.Kind == apperr.KindInternal {
-			s.log.ErrorContext(r.Context(), "sign-in failed", "err", err)
-			fail(http.StatusInternalServerError, "Something went wrong on our side.")
-			return
-		}
-		fail(http.StatusUnauthorized, ae.Message)
+		fail(http.StatusUnauthorized, apperr.As(err).Message)
 		return
 	}
 	s.setSessionCookie(w, res.Token, res.Session.ExpiresAt.Add(core.SessionAbsolute))

@@ -268,6 +268,11 @@ func (s *Server) signedIn(w http.ResponseWriter, r *http.Request) (*reqCtx, bool
 		return nil, false
 	}
 	ss, u, err := s.svc.Session(r.Context(), ck.Value)
+	if status, msg, fault := s.serverFault(w, r, "loading a session", err); fault {
+		// Keep the cookie: the session is likely fine, the database is not.
+		s.publicError(w, status, msg)
+		return nil, false
+	}
 	if err != nil {
 		s.clearSessionCookie(w)
 		http.Redirect(w, r, "/login?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
@@ -283,8 +288,7 @@ func (s *Server) signedIn(w http.ResponseWriter, r *http.Request) (*reqCtx, bool
 	}
 	c.orgs, err = s.svc.UserOrgs(r.Context(), u.ID)
 	if err != nil {
-		s.log.ErrorContext(r.Context(), "loading orgs", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		s.failSignedIn(w, r, "loading orgs", err)
 		return nil, false
 	}
 	if ss.SSOOrg != nil { // a session through single sign-on reaches its org only (ADR 0033)
@@ -309,12 +313,23 @@ func (s *Server) signedIn(w http.ResponseWriter, r *http.Request) (*reqCtx, bool
 			c.org, err = s.svc.Org(r.Context(), c.actor)
 		}
 		if err != nil {
-			s.log.ErrorContext(r.Context(), "loading membership", "err", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			s.failSignedIn(w, r, "loading membership", err)
 			return nil, false
 		}
 	}
 	return c, true
+}
+
+// failSignedIn answers a failure to load a signed-in person's orgs: a
+// fault of ours (503 or 500), or, for anything else, 500 as well, since
+// their session was already found.
+func (s *Server) failSignedIn(w http.ResponseWriter, r *http.Request, what string, err error) {
+	status, msg, fault := s.serverFault(w, r, what, err)
+	if !fault {
+		s.log.ErrorContext(r.Context(), what, "err", err)
+		status, msg = http.StatusInternalServerError, "Something went wrong on our side."
+	}
+	s.publicError(w, status, msg)
 }
 
 func (s *Server) checkCSRF(c *reqCtx) bool {
@@ -420,6 +435,36 @@ func (s *Server) handleErr(c *reqCtx, err error) {
 	default:
 		s.renderError(c, http.StatusUnprocessableEntity, ae.Error())
 	}
+}
+
+// serverFault is how a page outside app() answers an error that is ours,
+// not the visitor's: 503 with Retry-After when a dependency is unavailable
+// (Araldo recovers on its own; the visitor should try again), 500 for
+// anything else unexpected, logged either way. ok is false for the
+// visitor's own errors (invalid, not found, refused), which the page
+// answers itself.
+func (s *Server) serverFault(w http.ResponseWriter, r *http.Request, what string, err error) (status int, msg string, ok bool) {
+	if err == nil {
+		return 0, "", false
+	}
+	ae := apperr.As(err)
+	switch ae.Kind {
+	case apperr.KindUnavailable:
+		s.log.WarnContext(r.Context(), what+": a dependency is unavailable", "err", err)
+		w.Header().Set("Retry-After", "30")
+		return http.StatusServiceUnavailable, ae.Message, true
+	case apperr.KindInternal:
+		s.log.ErrorContext(r.Context(), what, "err", err)
+		return http.StatusInternalServerError, "Something went wrong on our side. Request " + api.RequestID(r.Context()) + ".", true
+	}
+	return 0, "", false
+}
+
+// publicError renders the error page for someone who may not be signed in.
+func (s *Server) publicError(w http.ResponseWriter, status int, msg string) {
+	v := s.view(nil, "", "Error", nil)
+	v.Error = msg
+	s.render(w, status, "error", v)
 }
 
 func (s *Server) renderError(c *reqCtx, status int, msg string) {

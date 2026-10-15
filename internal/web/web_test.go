@@ -3,10 +3,15 @@
 package web
 
 import (
+	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
@@ -126,6 +131,40 @@ func TestBrandLoc(t *testing.T) {
 			t.Parallel()
 			if got := brandLoc(tt.brand).String(); got != tt.want {
 				t.Fatalf("brandLoc = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestServerFault checks how signed-out pages answer errors: a dependency
+// down is 503 with Retry-After, anything unexpected 500, and the visitor's
+// own errors are left to the page.
+func TestServerFault(t *testing.T) {
+	t.Parallel()
+	s := &Server{log: slog.New(slog.DiscardHandler)}
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantFault  bool
+		wantRetry  bool
+	}{
+		{"no error", nil, 0, false, false},
+		{"unavailable", &apperr.Error{Kind: apperr.KindUnavailable, Message: "The database is down."}, http.StatusServiceUnavailable, true, true},
+		{"unexpected", errors.New("boom"), http.StatusInternalServerError, true, false},
+		{"not found", apperr.NotFound("invitation"), 0, false, false},
+		{"refused", apperr.Forbidden("No."), 0, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			w := httptest.NewRecorder()
+			status, msg, fault := s.serverFault(w, httptest.NewRequest(http.MethodGet, "/login", nil), "testing", tt.err)
+			if status != tt.wantStatus || fault != tt.wantFault || (fault && msg == "") {
+				t.Fatalf("serverFault = %d, %q, %v; want %d, fault %v", status, msg, fault, tt.wantStatus, tt.wantFault)
+			}
+			if got := w.Header().Get("Retry-After") != ""; got != tt.wantRetry {
+				t.Fatalf("Retry-After set = %v, want %v", got, tt.wantRetry)
 			}
 		})
 	}

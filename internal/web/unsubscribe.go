@@ -38,15 +38,9 @@ func (s *Server) unsubscribeResult(w http.ResponseWriter, r *http.Request, d uns
 	status := http.StatusOK
 	v := s.view(nil, "", "Email settings", d)
 	if err != nil {
-		ae := apperr.As(err)
-		status = http.StatusNotFound
-		if ae.Kind != apperr.KindNotFound {
-			s.log.ErrorContext(r.Context(), "unsubscribing", "err", err)
-			status = http.StatusInternalServerError
-		}
-		v.Error = ae.Message
-		if status == http.StatusInternalServerError {
-			v.Error = "Something went wrong on our side. Try again in a moment."
+		var fault bool
+		if status, v.Error, fault = s.serverFault(w, r, "unsubscribing", err); !fault {
+			status, v.Error = http.StatusNotFound, apperr.As(err).Message
 		}
 	}
 	s.render(w, status, "unsubscribe", v)

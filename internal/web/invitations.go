@@ -96,9 +96,13 @@ func (s *Server) renderInvite(w http.ResponseWriter, r *http.Request, status int
 	token := r.PathValue("token")
 	inv, err := s.svc.Invitation(r.Context(), token)
 	if err != nil {
+		status, msg, fault := s.serverFault(w, r, "loading an invitation", err)
+		if !fault {
+			status, msg = http.StatusNotFound, apperr.As(err).Message
+		}
 		v := s.view(nil, "", "Invitation", nil)
-		v.Error = apperr.As(err).Message
-		s.render(w, http.StatusNotFound, "invite", v)
+		v.Error = msg
+		s.render(w, status, "invite", v)
 		return
 	}
 	d.Invitation, d.Token = inv, token
@@ -160,12 +164,11 @@ func (s *Server) inviteSubmit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) inviteErr(w http.ResponseWriter, r *http.Request, err error, d inviteData) {
-	ae := apperr.As(err)
-	if ae.Kind == apperr.KindInternal || ae.Kind == apperr.KindUnavailable {
-		s.log.ErrorContext(r.Context(), "accepting an invitation", "err", err)
-		s.renderInvite(w, r, http.StatusInternalServerError, d, "Something went wrong on our side. Try again.")
+	if status, msg, fault := s.serverFault(w, r, "accepting an invitation", err); fault {
+		s.renderInvite(w, r, status, d, msg)
 		return
 	}
+	ae := apperr.As(err)
 	status := http.StatusUnprocessableEntity
 	if ae.Kind == apperr.KindForbidden {
 		status = http.StatusForbidden

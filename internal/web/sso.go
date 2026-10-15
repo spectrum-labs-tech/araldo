@@ -56,14 +56,12 @@ func (s *Server) ssoLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	to, state, err := s.svc.BeginSSO(r.Context(), data.Email, safeNext(data.Next))
+	if status, msg, fault := s.serverFault(w, r, "starting single sign-on", err); fault {
+		fail(status, msg)
+		return
+	}
 	if err != nil {
-		ae := apperr.As(err)
-		if ae.Kind == apperr.KindInternal {
-			s.log.ErrorContext(r.Context(), "starting single sign-on", "err", err)
-			fail(http.StatusInternalServerError, "Something went wrong on our side.")
-			return
-		}
-		fail(http.StatusBadRequest, ae.Message)
+		fail(http.StatusUnprocessableEntity, apperr.As(err).Message)
 		return
 	}
 	s.setSSOCookie(w, state, int(core.SSOStateTTL/time.Second))
@@ -94,14 +92,12 @@ func (s *Server) ssoCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.svc.FinishSSO(r.Context(), state, q.Get("code"), r.UserAgent(), s.clientIP(r))
+	if status, msg, fault := s.serverFault(w, r, "finishing single sign-on", err); fault {
+		fail(status, msg)
+		return
+	}
 	if err != nil {
-		ae := apperr.As(err)
-		status := http.StatusUnauthorized
-		if ae.Kind == apperr.KindInternal || ae.Kind == apperr.KindUnavailable {
-			s.log.ErrorContext(r.Context(), "finishing single sign-on", "err", err)
-			status = http.StatusBadGateway
-		}
-		fail(status, ae.Message)
+		fail(http.StatusUnauthorized, apperr.As(err).Message)
 		return
 	}
 	s.setSessionCookie(w, res.Token, res.Session.ExpiresAt.Add(core.SessionAbsolute))

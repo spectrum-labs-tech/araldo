@@ -65,9 +65,8 @@ func (s *Server) resetPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	token := r.PathValue("token")
 	err := s.svc.CheckPasswordReset(r.Context(), token)
-	if err != nil && apperr.As(err).Kind != apperr.KindNotFound {
-		s.log.ErrorContext(r.Context(), "checking a reset link", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	if status, msg, fault := s.serverFault(w, r, "checking a reset link", err); fault {
+		s.publicError(w, status, msg)
 		return
 	}
 	status := http.StatusOK
@@ -101,8 +100,11 @@ func (s *Server) resetSubmit(w http.ResponseWriter, r *http.Request) {
 		case apperr.KindInvalid:
 			fail(http.StatusUnprocessableEntity, ae.Message, true)
 		default:
-			s.log.ErrorContext(r.Context(), "resetting a password", "err", err)
-			fail(http.StatusInternalServerError, "Something went wrong on our side.", true)
+			status, msg, fault := s.serverFault(w, r, "resetting a password", err)
+			if !fault { // refused: shown as it is
+				status, msg = http.StatusForbidden, ae.Message
+			}
+			fail(status, msg, true)
 		}
 		return
 	}

@@ -50,8 +50,9 @@ func (s *Server) jsonFail(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusBadRequest
 	switch ae.Kind {
 	case apperr.KindInternal, apperr.KindUnavailable:
-		s.log.ErrorContext(r.Context(), "passkey ceremony failed", "err", err)
-		status = http.StatusInternalServerError
+		var msg string
+		status, msg, _ = s.serverFault(w, r, "passkey ceremony failed", err)
+		ae = &apperr.Error{Kind: ae.Kind, Code: ae.Code, Message: msg}
 	case apperr.KindUnauthorized:
 		status = http.StatusUnauthorized
 	case apperr.KindForbidden:

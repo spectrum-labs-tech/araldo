@@ -92,9 +92,16 @@ type VideoRules struct {
 	Source string
 }
 
+// ThreadPartsLimit is Araldo's own bound on a thread's parts, not a
+// platform's: none of the platforms that thread documents a limit for
+// replies in a chain. Twenty-five is longer than any thread people read,
+// and short enough that a template or data mistake cannot flood a channel
+// with replies, each one a post the publisher cannot take back.
+const ThreadPartsLimit = 25
+
 var rules = map[Provider]Rules{
 	X: {
-		Provider: X, Name: "X", MaxLength: 280, Counting: CountXWeighted, Threads: true, MaxThreadParts: 25, MaxMedia: 4,
+		Provider: X, Name: "X", MaxLength: 280, Counting: CountXWeighted, Threads: true, MaxThreadParts: ThreadPartsLimit, MaxMedia: 4,
 		Source:      "https://docs.x.com/fundamentals/counting-characters",
 		Images:      map[string]int64{media.JPEG: 5_000_000, media.PNG: 5_000_000, media.WebP: 5_000_000, media.GIF: 15_000_000},
 		ImageSource: "https://developer.x.com/en/docs/x-api/v1/media/upload-media/uploading-media/media-best-practices",
@@ -106,7 +113,7 @@ var rules = map[Provider]Rules{
 			Source: "https://developer.x.com/en/docs/x-api/v1/media/upload-media/uploading-media/media-best-practices"},
 	},
 	Bluesky: {
-		Provider: Bluesky, Name: "Bluesky", MaxLength: 300, Counting: CountBluesky, Threads: true, MaxThreadParts: 25, MaxMedia: 4,
+		Provider: Bluesky, Name: "Bluesky", MaxLength: 300, Counting: CountBluesky, Threads: true, MaxThreadParts: ThreadPartsLimit, MaxMedia: 4,
 		Source:      "https://docs.bsky.app/docs/advanced-guides/post-richtext",
 		Images:      map[string]int64{media.JPEG: 1_000_000, media.PNG: 1_000_000, media.WebP: 1_000_000, media.GIF: 1_000_000},
 		ImageSource: "https://github.com/bluesky-social/atproto/blob/main/lexicons/app/bsky/embed/images.json (maxSize)",
@@ -117,7 +124,7 @@ var rules = map[Provider]Rules{
 				"https://docs.bsky.app/docs/tutorials/video"},
 	},
 	Mastodon: {
-		Provider: Mastodon, Name: "Mastodon", MaxLength: 500, Counting: CountMastodon, Threads: true, MaxThreadParts: 25, MaxMedia: 4,
+		Provider: Mastodon, Name: "Mastodon", MaxLength: 500, Counting: CountMastodon, Threads: true, MaxThreadParts: ThreadPartsLimit, MaxMedia: 4,
 		Source:      "https://docs.joinmastodon.org/user/posting/ (default instance limit; servers may raise it)",
 		Images:      map[string]int64{media.JPEG: 16 << 20, media.PNG: 16 << 20, media.WebP: 16 << 20, media.GIF: 16 << 20},
 		ImageSource: "https://docs.joinmastodon.org/entities/Instance/#image_size_limit (default; servers may change it)",
@@ -126,7 +133,7 @@ var rules = map[Provider]Rules{
 			Source: "https://docs.joinmastodon.org/entities/Instance/#video_size_limit (default; servers may change it)"},
 	},
 	Gab: {
-		Provider: Gab, Name: "Gab", MaxLength: 3000, Counting: CountMastodon, Threads: true, MaxThreadParts: 25, MaxMedia: 4,
+		Provider: Gab, Name: "Gab", MaxLength: 3000, Counting: CountMastodon, Threads: true, MaxThreadParts: ThreadPartsLimit, MaxMedia: 4,
 		// Gab Social is a Mastodon fork: it enforces Mastodon's status length
 		// validator, which counts code points and every URL as 23, over a limit it
 		// raised to 3000. Gab publishes no API reference of its own, so the shape is
@@ -142,7 +149,7 @@ var rules = map[Provider]Rules{
 			Source: "https://docs.joinmastodon.org/methods/media/ (Gab Social is a Mastodon fork; it documents no video limits)"},
 	},
 	Threads: {
-		Provider: Threads, Name: "Threads", MaxLength: 500, Counting: CountRunes, Threads: true, MaxThreadParts: 25, MaxMedia: 10,
+		Provider: Threads, Name: "Threads", MaxLength: 500, Counting: CountRunes, Threads: true, MaxThreadParts: ThreadPartsLimit, MaxMedia: 10,
 		Source:    "https://developers.facebook.com/docs/threads/overview",
 		Images:    map[string]int64{media.JPEG: 8_000_000, media.PNG: 8_000_000},
 		MinAspect: 0.1, MaxAspect: 10,
@@ -233,7 +240,6 @@ var rules = map[Provider]Rules{
 	},
 }
 
-// RulesFor returns a provider's rules.
 // A LinkedIn Page posts by the same rules as a member: the same Posts,
 // Images and Videos APIs, with the Page as author.
 func init() {
@@ -242,6 +248,7 @@ func init() {
 	rules[LinkedInPages] = r
 }
 
+// RulesFor returns a provider's rules.
 func RulesFor(p Provider) (Rules, bool) {
 	r, ok := rules[p]
 	return r, ok
@@ -276,9 +283,11 @@ func (r Rules) Length(s string) int {
 	}
 }
 
-// xWeighted implements twitter-text v3's weighting: code points in these
-// ranges weigh 1, everything else 2; an emoji sequence weighs 2 in total;
-// a URL weighs 23.
+// xWeighted implements twitter-text v3's weighting
+// (https://github.com/twitter/twitter-text/blob/master/config/v3.json):
+// code points in its ranges weigh 1, everything else 2; an emoji sequence
+// weighs 2 in total (emojiParsingEnabled); a URL weighs 23
+// (transformedURLLength).
 func xWeighted(s string) int {
 	n := 0
 	rest := urlRE.ReplaceAllStringFunc(s, func(string) string { n += urlWeight; return "\x00" })
@@ -299,6 +308,9 @@ func xWeighted(s string) int {
 	return n
 }
 
+// xRuneWeight is a code point's weight: 1 in twitter-text v3's ranges
+// (weight 100 of a scale of 200: 0-4351, 8192-8205, 8208-8223, 8242-8247),
+// 2 otherwise.
 func xRuneWeight(r rune) int {
 	switch {
 	case r <= 0x10FF, r >= 0x2000 && r <= 0x200D, r >= 0x2010 && r <= 0x201F, r >= 0x2032 && r <= 0x2037:
@@ -307,6 +319,13 @@ func xRuneWeight(r rune) int {
 	return 2
 }
 
+// isEmoji reports whether a grapheme is an emoji, by the Unicode blocks
+// emoji are drawn from (https://www.unicode.org/Public/UCD/latest/ucd/Blocks.txt):
+// U+1F000-1FAFF, from Mahjong Tiles to Symbols and Pictographs Extended-A,
+// and U+2600-27BF, Miscellaneous Symbols and Dingbats. It approximates
+// twitter-text's emoji pattern, which is generated from Unicode's emoji
+// data; a symbol from these blocks it does not list is counted as 2 here
+// rather than by its code points, which the ranges above weigh 2 anyway.
 func isEmoji(runes []rune) bool {
 	for _, r := range runes {
 		if r >= 0x1F000 && r <= 0x1FAFF || r >= 0x2600 && r <= 0x27BF {

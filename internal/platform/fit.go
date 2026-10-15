@@ -57,17 +57,27 @@ func (r Rules) Split(text string, mode Fit) []string {
 	return parts
 }
 
-// truncate shortens s at a word boundary, ending with an ellipsis.
+// truncate shortens s at a word boundary, ending with an ellipsis: the
+// most words that fit, found by binary search (a longer prefix never
+// measures shorter), so a long text is measured log n times, not n.
 func (r Rules) truncate(s string) string {
 	tokens := tokenRE.FindAllString(s, -1)
-	for len(tokens) > 0 {
-		cand := strings.TrimRight(strings.Join(tokens, ""), " \t\r\n.,;:") + ellipsis
-		if r.Length(cand) <= r.MaxLength {
-			return cand
-		}
-		tokens = tokens[:len(tokens)-1]
+	cand := func(k int) string {
+		return strings.TrimRight(strings.Join(tokens[:k], ""), " \t\r\n.,;:") + ellipsis
 	}
-	return r.hardCut(s, ellipsis)
+	lo, hi := 0, len(tokens) // lo tokens fit; more than hi do not
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		if r.Length(cand(mid)) <= r.MaxLength {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	if lo == 0 {
+		return r.hardCut(s, ellipsis)
+	}
+	return cand(lo)
 }
 
 // pack splits s into parts that each fit, breaking between words.

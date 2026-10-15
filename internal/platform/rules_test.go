@@ -315,3 +315,49 @@ func TestTooLongSaysCharacters(t *testing.T) {
 		}
 	}
 }
+
+// truncateLinear is truncate as it was: drop the last word until the text
+// fits. The binary search must find the same cut.
+func truncateLinear(r Rules, s string) string {
+	tokens := tokenRE.FindAllString(s, -1)
+	for len(tokens) > 0 {
+		cand := strings.TrimRight(strings.Join(tokens, ""), " \t\r\n.,;:") + ellipsis
+		if r.Length(cand) <= r.MaxLength {
+			return cand
+		}
+		tokens = tokens[:len(tokens)-1]
+	}
+	return r.hardCut(s, ellipsis)
+}
+
+func TestTruncateMatchesWordByWord(t *testing.T) {
+	t.Parallel()
+	words := strings.Repeat("Launch day for araldo.dev, at last; read https://araldo.dev/blog/launch 🚀🚀 now. ", 40)
+	tests := []struct {
+		provider Provider
+		text     string
+	}{
+		{X, words},
+		{Bluesky, words},
+		{Mastodon, words},
+		{Threads, "日本語のテキスト " + words},
+		{X, strings.Repeat("a", 5000)}, // one word longer than the limit
+		{Bluesky, "short " + strings.Repeat("x", 400)},
+	}
+	for _, tt := range tests {
+		r, _ := RulesFor(tt.provider)
+		got, want := r.truncate(tt.text), truncateLinear(r, tt.text)
+		if got != want || r.Length(got) > r.MaxLength {
+			t.Errorf("%s: truncate = %q (%d), want %q", tt.provider, got, r.Length(got), want)
+		}
+	}
+}
+
+func TestThreadingPlatformsShareThePartsLimit(t *testing.T) {
+	t.Parallel()
+	for _, p := range []Provider{X, Bluesky, Mastodon, Gab, Threads} {
+		if r, _ := RulesFor(p); !r.Threads || r.MaxThreadParts != ThreadPartsLimit {
+			t.Errorf("%s: threads %v, %d parts", p, r.Threads, r.MaxThreadParts)
+		}
+	}
+}

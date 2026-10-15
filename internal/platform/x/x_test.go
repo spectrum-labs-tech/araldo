@@ -229,6 +229,9 @@ func TestErrors(t *testing.T) {
 		{401, `{"title":"Unauthorized"}`, platform.AuthRevoked, "unauthorized"},
 		{403, `{"detail":"You are not allowed to create a Tweet with duplicate content."}`, platform.Rejected, "duplicate"},
 		{403, `{"detail":"You are not permitted to perform this action."}`, platform.Rejected, "rejected"},
+		{403, `{"title":"Forbidden","type":"about:blank","padding":"` + strings.Repeat(".", 400) + `","detail":"duplicate content"}`, platform.Rejected, "duplicate"},
+		{200, `{}`, platform.Uncertain, "no_id"},
+		{500, `{}`, platform.Uncertain, "server_error"},
 	}
 	for _, tt := range tests {
 		f, a, creds := setup(t)
@@ -365,6 +368,21 @@ func (f *fakeXVideo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{}`))
 	default:
 		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func TestVideoProcessingIsBounded(t *testing.T) {
+	t.Parallel()
+	f := &fakeXVideo{segments: map[int]int{}, statusPolls: 1 << 30}
+	srv := httptest.NewServer(f)
+	t.Cleanup(srv.Close)
+	a := New(srv.Client())
+	a.API = srv.URL
+	a.Sleep = func(context.Context, time.Duration) error { return nil }
+	v := platform.Media{Type: "video/mp4"}.WithData([]byte("mp4"))
+	_, err := a.Publish(t.Context(), platform.Credentials{"access_token": "bearer"}, platform.Payload{Parts: []string{"watch"}, Media: []platform.Media{v}}, nil)
+	if platform.KindOf(err) != platform.Transient || len(f.tweets) != 0 || f.polls != maxProcessingChecks {
+		t.Fatalf("err = %v, %d tweets, %d polls", err, len(f.tweets), f.polls)
 	}
 }
 

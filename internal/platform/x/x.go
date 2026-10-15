@@ -201,7 +201,9 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 			tw.Reply = &reply{InReplyTo: replyTo}
 		}
 		if i == 0 && len(p.Media) > 0 {
-			ids, err := a.upload(ctx, cr, p.Media)
+			// Media no post uses is never public: uploading it again is
+			// safe.
+			ids, err := a.upload(platform.RetrySafe(ctx), cr, p.Media)
 			if err != nil {
 				return res, err
 			}
@@ -214,6 +216,9 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		}
 		if err := a.call(ctx, cr, http.MethodPost, "/2/tweets", tw, &out); err != nil {
 			return res, classify(err)
+		}
+		if err := platform.RequireID(out.Data.ID, "X"); err != nil {
+			return res, err
 		}
 		ref := platform.RemoteRef{ID: out.Data.ID, URL: "https://x.com/i/web/status/" + out.Data.ID}
 		if onPart != nil {
@@ -287,8 +292,12 @@ func (a *Adapter) setAlt(ctx context.Context, cr credentials, id, alt string) {
 // chunkSize is each appended segment of a video.
 const chunkSize = 4 << 20
 
-// maxProcessingWait bounds the wait between status checks.
-const maxProcessingWait = 30 * time.Second
+// maxProcessingWait bounds the wait between status checks, and
+// maxProcessingChecks their number.
+const (
+	maxProcessingWait   = 30 * time.Second
+	maxProcessingChecks = 60
+)
 
 type processing struct {
 	State          string `json:"state"`
@@ -351,7 +360,10 @@ func (a *Adapter) uploadVideo(ctx context.Context, cr credentials, m platform.Me
 	if err := a.call(ctx, cr, http.MethodPost, "/2/media/upload/"+url.PathEscape(id)+"/finalize", nil, &fin); err != nil {
 		return "", classify(err)
 	}
-	for p := fin.Data.Processing; p != nil && p.State != "succeeded"; {
+	for checks, p := 0, fin.Data.Processing; p != nil && p.State != "succeeded"; checks++ {
+		if checks == maxProcessingChecks {
+			return "", &platform.Error{Kind: platform.Transient, Code: "media_processing", Msg: "X was still processing the video"}
+		}
 		if p.State == "failed" {
 			return "", &platform.Error{Kind: platform.Rejected, Code: "video_rejected", Msg: "X could not process the video: " + p.Error.Message}
 		}
@@ -380,7 +392,7 @@ func classify(err error) error {
 	if !ok || pe.Kind != platform.Rejected {
 		return err
 	}
-	if strings.HasPrefix(pe.Msg, "HTTP 403") && strings.Contains(strings.ToLower(pe.Msg), "duplicate") {
+	if pe.Status == http.StatusForbidden && strings.Contains(strings.ToLower(string(pe.Body)), "duplicate") {
 		pe.Code = "duplicate"
 	}
 	return pe

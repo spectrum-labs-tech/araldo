@@ -267,6 +267,21 @@ func (a Actor) require(p Permission) error {
 	return a.permitted(p)
 }
 
+// requireAny is require for an action any of ps allows: reading brands
+// takes brands:read, or any permission whose work needs the brand. The
+// org's status is checked once, for the first, which names the action.
+func (a Actor) requireAny(ps ...Permission) error {
+	if err := a.statusAllows(ps[0]); err != nil {
+		return err
+	}
+	for _, p := range ps {
+		if a.Can(p) {
+			return nil
+		}
+	}
+	return a.permitted(ps[0])
+}
+
 // requireToRead is require for reading what p manages (an org's API keys
 // need keys:write to see): a read-only org still reads it.
 func (a Actor) requireToRead(p Permission) error {

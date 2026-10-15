@@ -219,7 +219,7 @@ func audienceIDs(as []model.Audience) []string {
 
 // MailAccounts lists the actor's mail accounts, optionally for one brand.
 func (s *Service) MailAccounts(ctx context.Context, a Actor, brandID *uuid.UUID) ([]*model.MailAccount, error) {
-	if err := a.require(PermChannelsRead); err != nil && !a.Can(PermNewslettersRead) {
+	if err := a.requireAny(PermChannelsRead, PermNewslettersRead); err != nil {
 		return nil, err
 	}
 	if a.BrandID != nil {
@@ -233,7 +233,7 @@ func (s *Service) MailAccounts(ctx context.Context, a Actor, brandID *uuid.UUID)
 
 // MailAccount returns one of the actor's mail accounts.
 func (s *Service) MailAccount(ctx context.Context, a Actor, accountID uuid.UUID) (*model.MailAccount, error) {
-	if err := a.require(PermChannelsRead); err != nil && !a.Can(PermNewslettersRead) {
+	if err := a.requireAny(PermChannelsRead, PermNewslettersRead); err != nil {
 		return nil, err
 	}
 	ma, err := s.store.MailAccount(ctx, a.OrgID, accountID)

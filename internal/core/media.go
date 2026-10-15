@@ -225,7 +225,7 @@ func cleanFilename(name string) string {
 
 // Media returns one of the actor's media items.
 func (s *Service) Media(ctx context.Context, a Actor, mediaID uuid.UUID) (*model.Media, error) {
-	if err := a.require(PermPostsRead); err != nil && !a.Can(PermPostsWrite) {
+	if err := a.requireAny(PermPostsRead, PermPostsWrite); err != nil {
 		return nil, err
 	}
 	return s.visibleMedia(ctx, a, mediaID)
@@ -247,7 +247,7 @@ type MediaFilter = store.MediaFilter
 
 // MediaList lists media newest first.
 func (s *Service) MediaList(ctx context.Context, a Actor, f MediaFilter, page store.Page) ([]*model.Media, bool, error) {
-	if err := a.require(PermPostsRead); err != nil && !a.Can(PermPostsWrite) {
+	if err := a.requireAny(PermPostsRead, PermPostsWrite); err != nil {
 		return nil, false, err
 	}
 	if a.BrandID != nil {

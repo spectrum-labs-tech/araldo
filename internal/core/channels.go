@@ -208,7 +208,7 @@ func connectError(p platform.Provider, err error) error {
 
 // Channel returns one of the actor's channels (in the actor's mode).
 func (s *Service) Channel(ctx context.Context, a Actor, channelID uuid.UUID) (*model.Channel, error) {
-	if err := a.require(PermChannelsRead); err != nil && !a.Can(PermPostsWrite) {
+	if err := a.requireAny(PermChannelsRead, PermPostsWrite); err != nil {
 		return nil, err
 	}
 	ch, err := s.store.Channel(ctx, a.OrgID, channelID)
@@ -223,7 +223,7 @@ func (s *Service) Channel(ctx context.Context, a Actor, channelID uuid.UUID) (*m
 
 // Channels lists channels in the actor's mode, optionally for one brand.
 func (s *Service) Channels(ctx context.Context, a Actor, brandID *uuid.UUID) ([]*model.Channel, error) {
-	if err := a.require(PermChannelsRead); err != nil && !a.Can(PermPostsWrite) {
+	if err := a.requireAny(PermChannelsRead, PermPostsWrite); err != nil {
 		return nil, err
 	}
 	if a.BrandID != nil {

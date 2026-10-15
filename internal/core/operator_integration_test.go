@@ -320,6 +320,16 @@ func TestOrgStatus(t *testing.T) {
 	if _, err := w.s.CreateBrand(ctx, owner, core.BrandInput{Name: "No", Timezone: "UTC"}); code(err) != "org_suspended" {
 		t.Fatalf("changing a suspended org: %v", err)
 	}
+	// Nor can they read, by whichever permission or name.
+	if _, err := w.s.Brand(ctx, owner, w.brand.ID); code(err) != "org_suspended" {
+		t.Fatalf("reading a brand in a suspended org: %v", err)
+	}
+	if _, err := w.s.ResolveBrand(ctx, owner, w.brand.Slug); code(err) != "org_suspended" {
+		t.Fatalf("resolving a brand by slug in a suspended org: %v", err)
+	}
+	if _, err := w.s.Templates(ctx, owner, &w.brand.ID); code(err) != "org_suspended" {
+		t.Fatalf("listing templates in a suspended org: %v", err)
+	}
 	// A post due while suspended (made by the operator, whom nothing holds
 	// back) waits; once active again, it goes out.
 	inTest := in

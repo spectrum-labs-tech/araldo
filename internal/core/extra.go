@@ -32,12 +32,14 @@ func (s *Service) ResolveBrand(ctx context.Context, a Actor, ref string) (*model
 	}
 	b, err := s.store.BrandBySlug(ctx, a.OrgID, ref)
 	if err != nil {
+		return nil, notFoundAs(err, notFoundID("brand", ref))
+	}
+	// Through Brand, for the same permission and org status checks as by ID.
+	b, err = s.Brand(ctx, a, b.ID)
+	if err != nil && apperr.As(err).Kind == apperr.KindNotFound {
 		return nil, notFoundID("brand", ref)
 	}
-	if err := a.brandAllowed(b.ID); err != nil {
-		return nil, notFoundID("brand", ref)
-	}
-	return b, nil
+	return b, err
 }
 
 // Idempotency (ADR 0005).

@@ -218,7 +218,7 @@ func (s *Service) reloadTemplate(ctx context.Context, orgID, templateID uuid.UUI
 
 // Template returns a template and a version (0: latest).
 func (s *Service) Template(ctx context.Context, a Actor, templateID uuid.UUID, version int) (*model.Template, *model.TemplateVersion, error) {
-	if err := a.require(PermTemplatesRead); err != nil && !a.Can(PermPostsWrite) {
+	if err := a.requireAny(PermTemplatesRead, PermPostsWrite); err != nil {
 		return nil, nil, err
 	}
 	t, err := s.store.Template(ctx, a.OrgID, templateID)
@@ -275,7 +275,7 @@ func (s *Service) TemplateByRef(ctx context.Context, a Actor, brandID uuid.UUID,
 
 // Templates lists templates, optionally for one brand.
 func (s *Service) Templates(ctx context.Context, a Actor, brandID *uuid.UUID) ([]*model.Template, error) {
-	if err := a.require(PermTemplatesRead); err != nil && !a.Can(PermPostsWrite) {
+	if err := a.requireAny(PermTemplatesRead, PermPostsWrite); err != nil {
 		return nil, err
 	}
 	if a.BrandID != nil {
@@ -323,7 +323,7 @@ type Rendition struct {
 // provider, without side effects (ADR 0010). With no data, it uses the
 // first example.
 func (s *Service) PreviewTemplate(ctx context.Context, a Actor, src tmpl.Source, data json.RawMessage, providers []platform.Provider, tz string) ([]Rendition, error) {
-	if err := a.require(PermTemplatesRead); err != nil && !a.Can(PermPostsWrite) {
+	if err := a.requireAny(PermTemplatesRead, PermPostsWrite); err != nil {
 		return nil, err
 	}
 	c, err := tmpl.Compile(src)

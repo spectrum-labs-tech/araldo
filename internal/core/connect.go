@@ -145,8 +145,6 @@ func (s *Service) CreateProviderApp(ctx context.Context, a Actor, in ProviderApp
 	return app, err
 }
 
-// DeleteProviderApp removes an app. Its channels keep working until their
-// tokens need refreshing, then need reconnecting through another app.
 // RenameProviderApp changes an app's name, which is only Araldo's label
 // for it (one app may post for some accounts and read ads for others).
 func (s *Service) RenameProviderApp(ctx context.Context, a Actor, appID uuid.UUID, name string) (*model.ProviderApp, error) {
@@ -171,6 +169,8 @@ func (s *Service) RenameProviderApp(ctx context.Context, a Actor, appID uuid.UUI
 	return app, err
 }
 
+// DeleteProviderApp removes an app. Its channels keep working until their
+// tokens need refreshing, then need reconnecting through another app.
 func (s *Service) DeleteProviderApp(ctx context.Context, a Actor, appID uuid.UUID) error {
 	app, err := s.store.ProviderApp(ctx, a.OrgID, appID)
 	if err != nil {
@@ -264,19 +264,15 @@ type ConnectResult struct {
 
 var errConnectExpired = apperr.Invalid("connect_expired", "state", "This sign-in expired or was already used. Start again from Channels.")
 
-// oauthState loads the actor's sign-in for provider.
-func (s *Service) oauthState(ctx context.Context, a Actor, provider platform.Provider, state string) (*model.OAuthState, error) {
+// takeOAuthState takes the actor's sign-in for provider, at once, so of
+// two callbacks presenting it only one goes on (the other finds it used).
+// chosen takes one whose connections wait for the member's choice.
+func (s *Service) takeOAuthState(ctx context.Context, a Actor, provider platform.Provider, state string, chosen bool) (*model.OAuthState, error) {
 	if a.UserID == nil || state == "" {
 		return nil, errConnectExpired
 	}
-	st, err := s.store.OAuthState(ctx, stateHash(state), s.Now().Add(-OAuthStateTTL))
-	if err != nil {
-		return nil, notFoundAs(err, errConnectExpired)
-	}
-	if st.OrgID != a.OrgID || st.UserID != *a.UserID || st.Provider != provider {
-		return nil, errConnectExpired
-	}
-	return st, nil
+	st, err := s.store.TakeOAuthState(ctx, stateHash(state), a.OrgID, *a.UserID, provider, s.Now().Add(-OAuthStateTTL), chosen)
+	return st, notFoundAs(err, errConnectExpired)
 }
 
 func connectionsAAD(state []byte) string {
@@ -291,14 +287,11 @@ func (s *Service) FinishConnect(ctx context.Context, a Actor, provider platform.
 	if err := a.require(connectPermission(provider)); err != nil {
 		return nil, err
 	}
-	st, err := s.oauthState(ctx, a, provider, state)
+	st, err := s.takeOAuthState(ctx, a, provider, state, false)
 	if err != nil {
 		return nil, err
 	}
 	hash := stateHash(state)
-	if len(st.Connections) > 0 {
-		return nil, errConnectExpired // the code was already exchanged
-	}
 	app, err := appFor(ctx, s.store, a.OrgID, st.AppID, st.InstallApp)
 	if err != nil {
 		return nil, notFound(err, "app")
@@ -309,34 +302,27 @@ func (s *Service) FinishConnect(ctx context.Context, a Actor, provider platform.
 	}
 	conn, ok := s.connector(provider)
 	if !ok || code == "" {
-		_ = s.store.DeleteOAuthState(ctx, hash)
 		return nil, apperr.Invalid("connect_failed", "code", "The platform did not grant access.")
 	}
 	conns, err := conn.Exchange(ctx, creds, s.ConnectRedirectURI(provider), code, st.Verifier)
 	if err != nil {
-		_ = s.store.DeleteOAuthState(ctx, hash)
 		return nil, connectError(provider, err)
 	}
 	if len(conns) == 0 {
-		_ = s.store.DeleteOAuthState(ctx, hash)
 		return nil, apperr.Invalid("connect_empty", "code", "%s returned no account to connect.", provider)
 	}
 	if len(conns) == 1 {
-		res, err := s.connectChosen(ctx, a, st, conns)
-		if err == nil {
-			_ = s.store.DeleteOAuthState(ctx, hash)
-		}
-		return res, err
+		return s.connectChosen(ctx, a, st, conns)
 	}
 	raw, err := json.Marshal(conns)
 	if err != nil {
 		return nil, err
 	}
-	sealed, err := s.keys.Encrypt(ctx, a.OrgID, connectionsAAD(hash), raw)
-	if err != nil {
+	if st.Connections, err = s.keys.Encrypt(ctx, a.OrgID, connectionsAAD(hash), raw); err != nil {
 		return nil, err
 	}
-	if err := s.store.SetOAuthConnections(ctx, hash, sealed); err != nil {
+	// Kept again, now waiting for the member to choose.
+	if err := s.store.PutOAuthState(ctx, hash, st); err != nil {
 		return nil, err
 	}
 	res := &ConnectResult{State: state}
@@ -363,14 +349,21 @@ func (s *Service) ChooseConnections(ctx context.Context, a Actor, provider platf
 	if err := a.require(connectPermission(provider)); err != nil {
 		return nil, err
 	}
-	st, err := s.oauthState(ctx, a, provider, state)
+	st, err := s.takeOAuthState(ctx, a, provider, state, true)
 	if err != nil {
 		return nil, err
 	}
-	if len(st.Connections) == 0 {
-		return nil, errConnectExpired
-	}
 	hash := stateHash(state)
+	// Until this choice connects something, the sign-in is kept for
+	// another: put back when this one fails.
+	connected := false
+	defer func() {
+		if !connected {
+			if err := s.store.PutOAuthState(context.WithoutCancel(ctx), hash, st); err != nil {
+				s.log.WarnContext(ctx, "keeping a sign-in for another choice failed", "err", err)
+			}
+		}
+	}()
 	raw, err := s.keys.Decrypt(ctx, a.OrgID, connectionsAAD(hash), st.Connections)
 	if err != nil {
 		return nil, err
@@ -388,9 +381,7 @@ func (s *Service) ChooseConnections(ctx context.Context, a Actor, provider platf
 		return nil, apperr.Invalid("choice_required", "accounts", "Choose at least one account to connect.")
 	}
 	res, err := s.connectChosen(ctx, a, st, chosen)
-	if err == nil {
-		_ = s.store.DeleteOAuthState(ctx, hash)
-	}
+	connected = err == nil
 	return res, err
 }
 
@@ -492,23 +483,26 @@ func (s *Service) refreshTokens(ctx context.Context, orgID *uuid.UUID) (int, err
 	return n, nil
 }
 
-// refreshOne renews a channel's token with the channel locked, so two
-// renewals never race: some platforms (X) replace the refresh token each
-// time, and a second renewal with the spent one would read as revoked. If
-// the token changed while waiting for the lock, it was just renewed and is
-// left alone.
+// refreshOne renews a channel's token holding a lock on its renewal, so
+// two renewals never race: some platforms (X) replace the refresh token
+// each time, and a second renewal with the spent one would read as
+// revoked. If the token changed while waiting for the lock, it was just
+// renewed and is left alone. The lock is an advisory one, not a
+// transaction: nothing is held open across the platform's answer, and the
+// new token is saved on its own straight after, so a token the platform
+// has rotated is not lost to a long transaction failing to commit.
 func (s *Service) refreshOne(ctx context.Context, ch *model.Channel, r platform.Refresher) error {
-	return s.store.InTx(ctx, func(tx *store.Store) error {
-		locked, err := tx.ChannelForUpdate(ctx, ch.OrgID, ch.ID)
+	return s.store.WithLock(ctx, "channel_refresh:"+ch.ID.String(), func(st *store.Store) error {
+		locked, err := st.Channel(ctx, ch.OrgID, ch.ID)
 		if err != nil {
 			return err
 		}
 		if !sameTime(locked.TokenExpiresAt, ch.TokenExpiresAt) || locked.AppID == nil {
 			return nil
 		}
-		// Keys through the transaction too: see keyring.With.
-		keys := s.keys.With(tx)
-		app, err := appFor(ctx, tx, locked.OrgID, *locked.AppID, locked.InstallApp)
+		// Keys through the lock's connection too: see keyring.With.
+		keys := s.keys.With(st)
+		app, err := appFor(ctx, st, locked.OrgID, *locked.AppID, locked.InstallApp)
 		if err != nil {
 			return err
 		}
@@ -535,9 +529,25 @@ func (s *Service) refreshOne(ctx context.Context, ch *model.Channel, r platform.
 		if err != nil {
 			return err
 		}
-		return tx.SetChannelToken(ctx, locked.OrgID, locked.ID, sealed, expires)
+		// The platform may have spent the old token already: saving the new
+		// one is tried again before giving up, whatever the request's fate.
+		save := context.WithoutCancel(ctx)
+		for try := 1; ; try++ {
+			err := st.SetChannelToken(save, locked.OrgID, locked.ID, sealed, expires)
+			if err == nil || errors.Is(err, store.ErrNotFound) || try == saveTokenTries {
+				if err != nil && !errors.Is(err, store.ErrNotFound) {
+					s.log.ErrorContext(ctx, "the platform renewed a token that could not be saved; the channel may need reconnecting",
+						"channel", id.Format(id.Channel, locked.ID), "err", err)
+				}
+				return err
+			}
+			sleepCtx(save, time.Duration(try)*time.Second)
+		}
 	})
 }
+
+// saveTokenTries is how many times a renewed token's save is tried.
+const saveTokenTries = 3
 
 // sameTime compares expiries at Postgres's precision (microseconds), so a
 // time not yet read back from the database matches its stored copy.

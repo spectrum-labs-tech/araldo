@@ -153,16 +153,27 @@ func (s *Service) prepare(ctx context.Context, a Actor, in *PostInput, postID uu
 			ps.Add("no_channels", "channels", "Brand %s has no active %s-mode channels.", b.Name, mode)
 		}
 	}
+	if len(in.Channels) > MaxPostChannels {
+		ps.Add("too_many_channels", "channels", "A post goes to at most %d channels.", MaxPostChannels)
+		in.Channels = nil
+	}
+	named := map[uuid.UUID]*model.Channel{}
+	if len(in.Channels) > 0 {
+		var err error
+		if named, err = s.store.ChannelsByID(ctx, a.OrgID, in.Channels); err != nil {
+			return nil, err
+		}
+	}
 	seen := map[uuid.UUID]bool{}
 	for i, cid := range in.Channels {
 		if seen[cid] {
 			continue
 		}
 		seen[cid] = true
-		ch, err := s.store.Channel(ctx, a.OrgID, cid)
+		ch, ok := named[cid]
 		param := fmt.Sprintf("channels[%d]", i)
 		switch {
-		case err != nil || ch.Livemode != a.Livemode:
+		case !ok || ch.Livemode != a.Livemode:
 			ps.Add("channel_missing", param, "No such channel %s in this mode.", id.Format(id.Channel, cid))
 		case ch.BrandID != b.ID:
 			ps.Add("channel_other_brand", param, "Channel %s belongs to another brand.", id.Format(id.Channel, cid))
@@ -186,7 +197,11 @@ func (s *Service) prepare(ctx context.Context, a Actor, in *PostInput, postID uu
 	media := ruleMedia(pl.media)
 	for _, ch := range pl.channels {
 		rp := ch.RulesProvider()
-		rules, _ := platform.RulesFor(rp)
+		rules, ok := platform.RulesFor(rp)
+		if !ok {
+			return nil, apperr.Invalid("provider_unsupported", "channels", "Araldo has no rules for %s, channel %s's platform.", rp,
+				ch.DisplayName)
+		}
 		rules = rules.ForMedia(len(media))
 		tag := func(text string) string {
 			return utm.Tag(text, b.UTMDomains, utm.Params{Source: string(ch.Provider), Medium: "social", Campaign: campaign,
@@ -336,6 +351,9 @@ func (s *Service) CreatePost(ctx context.Context, a Actor, in PostInput) (*model
 	}
 	return nil, errSlotContention
 }
+
+// MaxPostChannels is the most channels a post can name.
+const MaxPostChannels = 100
 
 // slotTries bounds the retries when another post takes the slot first.
 const slotTries = 5
@@ -518,7 +536,9 @@ func (s *Service) CancelPost(ctx context.Context, a Actor, postID uuid.UUID) (*m
 		if n == 0 {
 			return apperr.Conflict("post_not_cancelable", "Nothing left to cancel: every target is already canceled, published, failed or publishing now.")
 		}
-		out, err = s.refreshPost(ctx, tx, a.OrgID, p.ID, a.RequestID, model.PostCanceled)
+		// Derived, not forced: a post some of whose targets were published,
+		// or are being published now, is not canceled as a whole.
+		out, err = s.refreshPost(ctx, tx, a.OrgID, p.ID, a.RequestID, "")
 		if err != nil {
 			return err
 		}
@@ -951,5 +971,13 @@ func (s *Service) wake(ctx context.Context, at time.Time) {
 	if at.After(s.Now().Add(publishPoll)) {
 		return
 	}
-	_, _ = s.store.Pool().Exec(context.WithoutCancel(ctx), "NOTIFY araldo_publish")
+	s.notify(ctx, "araldo_publish")
+}
+
+// notify wakes the workers listening on channel. A failure only delays
+// the work until their next poll, so it is logged, not returned.
+func (s *Service) notify(ctx context.Context, channel string) {
+	if err := s.store.Notify(context.WithoutCancel(ctx), channel); err != nil {
+		s.log.WarnContext(ctx, "waking the workers failed; they find the work at their next poll", "channel", channel, "err", err)
+	}
 }

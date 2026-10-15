@@ -96,24 +96,18 @@ func (s *Service) runPublisher(ctx context.Context, owner string, orgID *uuid.UU
 // after errors.
 func (s *Service) listen(ctx context.Context, channel string, wake chan<- struct{}) {
 	for ctx.Err() == nil {
-		conn, err := s.store.Pool().Acquire(ctx)
-		if err != nil {
-			sleepCtx(ctx, 5*time.Second)
-			continue
-		}
-		if _, err := conn.Exec(ctx, "LISTEN "+channel); err == nil {
-			for {
-				if _, err := conn.Conn().WaitForNotification(ctx); err != nil {
-					break
-				}
-				select {
-				case wake <- struct{}{}:
-				default:
-				}
+		err := s.store.Listen(ctx, channel, func() {
+			select {
+			case wake <- struct{}{}:
+			default:
 			}
+		})
+		if ctx.Err() != nil {
+			return
 		}
-		conn.Release()
-		sleepCtx(ctx, time.Second)
+		// Polling still finds the work meanwhile.
+		s.log.InfoContext(ctx, "listening for work failed; listening again shortly", "channel", channel, "err", err)
+		sleepCtx(ctx, 5*time.Second)
 	}
 }
 
@@ -211,7 +205,11 @@ func (s *Service) publishTarget(ctx context.Context, owner string, ct store.Clai
 			pubErr = &platform.Error{Kind: platform.Transient, Code: "media_unreadable", Msg: "could not read the post's media", Err: err}
 			break
 		}
-		rules, _ := platform.RulesFor(ch.RulesProvider())
+		rules, ok := platform.RulesFor(ch.RulesProvider())
+		if !ok {
+			pubErr = &platform.Error{Kind: platform.Rejected, Code: "provider_unsupported", Msg: "no rules for " + string(ch.RulesProvider())}
+			break
+		}
 		pm, err := s.payloadMedia(ctx, media, rules.ForMedia(len(media)))
 		if err != nil {
 			pubErr = err
@@ -444,6 +442,9 @@ func (s *Service) ExpireOverdue(ctx context.Context) (int, error) {
 // SandboxTarget returns one of the actor's org's published test-mode
 // targets, for the sandbox page, which shows what the sandbox "published".
 func (s *Service) SandboxTarget(ctx context.Context, a Actor, ref string) (*model.Target, error) {
+	if err := a.require(PermPostsRead); err != nil {
+		return nil, err
+	}
 	tid, err := ParseID(id.Target, ref, "post target")
 	if err != nil {
 		return nil, err

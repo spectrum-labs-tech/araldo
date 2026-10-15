@@ -579,8 +579,7 @@ func (s *Service) LinkedMedia(ctx context.Context, ref, expires, signature, forP
 	if err != nil {
 		return nil, nil, notFound(err, "media")
 	}
-	if forProvider != "" {
-		rules, _ := platform.RulesFor(platform.Provider(forProvider))
+	if rules, ok := platform.RulesFor(platform.Provider(forProvider)); ok {
 		pm := ruleMedia([]*model.Media{m})[0]
 		if rs, needed, possible := rules.ResizeFor(pm); needed && possible {
 			data, info, err := s.fitMedia(ctx, m, rs)

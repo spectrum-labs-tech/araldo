@@ -9,6 +9,8 @@ import (
 	"context"
 	"net/url"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -124,6 +126,23 @@ func TestOAuthConnections(t *testing.T) {
 	}
 	if _, err := w.s.FinishConnect(ctx, live, platform.Threads, state, "one"); kind(err) != apperr.KindInvalid {
 		t.Fatalf("a used state: %v", err)
+	}
+	// Two callbacks with one state at once: one connects, one finds it used.
+	state = signIn(t, w, live, app)
+	var finished atomic.Int32
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			if _, err := w.s.FinishConnect(ctx, live, platform.Threads, state, "one"); err == nil {
+				finished.Add(1)
+			} else if code(err) != "connect_expired" {
+				t.Errorf("the second callback: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+	if finished.Load() != 1 {
+		t.Fatalf("%d callbacks with one state went on, want 1", finished.Load())
 	}
 
 	// Several accounts: choose; the one already connected is reconnected,

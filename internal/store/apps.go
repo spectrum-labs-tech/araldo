@@ -84,29 +84,33 @@ func (s *Store) CreateOAuthState(ctx context.Context, hash []byte, st *model.OAu
 	return mapErr(err)
 }
 
-// OAuthState reads a sign-in created after since.
-func (s *Store) OAuthState(ctx context.Context, hash []byte, since time.Time) (*model.OAuthState, error) {
+// TakeOAuthState deletes and returns the sign-in for provider that the
+// user began in the org after since, so only one of the callbacks that
+// present it goes on: chosen tells a sign-in waiting for the member to
+// choose among its connections (true) from one waiting for the platform's
+// code (false).
+func (s *Store) TakeOAuthState(ctx context.Context, hash []byte, orgID, userID uuid.UUID, provider platform.Provider, since time.Time,
+	chosen bool) (*model.OAuthState, error) {
 	var st model.OAuthState
-	var provider string
-	err := s.q.QueryRow(ctx, `SELECT org_id, user_id, brand_id, `+appRef+`, provider, verifier, connections, created_at FROM oauth_states
-		WHERE state_hash = $1 AND created_at > $2`, hash, since).
-		Scan(&st.OrgID, &st.UserID, &st.BrandID, &st.AppID, &st.InstallApp, &provider, &st.Verifier, &st.Connections, &st.CreatedAt)
-	st.Provider = platform.Provider(provider)
+	err := s.q.QueryRow(ctx, `DELETE FROM oauth_states WHERE state_hash = $1 AND org_id = $2 AND user_id = $3 AND provider = $4
+		AND created_at > $5 AND (connections IS NOT NULL) = $6
+		RETURNING org_id, user_id, brand_id, `+appRef+`, provider, verifier, connections, created_at`, hash, orgID, userID, string(provider),
+		since, chosen).
+		Scan(&st.OrgID, &st.UserID, &st.BrandID, &st.AppID, &st.InstallApp, &st.Provider, &st.Verifier, &st.Connections, &st.CreatedAt)
 	if err != nil {
 		return nil, mapErr(err)
 	}
 	return &st, nil
 }
 
-// SetOAuthConnections keeps a sign-in's encrypted connections for the
-// member to choose among.
-func (s *Store) SetOAuthConnections(ctx context.Context, hash, connections []byte) error {
-	return s.execOne(ctx, `UPDATE oauth_states SET connections = $2 WHERE state_hash = $1`, hash, connections)
-}
-
-// DeleteOAuthState ends a sign-in; a state is used once.
-func (s *Store) DeleteOAuthState(ctx context.Context, hash []byte) error {
-	return s.execOne(ctx, `DELETE FROM oauth_states WHERE state_hash = $1`, hash)
+// PutOAuthState records a taken sign-in again, as it was, with its
+// encrypted connections for the member to choose among.
+func (s *Store) PutOAuthState(ctx context.Context, hash []byte, st *model.OAuthState) error {
+	orgApp, installApp := appColumns(&st.AppID, st.InstallApp)
+	_, err := s.q.Exec(ctx, `INSERT INTO oauth_states (state_hash, org_id, user_id, brand_id, app_id, install_app_id, provider, verifier,
+		connections, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, hash, st.OrgID, st.UserID, st.BrandID, orgApp, installApp,
+		string(st.Provider), st.Verifier, st.Connections, st.CreatedAt)
+	return mapErr(err)
 }
 
 // PruneOAuthStates deletes sign-ins started before cutoff.

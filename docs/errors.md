@@ -122,6 +122,7 @@ every problem in `errors`, each with its own `code` and `param`.
 - **no_channels**: the brand has no active channels in this mode.
 - **channel_missing**, **channel_inactive**, **channel_other_brand**: a
   listed channel cannot be used.
+- **too_many_channels**: a post names at most 100 channels.
 - **no_slots**, **slots_full**: `next_slot` found nothing. Set the brand's
   `slots` with `POST /v1/brands/{id}`. A post waiting for approval takes
   its slot when approved, so approval can fail with `slots_full` too; the

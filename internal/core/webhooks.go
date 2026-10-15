@@ -385,7 +385,7 @@ func VerifySignature(secret, header string, body []byte, now time.Time, toleranc
 }
 
 func (s *Service) wakeDeliveries(ctx context.Context) {
-	_, _ = s.store.Pool().Exec(context.WithoutCancel(ctx), "NOTIFY araldo_webhooks")
+	s.notify(ctx, "araldo_webhooks")
 }
 
 // RunDeliverer delivers webhooks until ctx ends.

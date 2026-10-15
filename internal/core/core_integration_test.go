@@ -176,6 +176,10 @@ func TestPostPublishesThroughTheSandbox(t *testing.T) {
 	if other := newWorld(t); kind(func() error { _, err := other.s.SandboxTarget(ctx, other.owner, ref); return err }()) != apperr.KindNotFound {
 		t.Fatal("another org sees the sandbox target")
 	}
+	noPosts := core.Actor{OrgID: w.org.ID, KeyID: ptrID(id.New()), Scopes: []string{"templates:read"}, OrgStatus: model.OrgActive}
+	if _, err := w.s.SandboxTarget(ctx, noPosts, ref); kind(err) != apperr.KindForbidden {
+		t.Fatalf("a key without posts:read reading the sandbox target: %v", err)
+	}
 	events, _, err := w.s.Events(ctx, w.owner, "", store.Page{Limit: 50})
 	if err != nil {
 		t.Fatal(err)
@@ -374,6 +378,15 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	_, err = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: b.brand.ID, Content: &model.Content{Body: "x"}, Channels: []uuid.UUID{a.channel.ID}})
 	if kind(err) != apperr.KindInvalid {
 		t.Errorf("targeting another org's channel: %v", err)
+	}
+	// A post names at most so many channels.
+	many := make([]uuid.UUID, core.MaxPostChannels+1)
+	for i := range many {
+		many[i] = id.New()
+	}
+	_, err = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: b.brand.ID, Content: &model.Content{Body: "x"}, Channels: many})
+	if !hasProblem(err, "too_many_channels") {
+		t.Errorf("naming too many channels: %v", err)
 	}
 	// Nor can another org's media be attached.
 	_, err = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: b.brand.ID, Content: &model.Content{Body: "x"}, Media: []uuid.UUID{m.ID}})
@@ -1787,5 +1800,35 @@ func TestOutagesAreNotMissing(t *testing.T) {
 		if !errors.Is(err, context.Canceled) {
 			t.Errorf("%s: %v, want the cancellation", what, err)
 		}
+	}
+}
+
+// TestCancelingAPartlyPublishedPost checks canceling what is left of a
+// post one of whose targets was published leaves it partially published,
+// not canceled.
+func TestCancelingAPartlyPublishedPost(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	second, err := w.s.ConnectChannel(ctx, w.owner, core.ConnectInput{BrandID: w.brand.ID, Provider: platform.Sandbox,
+		Fields: map[string]string{"emulates": "mastodon"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "half"},
+		Channels: []uuid.UUID{w.channel.ID, second.ID}, PublishAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// As if the first had gone out already (this test's own row).
+	if _, err := open(t).Pool().Exec(ctx, `UPDATE post_targets SET status = 'published' WHERE id = $1`, p.Targets[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := w.s.CancelPost(ctx, w.owner, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != model.PostPartiallyPublished {
+		t.Fatalf("after canceling the rest: %s, want partially_published", got.Status)
 	}
 }

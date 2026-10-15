@@ -2664,6 +2664,7 @@ components:
         content: { $ref: "#/components/schemas/Content" }
         channels:
           type: array
+          maxItems: 100
           items: { type: string }
           description: Default every active channel of the brand in this mode.
         publish_at:

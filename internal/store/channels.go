@@ -51,6 +51,24 @@ func (s *Store) Channel(ctx context.Context, orgID, id uuid.UUID) (*model.Channe
 	return scanChannel(s.q.QueryRow(ctx, `SELECT `+channelCols+` FROM channels WHERE org_id = $1 AND id = $2`, orgID, id))
 }
 
+// ChannelsByID returns those of ids that are channels of the org, by ID;
+// the others are missing from the map.
+func (s *Store) ChannelsByID(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]*model.Channel, error) {
+	rows, err := s.q.Query(ctx, `SELECT `+channelCols+` FROM channels WHERE org_id = $1 AND id = ANY($2)`, orgID, ids)
+	if err != nil {
+		return nil, err
+	}
+	chs, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Channel, error) { return scanChannel(r) })
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]*model.Channel, len(chs))
+	for _, ch := range chs {
+		out[ch.ID] = ch
+	}
+	return out, nil
+}
+
 // Channels lists channels in an org and mode, optionally for one brand.
 func (s *Store) Channels(ctx context.Context, orgID uuid.UUID, livemode bool, brandID *uuid.UUID) ([]*model.Channel, error) {
 	rows, err := s.q.Query(ctx, `SELECT `+channelCols+` FROM channels WHERE org_id = $1 AND livemode = $2 AND ($3::uuid IS NULL OR brand_id = $3)
@@ -69,11 +87,6 @@ func (s *Store) UpdateChannelConnection(ctx context.Context, c *model.Channel) e
 		WHERE org_id = $1 AND id = $2`,
 		c.OrgID, c.ID, c.DisplayName, c.Handle, c.ExternalID, c.ProfileURL, c.Settings, c.Credentials, c.Status, c.StatusNote,
 		orgApp, installApp, c.TokenExpiresAt)
-}
-
-// ChannelForUpdate reads a channel and locks it until the transaction ends.
-func (s *Store) ChannelForUpdate(ctx context.Context, orgID, id uuid.UUID) (*model.Channel, error) {
-	return scanChannel(s.q.QueryRow(ctx, `SELECT `+channelCols+` FROM channels WHERE org_id = $1 AND id = $2 FOR UPDATE`, orgID, id))
 }
 
 // SetChannelToken stores refreshed credentials and their expiry.

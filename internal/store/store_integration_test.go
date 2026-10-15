@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -247,5 +249,81 @@ func TestSSOSessionsGoWithTheirOrg(t *testing.T) {
 	orphan := &model.Session{ID: id.New(), UserID: u.ID, CSRFToken: "csrf", State: "active", ExpiresAt: time.Now().Add(time.Hour), SSOOrg: &missing}
 	if err := st.CreateSession(ctx, orphan, []byte(uuid.NewString())); !errors.Is(err, ErrReferenced) {
 		t.Errorf("a session through an org that does not exist: %v, want ErrReferenced", err)
+	}
+}
+
+// TestNotifyWakesListeners checks a notification reaches a listener on its
+// channel, named here at random so no other test's notifications arrive.
+func TestNotifyWakesListeners(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	st := testStore(ctx, t)
+	channel := "araldo_test_" + uuid.NewString()[:8]
+	got := make(chan struct{}, 1)
+	listening := make(chan error, 1)
+	go func() {
+		listening <- st.Listen(ctx, channel, func() {
+			select {
+			case got <- struct{}{}:
+			default:
+			}
+		})
+	}()
+	// Notify until the listener, which may not have started, hears one.
+	for {
+		if err := st.Notify(ctx, channel); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-got:
+			cancel()
+			if err := <-listening; !errors.Is(err, context.Canceled) {
+				t.Fatalf("Listen returned %v after its context ended", err)
+			}
+			return
+		case err := <-listening:
+			t.Fatalf("Listen stopped: %v", err)
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatal("no notification arrived")
+		}
+	}
+}
+
+// TestWithLockTakesTurns checks two holders of one advisory lock never
+// overlap, and the lock is free again after.
+func TestWithLockTakesTurns(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	st := testStore(ctx, t)
+	key := "test:" + uuid.NewString()
+	var inside, overlapped atomic.Int32
+	var wg sync.WaitGroup
+	for range 3 {
+		wg.Go(func() {
+			err := st.WithLock(ctx, key, func(*Store) error {
+				if inside.Add(1) > 1 {
+					overlapped.Store(1)
+				}
+				time.Sleep(50 * time.Millisecond)
+				inside.Add(-1)
+				return nil
+			})
+			if err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if overlapped.Load() != 0 {
+		t.Fatal("two holders of one lock overlapped")
+	}
+	var free bool
+	if err := st.Pool().QueryRow(ctx, `SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AND pg_advisory_unlock(hashtextextended($1, 0))`, key).Scan(&free); err != nil {
+		t.Fatal(err)
+	}
+	if !free {
+		t.Fatal("the lock is still held")
 	}
 }

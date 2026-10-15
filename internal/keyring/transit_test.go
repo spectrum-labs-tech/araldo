@@ -4,6 +4,7 @@ package keyring
 
 import (
 	"bytes"
+	"context"
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
@@ -30,6 +31,8 @@ type fakeBao struct {
 	tokens map[string]bool
 	logins int
 	calls  int
+	// gate, when set, holds every login until it is closed.
+	gate chan struct{}
 }
 
 func newFakeBao(t *testing.T) (*fakeBao, *httptest.Server) {
@@ -58,6 +61,9 @@ func (f *fakeBao) restart() {
 func (f *fakeBao) serve(w http.ResponseWriter, r *http.Request) {
 	var body map[string]string
 	_ = json.NewDecoder(r.Body).Decode(&body)
+	if f.gate != nil && strings.HasSuffix(r.URL.Path, "/login") {
+		<-f.gate
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	reply := func(status int, v any) {
@@ -180,6 +186,47 @@ func TestTransitLogsInWithTheServiceAccount(t *testing.T) {
 	bao.restart()
 	if _, err := tr.Unwrap(t.Context(), wrapped, aad); err != nil || bao.logins != 3 {
 		t.Fatalf("after a restart: %v, logins = %d, want 3", err, bao.logins)
+	}
+}
+
+// TestTransitLogsInOnceForConcurrentCallers checks callers needing a token
+// at once share one login, and one that gives up does not wait for it.
+func TestTransitLogsInOnceForConcurrentCallers(t *testing.T) {
+	t.Parallel()
+	bao, srv := newFakeBao(t)
+	bao.gate = make(chan struct{})
+	tr := newTransit(t, srv, TransitConfig{Role: "araldo", AuthPath: "kubernetes-test", JWTFile: jwtFile(t)})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	gaveUp := make(chan error, 1)
+	go func() {
+		_, err := tr.currentToken(ctx)
+		gaveUp <- err
+	}()
+	cancel()
+	select {
+	case err := <-gaveUp:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("a caller that gave up: %v, want context.Canceled", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a caller that gave up waited for the login")
+	}
+
+	var wg sync.WaitGroup
+	for range 5 {
+		wg.Go(func() {
+			if _, err := tr.Wrap(t.Context(), []byte("k"), wrapAAD(uuid.New(), 1)); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	close(bao.gate)
+	wg.Wait()
+	bao.mu.Lock()
+	defer bao.mu.Unlock()
+	if bao.logins != 1 {
+		t.Errorf("logins = %d, want 1 shared by every caller", bao.logins)
 	}
 }
 

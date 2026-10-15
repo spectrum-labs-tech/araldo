@@ -58,6 +58,15 @@ type Transit struct {
 	mu      sync.Mutex
 	token   string
 	refresh time.Time
+	login   *login // the login under way, if any
+}
+
+// login is one login to the service, which every caller needing a token
+// meanwhile waits for, each only as long as its own context allows.
+type login struct {
+	done  chan struct{}
+	token string
+	err   error
 }
 
 // NewTransit returns a KEK using the Transit key in cfg.
@@ -156,15 +165,49 @@ func (t *Transit) call(ctx context.Context, op string, body, out any) error {
 	}
 }
 
+// currentToken returns the token to call with, logging in when there is
+// none or it is due for renewal. Callers arriving during a login wait for
+// it rather than each logging in, and none holds the lock across the call.
 func (t *Transit) currentToken(ctx context.Context) (string, error) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.token != "" && (t.cfg.Token != "" || t.now().Before(t.refresh)) {
-		return t.token, nil
+		tok := t.token
+		t.mu.Unlock()
+		return tok, nil
 	}
+	l := t.login
+	if l == nil {
+		l = &login{done: make(chan struct{})}
+		t.login = l
+		// The login outlives a caller that gives up, so those still
+		// waiting get its token; the HTTP client's timeout bounds it.
+		go func() {
+			tok, refresh, err := t.logIn(context.WithoutCancel(ctx))
+			t.mu.Lock()
+			if err == nil {
+				t.token, t.refresh = tok, refresh
+			}
+			t.login = nil
+			t.mu.Unlock()
+			l.token, l.err = tok, err
+			close(l.done)
+		}()
+	}
+	t.mu.Unlock()
+	select {
+	case <-l.done:
+		return l.token, l.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+// logIn exchanges the service account token for a token, and says when to
+// renew it.
+func (t *Transit) logIn(ctx context.Context) (string, time.Time, error) {
 	jwt, err := os.ReadFile(t.cfg.JWTFile)
 	if err != nil {
-		return "", fmt.Errorf("transit: service account token: %w", err)
+		return "", time.Time{}, fmt.Errorf("transit: service account token: %w", err)
 	}
 	var out struct {
 		Auth struct {
@@ -174,18 +217,17 @@ func (t *Transit) currentToken(ctx context.Context) (string, error) {
 	}
 	body := map[string]string{"role": t.cfg.Role, "jwt": strings.TrimSpace(string(jwt))}
 	if _, err := t.post(ctx, "/v1/auth/"+t.cfg.AuthPath+"/login", "", body, &out); err != nil {
-		return "", fmt.Errorf("transit: log in as %q: %w", t.cfg.Role, err)
+		return "", time.Time{}, fmt.Errorf("transit: log in as %q: %w", t.cfg.Role, err)
 	}
 	if out.Auth.ClientToken == "" {
-		return "", errors.New("transit: login returned no token")
+		return "", time.Time{}, errors.New("transit: login returned no token")
 	}
 	// Log in again at half the lease, well before the token expires.
 	lease := time.Duration(out.Auth.LeaseDuration) * time.Second
 	if lease <= 0 {
 		lease = time.Minute
 	}
-	t.token, t.refresh = out.Auth.ClientToken, t.now().Add(lease/2)
-	return t.token, nil
+	return out.Auth.ClientToken, t.now().Add(lease / 2), nil
 }
 
 func (t *Transit) forget() {

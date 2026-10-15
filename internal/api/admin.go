@@ -55,6 +55,7 @@ func (h *Handler) createKey(w http.ResponseWriter, r *http.Request) error {
 		}
 		in.BrandID = &b.ID
 	}
+	holdsSecret(w)
 	plain, k, err := h.svc.CreateKeyWithKey(r.Context(), a, in)
 	if err != nil {
 		return err
@@ -93,6 +94,7 @@ func (h *Handler) rollKey(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	holdsSecret(w)
 	plain, k, err := h.svc.RollAPIKey(r.Context(), actor(r), nil, kid, overlap)
 	if err != nil {
 		return err
@@ -112,6 +114,7 @@ func (h *Handler) rollOwnKey(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	holdsSecret(w)
 	plain, k, err := h.svc.RollOwnKey(r.Context(), actor(r), overlap)
 	if err != nil {
 		return err

@@ -169,6 +169,7 @@ func (h *Handler) createInvitation(w http.ResponseWriter, r *http.Request) error
 	if err := decode(r, &body); err != nil {
 		return err
 	}
+	holdsSecret(w)
 	link, inv, err := h.svc.InviteMember(r.Context(), a, nil, body.Email, body.Role)
 	if err != nil {
 		return err

@@ -296,6 +296,10 @@ func (h *Handler) idempotent(w http.ResponseWriter, r *http.Request, a core.Acto
 	}
 	if replay != nil {
 		w.Header().Set("Idempotent-Replayed", "true")
+		if replay.Withheld {
+			h.fail(w, r, core.ErrSecretWithheld)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(replay.Status)
 		_, _ = w.Write(replay.Body) //nolint:gosec // G705: a stored JSON API response, served as application/json
@@ -309,7 +313,7 @@ func (h *Handler) idempotent(w http.ResponseWriter, r *http.Request, a core.Acto
 	defer h.releaseIfPanicked(r.Context(), a, key, &finished)
 	h.mux.ServeHTTP(rec, r)
 	finished = true
-	if err := h.svc.FinishIdempotent(r.Context(), a, key, rec.status, rec.buf.Bytes()); err != nil {
+	if err := h.svc.FinishIdempotent(r.Context(), a, key, rec.status, rec.buf.Bytes(), rec.secret); err != nil {
 		h.log.ErrorContext(r.Context(), "storing idempotent response", "err", err)
 	}
 }
@@ -332,6 +336,27 @@ type recorder struct {
 	http.ResponseWriter
 	status int
 	buf    bytes.Buffer
+	// secret is set by a handler whose response holds a secret, which is
+	// never stored (see holdsSecret).
+	secret bool
+}
+
+// holdsSecret marks the response w is writing as holding a secret (a new
+// key, signing secret or invitation link): under an Idempotency-Key, its
+// outcome is kept but not its body, and a retry is told the secret was
+// shown once (ADR 0005).
+func holdsSecret(w http.ResponseWriter) {
+	for w != nil {
+		if rec, ok := w.(*recorder); ok {
+			rec.secret = true
+			return
+		}
+		u, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return
+		}
+		w = u.Unwrap()
+	}
 }
 
 // releaseIfPanicked releases key when the handler panicked (finished is
@@ -341,7 +366,7 @@ func (h *Handler) releaseIfPanicked(ctx context.Context, a core.Actor, key strin
 	if *finished {
 		return
 	}
-	if err := h.svc.FinishIdempotent(ctx, a, key, http.StatusInternalServerError, nil); err != nil {
+	if err := h.svc.FinishIdempotent(ctx, a, key, http.StatusInternalServerError, nil, false); err != nil {
 		h.log.ErrorContext(ctx, "releasing idempotency key", "err", err)
 	}
 }

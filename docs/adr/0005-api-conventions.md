@@ -35,8 +35,9 @@ set the bar most developers now expect.
    example the caller's own release ID), returned everywhere and filterable in
    lists.
 5. **Idempotency.** Every `POST` accepts an `Idempotency-Key` header. For 24
-   hours Araldo stores the key per API key and mode with a fingerprint of
-   the request and the response:
+   hours Araldo stores the key per credential (an API key, or the user
+   token a person signs in to the CLI with) with a fingerprint of the
+   request and the response:
    - a retry with the same key and request returns the stored response,
      with `Idempotent-Replayed: true`;
    - the same key with a different request is `409 idempotency_key_reused`;
@@ -48,7 +49,10 @@ set the bar most developers now expect.
      retry of the same request. If that process had already committed, the
      retry runs again: the key and the work are not one transaction;
    - a file upload (`POST /v1/media`, multipart) is streamed rather than held
-     in memory, so its fingerprint is the route alone, not the file.
+     in memory, so its fingerprint is the route alone, not the file;
+   - a response that holds a secret (a new key or signing secret, an
+     invitation link) is never stored: its outcome is, and a retry is
+     `409 idempotency_response_withheld`, since the secret is shown once.
 6. **Pagination** is by cursor: `limit` (1–100, default 20),
    `starting_after` or `ending_before` (an object ID). A list is
    `{ "object": "list", "data": [...], "has_more": true }`. There are no

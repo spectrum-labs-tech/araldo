@@ -914,6 +914,7 @@ func (h *Handler) createEndpoint(w http.ResponseWriter, r *http.Request) error {
 	if err := decode(r, &body); err != nil {
 		return err
 	}
+	holdsSecret(w)
 	ep, secret, err := h.svc.CreateEndpoint(r.Context(), actor(r), core.EndpointInput{URL: body.URL, Description: body.Description, EventTypes: body.EnabledEvents})
 	if err != nil {
 		return err
@@ -984,6 +985,7 @@ func (h *Handler) rollSecret(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	holdsSecret(w)
 	secret, err := h.svc.RollEndpointSecret(r.Context(), actor(r), eid, overlap)
 	if err != nil {
 		return err

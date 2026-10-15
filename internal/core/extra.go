@@ -52,24 +52,45 @@ const IdempotencyWindow = 24 * time.Hour
 // runs (the server's timeouts are a minute), so its process is gone.
 const idempotencyAbandoned = 5 * time.Minute
 
-// IdempotentReplay is a stored response to replay.
+// IdempotentReplay is a stored response to replay. Withheld is set, with
+// no body, when the response held a secret, which is shown once and never
+// stored.
 type IdempotentReplay struct {
-	Status int
-	Body   []byte
+	Status   int
+	Body     []byte
+	Withheld bool
+}
+
+// ErrSecretWithheld answers a retry of a request whose response held a
+// secret: it took effect, and the secret is not kept to be shown again.
+var ErrSecretWithheld = apperr.Conflict("idempotency_response_withheld",
+	"A request with this Idempotency-Key succeeded, and its response held a secret, which is shown once and not kept. "+
+		"Look the object up, and roll or revoke it if the secret was lost.")
+
+// idempotencyOwner is the credential an actor's idempotency keys belong
+// to: its API key, or the user token a person acts through (from the CLI
+// or MCP). The two are UUIDs from one space, so they share the column.
+// Nil for one with neither (the dashboard sends none).
+func idempotencyOwner(a Actor) *uuid.UUID {
+	if a.KeyID != nil {
+		return a.KeyID
+	}
+	return a.TokenID
 }
 
 // BeginIdempotent claims an idempotency key for a request. It returns a
 // replay when the key already completed with the same request, and a 409
 // when it is in use or was used for a different request.
 func (s *Service) BeginIdempotent(ctx context.Context, a Actor, key string, fingerprint []byte) (*IdempotentReplay, error) {
-	if a.KeyID == nil {
+	owner := idempotencyOwner(a)
+	if owner == nil {
 		return nil, nil
 	}
 	if len(key) > 255 {
 		return nil, apperr.Invalid("idempotency_key_invalid", "Idempotency-Key", "Idempotency keys are at most 255 characters.")
 	}
 	now := s.Now()
-	rec, claimed, err := s.store.BeginIdempotent(ctx, *a.KeyID, key, fingerprint, now, now.Add(-IdempotencyWindow), now.Add(-idempotencyAbandoned))
+	rec, claimed, err := s.store.BeginIdempotent(ctx, *owner, key, fingerprint, now, now.Add(-IdempotencyWindow), now.Add(-idempotencyAbandoned))
 	if err != nil || claimed {
 		return nil, err
 	}
@@ -79,20 +100,22 @@ func (s *Service) BeginIdempotent(ctx context.Context, a Actor, key string, fing
 	if rec.Status != "done" {
 		return nil, apperr.Conflict("idempotency_key_in_use", "A request with this Idempotency-Key is still in progress; retry shortly.")
 	}
-	return &IdempotentReplay{Status: rec.ResponseStatus, Body: rec.ResponseBody}, nil
+	return &IdempotentReplay{Status: rec.ResponseStatus, Body: rec.ResponseBody, Withheld: rec.ResponseBody == nil}, nil
 }
 
 // FinishIdempotent stores the response for a claimed key. Only a
 // request that took effect (2xx) is kept: an error had no side effects, so
 // releasing the key lets a corrected retry run (ADR 0019, as Stripe does).
-func (s *Service) FinishIdempotent(ctx context.Context, a Actor, key string, status int, body []byte) error {
-	if a.KeyID == nil {
+// withheld keeps the outcome without the body, which held a secret.
+func (s *Service) FinishIdempotent(ctx context.Context, a Actor, key string, status int, body []byte, withheld bool) error {
+	owner := idempotencyOwner(a)
+	if owner == nil {
 		return nil
 	}
 	if status < 200 || status > 299 {
 		status = 0
 	}
-	return s.store.FinishIdempotent(context.WithoutCancel(ctx), *a.KeyID, key, status, body)
+	return s.store.FinishIdempotent(context.WithoutCancel(ctx), *owner, key, status, body, withheld)
 }
 
 // Housekeeping tasks (opsched).

@@ -21,9 +21,12 @@ info:
 
     **Idempotency.** Every `POST` accepts an `Idempotency-Key` header. A
     retry with the same key and body returns the first response (with
-    `Idempotent-Replayed: true`) for 24 hours. Only a request that took
-    effect (2xx) keeps its key: after an error, nothing happened, so the
-    same key can be sent again with a corrected request.
+    `Idempotent-Replayed: true`) for 24 hours, per API key or CLI sign-in.
+    Only a request that took effect (2xx) keeps its key: after an error,
+    nothing happened, so the same key can be sent again with a corrected
+    request. A response holding a secret (a new API key or signing secret,
+    an invitation link) is shown once and never stored: a retry of it is a
+    `409 idempotency_response_withheld`.
 
     **Strict parameters.** An unknown body field or query parameter is a
     `400 parameter_unknown`, so a typo never passes as a filter. Paths take
@@ -485,9 +488,10 @@ paths:
         Video needs the install's S3-compatible storage and is streamed
         into it, up to the install's limit (1 GiB unless configured). Its
         length, frame rate and codecs are read from its index; Araldo
-        does not transcode, so export it as H.264 with AAC in an MP4. An
-        `Idempotency-Key` makes Araldo hold the request in memory, which
-        limits it to 16 MiB: upload a video without one.
+        does not transcode, so export it as H.264 with AAC in an MP4. A
+        multipart upload is streamed, never held in memory, so its
+        `Idempotency-Key` covers the route alone: a retry with the key
+        replays the first upload's answer, whatever file it carries.
       tags: [Media]
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:

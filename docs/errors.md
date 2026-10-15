@@ -68,6 +68,11 @@ every problem in `errors`, each with its own `code` and `param`.
   running; retry shortly.
 - **idempotency_key_invalid** (422): an `Idempotency-Key` is at most 255
   characters.
+- **idempotency_response_withheld** (409): a request with this key
+  succeeded, and its response held a secret (a new API key, a webhook
+  signing secret, an invitation link), which is shown once and never
+  stored. Look the object up instead; roll or revoke it if the secret was
+  lost.
 - **body_unreadable** (400): the request body could not be read; send it
   again.
 - **parameter_missing** (400): a required parameter is absent; `param`

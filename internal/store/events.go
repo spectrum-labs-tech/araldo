@@ -357,10 +357,19 @@ func (s *Store) BeginIdempotent(ctx context.Context, apiKeyID uuid.UUID, key str
 
 // FinishIdempotent stores a response; with status 0 it releases the key
 // (the request failed in a way worth retrying).
-func (s *Store) FinishIdempotent(ctx context.Context, apiKeyID uuid.UUID, key string, status int, body []byte) error {
+//
+// withheld keeps no body: the response held a secret, which is never
+// stored, and a replay says so instead (ResponseBody nil).
+func (s *Store) FinishIdempotent(ctx context.Context, apiKeyID uuid.UUID, key string, status int, body []byte, withheld bool) error {
 	if status == 0 {
 		_, err := s.q.Exec(ctx, `DELETE FROM idempotency_keys WHERE api_key_id = $1 AND key = $2 AND status = 'in_progress'`, apiKeyID, key)
 		return err
+	}
+	switch {
+	case withheld:
+		body = nil
+	case body == nil:
+		body = []byte{} // empty, not withheld
 	}
 	_, err := s.q.Exec(ctx, `UPDATE idempotency_keys SET status = 'done', response_status = $3, response_body = $4
 		WHERE api_key_id = $1 AND key = $2`, apiKeyID, key, status, body)

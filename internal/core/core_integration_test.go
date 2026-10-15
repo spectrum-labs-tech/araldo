@@ -776,7 +776,7 @@ func TestAbandonedIdempotencyKey(t *testing.T) {
 	if replay, err := w.s.BeginIdempotent(ctx, a, key, req); err != nil || replay != nil {
 		t.Fatalf("a retry once it is abandoned: %v, %v", replay, err)
 	}
-	if err := w.s.FinishIdempotent(ctx, a, key, http.StatusCreated, []byte(`{"id":"x"}`)); err != nil {
+	if err := w.s.FinishIdempotent(ctx, a, key, http.StatusCreated, []byte(`{"id":"x"}`), false); err != nil {
 		t.Fatal(err)
 	}
 	if replay, err := w.s.BeginIdempotent(ctx, a, key, req); err != nil || replay == nil || replay.Status != http.StatusCreated {

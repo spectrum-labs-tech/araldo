@@ -191,7 +191,7 @@ func TestChooseBrand(t *testing.T) {
 			t.Parallel()
 			got := chooseBrand(tt.err)
 			if tt.wantCode == "" {
-				if got != tt.err {
+				if !errors.Is(got, tt.err) {
 					t.Fatalf("chooseBrand changed %v into %v", tt.err, got)
 				}
 				return

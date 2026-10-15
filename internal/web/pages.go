@@ -397,6 +397,8 @@ func (s *Server) createPost(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
+	// fail shows the form again with a problem.
+	fail := func(err error) error { return s.formErr(c, "post_new", "posts", "New post", d, err) }
 	f := c.r.PostForm
 	for _, k := range []string{"brand", "mode", "body", "template", "data", "publish", "publish_at", "fit", "new_alt"} {
 		d.Form[k] = f.Get(k)
@@ -408,11 +410,11 @@ func (s *Server) createPost(c *reqCtx) error {
 	if d.Form["mode"] == "template" {
 		tid, err := id.Parse(id.Template, f.Get("template"))
 		if err != nil {
-			return s.formErr(c, "post_new", "posts", "New post", d, apperr.Invalid("template_required", "template", "Choose a template."))
+			return fail(apperr.Invalid("template_required", "template", "Choose a template."))
 		}
 		t, _, err := s.svc.Template(c.ctx(), c.actor, tid, 0)
 		if err != nil {
-			return s.formErr(c, "post_new", "posts", "New post", d, err)
+			return fail(err)
 		}
 		in.Template, tplBrand = id.Format(id.Template, t.ID), t.BrandID
 		in.Data = json.RawMessage(strings.TrimSpace(f.Get("data")))
@@ -433,7 +435,7 @@ func (s *Server) createPost(c *reqCtx) error {
 	} else {
 		b, err := s.svc.ResolveBrand(c.ctx(), c.actor, brandRef)
 		if err != nil {
-			return s.formErr(c, "post_new", "posts", "New post", d, chooseBrand(err))
+			return fail(chooseBrand(err))
 		}
 		in.BrandID = b.ID
 	}
@@ -443,7 +445,7 @@ func (s *Server) createPost(c *reqCtx) error {
 		}
 	}
 	if err := s.postFormMedia(c, d, in.BrandID); err != nil {
-		return s.formErr(c, "post_new", "posts", "New post", d, err)
+		return fail(err)
 	}
 	for _, m := range d.Media {
 		in.Media = append(in.Media, m.ID)
@@ -455,21 +457,21 @@ func (s *Server) createPost(c *reqCtx) error {
 		}
 		at, err := brandTime(b, f.Get("publish_at"), "publish_at")
 		if err != nil {
-			return s.formErr(c, "post_new", "posts", "New post", d, err)
+			return fail(err)
 		}
 		in.PublishAt = at
 	}
 	if f.Get("action") == "preview" {
 		renders, err := s.svc.PreviewPost(c.ctx(), c.actor, in)
 		if err != nil {
-			return s.formErr(c, "post_new", "posts", "New post", d, err)
+			return fail(err)
 		}
 		d.Renditions = renders
 		return s.page(c, "post_new", "posts", "New post", d)
 	}
 	p, err := s.svc.CreatePost(c.ctx(), c.actor, in)
 	if err != nil {
-		return s.formErr(c, "post_new", "posts", "New post", d, err)
+		return fail(err)
 	}
 	return redirect(c, "/posts/"+id.Format(id.Post, p.ID), "Post scheduled.")
 }

@@ -32,7 +32,22 @@ var (
 	ErrConflict = errors.New("store: conflict")
 	// ErrReferenced is a foreign key violation: the row is still in use.
 	ErrReferenced = errors.New("store: still referenced")
+	// ErrInvalid is a check constraint violation: the row breaks a rule
+	// the schema enforces.
+	ErrInvalid = errors.New("store: invalid")
 )
+
+// ConstraintError is a constraint violation: Err is ErrConflict,
+// ErrReferenced or ErrInvalid, and Constraint the constraint's name.
+type ConstraintError struct {
+	Err        error
+	Constraint string
+}
+
+func (e *ConstraintError) Error() string { return e.Err.Error() + ": " + e.Constraint }
+
+// Unwrap makes errors.Is(err, ErrConflict) and the like work.
+func (e *ConstraintError) Unwrap() error { return e.Err }
 
 //go:embed migrations/*.sql
 var migrations embed.FS
@@ -290,18 +305,24 @@ func mapErr(err error) error {
 		return ErrNotFound
 	}
 	var pe *pgconn.PgError
-	if errors.As(err, &pe) && pe.Code == "23505" {
-		return fmt.Errorf("%w: %s", ErrConflict, pe.ConstraintName)
+	if !errors.As(err, &pe) {
+		return err
 	}
-	if errors.As(err, &pe) && pe.Code == "23503" {
-		return fmt.Errorf("%w: %s", ErrReferenced, pe.ConstraintName)
+	switch pe.Code {
+	case "23505": // unique_violation
+		return &ConstraintError{Err: ErrConflict, Constraint: pe.ConstraintName}
+	case "23503": // foreign_key_violation
+		return &ConstraintError{Err: ErrReferenced, Constraint: pe.ConstraintName}
+	case "23514": // check_violation
+		return &ConstraintError{Err: ErrInvalid, Constraint: pe.ConstraintName}
 	}
 	return err
 }
 
 // ConflictOn reports whether err is a unique violation of constraint name.
 func ConflictOn(err error, name string) bool {
-	return errors.Is(err, ErrConflict) && strings.HasSuffix(err.Error(), ": "+name)
+	var ce *ConstraintError
+	return errors.As(err, &ce) && errors.Is(ce.Err, ErrConflict) && ce.Constraint == name
 }
 
 // batchSize is how many rows one statement of a bulk delete or update

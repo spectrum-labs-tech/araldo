@@ -23,7 +23,10 @@ func scanAnalyticsSource(r pgx.Row) (*model.AnalyticsSource, error) {
 	var a model.AnalyticsSource
 	err := r.Scan(&a.ID, &a.OrgID, &a.BrandID, &a.Livemode, &a.Provider, &a.Site, &a.Name, &a.Timezone, &a.Goals, &a.Settings,
 		&a.Credentials, &a.Status, &a.StatusNote, &a.ReadAt, &a.NextReadAt, &a.CreatedAt)
-	return &a, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &a, nil
 }
 
 func collectAnalyticsSources(rows pgx.Rows, err error) ([]*model.AnalyticsSource, error) {

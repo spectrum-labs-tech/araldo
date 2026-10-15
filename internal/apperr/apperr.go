@@ -125,12 +125,23 @@ func As(err error) *Error {
 				Message: "A service Araldo depends on is unavailable; try again shortly."}
 		}
 	}
+	for _, refused := range invalid {
+		if refused(err) {
+			return Invalid("invalid_request", "", "The request breaks a rule on what Araldo stores.")
+		}
+	}
 	return &Error{Kind: KindInternal, Code: "internal_error", Message: "Something went wrong on our side."}
 }
 
-var unavailable []func(error) bool
+var unavailable, invalid []func(error) bool
 
 // RegisterUnavailable adds a check that recognizes a dependency being down
 // (the database, say) in errors that carry no Kind, so As reports them as
 // unavailable instead of internal. Call it once at startup.
 func RegisterUnavailable(down func(error) bool) { unavailable = append(unavailable, down) }
+
+// RegisterInvalid adds a check that recognizes a change the data refused
+// (a database CHECK constraint, say) in errors that carry no Kind, so As
+// reports them as invalid (422) instead of internal. Call it once at
+// startup.
+func RegisterInvalid(refused func(error) bool) { invalid = append(invalid, refused) }

@@ -7,6 +7,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -82,7 +83,7 @@ type App struct {
 // MigrateWait is how long Open waits for a startup migration.
 var MigrateWait = 30 * time.Second
 
-var registerUnavailable sync.Once
+var registerChecks sync.Once
 
 // Logger returns the JSON logger at level.
 func Logger(level string) *slog.Logger {
@@ -101,7 +102,10 @@ func Logger(level string) *slog.Logger {
 // Only configuration that cannot work as written (a malformed database URL
 // or master key) is an error.
 func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error) {
-	registerUnavailable.Do(func() { apperr.RegisterUnavailable(store.Unavailable) })
+	registerChecks.Do(func() {
+		apperr.RegisterUnavailable(store.Unavailable)
+		apperr.RegisterInvalid(func(err error) bool { return errors.Is(err, store.ErrInvalid) })
+	})
 	st, err := store.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, err

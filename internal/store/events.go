@@ -22,7 +22,10 @@ func scanEvent(r pgx.Row) (*model.Event, error) {
 	var data []byte
 	err := r.Scan(&e.ID, &e.OrgID, &e.Livemode, &e.Type, &data, &e.RequestID, &e.CreatedAt)
 	e.Data = data
-	return &e, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &e, nil
 }
 
 // CreateEvent stores e and queues a delivery to every enabled endpoint of
@@ -98,7 +101,10 @@ const endpointCols = `id, org_id, livemode, url, description, event_types, secre
 func scanEndpoint(r pgx.Row) (*model.WebhookEndpoint, error) {
 	var w model.WebhookEndpoint
 	err := r.Scan(&w.ID, &w.OrgID, &w.Livemode, &w.URL, &w.Description, &w.EventTypes, &w.Secret, &w.Status, &w.DisabledReason, &w.FailingSince, &w.CreatedAt)
-	return &w, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &w, nil
 }
 
 func (s *Store) CreateEndpoint(ctx context.Context, w *model.WebhookEndpoint) error {
@@ -331,7 +337,10 @@ func (s *Store) BeginIdempotent(ctx context.Context, apiKeyID uuid.UUID, key str
 	if status != nil {
 		rec.ResponseStatus = *status
 	}
-	return &rec, false, mapErr(err)
+	if err != nil {
+		return nil, false, mapErr(err)
+	}
+	return &rec, false, nil
 }
 
 // FinishIdempotent stores a response; with status 0 it releases the key

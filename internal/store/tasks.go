@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -35,8 +36,8 @@ func (s *Store) ClaimTask(ctx context.Context, name, owner string, now, leaseUnt
 		st.Interval = time.Duration(ms) * time.Millisecond
 		return st, true, nil
 	}
-	if err != pgx.ErrNoRows { //nolint:errorlint // pgx returns it unwrapped
-		return st, false, err
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return st, false, mapErr(err)
 	}
 	err = s.q.QueryRow(ctx, `SELECT enabled, interval_ms, next_run_at, lease_until, failures FROM scheduled_tasks WHERE name = $1`, name).
 		Scan(&st.Enabled, &ms, &st.NextRunAt, &st.LeaseUntil, &st.Failures)

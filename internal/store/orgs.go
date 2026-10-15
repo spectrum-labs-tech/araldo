@@ -13,8 +13,6 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
-func errorsIs(err, target error) bool { return errors.Is(err, target) }
-
 // Orgs and memberships.
 
 const orgCols = `id, name, require_mfa, status, status_note, COALESCE(external_ref, ''), limit_brands, limit_channels, limit_members,
@@ -24,7 +22,10 @@ func scanOrg(r pgx.Row) (*model.Org, error) {
 	var o model.Org
 	err := r.Scan(&o.ID, &o.Name, &o.RequireMFA, &o.Status, &o.StatusNote, &o.ExternalRef, &o.Limits.Brands, &o.Limits.Channels,
 		&o.Limits.Members, &o.Limits.PostsMonth, &o.CreatedAt, &o.RequireSSO)
-	return &o, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &o, nil
 }
 
 func (s *Store) CreateOrg(ctx context.Context, o *model.Org) error {
@@ -96,7 +97,10 @@ func (s *Store) Membership(ctx context.Context, orgID, userID uuid.UUID) (*model
 	err := s.q.QueryRow(ctx, `SELECT m.org_id, m.user_id, m.role, m.created_at, o.name
 		FROM memberships m JOIN orgs o ON o.id = m.org_id WHERE m.org_id = $1 AND m.user_id = $2`, orgID, userID).
 		Scan(&m.OrgID, &m.UserID, &m.Role, &m.CreatedAt, &m.OrgName)
-	return &m, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &m, nil
 }
 
 // UserMemberships lists the orgs a user belongs to, by org name.
@@ -119,7 +123,10 @@ func (s *Store) Member(ctx context.Context, orgID, userID uuid.UUID) (*model.Mem
 	err := s.q.QueryRow(ctx, `SELECT m.org_id, m.user_id, m.role, m.created_at, u.email, u.name, u.totp_enabled_at IS NOT NULL
 		FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.org_id = $1 AND m.user_id = $2`, orgID, userID).
 		Scan(&m.OrgID, &m.UserID, &m.Role, &m.CreatedAt, &m.UserEmail, &m.UserName, &m.UserMFA)
-	return &m, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &m, nil
 }
 
 // Members lists an org's members, by email.
@@ -151,7 +158,10 @@ func scanBrand(r pgx.Row) (*model.Brand, error) {
 	var b model.Brand
 	err := r.Scan(&b.ID, &b.OrgID, &b.Name, &b.Slug, &b.Timezone, &b.ApprovalPolicy, &b.UTMDomains, &b.EmailTheme.LogoMediaID,
 		&b.EmailTheme.Accent, &b.EmailTheme.PostalAddress, &b.EmailTheme.Footer, &b.CreatedAt)
-	return &b, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &b, nil
 }
 
 func (s *Store) CreateBrand(ctx context.Context, b *model.Brand) error {
@@ -279,7 +289,10 @@ const apiKeyCols = `id, org_id, livemode, name, hint, scopes, brand_id, created_
 func scanAPIKey(r pgx.Row) (*model.APIKey, error) {
 	var k model.APIKey
 	err := r.Scan(&k.ID, &k.OrgID, &k.Livemode, &k.Name, &k.Hint, &k.Scopes, &k.BrandID, &k.CreatedBy, &k.CreatedAt, &k.LastUsedAt, &k.ExpiresAt, &k.RevokedAt)
-	return &k, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &k, nil
 }
 
 func (s *Store) CreateAPIKey(ctx context.Context, k *model.APIKey, hash []byte) error {

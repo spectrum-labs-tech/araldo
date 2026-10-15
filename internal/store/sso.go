@@ -33,7 +33,10 @@ func (s *Store) SSOConnection(ctx context.Context, orgID uuid.UUID) (*model.SSOC
 	var secret []byte
 	err := s.q.QueryRow(ctx, `SELECT org_id, issuer, client_id, client_secret, default_role, created_at, updated_at
 		FROM sso_connections WHERE org_id = $1`, orgID).Scan(&c.OrgID, &c.Issuer, &c.ClientID, &secret, &c.DefaultRole, &c.CreatedAt, &c.UpdatedAt)
-	return &c, secret, mapErr(err)
+	if err != nil {
+		return nil, nil, mapErr(err)
+	}
+	return &c, secret, nil
 }
 
 // DeleteSSOConnection removes an org's identity provider.
@@ -100,7 +103,10 @@ func (s *Store) TakeSSOState(ctx context.Context, hash []byte, now time.Time) (*
 	var st SSOState
 	err := s.q.QueryRow(ctx, `DELETE FROM sso_states WHERE state_hash = $1 AND expires_at > $2 RETURNING org_id, verifier, nonce, next, expires_at`,
 		hash, now).Scan(&st.OrgID, &st.Verifier, &st.Nonce, &st.Next, &st.ExpiresAt)
-	return &st, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &st, nil
 }
 
 // PruneSSOStates deletes sign-ins never finished.

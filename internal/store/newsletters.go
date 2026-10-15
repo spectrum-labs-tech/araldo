@@ -21,7 +21,10 @@ func scanMailAccount(r pgx.Row) (*model.MailAccount, error) {
 	var m model.MailAccount
 	err := r.Scan(&m.ID, &m.OrgID, &m.BrandID, &m.Livemode, &m.Provider, &m.ExternalID, &m.Name, &m.FromName, &m.FromEmail, &m.ReplyTo,
 		&m.DefaultAudiences, &m.Settings, &m.Credentials, &m.Status, &m.StatusNote, &m.CreatedAt)
-	return &m, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &m, nil
 }
 
 // CreateMailAccount stores a new account. The same provider account and
@@ -88,7 +91,10 @@ func scanIssue(r pgx.Row) (*model.Issue, error) {
 	err := r.Scan(&is.ID, &is.OrgID, &is.BrandID, &is.Livemode, &is.Subject, &is.PreviewText, &is.Body, &is.Status, &is.SendAt,
 		&is.ApprovalNeeded, &is.ReviewedByUser, &is.ReviewedByKey, &is.ReviewedAt, &is.ReviewNote, &is.CreatedByUser, &is.CreatedByKey,
 		&is.CreatedAt, &is.UpdatedAt)
-	return &is, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &is, nil
 }
 
 const deliveryCols = `id, org_id, issue_id, mail_account_id, livemode, provider, account_name, audiences, status, handoff_at, attempts,
@@ -101,7 +107,10 @@ func scanDelivery(r pgx.Row) (*model.IssueDelivery, error) {
 	err := r.Scan(&d.ID, &d.OrgID, &d.IssueID, &d.MailAccountID, &d.Livemode, &d.Provider, &d.AccountName, &d.Audiences, &d.Status,
 		&d.HandoffAt, &d.Attempts, &d.CampaignID, &d.LastError, &d.SentAt, &res.Recipients, &res.Delivered, &res.Opens, &res.Clicks,
 		&res.Unsubscribes, &res.Bounces, &res.Complaints, &d.ResultsReadAt, &d.NextReadAt, &d.UpdatedAt)
-	return &d, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &d, nil
 }
 
 func collectDeliveries(rows pgx.Rows, err error) ([]*model.IssueDelivery, error) {
@@ -125,7 +134,7 @@ func (s *Store) CreateIssue(ctx context.Context, is *model.Issue) error {
 // replaceIssueParts rewrites an issue's deliveries and media.
 func (s *Store) replaceIssueParts(ctx context.Context, is *model.Issue) error {
 	if _, err := s.q.Exec(ctx, `DELETE FROM newsletter_deliveries WHERE org_id = $1 AND issue_id = $2`, is.OrgID, is.ID); err != nil {
-		return err
+		return mapErr(err)
 	}
 	for i := range is.Deliveries {
 		d := &is.Deliveries[i]
@@ -139,7 +148,7 @@ func (s *Store) replaceIssueParts(ctx context.Context, is *model.Issue) error {
 		}
 	}
 	if _, err := s.q.Exec(ctx, `DELETE FROM newsletter_media WHERE org_id = $1 AND issue_id = $2`, is.OrgID, is.ID); err != nil {
-		return err
+		return mapErr(err)
 	}
 	for _, m := range is.Media {
 		if _, err := s.q.Exec(ctx, `INSERT INTO newsletter_media (org_id, issue_id, media_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,

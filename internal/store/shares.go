@@ -19,7 +19,10 @@ const shareCols = `id, org_id, brand_id, livemode, month, created_by, expires_at
 func scanShare(r pgx.Row) (*model.ReportShare, error) {
 	var sh model.ReportShare
 	err := r.Scan(&sh.ID, &sh.OrgID, &sh.BrandID, &sh.Livemode, &sh.Month, &sh.CreatedBy, &sh.ExpiresAt, &sh.RevokedAt, &sh.CreatedAt)
-	return &sh, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &sh, nil
 }
 
 // CreateReportShare stores a share by its token's hash.

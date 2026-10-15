@@ -22,7 +22,10 @@ func scanApp(r pgx.Row) (*model.ProviderApp, error) {
 	var provider string
 	err := r.Scan(&a.ID, &a.OrgID, &provider, &a.Name, &a.ClientID, &a.ClientSecret, &a.CreatedBy, &a.CreatedAt)
 	a.Provider = platform.Provider(provider)
-	return &a, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &a, nil
 }
 
 // CreateProviderApp inserts an app.
@@ -89,7 +92,10 @@ func (s *Store) OAuthState(ctx context.Context, hash []byte, since time.Time) (*
 		WHERE state_hash = $1 AND created_at > $2`, hash, since).
 		Scan(&st.OrgID, &st.UserID, &st.BrandID, &st.AppID, &st.InstallApp, &provider, &st.Verifier, &st.Connections, &st.CreatedAt)
 	st.Provider = platform.Provider(provider)
-	return &st, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &st, nil
 }
 
 // SetOAuthConnections keeps a sign-in's encrypted connections for the
@@ -118,7 +124,10 @@ func scanInstallApp(r pgx.Row) (*model.ProviderApp, error) {
 	var provider string
 	err := r.Scan(&a.ID, &provider, &a.Name, &a.ClientID, &a.ClientSecret, &a.CreatedAt)
 	a.Provider = platform.Provider(provider)
-	return &a, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &a, nil
 }
 
 // CreateInstallApp inserts an install app.

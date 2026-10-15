@@ -88,7 +88,10 @@ func (s *Store) OrgUsage(ctx context.Context, orgID uuid.UUID, start, end, now t
 			AND published_at >= $2 AND published_at < $3),
 		(SELECT COALESCE(sum(size_bytes), 0) FROM media WHERE org_id = $1)`, orgID, start, end, now).
 		Scan(&u.Brands, &u.Channels, &u.Members, &u.PostsCreated, &u.TargetsSent, &u.MediaBytes)
-	return &u, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &u, nil
 }
 
 // Operator keys.
@@ -98,7 +101,10 @@ const opKeyCols = `id, name, hint, created_at, last_used_at, revoked_at`
 func scanOperatorKey(r pgx.Row) (*model.OperatorKey, error) {
 	var k model.OperatorKey
 	err := r.Scan(&k.ID, &k.Name, &k.Hint, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt)
-	return &k, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &k, nil
 }
 
 // CreateOperatorKey stores a key by its hash.

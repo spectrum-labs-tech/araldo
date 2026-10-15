@@ -19,7 +19,10 @@ const invitationCols = `i.id, i.org_id, o.name, i.email, i.role, i.invited_by, i
 func scanInvitation(r pgx.Row) (*model.Invitation, error) {
 	var inv model.Invitation
 	err := r.Scan(&inv.ID, &inv.OrgID, &inv.OrgName, &inv.Email, &inv.Role, &inv.InvitedBy, &inv.ExpiresAt, &inv.AcceptedAt, &inv.CreatedAt)
-	return &inv, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &inv, nil
 }
 
 // CreateInvitation stores inv, replacing an open invitation of the same

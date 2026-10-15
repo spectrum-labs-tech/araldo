@@ -90,7 +90,10 @@ const notificationCols = `n.id, n.user_id, n.org_id, COALESCE(o.name, ''), n.typ
 func scanNotification(r pgx.Row) (*model.Notification, error) {
 	var n model.Notification
 	err := r.Scan(&n.ID, &n.UserID, &n.OrgID, &n.OrgName, &n.Type, &n.Subject, &n.Body, &n.Link, &n.Shown, &n.DedupeKey, &n.ReadAt, &n.CreatedAt)
-	return &n, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &n, nil
 }
 
 // NotificationCursor is where a page of notifications ends: the last one's

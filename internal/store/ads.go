@@ -23,7 +23,10 @@ func scanAdAccount(r pgx.Row) (*model.AdAccount, error) {
 	var a model.AdAccount
 	err := r.Scan(&a.ID, &a.OrgID, &a.BrandID, &a.Livemode, &a.Network, &a.ExternalID, &a.Name, &a.Currency, &a.Timezone, &a.Settings,
 		&a.Credentials, &a.AppID, &a.InstallApp, &a.Status, &a.StatusNote, &a.ReadAt, &a.NextReadAt, &a.CreatedAt)
-	return &a, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &a, nil
 }
 
 func collectAdAccounts(rows pgx.Rows, err error) ([]*model.AdAccount, error) {

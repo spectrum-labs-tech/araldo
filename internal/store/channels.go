@@ -23,7 +23,10 @@ func scanChannel(r pgx.Row) (*model.Channel, error) {
 	err := r.Scan(&c.ID, &c.OrgID, &c.BrandID, &c.Livemode, &provider, &emulates, &c.DisplayName, &c.Handle, &c.ExternalID, &c.ProfileURL,
 		&c.Settings, &c.Credentials, &c.Status, &c.StatusNote, &c.HoldUntil, &c.CreatedAt, &c.AppID, &c.InstallApp, &c.TokenExpiresAt, &c.CheckedAt, &c.CheckError)
 	c.Provider, c.Emulates = platform.Provider(provider), platform.Provider(emulates)
-	return &c, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &c, nil
 }
 
 func (s *Store) CreateChannel(ctx context.Context, c *model.Channel) error {
@@ -110,7 +113,10 @@ const templateCols = `id, org_id, brand_id, key, name, approval, latest_version,
 func scanTemplate(r pgx.Row) (*model.Template, error) {
 	var t model.Template
 	err := r.Scan(&t.ID, &t.OrgID, &t.BrandID, &t.Key, &t.Name, &t.Approval, &t.LatestVersion, &t.CreatedAt, &t.UpdatedAt)
-	return &t, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &t, nil
 }
 
 func (s *Store) CreateTemplate(ctx context.Context, t *model.Template) error {

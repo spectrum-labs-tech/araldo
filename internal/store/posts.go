@@ -265,7 +265,7 @@ func (s *Store) SchedulePost(ctx context.Context, orgID, id uuid.UUID, at, by, s
 // ReleaseSlot frees the slot a post holds, keeping its times.
 func (s *Store) ReleaseSlot(ctx context.Context, orgID, id uuid.UUID) error {
 	_, err := s.q.Exec(ctx, `UPDATE posts SET slot_at = NULL, updated_at = now() WHERE org_id = $1 AND id = $2`, orgID, id)
-	return err
+	return mapErr(err)
 }
 
 // ReviewPost records an approval or rejection.
@@ -303,7 +303,10 @@ func (s *Store) Targets(ctx context.Context, orgID, postID uuid.UUID) ([]model.T
 func (s *Store) Target(ctx context.Context, orgID, id uuid.UUID) (*model.Target, error) {
 	t, err := scanTarget(s.q.QueryRow(ctx, `SELECT `+targetCols+` FROM post_targets t JOIN channels c ON c.id = t.channel_id
 		WHERE t.org_id = $1 AND t.id = $2`, orgID, id))
-	return &t, err
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 
 // UpdateTargetParts replaces a queued target's text.

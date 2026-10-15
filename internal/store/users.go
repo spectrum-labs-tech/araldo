@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,7 +27,7 @@ func (s *Store) DataKey(ctx context.Context, scope uuid.UUID, version int) (keyr
 func (s *Store) dataKey(ctx context.Context, sql string, args ...any) (keyring.WrappedKey, error) {
 	var k keyring.WrappedKey
 	err := s.q.QueryRow(ctx, sql, args...).Scan(&k.Scope, &k.Version, &k.KEKID, &k.Wrapped)
-	if err == pgx.ErrNoRows { //nolint:errorlint // pgx returns it unwrapped
+	if errors.Is(err, pgx.ErrNoRows) {
 		return k, keyring.ErrNoKey
 	}
 	return k, err
@@ -35,7 +36,7 @@ func (s *Store) dataKey(ctx context.Context, sql string, args ...any) (keyring.W
 func (s *Store) InsertDataKey(ctx context.Context, k keyring.WrappedKey) error {
 	_, err := s.q.Exec(ctx, `INSERT INTO data_keys (scope, version, kek_id, wrapped) VALUES ($1, $2, $3, $4)`,
 		k.Scope, k.Version, k.KEKID, k.Wrapped)
-	if err = mapErr(err); err != nil && isConflict(err) {
+	if err = mapErr(err); errors.Is(err, ErrConflict) {
 		return keyring.ErrConflict
 	}
 	return err
@@ -64,8 +65,6 @@ func (s *Store) DeleteDataKeys(ctx context.Context, scope uuid.UUID) error {
 	return err
 }
 
-func isConflict(err error) bool { return err != nil && errorsIs(err, ErrConflict) }
-
 // Users.
 
 const userCols = `id, email, name, password_hash, totp_secret, totp_last_step, totp_enabled_at, failed_logins, locked_until, created_at,
@@ -79,7 +78,10 @@ func scanUser(r pgx.Row) (*model.User, error) {
 	if pw != nil {
 		u.PasswordHash = *pw
 	}
-	return &u, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &u, nil
 }
 
 // CreateUser inserts a user; a taken email is ErrConflict.
@@ -139,7 +141,7 @@ func (s *Store) ReplaceRecoveryCodes(ctx context.Context, userID uuid.UUID, hash
 	}
 	for _, h := range hashes {
 		if _, err := s.q.Exec(ctx, `INSERT INTO recovery_codes (id, user_id, code_hash) VALUES ($1, $2, $3)`, uuid.Must(uuid.NewV7()), userID, h); err != nil {
-			return err
+			return mapErr(err)
 		}
 	}
 	return nil
@@ -164,7 +166,10 @@ func scanSession(r pgx.Row) (*model.Session, error) {
 	var ss model.Session
 	err := r.Scan(&ss.ID, &ss.UserID, &ss.CSRFToken, &ss.State, &ss.CurrentOrg, &ss.Livemode, &ss.SudoUntil, &ss.UserAgent, &ss.IP,
 		&ss.CreatedAt, &ss.LastSeenAt, &ss.ExpiresAt, &ss.SSOOrg)
-	return &ss, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &ss, nil
 }
 
 func (s *Store) CreateSession(ctx context.Context, ss *model.Session, tokenHash []byte) error {

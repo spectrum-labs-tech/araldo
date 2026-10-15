@@ -19,7 +19,10 @@ const utokCols = `id, user_id, livemode, name, hint, created_ip, last_used_at, r
 func scanUserToken(r pgx.Row) (*model.UserToken, error) {
 	var t model.UserToken
 	err := r.Scan(&t.ID, &t.UserID, &t.Livemode, &t.Name, &t.Hint, &t.CreatedIP, &t.LastUsedAt, &t.RevokedAt, &t.CreatedAt, &t.SSOOrg)
-	return &t, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &t, nil
 }
 
 // CreateUserToken stores a token by its hash.
@@ -72,7 +75,10 @@ func scanDevice(r pgx.Row) (*model.DeviceAuthorization, error) {
 	var d model.DeviceAuthorization
 	err := r.Scan(&d.ID, &d.UserCode, &d.DeviceName, &d.Livemode, &d.ClientIP, &d.Status, &d.UserID, &d.PollInterval, &d.LastPolledAt,
 		&d.ExpiresAt, &d.CreatedAt, &d.SSOOrg)
-	return &d, mapErr(err)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &d, nil
 }
 
 // CreateDeviceAuthorization stores a device sign-in; ErrConflict if its

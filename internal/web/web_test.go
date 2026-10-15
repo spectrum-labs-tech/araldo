@@ -367,3 +367,27 @@ func TestChangeClass(t *testing.T) {
 		}
 	}
 }
+
+func TestCountLabels(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		counts    map[model.PostStatus]int
+		total     string
+		published string
+	}{
+		{"under the cap", map[model.PostStatus]int{model.PostPublished: 3, model.PostFailed: 1}, "4", "3"},
+		{"at the cap", map[model.PostStatus]int{model.PostPublished: core.PostCountCap}, "1000", "1000"},
+		{"past the cap", map[model.PostStatus]int{model.PostPublished: 990, model.PostFailed: 11}, "1000+", "990+"},
+		{"one status past it", map[model.PostStatus]int{model.PostPublished: core.PostCountCap + 1}, "1000+", "1000+"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			total, labels := countLabels(tt.counts)
+			if total != tt.total || labels[model.PostPublished] != tt.published {
+				t.Fatalf("countLabels = %q, published %q; want %q, %q", total, labels[model.PostPublished], tt.total, tt.published)
+			}
+		})
+	}
+}

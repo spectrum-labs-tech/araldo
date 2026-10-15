@@ -18,7 +18,7 @@
 <nav class="choices mb-4" aria-label="Filter by status">
   <a href="{{$d.StatusLink ""}}" class="chip" {{if eq $d.Status ""}}aria-current="true"{{end}}>All <span class="chip-count">{{$d.Total}}</span></a>
   {{range $s := $d.Statuses}}{{with index $d.Counts $s}}
-  <a href="{{$d.StatusLink (printf "%s" $s)}}" class="chip" {{if eq $d.Status (printf "%s" $s)}}aria-current="true"{{end}}>{{$s}} <span class="chip-count">{{.}}</span></a>
+  <a href="{{$d.StatusLink (printf "%s" $s)}}" class="chip" {{if eq $d.Status (printf "%s" $s)}}aria-current="true"{{end}}>{{$s}} <span class="chip-count">{{index $d.CountLabels $s}}</span></a>
   {{end}}{{end}}
 </nav>
 

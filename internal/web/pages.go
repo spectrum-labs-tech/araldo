@@ -279,10 +279,35 @@ type postsData struct {
 	// The filters, as the URL has them.
 	Status, Brand, Query string
 	Counts               map[model.PostStatus]int
-	Total                int
 	Statuses             []model.PostStatus
+	// Total and CountLabels are the counts as shown: past
+	// core.PostCountCap posts, "1000+", and each status's count a floor.
+	Total       string
+	CountLabels map[model.PostStatus]string
 	// Older and Newer are the neighboring pages' URLs, if any.
 	Older, Newer string
+}
+
+// countLabels shows status counts: as they are, or, past
+// core.PostCountCap posts in all, as floors ("12+") under a total of
+// "1000+", since then only the newest posts were counted.
+func countLabels(counts map[model.PostStatus]int) (string, map[model.PostStatus]string) {
+	total := 0
+	for _, n := range counts {
+		total += n
+	}
+	over := total > core.PostCountCap
+	labels := make(map[model.PostStatus]string, len(counts))
+	for st, n := range counts {
+		labels[st] = strconv.Itoa(min(n, core.PostCountCap))
+		if over {
+			labels[st] += "+"
+		}
+	}
+	if over {
+		return strconv.Itoa(core.PostCountCap) + "+", labels
+	}
+	return strconv.Itoa(total), labels
 }
 
 // link is the posts page's URL with these filters and a page cursor.
@@ -348,9 +373,7 @@ func (s *Server) posts(c *reqCtx) error {
 	if d.Counts, err = s.svc.PostStatusCounts(c.ctx(), c.actor, f); err != nil {
 		return err
 	}
-	for _, n := range d.Counts {
-		d.Total += n
-	}
+	d.Total, d.CountLabels = countLabels(d.Counts)
 	return s.page(c, "posts", "posts", "Posts", d)
 }
 

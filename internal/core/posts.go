@@ -506,6 +506,10 @@ func (s *Service) Posts(ctx context.Context, a Actor, f PostFilter, page store.P
 	return s.store.Posts(ctx, a.OrgID, a.Livemode, f, page)
 }
 
+// PostCountCap is the most posts PostStatusCounts counts: past it, the
+// counts are of the newest, and their total means "more than this".
+const PostCountCap = store.PostCountCap
+
 // PostStatusCounts counts the posts a filter matches, by status, ignoring
 // the filter's own status (for the status filter's labels).
 func (s *Service) PostStatusCounts(ctx context.Context, a Actor, f PostFilter) (map[model.PostStatus]int, error) {

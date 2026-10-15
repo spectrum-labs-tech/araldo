@@ -14,8 +14,10 @@
 package tiktok
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,8 +40,10 @@ const (
 	// minChunk is the smallest part TikTok takes, unless the video is
 	// smaller.
 	minChunk = 5 << 20
-	// statusWait is the wait between checks on a post being processed.
-	statusWait = 5 * time.Second
+	// statusWait is the wait between checks on a post being processed,
+	// and maxStatusChecks how many checks to make: ten minutes.
+	statusWait      = 5 * time.Second
+	maxStatusChecks = 120
 )
 
 // Adapter posts to TikTok.
@@ -162,43 +166,37 @@ func (a *Adapter) call(ctx context.Context, c platform.Credentials, method, path
 			return &platform.Error{Kind: platform.Rejected, Code: "encode", Err: err}
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, method, a.API+path, strings.NewReader(string(body)))
-	if err != nil {
-		return &platform.Error{Kind: platform.Rejected, Code: "request", Err: err}
-	}
-	req.Header.Set("Authorization", "Bearer "+tok)
-	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
-	resp, err := platform.Do(a.Client, req)
+	resp, err := platform.Fetch(ctx, a.Client, platform.Request{Method: method, URL: a.API + path,
+		Header: map[string]string{"Authorization": "Bearer " + tok}, Body: bytes.NewReader(body), Length: int64(len(body)),
+		ContentType: "application/json; charset=UTF-8"})
 	if err != nil {
 		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return &platform.Error{Kind: platform.Uncertain, Code: "network", Err: err}
 	}
 	var env struct {
 		Data  json.RawMessage `json:"data"`
 		Error apiError        `json:"error"`
 	}
-	if json.Unmarshal(raw, &env) != nil {
-		return platform.Classify(resp, raw)
+	if json.Unmarshal(resp.Body, &env) != nil {
+		if err := resp.Err(); err != nil {
+			return err
+		}
+		return resp.ServerError("decode", "unreadable response")
 	}
 	if env.Error.Code != "" && env.Error.Code != "ok" {
 		return classify(env.Error, resp)
 	}
-	if resp.StatusCode/100 != 2 {
-		return platform.Classify(resp, raw)
+	if err := resp.Err(); err != nil {
+		return err
 	}
 	if data != nil && len(env.Data) > 0 {
 		if err := json.Unmarshal(env.Data, data); err != nil {
-			return &platform.Error{Kind: platform.Uncertain, Code: "decode", Err: err}
+			return resp.ServerError("decode", "unreadable response")
 		}
 	}
 	return nil
 }
 
-func classify(e apiError, resp *http.Response) error {
+func classify(e apiError, resp *platform.Response) error {
 	msg := e.Code + ": " + e.Message
 	switch {
 	case e.Code == "access_token_invalid", e.Code == "scope_not_authorized", e.Code == "scope_permission_missed":
@@ -208,8 +206,8 @@ func classify(e apiError, resp *http.Response) error {
 	case e.Code == "unaudited_client_can_only_post_to_private_accounts":
 		return &platform.Error{Kind: platform.Rejected, Code: e.Code,
 			Msg: "TikTok has not audited this app, so it can post only to a private account: make the account private, or have TikTok audit the app. " + msg}
-	case resp.StatusCode >= 500:
-		return platform.ServerError(resp, e.Code, msg)
+	case resp.Status >= 500:
+		return resp.ServerError(e.Code, msg)
 	}
 	return &platform.Error{Kind: platform.Rejected, Code: e.Code, Msg: msg}
 }
@@ -254,8 +252,12 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		return res, &platform.Error{Kind: platform.Rejected, Code: "media_required", Msg: "a TikTok post is one video"}
 	}
 	v := p.Media[0]
+	// Nothing is public until the whole video is uploaded: asking what the
+	// creator may post, starting the upload and sending all but its last
+	// part can be done again.
+	prep := platform.RetrySafe(ctx)
 	var cr creator
-	if err := a.call(ctx, c, http.MethodPost, "/v2/post/publish/creator_info/query/", nil, &cr); err != nil {
+	if err := a.call(prep, c, http.MethodPost, "/v2/post/publish/creator_info/query/", nil, &cr); err != nil {
 		return res, err
 	}
 	if cr.MaxVideoDurationSecs > 0 && v.Duration > time.Duration(cr.MaxVideoDurationSecs)*time.Second {
@@ -278,7 +280,7 @@ func (a *Adapter) Publish(ctx context.Context, c platform.Credentials, p platfor
 		PublishID string `json:"publish_id"`
 		UploadURL string `json:"upload_url"`
 	}
-	err := a.call(ctx, c, http.MethodPost, "/v2/post/publish/video/init/", map[string]any{
+	err := a.call(prep, c, http.MethodPost, "/v2/post/publish/video/init/", map[string]any{
 		"post_info": map[string]any{"title": p.Parts[0], "privacy_level": privacy, "disable_comment": cr.CommentDisabled,
 			"disable_duet": cr.DuetDisabled, "disable_stitch": cr.StitchDisabled},
 		"source_info": map[string]any{"source": "FILE_UPLOAD", "video_size": v.Size, "chunk_size": size, "total_chunk_count": count},
@@ -328,37 +330,34 @@ func (a *Adapter) upload(ctx context.Context, uploadURL string, v platform.Media
 		if i == count-1 {
 			n = v.Size - first
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, io.LimitReader(rc, n))
-		if err != nil {
-			return &platform.Error{Kind: platform.Rejected, Code: "request", Err: err}
+		// The last part completes the upload, and TikTok posts the video.
+		pctx := ctx
+		if i < count-1 {
+			pctx = platform.RetrySafe(ctx)
 		}
-		req.ContentLength = n
-		req.Header.Set("Content-Type", v.Type)
-		req.Header.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", first, first+n-1, v.Size))
-		resp, err := platform.Do(a.Client, req)
+		err := platform.Call(pctx, a.Client, platform.Request{Method: http.MethodPut, URL: uploadURL, Body: io.LimitReader(rc, n), Length: n,
+			ContentType: v.Type, Header: map[string]string{"Content-Range": fmt.Sprintf("bytes %d-%d/%d", first, first+n-1, v.Size)}}, nil)
 		if err != nil {
 			return err
-		}
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-		_ = resp.Body.Close()
-		if resp.StatusCode/100 != 2 {
-			return platform.Classify(resp, raw)
 		}
 	}
 	return nil
 }
 
 // wait checks the post until TikTok has published it, and returns its ID
-// when TikTok gives one (it does not for a private post).
+// when TikTok gives one (it does not for a private post). The video is
+// uploaded, so TikTok may post it whatever happens here: a failed check is
+// Uncertain, never retried (that would upload and post it again), unless
+// TikTok says the post failed.
 func (a *Adapter) wait(ctx context.Context, c platform.Credentials, publishID string) (string, error) {
-	for {
+	for range maxStatusChecks {
 		var st struct {
 			Status     string   `json:"status"`
 			FailReason string   `json:"fail_reason"`
 			PostIDs    []string `json:"publicaly_available_post_id"` //nolint:misspell // TikTok's spelling
 		}
 		if err := a.call(ctx, c, http.MethodPost, "/v2/post/publish/status/fetch/", map[string]string{"publish_id": publishID}, &st); err != nil {
-			return "", err
+			return "", uncertain(err)
 		}
 		switch st.Status {
 		case "PUBLISH_COMPLETE":
@@ -375,4 +374,16 @@ func (a *Adapter) wait(ctx context.Context, c platform.Credentials, publishID st
 			return "", &platform.Error{Kind: platform.Uncertain, Code: "processing", Msg: "TikTok was still processing the post", Err: err}
 		}
 	}
+	return "", &platform.Error{Kind: platform.Uncertain, Code: "processing", Msg: "TikTok was still processing the post"}
+}
+
+// uncertain makes err Uncertain, keeping what it says.
+func uncertain(err error) error {
+	var pe *platform.Error
+	if errors.As(err, &pe) {
+		cp := *pe
+		cp.Kind, cp.RetryAfter = platform.Uncertain, 0
+		return &cp
+	}
+	return &platform.Error{Kind: platform.Uncertain, Code: "status", Msg: "checking the post", Err: err}
 }

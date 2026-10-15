@@ -30,6 +30,17 @@ type fakeTikTok struct {
 	polls    int
 	errCode  string
 	failPost bool
+	// answer replaces the response to a path: a status and a body.
+	answer map[string]canned
+	// failUpload is the upload request (from 1) that fails with a 500.
+	failUpload int
+	// stuck keeps the post processing.
+	stuck bool
+}
+
+type canned struct {
+	status int
+	body   string
 }
 
 func (f *fakeTikTok) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -51,8 +62,18 @@ func (f *fakeTikTok) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if c, ok := f.answer[r.URL.Path]; ok {
+		w.WriteHeader(c.status)
+		_, _ = w.Write([]byte(c.body))
+		return
+	}
 	if r.URL.Path == "/upload" {
 		data, _ := io.ReadAll(r.Body)
+		if len(f.ranges)+1 == f.failUpload {
+			f.ranges = append(f.ranges, "failed")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		f.ranges = append(f.ranges, r.Header.Get("Content-Range"))
 		f.data = append(f.data, string(data))
 		w.WriteHeader(http.StatusCreated)
@@ -82,7 +103,7 @@ func (f *fakeTikTok) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case f.failPost:
 			ok(`{"status":"FAILED","fail_reason":"duration_check"}`)
-		case f.polls < 3:
+		case f.stuck || f.polls < 3:
 			ok(`{"status":"PROCESSING_UPLOAD"}`)
 		default:
 			ok(`{"status":"PUBLISH_COMPLETE","publicaly_available_post_id":["7300000000000000001"]}`) //nolint:misspell // TikTok's spelling
@@ -207,5 +228,59 @@ func TestPublishRules(t *testing.T) {
 	}
 	if _, err := a.Publish(t.Context(), creds, platform.Payload{Parts: []string{"no video"}}, nil); platform.KindOf(err) != platform.Rejected {
 		t.Fatalf("a post without a video: %v", err)
+	}
+}
+
+func TestPublishOutcomes(t *testing.T) {
+	t.Parallel()
+	server := canned{http.StatusInternalServerError, `{"error":{"code":"internal_error","message":"try again"}}`}
+	limited := canned{http.StatusTooManyRequests, `{"error":{"code":"rate_limit_exceeded","message":"slow down"}}`}
+	tests := []struct {
+		name       string
+		answer     map[string]canned
+		failUpload int
+		stuck      bool
+		want       platform.Kind
+	}{
+		// Before the video is uploaded nothing is public: try again.
+		{"creator info fails", map[string]canned{"/v2/post/publish/creator_info/query/": server}, 0, false, platform.Transient},
+		{"init fails", map[string]canned{"/v2/post/publish/video/init/": server}, 0, false, platform.Transient},
+		// After it, TikTok may post it: never again.
+		{"the last part fails", nil, 1, false, platform.Uncertain},
+		{"a status check fails", map[string]canned{"/v2/post/publish/status/fetch/": server}, 0, false, platform.Uncertain},
+		{"a status check is rate limited", map[string]canned{"/v2/post/publish/status/fetch/": limited}, 0, false, platform.Uncertain},
+		{"processing for ever", nil, 0, true, platform.Uncertain},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f, a := setup(t)
+			f.answer, f.failUpload, f.stuck = tt.answer, tt.failUpload, tt.stuck
+			v := platform.Media{Type: "video/mp4", Size: 12}.WithData([]byte("012345678901"))
+			_, err := a.Publish(t.Context(), platform.Credentials{"access_token": "at"}, platform.Payload{Parts: []string{"x"}, Media: []platform.Media{v}}, nil)
+			if platform.KindOf(err) != tt.want {
+				t.Fatalf("err = %v, want %s", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestUploadFailures(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		fail int
+		want platform.Kind
+	}{
+		{1, platform.Transient}, // not complete: the post is not made
+		{2, platform.Transient},
+		{3, platform.Uncertain}, // the last part completes the upload
+	}
+	for _, tt := range tests {
+		f, a := setup(t)
+		f.failUpload = tt.fail
+		v := platform.Media{Type: "video/mp4", Size: 12}.WithData([]byte("012345678901"))
+		if err := a.upload(t.Context(), f.srv.URL+"/upload", v, 4, 3); platform.KindOf(err) != tt.want {
+			t.Errorf("part %d fails: %v, want %s", tt.fail, err, tt.want)
+		}
 	}
 }

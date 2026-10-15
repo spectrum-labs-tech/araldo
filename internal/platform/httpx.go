@@ -107,6 +107,10 @@ func (r *Response) Err() error {
 	return Classify(r.resp, r.Body)
 }
 
+// ServerError classifies the response as a 5xx (see ServerError), for
+// platforms that report errors in their own envelope.
+func (r *Response) ServerError(code, msg string) *Error { return ServerError(r.resp, code, msg) }
+
 // Fetch sends r with Araldo's User-Agent and reads the whole response,
 // whatever its status. An error is a *Error: a transport failure as Do
 // classifies it, or a response that cannot be read or is longer than

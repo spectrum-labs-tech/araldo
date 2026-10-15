@@ -12,6 +12,7 @@ import (
 	"image/png"
 	"math/rand/v2"
 	"testing"
+	"time"
 )
 
 // noise is a photo-like image that compresses badly.
@@ -188,5 +189,32 @@ func TestFitRefuses(t *testing.T) {
 	}
 	if Resizable(Info{Type: GIF, Width: 10, Height: 10}) {
 		t.Fatal("a GIF is not resizable")
+	}
+}
+
+// Decoding waits for a free slot: a burst of large images is decoded two
+// at a time, not all at once.
+func TestDecodesAreBounded(t *testing.T) {
+	t.Parallel()
+	data := jpegOf(t, noise(16, 16), 90)
+	var held []func()
+	for range cap(decodeSlots) {
+		held = append(held, decodeSlot())
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := Fit(data, Info{Type: JPEG, Width: 16, Height: 16}, 0, 0)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("Fit decoded with every slot taken (%v)", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	for _, release := range held {
+		release()
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

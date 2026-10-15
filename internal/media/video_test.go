@@ -134,3 +134,37 @@ func TestProbeVideoRefuses(t *testing.T) {
 		t.Fatal("SniffVideo")
 	}
 }
+
+// countingReader counts reads, as each is a request to storage.
+type countingReader struct {
+	r     *bytes.Reader
+	reads int
+}
+
+func (c *countingReader) ReadAt(p []byte, off int64) (int, error) {
+	c.reads++
+	return c.r.ReadAt(p, off)
+}
+
+func TestProbeVideoBoundsBoxes(t *testing.T) {
+	t.Parallel()
+	whole := testVideo{w: 640, h: 480, seconds: 1, frames: 30}.bytes()
+	tests := []struct {
+		name  string
+		boxes int // empty boxes before the video
+		ok    bool
+	}{
+		{"a few boxes", 10, true},
+		{"a box for every eight bytes", 100_000, false},
+	}
+	for _, tt := range tests {
+		// The ftyp box first, then the empty boxes, then the rest.
+		ftyp := int(binary.BigEndian.Uint32(whole[:4]))
+		data := append(append(append([]byte(nil), whole[:ftyp]...), bytes.Repeat(mp4box("free"), tt.boxes)...), whole[ftyp:]...)
+		r := &countingReader{r: bytes.NewReader(data)}
+		_, err := ProbeVideo(r, int64(len(data)))
+		if (err == nil) != tt.ok || r.reads > 2*maxBoxes+16 {
+			t.Errorf("%s: %v after %d reads", tt.name, err, r.reads)
+		}
+	}
+}

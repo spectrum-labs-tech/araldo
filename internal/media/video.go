@@ -120,9 +120,16 @@ func header(r io.ReaderAt, off, limit int64) (box, error) {
 	return b, nil
 }
 
+// maxBoxes bounds the top-level boxes findBox walks: each is a read (a
+// ranged GET from storage), and a real video has a handful.
+const maxBoxes = 1024
+
 // findBox reads a top-level box's payload.
 func findBox(r io.ReaderAt, size int64, typ string) ([]byte, error) {
-	for off := int64(0); off < size; {
+	for off, n := int64(0), 0; off < size; n++ {
+		if n == maxBoxes {
+			return nil, fmt.Errorf("more than %d boxes before the %q box: not a video Araldo reads", maxBoxes, typ)
+		}
 		b, err := header(r, off, size)
 		if err != nil {
 			return nil, err

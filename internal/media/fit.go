@@ -22,6 +22,17 @@ import (
 // dimensions, so a decompression bomb costs nothing.
 const MaxPixels = 50_000_000
 
+// decodeSlots bounds how many images are decoded at once: one within
+// MaxPixels can take 200 to 400 MB as pixels, so a burst of uploads must
+// not decode them all together.
+var decodeSlots = make(chan struct{}, 2)
+
+// decodeSlot waits for a turn to decode, and returns its release.
+func decodeSlot() func() {
+	decodeSlots <- struct{}{}
+	return func() { <-decodeSlots }
+}
+
 // Errors from Fit.
 var (
 	ErrTooManyPixels = errors.New("the image has more than 50 megapixels")
@@ -52,6 +63,7 @@ func Fit(data []byte, info Info, maxBytes int64, maxSum int) ([]byte, Info, erro
 	if int64(info.Width)*int64(info.Height) > MaxPixels {
 		return nil, Info{}, ErrTooManyPixels
 	}
+	defer decodeSlot()()
 	img, err := decode(data, info.Type)
 	if err != nil {
 		return nil, Info{}, err
@@ -274,6 +286,7 @@ func transparent(data []byte, info Info) bool {
 	if int64(info.Width)*int64(info.Height) > MaxPixels {
 		return true
 	}
+	defer decodeSlot()()
 	img, err := decode(data, info.Type)
 	return err != nil || !opaque(img)
 }

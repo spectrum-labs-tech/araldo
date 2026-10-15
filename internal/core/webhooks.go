@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	mrand "math/rand/v2"
 	"net/http"
 	"net/url"
 	"slices"
@@ -60,10 +61,20 @@ func secretAAD(endpointID uuid.UUID) string {
 
 // EndpointInput creates or changes an endpoint.
 type EndpointInput struct {
-	URL         string
-	Description string
+	URL string
+	// Description, when nil, is empty for a new endpoint and unchanged on
+	// an update.
+	Description *string
 	EventTypes  []string
 	Enabled     *bool
+}
+
+// description is in's description, or keep when it has none.
+func (in *EndpointInput) description(keep string) string {
+	if in.Description == nil {
+		return keep
+	}
+	return strings.TrimSpace(*in.Description)
 }
 
 func (in *EndpointInput) check(livemode bool) error {
@@ -85,7 +96,7 @@ func (in *EndpointInput) check(livemode bool) error {
 			ps.Add("event_type_invalid", "enabled_events", "Unknown event type %q: the types are the EventType enum in /v1/openapi.yaml, or \"*\" for all.", t)
 		}
 	}
-	if len(in.Description) > 500 {
+	if len(in.description("")) > 500 {
 		ps.Add("description_invalid", "description", "Descriptions are at most 500 characters.")
 	}
 	return ps.Err("The webhook endpoint is not valid.")
@@ -110,7 +121,7 @@ func (s *Service) CreateEndpoint(ctx context.Context, a Actor, in EndpointInput)
 		return nil, "", err
 	}
 	w := &model.WebhookEndpoint{ID: id.New(), OrgID: a.OrgID, Livemode: a.Livemode, URL: strings.TrimSpace(in.URL),
-		Description: strings.TrimSpace(in.Description), EventTypes: in.EventTypes, Status: model.EndpointEnabled, CreatedAt: s.Now()}
+		Description: in.description(""), EventTypes: in.EventTypes, Status: model.EndpointEnabled, CreatedAt: s.Now()}
 	secret := newWebhookSecret()
 	sealed, err := s.keys.Encrypt(ctx, a.OrgID, secretAAD(w.ID), []byte(secret))
 	if err != nil {
@@ -155,8 +166,10 @@ func (s *Service) Endpoints(ctx context.Context, a Actor) ([]*model.WebhookEndpo
 	return s.store.Endpoints(ctx, a.OrgID, a.Livemode)
 }
 
-// UpdateEndpoint changes an endpoint; enabling it clears its failure
-// streak.
+// UpdateEndpoint changes an endpoint: what in leaves out stays as it is.
+// Enabling a disabled one clears its failure streak. It is read and
+// written with the endpoint locked, so a change made while it was being
+// disabled for failing applies to the disabled endpoint, not over it.
 func (s *Service) UpdateEndpoint(ctx context.Context, a Actor, endpointID uuid.UUID, in EndpointInput) (*model.WebhookEndpoint, error) {
 	if err := a.orgWide("webhooks"); err != nil {
 		return nil, err
@@ -164,33 +177,40 @@ func (s *Service) UpdateEndpoint(ctx context.Context, a Actor, endpointID uuid.U
 	if err := a.require(PermWebhooksWrite); err != nil {
 		return nil, err
 	}
-	w, err := s.Endpoint(ctx, a, endpointID)
-	if err != nil {
-		return nil, err
-	}
-	if in.URL == "" {
-		in.URL = w.URL
-	}
-	if in.EventTypes == nil {
-		in.EventTypes = w.EventTypes
-	}
-	if err := in.check(a.Livemode); err != nil {
-		return nil, err
-	}
-	w.URL, w.Description, w.EventTypes = strings.TrimSpace(in.URL), strings.TrimSpace(in.Description), in.EventTypes
-	if in.Enabled != nil {
-		w.Status, w.DisabledReason = model.EndpointDisabled, "Disabled by a person."
-		if *in.Enabled {
-			w.Status, w.DisabledReason = model.EndpointEnabled, ""
+	var w *model.WebhookEndpoint
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
+		var err error
+		if w, err = tx.EndpointForUpdate(ctx, a.OrgID, endpointID); err != nil {
+			return notFound(err, "webhook endpoint")
 		}
-	}
-	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		if w.Livemode != a.Livemode {
+			return apperr.NotFound("webhook endpoint")
+		}
+		if in.URL == "" {
+			in.URL = w.URL
+		}
+		if in.EventTypes == nil {
+			in.EventTypes = w.EventTypes
+		}
+		if err := in.check(a.Livemode); err != nil {
+			return err
+		}
+		w.URL, w.Description, w.EventTypes = strings.TrimSpace(in.URL), in.description(w.Description), in.EventTypes
+		if in.Enabled != nil {
+			w.Status, w.DisabledReason = model.EndpointDisabled, "Disabled by a person."
+			if *in.Enabled {
+				w.Status, w.DisabledReason = model.EndpointEnabled, ""
+			}
+		}
 		if err := tx.UpdateEndpoint(ctx, w); err != nil {
 			return err
 		}
 		return s.audit(ctx, tx, a, "webhook_endpoint.update", id.Format(id.WebhookEndpoint, w.ID), nil)
 	})
-	return w, err
+	if err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
 // RollEndpointSecret replaces an endpoint's signing secret. For overlap
@@ -438,21 +458,6 @@ func (s *Service) runDeliverer(ctx context.Context, owner string, orgID *uuid.UU
 	}
 }
 
-// DeliverDue sends one batch of due deliveries in parallel.
-func (s *Service) DeliverDue(ctx context.Context, owner string) (int, error) {
-	now := s.Now()
-	claimed, err := s.store.ClaimDeliveries(ctx, nil, owner, now, now.Add(deliveryLease), deliveryBatch)
-	if err != nil {
-		return 0, err
-	}
-	var wg sync.WaitGroup
-	for _, d := range claimed {
-		wg.Go(func() { s.deliverOne(ctx, owner, d) })
-	}
-	wg.Wait()
-	return len(claimed), nil
-}
-
 // deliverOne sends a claimed delivery, logging what cannot be recorded.
 func (s *Service) deliverOne(ctx context.Context, owner string, d store.ClaimedDelivery) {
 	if err := s.deliver(ctx, owner, d); err != nil {
@@ -501,7 +506,7 @@ func (s *Service) deliver(ctx context.Context, owner string, d store.ClaimedDeli
 		}
 	}
 	if !res.Succeeded {
-		res.NextAttemptAt = res.At.Add(webhookRetryDelay(d.Attempts))
+		res.NextAttemptAt = res.At.Add(jitter(webhookRetryDelay(d.Attempts)))
 		res.GiveUp = res.NextAttemptAt.After(d.CreatedAt.Add(deliveryWindow))
 	}
 	s.metrics.recordDelivery(ctx, &d, &res)
@@ -512,6 +517,12 @@ func (s *Service) deliver(ctx context.Context, owner string, d store.ClaimedDeli
 		span.SetStatus(codes.Error, "delivery failed")
 	}
 	return s.store.FinishDelivery(context.WithoutCancel(ctx), d, owner, res)
+}
+
+// jitter adds up to a tenth of d at random, so the deliveries that failed
+// together (an endpoint down for a while) do not all come back together.
+func jitter(d time.Duration) time.Duration {
+	return d + mrand.N(d/10+1) //nolint:gosec // G404: spreading retries needs no secrecy
 }
 
 // webhookRetryDelay spreads about 15 attempts over three days.
@@ -527,8 +538,9 @@ func webhookRetryDelay(attempts int) time.Duration {
 // for the whole retry window.
 //
 // Each one is recorded as a webhook_endpoint.disabled event, in the same
-// transaction, which the org's other endpoints receive, and the dashboard
-// shows it on the overview until it is fixed and enabled again.
+// transaction, which the org's other endpoints receive (with the
+// endpoint's host, not its URL), and the dashboard shows it on the
+// overview until it is fixed and enabled again.
 func (s *Service) DisableFailingEndpoints(ctx context.Context) (int, error) {
 	var disabled []*model.WebhookEndpoint
 	err := s.store.InTx(ctx, func(tx *store.Store) error {
@@ -537,14 +549,17 @@ func (s *Service) DisableFailingEndpoints(ctx context.Context) (int, error) {
 			return err
 		}
 		for _, w := range disabled {
-			if err := s.emit(ctx, tx, w.OrgID, w.Livemode, "", "webhook_endpoint.disabled", ViewEndpoint(w)); err != nil {
+			if err := s.emit(ctx, tx, w.OrgID, w.Livemode, "", "webhook_endpoint.disabled", ViewEndpointEvent(w)); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+	if err != nil {
+		return 0, err // rolled back: none was disabled
+	}
 	for _, w := range disabled {
 		s.log.WarnContext(ctx, "webhook endpoint disabled after 3 days of failures", "endpoint", id.Format(id.WebhookEndpoint, w.ID))
 	}
-	return len(disabled), err
+	return len(disabled), nil
 }

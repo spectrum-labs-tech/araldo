@@ -411,12 +411,6 @@ func (s *Service) NotificationChoices(ctx context.Context, a Actor) ([]Notificat
 	return out, nil
 }
 
-// SetNotificationChoice records the actor's choice for a type in their
-// org. Account notices cannot be turned off.
-func (s *Service) SetNotificationChoice(ctx context.Context, a Actor, typ string, inApp, email bool) error {
-	return s.SetNotificationChoices(ctx, a, []model.NotificationPref{{Type: typ, InApp: inApp, Email: email}})
-}
-
 // SetNotificationChoices records several choices at once: all of them, or,
 // if one is invalid or the save fails, none.
 func (s *Service) SetNotificationChoices(ctx context.Context, a Actor, prefs []model.NotificationPref) error {

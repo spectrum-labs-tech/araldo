@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"sync"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/metric"
@@ -115,4 +116,26 @@ func RunPublisherOrg(ctx context.Context, s *Service, owner string, org uuid.UUI
 // RunDelivererOrg is RunDeliverer for one org.
 func RunDelivererOrg(ctx context.Context, s *Service, owner string, org uuid.UUID) error {
 	return s.runDeliverer(ctx, owner, &org)
+}
+
+// DeliverDue sends one batch of due deliveries in parallel, in every org,
+// as the deliverer does each round.
+func (s *Service) DeliverDue(ctx context.Context, owner string) (int, error) {
+	now := s.Now()
+	claimed, err := s.store.ClaimDeliveries(ctx, nil, owner, now, now.Add(deliveryLease), deliveryBatch)
+	if err != nil {
+		return 0, err
+	}
+	var wg sync.WaitGroup
+	for _, d := range claimed {
+		wg.Go(func() { s.deliverOne(ctx, owner, d) })
+	}
+	wg.Wait()
+	return len(claimed), nil
+}
+
+// SetNotificationChoice records the actor's choice for a type in their
+// org. Account notices cannot be turned off.
+func (s *Service) SetNotificationChoice(ctx context.Context, a Actor, typ string, inApp, email bool) error {
+	return s.SetNotificationChoices(ctx, a, []model.NotificationPref{{Type: typ, InApp: inApp, Email: email}})
 }

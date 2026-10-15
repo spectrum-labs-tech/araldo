@@ -125,10 +125,18 @@ func (s *Store) Endpoints(ctx context.Context, orgID uuid.UUID, livemode bool) (
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.WebhookEndpoint, error) { return scanEndpoint(r) })
 }
 
+// EndpointForUpdate reads an endpoint and locks it for the rest of the
+// transaction.
+func (s *Store) EndpointForUpdate(ctx context.Context, orgID, id uuid.UUID) (*model.WebhookEndpoint, error) {
+	return scanEndpoint(s.q.QueryRow(ctx, `SELECT `+endpointCols+` FROM webhook_endpoints WHERE org_id = $1 AND id = $2 FOR UPDATE`, orgID, id))
+}
+
+// UpdateEndpoint writes an endpoint's settings. Enabling a disabled one
+// clears its failure streak; one that stays enabled keeps it.
 func (s *Store) UpdateEndpoint(ctx context.Context, w *model.WebhookEndpoint) error {
 	return s.execOne(ctx, `UPDATE webhook_endpoints SET url = $3, description = $4, event_types = $5, status = $6, disabled_reason = $7,
-		failing_since = CASE WHEN $6 = 'enabled' THEN NULL ELSE failing_since END, updated_at = now() WHERE org_id = $1 AND id = $2`,
-		w.OrgID, w.ID, w.URL, w.Description, w.EventTypes, w.Status, w.DisabledReason)
+		failing_since = CASE WHEN $6 = 'enabled' AND status <> 'enabled' THEN NULL ELSE failing_since END, updated_at = now()
+		WHERE org_id = $1 AND id = $2`, w.OrgID, w.ID, w.URL, w.Description, w.EventTypes, w.Status, w.DisabledReason)
 }
 
 // SetEndpointSecret replaces an endpoint's secret. With keepUntil, the old

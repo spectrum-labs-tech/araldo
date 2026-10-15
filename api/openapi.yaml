@@ -3299,6 +3299,10 @@ components:
 
     EventType:
       type: string
+      description: >-
+        What happened. An event's data.object is the changed object as the API returns it, except
+        webhook_endpoint.disabled, whose endpoint has a host (the URL's host name) in place of its url,
+        since the org's other endpoints receive it and a URL may carry a secret.
       enum:
         - post.created
         - post.approval_requested
@@ -3348,6 +3352,7 @@ components:
 
     WebhookEndpointInput:
       type: object
+      description: On an update, what is left out stays as it is.
       properties:
         url: { type: string }
         description: { type: string }

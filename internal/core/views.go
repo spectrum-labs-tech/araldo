@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -375,6 +376,30 @@ type EndpointView struct {
 func ViewEndpoint(w *model.WebhookEndpoint) EndpointView {
 	return EndpointView{ID: id.Format(id.WebhookEndpoint, w.ID), Object: "webhook_endpoint", URL: w.URL, Description: w.Description,
 		EventTypes: w.EventTypes, Status: w.Status, DisabledReason: w.DisabledReason, Livemode: w.Livemode, CreatedAt: w.CreatedAt.UTC()}
+}
+
+// EndpointEventView is a webhook endpoint as an event shows it to the
+// org's other endpoints: its host, never its URL, whose path or query may
+// carry a secret.
+type EndpointEventView struct {
+	ID             string    `json:"id"`
+	Object         string    `json:"object"`
+	Host           string    `json:"host"`
+	Description    string    `json:"description"`
+	Status         string    `json:"status"`
+	DisabledReason string    `json:"disabled_reason,omitempty"`
+	Livemode       bool      `json:"livemode"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// ViewEndpointEvent renders an endpoint for an event.
+func ViewEndpointEvent(w *model.WebhookEndpoint) EndpointEventView {
+	host := ""
+	if u, err := url.Parse(w.URL); err == nil {
+		host = u.Hostname()
+	}
+	return EndpointEventView{ID: id.Format(id.WebhookEndpoint, w.ID), Object: "webhook_endpoint", Host: host, Description: w.Description,
+		Status: w.Status, DisabledReason: w.DisabledReason, Livemode: w.Livemode, CreatedAt: w.CreatedAt.UTC()}
 }
 
 // DeliveryView is one webhook delivery.

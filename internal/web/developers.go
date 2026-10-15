@@ -255,7 +255,7 @@ func (s *Server) createWebhook(c *reqCtx) error {
 	if len(types) == 0 || c.r.PostFormValue("all") == "1" {
 		types = []string{"*"}
 	}
-	ep, secret, err := s.svc.CreateEndpoint(c.ctx(), c.actor, core.EndpointInput{URL: d.Form.URL, Description: d.Form.Description, EventTypes: types})
+	ep, secret, err := s.svc.CreateEndpoint(c.ctx(), c.actor, core.EndpointInput{URL: d.Form.URL, Description: &d.Form.Description, EventTypes: types})
 	if err != nil {
 		return s.formErr(c, "webhooks", "webhooks", "Webhooks", d, err)
 	}
@@ -297,8 +297,9 @@ func (s *Server) updateWebhook(c *reqCtx) error {
 	if len(types) == 0 || c.r.PostFormValue("all") == "1" {
 		types = []string{"*"}
 	}
+	description := c.r.PostFormValue("description")
 	if _, err := s.svc.UpdateEndpoint(c.ctx(), c.actor, eid, core.EndpointInput{URL: c.r.PostFormValue("url"),
-		Description: c.r.PostFormValue("description"), EventTypes: types, Enabled: &enabled}); err != nil {
+		Description: &description, EventTypes: types, Enabled: &enabled}); err != nil {
 		return err
 	}
 	return redirect(c, "/webhooks/"+c.r.PathValue("id"), "Saved.")

@@ -891,7 +891,7 @@ func (h *Handler) getEvent(w http.ResponseWriter, r *http.Request) error {
 
 type endpointBody struct {
 	URL           string   `json:"url"`
-	Description   string   `json:"description"`
+	Description   *string  `json:"description"`
 	EnabledEvents []string `json:"enabled_events"`
 	Disabled      *bool    `json:"disabled"`
 }

@@ -1136,7 +1136,7 @@ func TestFailingEndpointIsDisabled(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	ctx := t.Context()
-	ep, _, err := w.s.CreateEndpoint(ctx, w.owner, core.EndpointInput{URL: "https://receiver.example/hooks", EventTypes: []string{"post.created"}})
+	ep, _, err := w.s.CreateEndpoint(ctx, w.owner, core.EndpointInput{URL: "https://receiver.example/hooks/s3cr3t", EventTypes: []string{"post.created"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1154,6 +1154,9 @@ func TestFailingEndpointIsDisabled(t *testing.T) {
 	evs, _, err := w.s.Events(ctx, w.owner, "webhook_endpoint.disabled", store.Page{})
 	if err != nil || len(evs) != 1 || !strings.Contains(string(evs[0].Data), id.Format(id.WebhookEndpoint, ep.ID)) {
 		t.Fatalf("the event: %v, %v", evs, err)
+	}
+	if data := string(evs[0].Data); strings.Contains(data, "s3cr3t") || !strings.Contains(data, "receiver.example") {
+		t.Fatalf("the event shows other endpoints the URL, not its host: %s", data)
 	}
 }
 
@@ -1850,5 +1853,38 @@ func TestRequestLogIsWrittenOnStop(t *testing.T) {
 	logged, _, err := w.s.APIRequests(ctx, memberActor(t, w, false), store.RequestFilter{}, store.Page{Limit: 100})
 	if err != nil || len(logged) != 100 {
 		t.Fatalf("logged %d requests (a page of at most 100), want a full page: %v", len(logged), err)
+	}
+}
+
+// TestEndpointUpdatesChangeOnlyWhatTheyName checks an update that leaves
+// out the description keeps it, and one that does not enable a failing
+// endpoint keeps its failure streak.
+func TestEndpointUpdatesChangeOnlyWhatTheyName(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	desc := "Our receiver"
+	ep, _, err := w.s.CreateEndpoint(ctx, w.owner, core.EndpointInput{URL: "https://receiver.example/hooks", Description: &desc,
+		EventTypes: []string{"post.created"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := open(t).Pool()
+	if _, err := pool.Exec(ctx, `UPDATE webhook_endpoints SET failing_since = now() - interval '1 day' WHERE id = $1`, ep.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := w.s.UpdateEndpoint(ctx, w.owner, ep.ID, core.EndpointInput{EventTypes: []string{"post.published"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Description != desc || !slices.Equal(got.EventTypes, []string{"post.published"}) {
+		t.Fatalf("after updating the events: %+v", got)
+	}
+	var failing bool
+	if err := pool.QueryRow(ctx, `SELECT failing_since IS NOT NULL FROM webhook_endpoints WHERE id = $1`, ep.ID).Scan(&failing); err != nil {
+		t.Fatal(err)
+	}
+	if !failing {
+		t.Fatal("an update that did not enable the endpoint cleared its failure streak")
 	}
 }

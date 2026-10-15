@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS post_targets_live_idx;

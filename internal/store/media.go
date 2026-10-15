@@ -115,7 +115,7 @@ func (s *Store) UnusedMedia(ctx context.Context, orgID *uuid.UUID, cutoff time.T
 	rows, err := s.q.Query(ctx, `SELECT `+mediaCols+` FROM media m WHERE m.created_at < $1 AND ($3::uuid IS NULL OR m.org_id = $3)
 		AND NOT EXISTS (SELECT 1 FROM post_media pm WHERE pm.media_id = m.id)
 		AND NOT EXISTS (SELECT 1 FROM newsletter_media nm WHERE nm.media_id = m.id)
-		AND NOT EXISTS (SELECT 1 FROM brands b WHERE b.email_logo_media_id = m.id) ORDER BY m.id LIMIT $2`, cutoff, limit, orgID)
+		AND NOT EXISTS (SELECT 1 FROM brands b WHERE b.org_id = m.org_id AND b.email_logo_media_id = m.id) ORDER BY m.id LIMIT $2`, cutoff, limit, orgID)
 	if err != nil {
 		return nil, err
 	}

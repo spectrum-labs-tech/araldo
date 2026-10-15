@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS newsletter_deliveries_mail_account_idx;

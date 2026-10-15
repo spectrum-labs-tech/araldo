@@ -147,10 +147,10 @@ func (s *Store) ReadAllNotifications(ctx context.Context, userID uuid.UUID, at t
 }
 
 // PruneNotifications deletes read notifications from before readCutoff and
-// any from before cutoff.
+// any from before cutoff, a batch at a time.
 func (s *Store) PruneNotifications(ctx context.Context, readCutoff, cutoff time.Time) (int, error) {
-	tag, err := s.q.Exec(ctx, `DELETE FROM notifications WHERE (read_at IS NOT NULL AND created_at < $1) OR created_at < $2`, readCutoff, cutoff)
-	return int(tag.RowsAffected()), err
+	return s.inBatches(ctx, batchSize, `DELETE FROM notifications WHERE id IN (SELECT id FROM notifications
+		WHERE read_at IS NOT NULL AND created_at < $2 OR created_at < $3 LIMIT $1)`, readCutoff, cutoff)
 }
 
 // NotificationEmail returns a notification's email status and why.

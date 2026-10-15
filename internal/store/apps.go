@@ -105,8 +105,8 @@ func (s *Store) DeleteOAuthState(ctx context.Context, hash []byte) error {
 
 // PruneOAuthStates deletes sign-ins started before cutoff.
 func (s *Store) PruneOAuthStates(ctx context.Context, cutoff time.Time) (int, error) {
-	tag, err := s.q.Exec(ctx, `DELETE FROM oauth_states WHERE created_at < $1`, cutoff)
-	return int(tag.RowsAffected()), err
+	return s.inBatches(ctx, batchSize, `DELETE FROM oauth_states WHERE state_hash IN (SELECT state_hash FROM oauth_states
+		WHERE created_at < $2 LIMIT $1)`, cutoff)
 }
 
 // Install apps (ADR 0030): developer apps the install provides to every org.

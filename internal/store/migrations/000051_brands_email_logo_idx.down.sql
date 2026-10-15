@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS brands_email_logo_idx;

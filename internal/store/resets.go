@@ -44,6 +44,6 @@ func (s *Store) TakePasswordReset(ctx context.Context, hash []byte, now time.Tim
 
 // PrunePasswordResets deletes reset links that expired before cutoff.
 func (s *Store) PrunePasswordResets(ctx context.Context, cutoff time.Time) (int, error) {
-	tag, err := s.q.Exec(ctx, `DELETE FROM password_resets WHERE expires_at < $1`, cutoff)
-	return int(tag.RowsAffected()), err
+	return s.inBatches(ctx, batchSize, `DELETE FROM password_resets WHERE token_hash IN (SELECT token_hash FROM password_resets
+		WHERE expires_at < $2 LIMIT $1)`, cutoff)
 }

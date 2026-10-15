@@ -105,6 +105,6 @@ func (s *Store) TakeSSOState(ctx context.Context, hash []byte, now time.Time) (*
 
 // PruneSSOStates deletes sign-ins never finished.
 func (s *Store) PruneSSOStates(ctx context.Context, now time.Time) (int, error) {
-	tag, err := s.q.Exec(ctx, `DELETE FROM sso_states WHERE expires_at <= $1`, now)
-	return int(tag.RowsAffected()), err
+	return s.inBatches(ctx, batchSize, `DELETE FROM sso_states WHERE state_hash IN (SELECT state_hash FROM sso_states
+		WHERE expires_at <= $2 LIMIT $1)`, now)
 }

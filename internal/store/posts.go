@@ -528,7 +528,7 @@ func (s *Store) QueueStats(ctx context.Context, orgID uuid.UUID, livemode bool, 
 		count(*) FILTER (WHERE status = 'publishing'),
 		count(*) FILTER (WHERE status = 'needs_attention'),
 		min(next_attempt_at) FILTER (WHERE status = 'queued' AND next_attempt_at <= $3)
-		FROM post_targets WHERE org_id = $1 AND livemode = $2`, orgID, livemode, now).Scan(&q.Due, &q.Publishing, &q.NeedsAttention, &q.OldestDue)
+		FROM post_targets WHERE org_id = $1 AND livemode = $2 AND status IN ('queued', 'publishing', 'needs_attention')`, orgID, livemode, now).Scan(&q.Due, &q.Publishing, &q.NeedsAttention, &q.OldestDue)
 	return q, err
 }
 

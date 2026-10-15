@@ -83,6 +83,6 @@ func (s *Store) TakePasskeyChallenge(ctx context.Context, hash []byte, purpose s
 
 // PrunePasskeyChallenges deletes ceremonies never finished.
 func (s *Store) PrunePasskeyChallenges(ctx context.Context, now time.Time) (int, error) {
-	tag, err := s.q.Exec(ctx, `DELETE FROM passkey_challenges WHERE expires_at <= $1`, now)
-	return int(tag.RowsAffected()), err
+	return s.inBatches(ctx, batchSize, `DELETE FROM passkey_challenges WHERE token_hash IN (SELECT token_hash FROM passkey_challenges
+		WHERE expires_at <= $2 LIMIT $1)`, now)
 }

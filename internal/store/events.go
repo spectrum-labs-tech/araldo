@@ -236,11 +236,13 @@ func (s *Store) FinishDelivery(ctx context.Context, d ClaimedDelivery, owner str
 	return err
 }
 
-// ReclaimDeliveries returns deliveries whose worker vanished to pending.
+// ReclaimDeliveries returns deliveries whose worker vanished to pending, a
+// batch at a time, so no one statement locks many rows.
 func (s *Store) ReclaimDeliveries(ctx context.Context, now time.Time) (int, error) {
-	tag, err := s.q.Exec(ctx, `UPDATE webhook_deliveries SET status = 'pending', lease_owner = NULL, lease_until = NULL, next_attempt_at = $1
-		WHERE status = 'delivering' AND lease_until < $1`, now)
-	return int(tag.RowsAffected()), err
+	return s.inBatches(ctx, batchSize, `UPDATE webhook_deliveries SET status = 'pending', lease_owner = NULL, lease_until = NULL, next_attempt_at = $2
+		WHERE id IN (SELECT id FROM webhook_deliveries WHERE status = 'delivering' AND lease_until < $2 ORDER BY lease_until LIMIT $1
+			FOR UPDATE SKIP LOCKED)
+		AND status = 'delivering'`, now)
 }
 
 // DisableFailingEndpoints disables endpoints failing since before cutoff
@@ -344,9 +346,10 @@ func (s *Store) FinishIdempotent(ctx context.Context, apiKeyID uuid.UUID, key st
 	return err
 }
 
+// PruneIdempotencyKeys deletes keys stored before before, a batch at a time.
 func (s *Store) PruneIdempotencyKeys(ctx context.Context, before time.Time) (int, error) {
-	tag, err := s.q.Exec(ctx, `DELETE FROM idempotency_keys WHERE created_at < $1`, before)
-	return int(tag.RowsAffected()), err
+	return s.inBatches(ctx, batchSize, `DELETE FROM idempotency_keys WHERE (api_key_id, key) IN (
+		SELECT api_key_id, key FROM idempotency_keys WHERE created_at < $2 LIMIT $1)`, before)
 }
 
 // Audit log (ADR 0004).

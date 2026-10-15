@@ -304,6 +304,31 @@ func ConflictOn(err error, name string) bool {
 	return errors.Is(err, ErrConflict) && strings.HasSuffix(err.Error(), ": "+name)
 }
 
+// batchSize is how many rows one statement of a bulk delete or update
+// touches, so none holds many row locks or runs long.
+const batchSize = 5000
+
+// inBatches runs sql, which changes at most $1 rows (its other arguments
+// numbered from $2), until a run changes fewer than batch or ctx ends, and
+// returns how many rows changed in all. Each run is its own statement, so
+// outside a transaction each commits on its own.
+func (s *Store) inBatches(ctx context.Context, batch int, sql string, args ...any) (int, error) {
+	n := 0
+	args = append([]any{batch}, args...)
+	for ctx.Err() == nil {
+		tag, err := s.q.Exec(ctx, sql, args...)
+		if err != nil {
+			return n, err
+		}
+		k := int(tag.RowsAffected())
+		n += k
+		if k < batch {
+			break
+		}
+	}
+	return n, nil
+}
+
 // exec runs a statement that must affect a row.
 func (s *Store) execOne(ctx context.Context, sql string, args ...any) error {
 	tag, err := s.q.Exec(ctx, sql, args...)

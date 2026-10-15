@@ -31,7 +31,8 @@ func (s *Store) PublishingCounts(ctx context.Context, orgID uuid.UUID, livemode 
 			count(*) FILTER (WHERE t.status IN ('failed', 'needs_attention') AND t.updated_at >= $4 AND t.updated_at < $5)
 		FROM post_targets t JOIN posts p ON p.id = t.post_id
 		WHERE t.org_id = $1 AND t.livemode = $2 AND p.brand_id = $3
-			AND (t.published_at >= $4 AND t.published_at < $5 OR t.updated_at >= $4 AND t.updated_at < $5)
+			AND (t.published_at >= $4 AND t.published_at < $5
+				OR t.status IN ('failed', 'needs_attention') AND t.updated_at >= $4 AND t.updated_at < $5)
 		GROUP BY t.provider ORDER BY 2 DESC, t.provider`, orgID, livemode, brandID, from, to)
 	if err != nil {
 		return nil, err

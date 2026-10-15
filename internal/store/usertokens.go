@@ -62,8 +62,8 @@ func (s *Store) RevokeAllUserTokens(ctx context.Context, userID uuid.UUID, at ti
 
 // PruneUserTokens deletes tokens revoked, or unused since before cutoff.
 func (s *Store) PruneUserTokens(ctx context.Context, cutoff time.Time) (int, error) {
-	tag, err := s.q.Exec(ctx, `DELETE FROM user_tokens WHERE revoked_at IS NOT NULL OR COALESCE(last_used_at, created_at) < $1`, cutoff)
-	return int(tag.RowsAffected()), err
+	return s.inBatches(ctx, batchSize, `DELETE FROM user_tokens WHERE id IN (SELECT id FROM user_tokens
+		WHERE revoked_at IS NOT NULL OR COALESCE(last_used_at, created_at) < $2 LIMIT $1)`, cutoff)
 }
 
 const deviceCols = `id, user_code, device_name, livemode, client_ip, status, user_id, poll_interval, last_polled_at, expires_at, created_at, sso_org_id`
@@ -120,6 +120,6 @@ func (s *Store) IssueDevice(ctx context.Context, id uuid.UUID) error {
 
 // PruneDevices deletes sign-ins that expired before cutoff.
 func (s *Store) PruneDevices(ctx context.Context, cutoff time.Time) (int, error) {
-	tag, err := s.q.Exec(ctx, `DELETE FROM device_authorizations WHERE expires_at < $1`, cutoff)
-	return int(tag.RowsAffected()), err
+	return s.inBatches(ctx, batchSize, `DELETE FROM device_authorizations WHERE id IN (SELECT id FROM device_authorizations
+		WHERE expires_at < $2 LIMIT $1)`, cutoff)
 }

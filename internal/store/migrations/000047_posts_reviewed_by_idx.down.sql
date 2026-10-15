@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS posts_reviewed_by_idx;

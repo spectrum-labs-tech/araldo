@@ -216,8 +216,7 @@ func (s *Store) Sessions(ctx context.Context, userID uuid.UUID, now time.Time) (
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.Session, error) { return scanSession(r) })
 }
 
-// PruneSessions deletes expired sessions.
+// PruneSessions deletes expired sessions, a batch at a time.
 func (s *Store) PruneSessions(ctx context.Context, now time.Time) (int, error) {
-	tag, err := s.q.Exec(ctx, `DELETE FROM sessions WHERE expires_at <= $1`, now)
-	return int(tag.RowsAffected()), err
+	return s.inBatches(ctx, batchSize, `DELETE FROM sessions WHERE id IN (SELECT id FROM sessions WHERE expires_at <= $2 LIMIT $1)`, now)
 }

@@ -1569,7 +1569,8 @@ func parseSlots(text string) ([]model.Slot, error) {
 		case "weekends":
 			days = []int{0, 6}
 		default:
-			i := slices.Index(weekdays, strings.TrimSuffix(fields[0], ":")[:min(3, len(fields[0]))])
+			day := strings.TrimSuffix(fields[0], ":")
+			i := slices.Index(weekdays, day[:min(3, len(day))])
 			if i < 0 {
 				ps.Add("slot_invalid", "slots", "Line %d: %q is not a day.", n+1, fields[0])
 				continue

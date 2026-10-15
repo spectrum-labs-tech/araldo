@@ -51,10 +51,13 @@ func TestSlotsRoundTrip(t *testing.T) {
 	if got := formatSlots(slots); got != "mon 09:00\nmon 13:00\ntue 09:00\nwed 09:00\nthu 09:00\nfri 09:00\nsat 18:30" {
 		t.Fatalf("formatSlots = %q", got)
 	}
-	for _, bad := range []string{"mon", "mon 25:00", "someday 09:00"} {
+	for _, bad := range []string{"mon", "mon 25:00", "someday 09:00", "mo: 09:00", ": 09:00", "m 09:00"} {
 		if _, err := parseSlots(bad); err == nil {
 			t.Errorf("parseSlots(%q) accepted", bad)
 		}
+	}
+	if s, err := parseSlots("tue: 08:15"); err != nil || len(s) != 1 || s[0].Weekday != time.Tuesday {
+		t.Errorf("a day with a colon = %+v, %v", s, err)
 	}
 	if s, err := parseSlots("daily 07:05"); err != nil || len(s) != 7 || s[0].MinuteOfDay != 7*60+5 || s[0].Weekday != time.Sunday {
 		t.Errorf("daily = %+v, %v", s, err)

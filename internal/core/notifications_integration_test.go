@@ -121,6 +121,23 @@ func TestNotifications(t *testing.T) {
 	if err := w.s.SetNotificationChoice(ctx, adminActor, core.NotifyPasswordChanged, false, false); code(err) != "notification_type_invalid" {
 		t.Fatalf("turning off an account notice: %v", err)
 	}
+	// Several at once are all saved, or with one invalid, none. (Types the
+	// rest of this test does not use.)
+	if err := w.s.SetNotificationChoices(ctx, adminActor, []model.NotificationPref{{Type: core.NotifyNewsletterApproval},
+		{Type: core.NotifyPasswordChanged}}); code(err) != "notification_type_invalid" {
+		t.Fatalf("a batch with an account notice: %v", err)
+	}
+	if chs, err := w.s.NotificationChoices(ctx, adminActor); err != nil || choiceIs(chs, core.NotifyNewsletterApproval, false, false) {
+		t.Fatalf("the refused batch changed a choice: %+v, %v", chs, err)
+	}
+	if err := w.s.SetNotificationChoices(ctx, adminActor, []model.NotificationPref{{Type: core.NotifyNewsletterApproval},
+		{Type: core.NotifyPostNeedsAttention, Email: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if chs, err := w.s.NotificationChoices(ctx, adminActor); err != nil || !choiceIs(chs, core.NotifyNewsletterApproval, false, false) ||
+		!choiceIs(chs, core.NotifyPostNeedsAttention, false, true) {
+		t.Fatalf("after the batch: %+v, %v", chs, err)
+	}
 	choices, err := w.s.NotificationChoices(ctx, adminActor)
 	if err != nil {
 		t.Fatal(err)
@@ -188,4 +205,14 @@ func TestAccountNotices(t *testing.T) {
 			t.Fatalf("mail %v: %d notices", mail, len(got))
 		}
 	}
+}
+
+// choiceIs reports whether the choices hold typ set to inApp and email.
+func choiceIs(chs []core.NotificationChoice, typ string, inApp, email bool) bool {
+	for _, c := range chs {
+		if c.Key == typ {
+			return c.InApp == inApp && c.Email == email
+		}
+	}
+	return false
 }

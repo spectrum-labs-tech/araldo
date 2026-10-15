@@ -1270,6 +1270,19 @@ func TestTemplatesCannotLiftApproval(t *testing.T) {
 	if _, _, err := w.s.AddTemplateVersion(ctx, w.owner, exempt.ID, "", tmpl.Source{Body: "Shipped, reviewed"}); err != nil {
 		t.Fatalf("an owner rewriting it: %v", err)
 	}
+	// Settings and text save as one change: the refused text takes the
+	// rename with it, and an allowed save keeps both.
+	renamed, text := "Renamed", tmpl.Source{Body: "Shipped again"}
+	if _, _, err := w.s.UpdateTemplate(ctx, editor, exempt.ID, core.TemplateSettings{Name: &renamed, Source: &text}); kind(err) != apperr.KindForbidden {
+		t.Fatalf("an editor renaming and rewriting it: %v", err)
+	}
+	if got, _, err := w.s.Template(ctx, w.owner, exempt.ID, 0); err != nil || got.Name != "Release" || got.LatestVersion != 2 {
+		t.Fatalf("after the refused save: %+v, %v; want the old name at version 2", got, err)
+	}
+	if got, v, err := w.s.UpdateTemplate(ctx, w.owner, exempt.ID, core.TemplateSettings{Name: &renamed, Source: &text}); err != nil ||
+		got.Name != renamed || v.Version != 3 || v.Body != text.Body {
+		t.Fatalf("an owner renaming and rewriting it: %+v, %+v, %v", got, v, err)
+	}
 }
 
 // TestPublisherSlotsAreIndependent checks a publish that takes long holds

@@ -414,12 +414,26 @@ func (s *Service) NotificationChoices(ctx context.Context, a Actor) ([]Notificat
 // SetNotificationChoice records the actor's choice for a type in their
 // org. Account notices cannot be turned off.
 func (s *Service) SetNotificationChoice(ctx context.Context, a Actor, typ string, inApp, email bool) error {
+	return s.SetNotificationChoices(ctx, a, []model.NotificationPref{{Type: typ, InApp: inApp, Email: email}})
+}
+
+// SetNotificationChoices records several choices at once: all of them, or,
+// if one is invalid or the save fails, none.
+func (s *Service) SetNotificationChoices(ctx context.Context, a Actor, prefs []model.NotificationPref) error {
 	if a.UserID == nil {
 		return apperr.Forbidden("Only people have notifications.")
 	}
-	t, ok := notificationType(typ)
-	if !ok || t.Account {
-		return apperr.Invalid("notification_type_invalid", "type", "Unknown notification type %q.", typ)
+	for _, p := range prefs {
+		if t, ok := notificationType(p.Type); !ok || t.Account {
+			return apperr.Invalid("notification_type_invalid", "type", "Unknown notification type %q.", p.Type)
+		}
 	}
-	return s.store.SetNotificationPref(ctx, *a.UserID, a.OrgID, model.NotificationPref{Type: typ, InApp: inApp, Email: email})
+	return s.store.InTx(ctx, func(tx *store.Store) error {
+		for _, p := range prefs {
+			if err := tx.SetNotificationPref(ctx, *a.UserID, a.OrgID, p); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

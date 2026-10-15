@@ -1224,15 +1224,16 @@ func (s *Server) saveTemplate(c *reqCtx) error {
 	if ap := model.TemplateApproval(f.Approval); f.Approval != "" && ap != t.Approval {
 		settings.Approval = &ap
 	}
-	if _, _, err := s.svc.UpdateTemplate(c.ctx(), c.actor, tid, settings); err != nil {
+	// One save: the settings and any new text change together or not at all.
+	if !sameSource(src, v) {
+		settings.Source = &src
+	}
+	_, nv, err := s.svc.UpdateTemplate(c.ctx(), c.actor, tid, settings)
+	if err != nil {
 		return s.formErr(c, "template_edit", "templates", t.Key, f, err)
 	}
-	if sameSource(src, v) {
+	if settings.Source == nil {
 		return redirect(c, "/templates/"+id.Format(id.Template, t.ID), "Saved.")
-	}
-	_, nv, err := s.svc.AddTemplateVersion(c.ctx(), c.actor, tid, "", src)
-	if err != nil {
-		return s.formErr(c, "template_edit", "templates", f.Key, f, err)
 	}
 	return redirect(c, "/templates/"+id.Format(id.Template, t.ID), "Saved as version "+strconv.Itoa(nv.Version)+".")
 }
@@ -1530,11 +1531,9 @@ func (s *Server) saveBrand(c *reqCtx) error {
 	if err != nil {
 		return s.formErr(c, "brand_edit", "brands", b.Name, f, err)
 	}
+	// One save: the settings and the slots change together or not at all.
 	if _, err := s.svc.UpdateBrand(c.ctx(), c.actor, bid, core.BrandInput{Name: f.Name, Slug: f.Slug, Timezone: f.Timezone, ApprovalPolicy: model.ApprovalPolicy(f.Policy),
-		UTMDomains: splitDomains(f.UTMDomains)}); err != nil {
-		return s.formErr(c, "brand_edit", "brands", b.Name, f, err)
-	}
-	if err := s.svc.SetSlots(c.ctx(), c.actor, bid, slots); err != nil {
+		UTMDomains: splitDomains(f.UTMDomains), Slots: &slots}); err != nil {
 		return s.formErr(c, "brand_edit", "brands", b.Name, f, err)
 	}
 	return redirect(c, "/brands/"+c.r.PathValue("id"), "Saved.")

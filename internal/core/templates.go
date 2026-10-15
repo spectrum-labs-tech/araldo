@@ -109,26 +109,13 @@ func (s *Service) AddTemplateVersion(ctx context.Context, a Actor, templateID uu
 		if err := a.brandAllowed(t.BrandID); err != nil {
 			return err
 		}
-		// An approver exempted this template's posts from review, trusting
-		// its text; new text needs one too (ADR 0004).
-		if t.Approval == model.TemplateApprovalNotRequired && !a.Can(PermPostsApprove) {
-			return apperr.Forbidden("This template's posts skip approval, so only admins and owners can change its text.")
-		}
 		if name = strings.TrimSpace(name); name != "" && name != t.Name {
 			if err := tx.SetTemplateName(ctx, a.OrgID, t.ID, name); err != nil {
 				return err
 			}
 			t.Name = name
 		}
-		v := versionOf(t, src, t.LatestVersion+1, a.UserID)
-		if err := tx.AddTemplateVersion(ctx, v); err != nil {
-			return err
-		}
-		t.LatestVersion = v.Version
-		if err := s.audit(ctx, tx, a, "template.version", id.Format(id.Template, t.ID), map[string]any{"version": v.Version}); err != nil {
-			return err
-		}
-		return s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, "template.version_created", ViewTemplate(t, v))
+		return s.addVersion(ctx, tx, a, t, src)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -136,11 +123,30 @@ func (s *Service) AddTemplateVersion(ctx context.Context, a Actor, templateID uu
 	return s.reloadTemplate(ctx, a.OrgID, templateID)
 }
 
-// TemplateSettings changes a template's name or approval rule without
-// making a new version.
+// addVersion saves src as t's next version, in tx. src is compiled.
+func (s *Service) addVersion(ctx context.Context, tx *store.Store, a Actor, t *model.Template, src tmpl.Source) error {
+	// An approver exempted this template's posts from review, trusting
+	// its text; new text needs one too (ADR 0004).
+	if t.Approval == model.TemplateApprovalNotRequired && !a.Can(PermPostsApprove) {
+		return apperr.Forbidden("This template's posts skip approval, so only admins and owners can change its text.")
+	}
+	v := versionOf(t, src, t.LatestVersion+1, a.UserID)
+	if err := tx.AddTemplateVersion(ctx, v); err != nil {
+		return err
+	}
+	t.LatestVersion = v.Version
+	if err := s.audit(ctx, tx, a, "template.version", id.Format(id.Template, t.ID), map[string]any{"version": v.Version}); err != nil {
+		return err
+	}
+	return s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, "template.version_created", ViewTemplate(t, v))
+}
+
+// TemplateSettings changes a template's name or approval rule, and with
+// Source also saves new text as its next version, all at once.
 type TemplateSettings struct {
 	Name     *string
 	Approval *model.TemplateApproval
+	Source   *tmpl.Source
 }
 
 // UpdateTemplate changes a template's settings.
@@ -150,6 +156,11 @@ func (s *Service) UpdateTemplate(ctx context.Context, a Actor, templateID uuid.U
 	}
 	if in.Approval != nil {
 		if err := checkApprovalSetting(a, *in.Approval); err != nil {
+			return nil, nil, err
+		}
+	}
+	if in.Source != nil {
+		if _, err := tmpl.Compile(*in.Source); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -173,11 +184,17 @@ func (s *Service) UpdateTemplate(ctx context.Context, a Actor, templateID uuid.U
 				return err
 			}
 			detail["approval"] = *in.Approval
+			t.Approval = *in.Approval
 		}
-		if len(detail) == 0 {
+		if len(detail) > 0 {
+			if err := s.audit(ctx, tx, a, "template.update", id.Format(id.Template, t.ID), detail); err != nil {
+				return err
+			}
+		}
+		if in.Source == nil {
 			return nil
 		}
-		return s.audit(ctx, tx, a, "template.update", id.Format(id.Template, t.ID), detail)
+		return s.addVersion(ctx, tx, a, t, *in.Source)
 	})
 	if err != nil {
 		return nil, nil, err

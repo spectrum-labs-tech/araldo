@@ -110,14 +110,15 @@ func (s *Server) saveNotificationSettings(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
+	var changed []model.NotificationPref
 	for _, ch := range choices {
 		inApp, email := c.r.PostFormValue("in_app:"+ch.Key) == "1", c.r.PostFormValue("email:"+ch.Key) == "1"
-		if inApp == ch.InApp && email == ch.Email {
-			continue
+		if inApp != ch.InApp || email != ch.Email {
+			changed = append(changed, model.NotificationPref{Type: ch.Key, InApp: inApp, Email: email})
 		}
-		if err := s.svc.SetNotificationChoice(c.ctx(), c.actor, ch.Key, inApp, email); err != nil {
-			return err
-		}
+	}
+	if err := s.svc.SetNotificationChoices(c.ctx(), c.actor, changed); err != nil {
+		return err
 	}
 	return redirect(c, "/notifications/settings", "Saved.")
 }

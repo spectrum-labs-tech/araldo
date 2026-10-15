@@ -183,27 +183,28 @@ type accountData struct {
 	Passkeys []*model.Passkey
 }
 
-// account fills what every rendering of the account page shows.
-func (s *Server) account(c *reqCtx, d accountData) (accountData, error) {
+// renderAccount shows the account page with d, filled with what every
+// rendering shows (passkeys, devices, recovery codes left), so a form's
+// result or problem never hides them; with formErr, as that form's error.
+func (s *Server) renderAccount(c *reqCtx, d accountData, formErr error) error {
 	var err error
-	d.Passkeys, err = s.svc.Passkeys(c.ctx(), c.user.ID)
-	return d, err
-}
-
-func (s *Server) accountPage(c *reqCtx) error {
-	d := accountData{MFARequired: c.r.URL.Query().Get("mfa_required") == "1"}
-	n, err := s.svc.RemainingRecoveryCodes(c.ctx(), c.user.ID)
-	if err != nil {
+	if d.RecoveryLeft, err = s.svc.RemainingRecoveryCodes(c.ctx(), c.user.ID); err != nil {
 		return err
 	}
-	d.RecoveryLeft = n
 	if d.Devices, err = s.accountDevices(c); err != nil {
 		return err
 	}
-	if d, err = s.account(c, d); err != nil {
+	if d.Passkeys, err = s.svc.Passkeys(c.ctx(), c.user.ID); err != nil {
 		return err
 	}
+	if formErr != nil {
+		return s.formErr(c, "account", "account", "Your account", d, formErr)
+	}
 	return s.page(c, "account", "account", "Your account", d)
+}
+
+func (s *Server) accountPage(c *reqCtx) error {
+	return s.renderAccount(c, accountData{MFARequired: c.r.URL.Query().Get("mfa_required") == "1"}, nil)
 }
 
 func (s *Server) accountMFABegin(c *reqCtx) error {
@@ -211,16 +212,12 @@ func (s *Server) accountMFABegin(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	d := accountData{Enrolling: true, SecretText: secret, QR: qrDataURL(uri)}
-	return s.page(c, "account", "account", "Your account", d)
+	return s.renderAccount(c, accountData{Enrolling: true, SecretText: secret, QR: qrDataURL(uri)}, nil)
 }
 
 func (s *Server) accountMFAConfirm(c *reqCtx) error {
 	codes, err := s.svc.ConfirmTOTP(c.ctx(), c.session, c.r.PostFormValue("code"))
-	if err != nil {
-		return s.formErr(c, "account", "account", "Your account", accountData{}, err)
-	}
-	return s.page(c, "account", "account", "Your account", accountData{RecoveryCodes: codes})
+	return s.renderAccount(c, accountData{RecoveryCodes: codes}, err)
 }
 
 func (s *Server) accountMFADisable(c *reqCtx) error {
@@ -235,17 +232,16 @@ func (s *Server) accountRecoveryCodes(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	return s.page(c, "account", "account", "Your account", accountData{RecoveryCodes: codes})
+	return s.renderAccount(c, accountData{RecoveryCodes: codes}, nil)
 }
 
 func (s *Server) accountPassword(c *reqCtx) error {
 	next := c.r.PostFormValue("new_password")
 	if next != c.r.PostFormValue("confirm_password") {
-		return s.formErr(c, "account", "account", "Your account", accountData{},
-			apperr.Invalid("password_mismatch", "confirm_password", "The new passwords do not match."))
+		return s.renderAccount(c, accountData{}, apperr.Invalid("password_mismatch", "confirm_password", "The new passwords do not match."))
 	}
 	if err := s.svc.ChangePassword(c.ctx(), c.session, c.r.PostFormValue("current_password"), next); err != nil {
-		return s.formErr(c, "account", "account", "Your account", accountData{}, err)
+		return s.renderAccount(c, accountData{}, err)
 	}
 	return redirect(c, "/account", "Password changed. Other sessions were signed out.")
 }

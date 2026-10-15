@@ -3,6 +3,7 @@
 package web
 
 import (
+	"maps"
 	"net/url"
 	"strconv"
 	"strings"
@@ -121,30 +122,35 @@ func (s *Server) adsData(c *reqCtx) (*adsData, error) {
 
 func (s *Server) connectAdAccount(c *reqCtx) error {
 	f := c.r.PostForm
-	d, err := s.adsData(c)
-	if err != nil {
-		return err
-	}
-	in := core.AdAccountInput{Network: ads.Network(f.Get("network")), Fields: map[string]string{}}
-	for k, v := range f {
-		if name, ok := strings.CutPrefix(k, "field_"); ok && len(v) > 0 {
-			in.Fields[name] = v[0]
-			d.Values[name] = v[0]
+	in := core.AdAccountInput{Network: ads.Network(f.Get("network"))}
+	var values map[string]string
+	for _, n := range s.svc.AdNetworks(c.actor.Livemode) {
+		if n.Network == in.Network {
+			in.Fields, values = providerFields(f, n.Fields)
 		}
 	}
-	for i := range d.Networks {
-		if d.Networks[i].Network == in.Network {
-			d.Network = &d.Networks[i]
+	// The page's data is loaded only to show the form again.
+	fail := func(err error) error {
+		d, derr := s.adsData(c)
+		if derr != nil {
+			return derr
 		}
+		maps.Copy(d.Values, values)
+		for i := range d.Networks {
+			if d.Networks[i].Network == in.Network {
+				d.Network = &d.Networks[i]
+			}
+		}
+		return s.formErr(c, "ads", "ads", "Ads", d, err)
 	}
 	b, err := s.svc.ResolveBrand(c.ctx(), c.actor, f.Get("brand"))
 	if err != nil {
-		return s.formErr(c, "ads", "ads", "Ads", d, err)
+		return fail(chooseBrand(err))
 	}
 	in.BrandID = b.ID
 	ac, err := s.svc.ConnectAdAccount(c.ctx(), c.actor, in)
 	if err != nil {
-		return s.formErr(c, "ads", "ads", "Ads", d, err)
+		return fail(err)
 	}
 	return redirect(c, "/ads", "Connected "+ac.Name+". Its results are read within a few minutes, then daily.")
 }

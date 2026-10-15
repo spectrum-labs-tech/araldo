@@ -3,6 +3,7 @@
 package web
 
 import (
+	"net/url"
 	"strconv"
 
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
@@ -207,6 +208,25 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// providerFields reads a provider's declared settings from a connect form
+// ("field_<name>"): fields for core, and values to fill the form with if
+// it comes back with a problem, which leave out the secret ones so a
+// token or password is never written into a page. Undeclared fields are
+// ignored.
+func providerFields(form url.Values, defs []platform.Field) (fields, values map[string]string) {
+	fields, values = map[string]string{}, map[string]string{}
+	for _, fd := range defs {
+		if !form.Has("field_" + fd.Name) {
+			continue
+		}
+		fields[fd.Name] = form.Get("field_" + fd.Name)
+		if !fd.Secret {
+			values[fd.Name] = fields[fd.Name]
+		}
+	}
+	return fields, values
 }
 
 // connectRefused is the notice for a platform that sent the member back

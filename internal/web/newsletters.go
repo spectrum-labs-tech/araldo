@@ -4,6 +4,7 @@ package web
 
 import (
 	"html/template"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -92,32 +93,37 @@ func (s *Server) newslettersData(c *reqCtx) (*newslettersData, error) {
 
 func (s *Server) connectMailAccount(c *reqCtx) error {
 	f := c.r.PostForm
-	d, err := s.newslettersData(c)
-	if err != nil {
-		return err
-	}
 	in := core.MailAccountInput{Provider: email.Provider(f.Get("provider")), FromName: f.Get("from_name"), FromEmail: f.Get("from_email"),
-		ReplyTo: f.Get("reply_to"), Fields: map[string]string{}}
-	d.Values["from_name"], d.Values["from_email"], d.Values["reply_to"] = in.FromName, in.FromEmail, in.ReplyTo
-	for k, v := range f {
-		if name, ok := strings.CutPrefix(k, "field_"); ok && len(v) > 0 {
-			in.Fields[name] = v[0]
-			d.Values[name] = v[0]
+		ReplyTo: f.Get("reply_to")}
+	var values map[string]string
+	for _, p := range s.svc.MailProviders(c.actor.Livemode) {
+		if p.Provider == in.Provider {
+			in.Fields, values = providerFields(f, p.Fields)
 		}
 	}
-	for i := range d.Providers {
-		if d.Providers[i].Provider == in.Provider {
-			d.Provider = &d.Providers[i]
+	// The page's data is loaded only to show the form again.
+	fail := func(err error) error {
+		d, derr := s.newslettersData(c)
+		if derr != nil {
+			return derr
 		}
+		maps.Copy(d.Values, values)
+		d.Values["from_name"], d.Values["from_email"], d.Values["reply_to"] = in.FromName, in.FromEmail, in.ReplyTo
+		for i := range d.Providers {
+			if d.Providers[i].Provider == in.Provider {
+				d.Provider = &d.Providers[i]
+			}
+		}
+		return s.formErr(c, "newsletters", "newsletters", "Newsletters", d, err)
 	}
 	b, err := s.svc.ResolveBrand(c.ctx(), c.actor, f.Get("brand"))
 	if err != nil {
-		return s.formErr(c, "newsletters", "newsletters", "Newsletters", d, err)
+		return fail(chooseBrand(err))
 	}
 	in.BrandID = b.ID
 	ma, err := s.svc.ConnectMailAccount(c.ctx(), c.actor, in)
 	if err != nil {
-		return s.formErr(c, "newsletters", "newsletters", "Newsletters", d, err)
+		return fail(err)
 	}
 	return redirect(c, "/mail-accounts/"+id.Format(id.MailAccount, ma.ID), "Connected "+ma.Name+". Now choose the audiences new issues go to.")
 }

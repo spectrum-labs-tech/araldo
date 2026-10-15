@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"io/fs"
+	"maps"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -636,32 +637,36 @@ func (s *Server) performanceData(c *reqCtx) (*performanceData, error) {
 
 func (s *Server) connectAnalytics(c *reqCtx) error {
 	f := c.r.PostForm
-	d, err := s.performanceData(c)
-	if err != nil {
-		return err
-	}
-	in := core.AnalyticsSourceInput{Provider: analytics.Provider(f.Get("provider")), Fields: map[string]string{}}
-	for k, v := range f {
-		if name, ok := strings.CutPrefix(k, "field_"); ok && len(v) > 0 {
-			in.Fields[name] = v[0]
-			d.Values[name] = v[0]
+	in := core.AnalyticsSourceInput{Provider: analytics.Provider(f.Get("provider")), Goals: strings.Split(f.Get("goals"), ",")}
+	var values map[string]string
+	for _, p := range s.svc.AnalyticsProviders(c.actor.Livemode) {
+		if p.Provider == in.Provider {
+			in.Fields, values = providerFields(f, p.Fields)
 		}
 	}
-	d.Values["goals"] = f.Get("goals")
-	in.Goals = strings.Split(f.Get("goals"), ",")
-	for i := range d.Providers {
-		if d.Providers[i].Provider == in.Provider {
-			d.Provider = &d.Providers[i]
+	// The page's data is loaded only to show the form again.
+	fail := func(err error) error {
+		d, derr := s.performanceData(c)
+		if derr != nil {
+			return derr
 		}
+		maps.Copy(d.Values, values)
+		d.Values["goals"] = f.Get("goals")
+		for i := range d.Providers {
+			if d.Providers[i].Provider == in.Provider {
+				d.Provider = &d.Providers[i]
+			}
+		}
+		return s.formErr(c, "performance", "performance", "Performance", d, err)
 	}
 	b, err := s.svc.ResolveBrand(c.ctx(), c.actor, f.Get("brand"))
 	if err != nil {
-		return s.formErr(c, "performance", "performance", "Performance", d, err)
+		return fail(chooseBrand(err))
 	}
 	in.BrandID = b.ID
 	src, err := s.svc.ConnectAnalyticsSource(c.ctx(), c.actor, in)
 	if err != nil {
-		return s.formErr(c, "performance", "performance", "Performance", d, err)
+		return fail(err)
 	}
 	return redirect(c, "/performance", "Connected "+src.Name+". Its visits and signups are read within a few minutes, then daily.")
 }
@@ -1347,13 +1352,8 @@ func (s *Server) createChannel(c *reqCtx) error {
 	if f.Provider == nil {
 		return s.formErr(c, "channel_new", "channels", "Connect a channel", f, apperr.Invalid("provider_required", "provider", "Choose a platform."))
 	}
-	fields := map[string]string{}
-	for _, fd := range f.Provider.Fields {
-		fields[fd.Name] = c.r.PostFormValue("field_" + fd.Name)
-		if !fd.Secret {
-			f.Values[fd.Name] = fields[fd.Name]
-		}
-	}
+	fields, values := providerFields(c.r.PostForm, f.Provider.Fields)
+	maps.Copy(f.Values, values)
 	b, err := s.svc.ResolveBrand(c.ctx(), c.actor, f.Brand)
 	if err != nil {
 		return s.formErr(c, "channel_new", "channels", "Connect a channel", f, chooseBrand(err))
@@ -1385,10 +1385,7 @@ func (s *Server) reconnectChannel(c *reqCtx) error {
 	if c.r.Method == http.MethodGet || f.Provider == nil {
 		return s.page(c, "channel_new", "channels", "Reconnect "+ch.DisplayName, f)
 	}
-	fields := map[string]string{}
-	for _, fd := range f.Provider.Fields {
-		fields[fd.Name] = c.r.PostFormValue("field_" + fd.Name)
-	}
+	fields, _ := providerFields(c.r.PostForm, f.Provider.Fields)
 	if _, err := s.svc.ReconnectChannel(c.ctx(), c.actor, cid, fields); err != nil {
 		return s.formErr(c, "channel_new", "channels", "Reconnect "+ch.DisplayName, f, err)
 	}

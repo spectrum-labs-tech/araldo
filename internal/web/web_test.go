@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
 func TestKeyExpiry(t *testing.T) {
@@ -310,5 +312,21 @@ func TestClientIP(t *testing.T) {
 		if got := s.clientIP(r); got != tt.want {
 			t.Errorf("clientIP with %s %q = %q, want %q", tt.header, tt.value, got, tt.want)
 		}
+	}
+}
+
+func TestProviderFields(t *testing.T) {
+	t.Parallel()
+	defs := []platform.Field{{Name: "handle"}, {Name: "app_password", Secret: true}, {Name: "instance", Optional: true}}
+	form := url.Values{"field_handle": {"araldo.dev"}, "field_app_password": {"hunter2"}, "field_unknown": {"x"}, "brand": {"brand_1"}}
+	fields, values := providerFields(form, defs)
+	if len(fields) != 2 || fields["handle"] != "araldo.dev" || fields["app_password"] != "hunter2" {
+		t.Fatalf("fields = %v; want the two declared ones sent, nothing undeclared", fields)
+	}
+	if len(values) != 1 || values["handle"] != "araldo.dev" {
+		t.Fatalf("values = %v; want only the non-secret one, to show again", values)
+	}
+	if f, v := providerFields(form, nil); len(f) != 0 || len(v) != 0 {
+		t.Fatalf("no declared fields read %v, %v", f, v)
 	}
 }

@@ -271,8 +271,8 @@ func (s *Service) analyticsLabels(ctx context.Context, a Actor, f AnalyticsFilte
 	switch f.GroupBy {
 	case store.AnalyticsByPost:
 	case store.AnalyticsByCampaign:
-		if a.require(PermNewslettersRead) != nil {
-			return nil, nil
+		if !a.Can(PermNewslettersRead) {
+			return nil, nil // campaigns name themselves to those who cannot read newsletters
 		}
 		prefix, label, lookup = id.Issue, func(subject string) string { return "Newsletter: " + subject }, s.store.IssueSubjects
 	default:

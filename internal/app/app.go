@@ -242,14 +242,25 @@ func masterKeys(cfg config.Config) (*keyring.MasterKeys, error) {
 	return local.Prepend(transit)
 }
 
+// telemetryOrNone starts telemetry, or, when it cannot (an exporter the SDK
+// does not know, a collector address it cannot parse), says why and runs
+// without: metrics and traces are not worth refusing to serve for.
+func telemetryOrNone(ctx context.Context, log *slog.Logger, start func() (*telemetry.Telemetry, error)) *telemetry.Telemetry {
+	t, err := start()
+	if err != nil {
+		log.WarnContext(ctx, "telemetry did not start; running without metrics and traces", "err", err)
+		return telemetry.Disabled()
+	}
+	return t
+}
+
 // StartTelemetry starts metric and trace export as the OTEL_* variables
 // configure it (ADR 0014) and instruments the use cases. The worker started afterwards
 // is instrumented too. Call stop, which flushes the exporter, when done.
 func (a *App) StartTelemetry(ctx context.Context) (stop func(), err error) {
-	t, err := telemetry.Start(ctx, a.Log, "araldo", buildinfo.Version)
-	if err != nil {
-		return nil, fmt.Errorf("telemetry: %w", err)
-	}
+	t := telemetryOrNone(ctx, a.Log, func() (*telemetry.Telemetry, error) {
+		return telemetry.Start(ctx, a.Log, "araldo", buildinfo.Version)
+	})
 	stop = func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()

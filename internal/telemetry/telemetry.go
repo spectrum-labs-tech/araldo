@@ -78,7 +78,7 @@ type Telemetry struct {
 // (overridden by OTEL_SERVICE_NAME). The SDK's own errors (an unreachable
 // collector) go to log.
 func Start(ctx context.Context, log *slog.Logger, service, version string) (*Telemetry, error) {
-	t := &Telemetry{meters: noop.NewMeterProvider(), tracers: tracenoop.NewTracerProvider()}
+	t := Disabled()
 	metrics, traces := MetricsEnabled(os.Getenv), TracesEnabled(os.Getenv)
 	if !metrics && !traces {
 		return t, nil
@@ -120,6 +120,12 @@ func Start(ctx context.Context, log *slog.Logger, service, version string) (*Tel
 		}
 	}
 	return t, nil
+}
+
+// Disabled is telemetry that records and exports nothing: what runs when
+// none is configured, or the SDK could not start.
+func Disabled() *Telemetry {
+	return &Telemetry{meters: noop.NewMeterProvider(), tracers: tracenoop.NewTracerProvider()}
 }
 
 // TracerProvider is where spans are made; a no-op when traces are off.

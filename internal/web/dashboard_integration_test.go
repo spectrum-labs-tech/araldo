@@ -787,3 +787,46 @@ func TestConnectTheCLI(t *testing.T) {
 		t.Fatalf("the new live key: %+v, %v", a, err)
 	}
 }
+
+// TestDevelopersNavMarksTheCurrentPage checks each developer page lights
+// its own sidebar link, and only that one.
+func TestDevelopersNavMarksTheCurrentPage(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	_, key, err := d.s.CreateOperatorAPIKey(ctx, d.owner, core.APIKeyInput{Name: "nav", Scopes: []string{"posts:read"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep, _, err := d.s.CreateEndpoint(ctx, d.owner, core.EndpointInput{URL: "https://hooks.example.com/nav", EventTypes: []string{"post.published"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, _, err := d.s.Events(ctx, d.owner, "", store.Page{Limit: 1})
+	if err != nil || len(events) == 0 {
+		t.Fatalf("events: %d, %v", len(events), err)
+	}
+	active := regexp.MustCompile(`<a href="([^"]+)" class="active" aria-current="page">`)
+	tests := []struct{ path, want string }{
+		{"/keys", "/keys"},
+		{"/keys/" + id.Format(id.APIKey, key.ID), "/keys"},
+		{"/cli?device=laptop", "/keys"},
+		{"/webhooks", "/webhooks"},
+		{"/webhooks/" + id.Format(id.WebhookEndpoint, ep.ID), "/webhooks"},
+		{"/events", "/events"},
+		{"/events/" + id.Format(id.Event, events[0].ID), "/events"},
+		{"/logs", "/logs"},
+		{"/api-reference", "/api-reference"},
+	}
+	for _, tt := range tests {
+		rec := d.send(httptest.NewRequest(http.MethodGet, tt.path, nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s: %d", tt.path, rec.Code)
+			continue
+		}
+		got := active.FindAllStringSubmatch(rec.Body.String(), -1)
+		if len(got) != 1 || got[0][1] != tt.want {
+			t.Errorf("GET %s lights %v, want only %s", tt.path, got, tt.want)
+		}
+	}
+}

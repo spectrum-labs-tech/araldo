@@ -72,7 +72,7 @@ func (s *Server) cliPage(c *reqCtx) error {
 	if d.Brands, err = s.svc.Brands(c.ctx(), c.actor); err != nil {
 		return err
 	}
-	return s.page(c, "cli", "developers", "Connect the araldo CLI", d)
+	return s.page(c, "cli", "keys", "Connect the araldo CLI", d)
 }
 
 func (s *Server) cliCreateKey(c *reqCtx) error {
@@ -85,7 +85,7 @@ func (s *Server) cliCreateKey(c *reqCtx) error {
 	if ref := c.r.PostFormValue("brand"); ref != "" {
 		b, err := s.svc.ResolveBrand(c.ctx(), c.actor, ref)
 		if err != nil {
-			return s.formErr(c, "cli", "developers", "Connect the araldo CLI", d, err)
+			return s.formErr(c, "cli", "keys", "Connect the araldo CLI", d, err)
 		}
 		in.BrandID = &b.ID
 	}
@@ -94,8 +94,8 @@ func (s *Server) cliCreateKey(c *reqCtx) error {
 		if core.NeedsReauth(err) {
 			return confirmFirst(c, d)
 		}
-		return s.formErr(c, "cli", "developers", "Connect the araldo CLI", d, err)
+		return s.formErr(c, "cli", "keys", "Connect the araldo CLI", d, err)
 	}
 	d.Key = plain
-	return s.page(c, "cli", "developers", "Connect the araldo CLI", d)
+	return s.page(c, "cli", "keys", "Connect the araldo CLI", d)
 }

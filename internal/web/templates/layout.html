@@ -50,9 +50,9 @@
     <a href="/channels" {{if eq .Nav "channels"}}class="active" aria-current="page"{{end}}>Channels</a>
     <a href="/brands" {{if eq .Nav "brands"}}class="active" aria-current="page"{{end}}>Brands</a>
     <div class="side-head">Developers</div>
-    <a href="/keys" {{if and (eq .Nav "developers") (eq .Title "API keys")}}class="active" aria-current="page"{{end}}>API keys</a>
-    <a href="/webhooks" {{if and (eq .Nav "developers") (or (eq .Title "Webhooks") (eq .Title "Webhook endpoint"))}}class="active" aria-current="page"{{end}}>Webhooks</a>
-    <a href="/events" {{if and (eq .Nav "developers") (not (or (eq .Title "API keys") (eq .Title "Webhooks") (eq .Title "Webhook endpoint")))}}class="active" aria-current="page"{{end}}>Events</a>
+    <a href="/keys" {{if eq .Nav "keys"}}class="active" aria-current="page"{{end}}>API keys</a>
+    <a href="/webhooks" {{if eq .Nav "webhooks"}}class="active" aria-current="page"{{end}}>Webhooks</a>
+    <a href="/events" {{if eq .Nav "events"}}class="active" aria-current="page"{{end}}>Events</a>
     <a href="/logs" {{if eq .Nav "requests"}}class="active" aria-current="page"{{end}}>Request log</a>
     <a href="/api-reference" {{if eq .Nav "reference"}}class="active" aria-current="page"{{end}}>API reference</a>
     <div class="side-head">Settings</div>

@@ -57,7 +57,7 @@ func (s *Server) keys(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	return s.page(c, "keys", "developers", "API keys", d)
+	return s.page(c, "keys", "keys", "API keys", d)
 }
 
 func (s *Server) createKey(c *reqCtx) error {
@@ -81,13 +81,13 @@ func (s *Server) createKey(c *reqCtx) error {
 	}
 	expires, err := keyExpiry(c.r.PostFormValue("expires"), c.r.PostFormValue("expires_on"), time.Now())
 	if err != nil {
-		return s.formErr(c, "keys", "developers", "API keys", d, err)
+		return s.formErr(c, "keys", "keys", "API keys", d, err)
 	}
 	in.Expires = expires
 	if ref := c.r.PostFormValue("brand"); ref != "" {
 		b, err := s.svc.ResolveBrand(c.ctx(), c.actor, ref)
 		if err != nil {
-			return s.formErr(c, "keys", "developers", "API keys", d, err)
+			return s.formErr(c, "keys", "keys", "API keys", d, err)
 		}
 		in.BrandID = &b.ID
 	}
@@ -96,11 +96,11 @@ func (s *Server) createKey(c *reqCtx) error {
 		if core.NeedsReauth(err) {
 			return redirect(c, "/confirm?next=/keys", "Confirm your password to create a key.")
 		}
-		return s.formErr(c, "keys", "developers", "API keys", d, err)
+		return s.formErr(c, "keys", "keys", "API keys", d, err)
 	}
 	d.NewKey, d.NewName = plain, k.Name
 	d.Keys = append([]*model.APIKey{k}, d.Keys...)
-	return s.page(c, "keys", "developers", "API keys", d)
+	return s.page(c, "keys", "keys", "API keys", d)
 }
 
 // keyExpiry turns the form's choice into an expiry time (nil: never).
@@ -161,7 +161,7 @@ func (s *Server) keyDetail(c *reqCtx) error {
 			return err
 		}
 	}
-	return s.page(c, "key_detail", "developers", "API key", d)
+	return s.page(c, "key_detail", "keys", "API key", d)
 }
 
 type memberDetailData struct {
@@ -210,7 +210,7 @@ func (s *Server) rollKey(c *reqCtx) error {
 		return err
 	}
 	d.NewKey, d.NewName, d.Rolled = plain, k.Name, true
-	return s.page(c, "keys", "developers", "API keys", d)
+	return s.page(c, "keys", "keys", "API keys", d)
 }
 
 func (s *Server) revokeKey(c *reqCtx) error {
@@ -242,7 +242,7 @@ func (s *Server) webhooks(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	return s.page(c, "webhooks", "developers", "Webhooks", webhooksData{Endpoints: eps, EventTypes: core.EventTypes})
+	return s.page(c, "webhooks", "webhooks", "Webhooks", webhooksData{Endpoints: eps, EventTypes: core.EventTypes})
 }
 
 func (s *Server) createWebhook(c *reqCtx) error {
@@ -257,11 +257,11 @@ func (s *Server) createWebhook(c *reqCtx) error {
 	}
 	ep, secret, err := s.svc.CreateEndpoint(c.ctx(), c.actor, core.EndpointInput{URL: d.Form.URL, Description: d.Form.Description, EventTypes: types})
 	if err != nil {
-		return s.formErr(c, "webhooks", "developers", "Webhooks", d, err)
+		return s.formErr(c, "webhooks", "webhooks", "Webhooks", d, err)
 	}
 	d.Endpoints = append(d.Endpoints, ep)
 	d.Secret, d.SecretFor, d.Form = secret, ep.URL, endpointForm{}
-	return s.page(c, "webhooks", "developers", "Webhooks", d)
+	return s.page(c, "webhooks", "webhooks", "Webhooks", d)
 }
 
 type webhookDetailData struct {
@@ -284,7 +284,7 @@ func (s *Server) webhookDetail(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	return s.page(c, "webhook_detail", "developers", "Webhook endpoint", webhookDetailData{Endpoint: ep, Deliveries: ds, EventTypes: core.EventTypes})
+	return s.page(c, "webhook_detail", "webhooks", "Webhook endpoint", webhookDetailData{Endpoint: ep, Deliveries: ds, EventTypes: core.EventTypes})
 }
 
 func (s *Server) updateWebhook(c *reqCtx) error {
@@ -321,7 +321,7 @@ func (s *Server) rollWebhook(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	return s.page(c, "webhook_detail", "developers", "Webhook endpoint", webhookDetailData{Endpoint: ep, Deliveries: ds, EventTypes: core.EventTypes, Secret: secret})
+	return s.page(c, "webhook_detail", "webhooks", "Webhook endpoint", webhookDetailData{Endpoint: ep, Deliveries: ds, EventTypes: core.EventTypes, Secret: secret})
 }
 
 func (s *Server) deleteWebhook(c *reqCtx) error {
@@ -370,7 +370,7 @@ func (s *Server) events(c *reqCtx) error {
 	if more && len(evs) > 0 {
 		d.Next = id.Format(id.Event, evs[len(evs)-1].ID)
 	}
-	return s.page(c, "events", "developers", "Events", d)
+	return s.page(c, "events", "events", "Events", d)
 }
 
 // requestsData is the request log page (ADR 0032).
@@ -435,7 +435,7 @@ func (s *Server) eventDetail(c *reqCtx) error {
 		return err
 	}
 	b, _ := json.MarshalIndent(core.ViewEvent(e), "", "  ")
-	return s.page(c, "event_detail", "developers", e.Type, struct {
+	return s.page(c, "event_detail", "events", e.Type, struct {
 		Event *model.Event
 		JSON  string
 	}{e, string(b)})

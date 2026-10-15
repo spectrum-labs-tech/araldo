@@ -498,6 +498,14 @@ func (s *Store) FinishAttempt(ctx context.Context, orgID, id uuid.UUID, at time.
 		WHERE org_id = $1 AND id = $2 AND outcome = 'running'`, orgID, id, at, outcome, code, msg)
 }
 
+// FirstAttemptStarted is when a target's first attempt began, the first
+// time its idempotency key was sent; nil if none has.
+func (s *Store) FirstAttemptStarted(ctx context.Context, orgID, targetID uuid.UUID) (*time.Time, error) {
+	var first *time.Time
+	err := s.q.QueryRow(ctx, `SELECT min(started_at) FROM publish_attempts WHERE org_id = $1 AND target_id = $2`, orgID, targetID).Scan(&first)
+	return first, err
+}
+
 func (s *Store) Attempts(ctx context.Context, orgID, targetID uuid.UUID) ([]model.Attempt, error) {
 	rows, err := s.q.Query(ctx, `SELECT id, org_id, target_id, attempt, started_at, finished_at, outcome, error_code, error
 		FROM publish_attempts WHERE org_id = $1 AND target_id = $2 ORDER BY started_at`, orgID, targetID)

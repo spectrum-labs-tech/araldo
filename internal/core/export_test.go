@@ -139,3 +139,17 @@ func (s *Service) DeliverDue(ctx context.Context, owner string) (int, error) {
 func (s *Service) SetNotificationChoice(ctx context.Context, a Actor, typ string, inApp, email bool) error {
 	return s.SetNotificationChoices(ctx, a, []model.NotificationPref{{Type: typ, InApp: inApp, Email: email}})
 }
+
+// PublishDueOrg is PublishDue for one org, so a test publishes only its own
+// targets.
+func PublishDueOrg(s *Service, org uuid.UUID) (int, error) {
+	ctx := context.Background()
+	claimed, err := s.claimDue(ctx, &org, "test-worker", publishBatch)
+	if err != nil {
+		return 0, err
+	}
+	for _, ct := range claimed {
+		s.publishOne(ctx, "test-worker", ct)
+	}
+	return len(claimed), nil
+}

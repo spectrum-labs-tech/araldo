@@ -261,8 +261,8 @@ func (s *Service) finishPublish(ctx context.Context, owner string, t *model.Targ
 		case platform.Transient, platform.AuthRevoked:
 			o.Status, o.NextAttemptAt = model.TargetQueued, now.Add(retryDelay(t.Attempts))
 		case platform.Uncertain:
-			if adapter != nil && adapter.Idempotent() {
-				o.Status, o.NextAttemptAt = model.TargetQueued, now.Add(retryDelay(t.Attempts))
+			if next := now.Add(retryDelay(t.Attempts)); s.retryUncertain(ctx, adapter, t, attempt.StartedAt, next) {
+				o.Status, o.NextAttemptAt = model.TargetQueued, next
 			} else {
 				o.Status, event = model.TargetNeedsAttention, "post_target.needs_attention"
 				o.ErrorMessage = "The platform may or may not have published this: " + o.ErrorMessage +
@@ -360,6 +360,30 @@ func retryDelay(attempts int) time.Duration {
 	return min(d, maxRetryDelay)
 }
 
+// retryUncertain reports whether an uncertain attempt on t may be retried
+// at the time at: on an idempotent platform, while it still remembers the
+// key, which was first sent when t's first attempt began (thisStart, this
+// attempt's start, if it is the first; zero to look it up). When that
+// cannot be read, it is not retried: a person decides.
+func (s *Service) retryUncertain(ctx context.Context, adapter platform.Adapter, t *model.Target, thisStart, at time.Time) bool {
+	if adapter == nil || !adapter.Idempotent() {
+		return false
+	}
+	first := thisStart
+	if t.Attempts > 1 || first.IsZero() {
+		f, err := s.store.FirstAttemptStarted(ctx, t.OrgID, t.ID)
+		if err != nil || f == nil {
+			if err != nil {
+				s.log.WarnContext(ctx, "reading when a target was first tried failed; it needs attention", "target", id.Format(id.Target, t.ID),
+					"err", err)
+			}
+			return false
+		}
+		first = *f
+	}
+	return platform.RetryUncertain(adapter, first, at)
+}
+
 // ReclaimLostTargets handles targets whose worker vanished mid-publish:
 // retried if the platform is idempotent, otherwise held for a person
 // (ADR 0011).
@@ -374,7 +398,7 @@ func (s *Service) ReclaimLostTargets(ctx context.Context) (int, error) {
 		status, code, msg, event := model.TargetNeedsAttention, "worker_lost",
 			"The worker stopped while publishing, so this may or may not have been published. Check the account, then retry or mark it published.",
 			"post_target.needs_attention"
-		if a, ok := s.platforms.Get(t.Provider); ok && a.Idempotent() {
+		if a, ok := s.platforms.Get(t.Provider); ok && s.retryUncertain(ctx, a, &t, time.Time{}, now) {
 			status, msg, event = model.TargetQueued, "The worker stopped while publishing; retrying safely.", ""
 		} else if started, err := s.store.AttemptStarted(ctx, t.ID, t.Attempts); err != nil {
 			return n, err

@@ -81,6 +81,12 @@ func TestOperatorKeys(t *testing.T) {
 	if err != nil || !strings.Contains(keyIDs(keys), id.Format(id.OperatorKey, *op.OperatorKeyID)) {
 		t.Fatalf("listing keys: %v, %v", keys, err)
 	}
+	// operatorKey authenticated with it, and that use is recorded.
+	for _, k := range keys {
+		if k.ID == *op.OperatorKeyID && k.LastUsedAt == nil {
+			t.Fatalf("the key's use was not recorded: %+v", k)
+		}
+	}
 	for _, bad := range []string{"", "ald_op_nope", strings.Replace(plain, "ald_op_", "ald_live_", 1)} {
 		if _, err := w.s.AuthenticateOperatorKey(ctx, bad, ""); kind(err) != apperr.KindUnauthorized {
 			t.Errorf("authenticating %q: %v", bad, err)

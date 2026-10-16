@@ -73,6 +73,10 @@ func TestDeviceSignIn(t *testing.T) {
 	if a2, err := w.s.AuthenticateUserToken(ctx, plain, id.Format(id.Org, w.org.ID), "req_test"); err != nil || a2.OrgID != w.org.ID {
 		t.Fatalf("naming the org by ID: %v", err)
 	}
+	// Using it is recorded, for the account page.
+	if toks, err := w.s.UserTokens(ctx, w.user.ID); err != nil || len(toks) != 1 || toks[0].LastUsedAt == nil {
+		t.Fatalf("the token's use was not recorded: %+v, %v", toks, err)
+	}
 	// A second org: now the request must say which.
 	other := newWorld(t)
 	if _, err := other.s.AddMember(ctx, other.owner, other.session, w.user.Email, model.RoleViewer, ""); err != nil {

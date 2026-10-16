@@ -90,7 +90,9 @@ func (s *Service) AuthenticateOperatorKey(ctx context.Context, plain, requestID 
 	if k.RevokedAt != nil {
 		return Actor{}, &apperr.Error{Kind: apperr.KindUnauthorized, Code: "operator_key_revoked", Message: "This operator key was revoked."}
 	}
-	_ = s.store.TouchOperatorKey(ctx, k.ID, s.Now())
+	if err := s.store.TouchOperatorKey(ctx, k.ID, s.Now()); err != nil {
+		s.log.WarnContext(ctx, "recording an operator key's use failed", "err", err)
+	}
 	return Actor{Operator: true, Role: model.RoleOwner, OperatorKeyID: &k.ID, RequestID: requestID}, nil
 }
 

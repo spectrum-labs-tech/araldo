@@ -933,7 +933,9 @@ func (s *Service) AuthenticateKey(ctx context.Context, plain, requestID string) 
 	if o.Status == model.OrgSuspended {
 		return Actor{}, errOrgSuspended
 	}
-	_ = s.store.TouchAPIKey(ctx, k.ID, now)
+	if err := s.store.TouchAPIKey(ctx, k.ID, now); err != nil {
+		s.log.WarnContext(ctx, "recording an API key's use failed", "api_key", id.Format(id.APIKey, k.ID), "err", err)
+	}
 	return Actor{OrgID: k.OrgID, Livemode: k.Livemode, KeyID: &k.ID, Scopes: k.Scopes, BrandID: k.BrandID, KeyExpiresAt: k.ExpiresAt,
 		RequestID: requestID, OrgStatus: o.Status}, nil
 }

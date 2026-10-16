@@ -581,12 +581,16 @@ func TestAPIKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(plain, "ald_test_") || k.Hint == plain {
-		t.Fatalf("key %q hint %q", plain, k.Hint)
+	if !strings.HasPrefix(plain, "ald_test_") || k.Hint == plain || k.CreatedAt.IsZero() {
+		t.Fatalf("key %q hint %q created %v", plain, k.Hint, k.CreatedAt)
 	}
 	a, err := w.s.AuthenticateKey(ctx, plain, "req_1")
 	if err != nil || a.OrgID != w.org.ID || a.Livemode {
 		t.Fatalf("AuthenticateKey = %+v, %v", a, err)
+	}
+	// Using it is recorded, for the keys page.
+	if got, err := w.s.APIKey(ctx, w.owner, k.ID); err != nil || got.LastUsedAt == nil || !got.CreatedAt.Equal(k.CreatedAt) {
+		t.Fatalf("after use: %+v, %v", got, err)
 	}
 	if _, err := w.s.CreatePost(ctx, a, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "x"}}); kind(err) != apperr.KindForbidden {
 		t.Fatalf("read-only key posting: %v", err)

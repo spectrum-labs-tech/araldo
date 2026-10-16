@@ -135,6 +135,6 @@ func (s *Store) RevokeOperatorKey(ctx context.Context, id uuid.UUID, at time.Tim
 // TouchOperatorKey records a key's use, at most once a minute.
 func (s *Store) TouchOperatorKey(ctx context.Context, id uuid.UUID, at time.Time) error {
 	_, err := s.q.Exec(ctx, `UPDATE operator_keys SET last_used_at = $2 WHERE id = $1
-		AND (last_used_at IS NULL OR last_used_at < $2 - interval '1 minute')`, id, at)
+		AND (last_used_at IS NULL OR last_used_at < $2::timestamptz - interval '1 minute')`, id, at)
 	return err
 }

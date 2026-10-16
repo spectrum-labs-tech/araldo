@@ -324,10 +324,9 @@ func (s *Store) CreateAPIKey(ctx context.Context, k *model.APIKey, hash []byte) 
 	if k.Scopes == nil {
 		k.Scopes = []string{}
 	}
-	_, err := s.q.Exec(ctx, `INSERT INTO api_keys (id, org_id, livemode, name, hint, key_hash, scopes, brand_id, created_by, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		k.ID, k.OrgID, k.Livemode, k.Name, k.Hint, hash, k.Scopes, k.BrandID, k.CreatedBy, k.ExpiresAt)
-	return mapErr(err)
+	return mapErr(s.q.QueryRow(ctx, `INSERT INTO api_keys (id, org_id, livemode, name, hint, key_hash, scopes, brand_id, created_by, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING created_at`,
+		k.ID, k.OrgID, k.Livemode, k.Name, k.Hint, hash, k.Scopes, k.BrandID, k.CreatedBy, k.ExpiresAt).Scan(&k.CreatedAt))
 }
 
 // APIKeyByHash finds a key by its hash (any org: this is how a request
@@ -368,7 +367,7 @@ func (s *Store) RevokeAPIKey(ctx context.Context, orgID, id uuid.UUID, at time.T
 
 // TouchAPIKey records use, at most once a minute per key.
 func (s *Store) TouchAPIKey(ctx context.Context, id uuid.UUID, now time.Time) error {
-	_, err := s.q.Exec(ctx, `UPDATE api_keys SET last_used_at = $2 WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $2 - interval '1 minute')`, id, now)
+	_, err := s.q.Exec(ctx, `UPDATE api_keys SET last_used_at = $2 WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $2::timestamptz - interval '1 minute')`, id, now)
 	return err
 }
 

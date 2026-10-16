@@ -48,7 +48,7 @@ func (s *Store) UserTokens(ctx context.Context, userID uuid.UUID) ([]*model.User
 
 // TouchUserToken records use, at most once a minute.
 func (s *Store) TouchUserToken(ctx context.Context, id uuid.UUID, now time.Time) error {
-	_, err := s.q.Exec(ctx, `UPDATE user_tokens SET last_used_at = $2 WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $2 - interval '1 minute')`, id, now)
+	_, err := s.q.Exec(ctx, `UPDATE user_tokens SET last_used_at = $2 WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $2::timestamptz - interval '1 minute')`, id, now)
 	return err
 }
 

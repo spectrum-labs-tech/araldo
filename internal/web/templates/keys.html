@@ -16,7 +16,7 @@
 
 {{if .Data.Keys}}
 <table>
-  <thead><tr><th>Name</th><th>Key</th><th>Access</th><th>Last used</th><th>Expires</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th>Key</th><th>Access</th><th>Created</th><th>Last used</th><th>Expires</th><th></th></tr></thead>
   <tbody>
   {{range .Data.Keys}}
   {{$dead := or .RevokedAt (expired .ExpiresAt)}}
@@ -24,6 +24,7 @@
     <td><a href="/keys/{{keyID .ID}}">{{.Name}}</a></td>
     <td><code>{{.Hint}}</code></td>
     <td>{{if .Scopes}}{{join .Scopes ", "}}{{else}}full{{end}}{{if .BrandID}} · one brand{{end}}</td>
+    <td>{{fmtTime .CreatedAt}}</td>
     <td>{{if .LastUsedAt}}{{ago (derefTime .LastUsedAt)}}{{else}}never{{end}}</td>
     <td>{{if .ExpiresAt}}{{fmtDate .ExpiresAt}}{{else}}never{{end}}</td>
     <td>{{if .RevokedAt}}revoked{{else if expired .ExpiresAt}}expired{{else}}

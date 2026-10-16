@@ -246,7 +246,9 @@ func (s *Service) AuthenticateUserToken(ctx context.Context, token, org, request
 	if o.Status == model.OrgSuspended {
 		return Actor{}, errOrgSuspended
 	}
-	_ = s.store.TouchUserToken(ctx, t.ID, now)
+	if err := s.store.TouchUserToken(ctx, t.ID, now); err != nil {
+		s.log.WarnContext(ctx, "recording a user token's use failed", "err", err)
+	}
 	return Actor{OrgID: m.OrgID, Livemode: t.Livemode, UserID: &t.UserID, Role: m.Role, TokenID: &t.ID, RequestID: requestID,
 		OrgStatus: o.Status}, nil
 }

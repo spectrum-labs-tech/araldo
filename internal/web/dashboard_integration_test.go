@@ -309,6 +309,43 @@ func TestRollKeyKeepsTheOldSecretForADay(t *testing.T) {
 	}
 }
 
+func TestKeysListShowsCreatedAndLastUsed(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	plain, k, err := d.s.CreateAPIKey(ctx, d.owner, d.login.Session, core.APIKeyInput{Name: "araldo.dev ci"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := func() string {
+		t.Helper()
+		rec := d.send(httptest.NewRequest(http.MethodGet, "/keys", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /keys: %d\n%s", rec.Code, rec.Body)
+		}
+		page := rec.Body.String()
+		start := strings.Index(page, `<a href="/keys/`+id.Format(id.APIKey, k.ID)+`">`)
+		if start < 0 {
+			t.Fatalf("key missing from the list:\n%s", page)
+		}
+		return page[start : start+strings.Index(page[start:], "</tr>")]
+	}
+	created := "<td>" + k.CreatedAt.UTC().Format("Jan 2, 2006 15:04 UTC") + "</td>"
+	// Last used sits right after Created; Expires also says "never".
+	lastUsed := func(r, want string) bool {
+		return regexp.MustCompile(regexp.QuoteMeta(created) + `\s*<td>` + regexp.QuoteMeta(want) + `</td>`).MatchString(r)
+	}
+	if r := row(); !lastUsed(r, "never") {
+		t.Fatalf("unused key's row lacks its creation time or says it was used:\n%s", r)
+	}
+	if _, err := d.s.AuthenticateKey(ctx, plain, ""); err != nil {
+		t.Fatal(err)
+	}
+	if r := row(); !lastUsed(r, "just now") {
+		t.Fatalf("used key's row does not show the use:\n%s", r)
+	}
+}
+
 func TestCreatorsLinkToTheirPages(t *testing.T) {
 	t.Parallel()
 	d := newDash(t)

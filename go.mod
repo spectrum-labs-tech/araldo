@@ -4,13 +4,13 @@ go 1.27.2
 
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/fxamacker/cbor/v2 v2.9.6
-	github.com/getkin/kin-openapi v0.151.0
+	github.com/fxamacker/cbor/v2 v2.10.0
+	github.com/getkin/kin-openapi v0.152.0
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/uuid v1.6.0
-	github.com/itchyny/gojq v0.12.19
-	github.com/jackc/pgx/v5 v5.11.0
+	github.com/itchyny/gojq v0.12.20
+	github.com/jackc/pgx/v5 v5.12.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/rivo/uniseg v0.4.7
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -24,8 +24,8 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.47.0
-	golang.org/x/net v0.61.0
-	golang.org/x/oauth2 v0.37.0
+	golang.org/x/net v0.62.0
+	golang.org/x/oauth2 v0.38.0
 	gopkg.in/yaml.v3 v3.0.1
 	rsc.io/qr v0.2.0
 )

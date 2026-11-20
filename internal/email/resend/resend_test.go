@@ -29,6 +29,7 @@ type fakeResend struct {
 	tests      []map[string]any
 	metricsQ   string
 	next       int
+	noTimes    bool // broadcasts come without readable times
 }
 
 func (f *fakeResend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +133,9 @@ func (f *fakeResend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"scheduled_at": b["scheduled_at"], "sent_at": nil}
 			if b["status"] == "sent" {
 				out["sent_at"] = "2026-10-05 08:00:00.120+00"
+			}
+			if f.noTimes {
+				out["sent_at"], out["created_at"] = "yesterday", nil
 			}
 			write(out)
 		}
@@ -338,6 +342,7 @@ func TestCampaignStatuses(t *testing.T) {
 		{"draft", email.CampaignStopped},
 		{"scheduled", email.CampaignScheduled},
 		{"queued", email.CampaignSending},
+		{"sending", email.CampaignSending},
 		{"canceled", email.CampaignStopped},
 	}
 	for _, tt := range tests {
@@ -350,6 +355,26 @@ func TestCampaignStatuses(t *testing.T) {
 				t.Fatalf("got %+v, %v; want %s and no results", cp, err, tt.want)
 			}
 		})
+	}
+}
+
+func TestFindMatchesTheWholeTag(t *testing.T) {
+	t.Parallel()
+	f, m, c := setup(t)
+	f.broadcasts["b-1"] = map[string]any{"name": "Old · nldel_11", "status": "sent"}
+	f.order = append(f.order, "b-1")
+	if found, err := m.Find(t.Context(), c, "nldel_1"); err != nil || found != "" {
+		t.Fatalf("nldel_1 is not nldel_11: %q, %v", found, err)
+	}
+}
+
+func TestSentWithoutATime(t *testing.T) {
+	t.Parallel()
+	f, m, c := setup(t)
+	f.broadcasts["b-1"] = map[string]any{"status": "sent"}
+	f.noTimes = true
+	if _, err := m.Campaign(t.Context(), c, "b-1"); kindOf(err) != platform.Transient {
+		t.Fatalf("results without a start date would cover six days only; want a transient error, got %v", err)
 	}
 }
 

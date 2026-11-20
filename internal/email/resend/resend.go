@@ -41,10 +41,12 @@ const DefaultAPI = "https://api.resend.com"
 
 // Resend's list endpoints take at most 100 a page
 // (https://resend.com/docs/api-reference/pagination). Broadcasts are not
-// documented to come in any order, so Find reads up to findPages of them.
+// documented to come in any order, so Find reads up to findPages of them;
+// domains and segments are read up to listPages.
 const (
 	pageSize  = 100
 	findPages = 20
+	listPages = 50
 )
 
 // Mailer sends through Resend.
@@ -164,7 +166,7 @@ func (m *Mailer) Verify(ctx context.Context, c platform.Credentials, from email.
 	}
 	_, want, _ := strings.Cut(from.Email, "@")
 	var found *domain
-	err := each(ctx, m, c, "/domains", 50, func(d domain) string { return d.ID }, func(d domain) bool {
+	err := each(ctx, m, c, "/domains", listPages, func(d domain) string { return d.ID }, func(d domain) bool {
 		if strings.EqualFold(d.Name, want) {
 			found = &d
 			return false
@@ -195,7 +197,7 @@ type segment struct {
 // IDs are Resend's own.
 func (m *Mailer) Audiences(ctx context.Context, c platform.Credentials) ([]email.Audience, error) {
 	var out []email.Audience
-	err := each(ctx, m, c, "/segments", 50, func(s segment) string { return s.ID }, func(s segment) bool {
+	err := each(ctx, m, c, "/segments", listPages, func(s segment) string { return s.ID }, func(s segment) bool {
 		out = append(out, email.Audience{ID: s.ID, Name: s.Name, Kind: "segment", Size: -1})
 		return true
 	})
@@ -262,12 +264,13 @@ type listed struct {
 	Name string `json:"name"`
 }
 
-// Find looks for the broadcast whose name ends with tag
+// Find looks for the broadcast whose name ends with " · "+tag, as name
+// writes it
 // (https://resend.com/docs/api-reference/broadcasts/list-broadcasts).
 func (m *Mailer) Find(ctx context.Context, c platform.Credentials, tag string) (string, error) {
 	found := ""
 	err := each(ctx, m, c, "/broadcasts", findPages, func(b listed) string { return b.ID }, func(b listed) bool {
-		if strings.HasSuffix(b.Name, tag) {
+		if b.Name == tag || strings.HasSuffix(b.Name, " · "+tag) {
 			found = b.ID
 			return false
 		}
@@ -381,18 +384,17 @@ func (m *Mailer) Campaign(ctx context.Context, c platform.Credentials, campaignI
 	if cp.Status != email.CampaignSent {
 		return cp, nil
 	}
-	from := ""
-	if t, ok := parseTime(d.SentAt); ok {
-		cp.SentAt = &t
-		from = t.UTC().AddDate(0, 0, -1).Format(time.DateOnly)
-	} else if t, ok := parseTime(d.CreatedAt); ok {
-		from = t.UTC().AddDate(0, 0, -1).Format(time.DateOnly)
+	start, ok := parseTime(d.SentAt)
+	if ok {
+		cp.SentAt = &start
+	} else if start, ok = parseTime(d.CreatedAt); !ok {
+		// Without a start, the metrics API counts only the last six days,
+		// which would quietly shrink an older broadcast's results.
+		return email.Campaign{}, &platform.Error{Kind: platform.Transient, Code: "time_unreadable",
+			Msg: fmt.Sprintf("Resend gave the broadcast no readable send or create time (%q, %q)", d.SentAt, d.CreatedAt)}
 	}
-	q := url.Values{"broadcast_id": {campaignID},
+	q := url.Values{"broadcast_id": {campaignID}, "start_date": {start.UTC().AddDate(0, 0, -1).Format(time.DateOnly)},
 		"metrics": {"sent,delivered,unique_opened,unique_clicked,unsubscribed,bounced,complained"}}
-	if from != "" {
-		q.Set("start_date", from)
-	}
 	var out struct {
 		Totals metrics `json:"totals"`
 	}

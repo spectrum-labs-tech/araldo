@@ -41,6 +41,7 @@ const (
 	maxThemeAddress   = 300
 	maxThemeFooter    = 300
 	handoffLease      = 2 * time.Minute
+	handoffBatch      = 20
 	handoffGiveUp     = 6 * time.Hour
 	readLease         = 10 * time.Minute
 	notSentGiveUp     = 24 * time.Hour
@@ -790,7 +791,11 @@ func (s *Service) ScheduleIssue(ctx context.Context, a Actor, issueID uuid.UUID,
 			ps.Add("mail_account_unknown", fmt.Sprintf("deliveries[%d]", i), "%s was disconnected; edit the issue.", d.AccountName)
 			continue
 		}
-		if ma, err := s.store.MailAccount(ctx, a.OrgID, *d.MailAccountID); err != nil || ma.Status != model.ConnectionActive {
+		ma, err := s.store.MailAccount(ctx, a.OrgID, *d.MailAccountID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
+		if err != nil || ma.Status != model.ConnectionActive {
 			ps.Add("mail_account_needs_reauth", fmt.Sprintf("deliveries[%d]", i), "%s needs connecting again.", d.AccountName)
 		}
 	}
@@ -858,7 +863,7 @@ func (s *Service) moveIssue(ctx context.Context, a Actor, cur *model.Issue, send
 		if d.Status != model.DeliveryHandedOff {
 			continue
 		}
-		if err := s.atProvider(ctx, a.OrgID, d, func(m email.Mailer, c platform.Credentials) error {
+		if err := s.atProvider(ctx, a.OrgID, d, func(ctx context.Context, m email.Mailer, c platform.Credentials) error {
 			return m.Reschedule(ctx, c, d.CampaignID, sendAt)
 		}); err != nil {
 			s.moveBack(ctx, a, cur, moved, sendAt)
@@ -896,7 +901,7 @@ func (s *Service) moveIssue(ctx context.Context, a Actor, cur *model.Issue, send
 func (s *Service) moveBack(ctx context.Context, a Actor, cur *model.Issue, moved []model.IssueDelivery, sendAt time.Time) {
 	var stuck []model.IssueDelivery
 	for _, back := range moved {
-		err := s.atProvider(ctx, a.OrgID, back, func(m email.Mailer, c platform.Credentials) error {
+		err := s.atProvider(ctx, a.OrgID, back, func(ctx context.Context, m email.Mailer, c platform.Credentials) error {
 			return m.Reschedule(ctx, c, back.CampaignID, *cur.SendAt)
 		})
 		if err != nil {
@@ -908,7 +913,8 @@ func (s *Service) moveBack(ctx context.Context, a Actor, cur *model.Issue, moved
 	if len(stuck) == 0 {
 		return
 	}
-	err := s.store.InTx(context.WithoutCancel(ctx), func(tx *store.Store) error {
+	ctx = context.WithoutCancel(ctx) // the flags must land even if the caller left
+	err := s.store.InTx(ctx, func(tx *store.Store) error {
 		is, err := s.lockIssue(ctx, tx, a, cur.ID)
 		if err != nil {
 			return err
@@ -931,7 +937,8 @@ var errHandoffInFlight = apperr.Conflict("handoff_in_progress", "The issue is be
 
 // atProvider runs fn with a delivery's account's provider. A refused key
 // flags the account.
-func (s *Service) atProvider(ctx context.Context, orgID uuid.UUID, d model.IssueDelivery, fn func(email.Mailer, platform.Credentials) error) error {
+func (s *Service) atProvider(ctx context.Context, orgID uuid.UUID, d model.IssueDelivery,
+	fn func(context.Context, email.Mailer, platform.Credentials) error) error {
 	if d.MailAccountID == nil {
 		return apperr.Conflict("mail_account_unknown", "%s was disconnected.", d.AccountName)
 	}
@@ -943,7 +950,7 @@ func (s *Service) atProvider(ctx context.Context, orgID uuid.UUID, d model.Issue
 	if err != nil {
 		return err
 	}
-	if err := fn(m, creds); err != nil {
+	if _, err := callProvider(ctx, func(ctx context.Context) (struct{}, error) { return struct{}{}, fn(ctx, m, creds) }); err != nil {
 		s.flagRevoked(ctx, ma, err)
 		return connectError(platform.Provider(m.Name()), err)
 	}
@@ -991,7 +998,7 @@ func (s *Service) stopIssue(ctx context.Context, a Actor, issueID uuid.UUID, can
 		if d.Status != model.DeliveryHandedOff {
 			continue
 		}
-		if err := s.atProvider(ctx, a.OrgID, d, func(m email.Mailer, c platform.Credentials) error {
+		if err := s.atProvider(ctx, a.OrgID, d, func(ctx context.Context, m email.Mailer, c platform.Credentials) error {
 			return m.Cancel(ctx, c, d.CampaignID)
 		}); err != nil {
 			return nil, err
@@ -1151,7 +1158,7 @@ func (s *Service) SendTestIssue(ctx context.Context, a Actor, issueID uuid.UUID,
 	}
 	msg := email.Message{Subject: "[Test] " + is.Subject, PreviewText: is.PreviewText, HTML: r.HTML, Text: r.Text,
 		From: email.Address{Name: ma.FromName, Email: ma.FromEmail}, ReplyTo: ma.ReplyTo}
-	if err := m.SendTest(ctx, creds, msg, to); err != nil {
+	if _, err := callProvider(ctx, func(ctx context.Context) (struct{}, error) { return struct{}{}, m.SendTest(ctx, creds, msg, to) }); err != nil {
 		s.flagRevoked(ctx, ma, err)
 		return connectError(platform.Provider(m.Name()), err)
 	}
@@ -1230,14 +1237,21 @@ func (s *Service) HandOffNewsletters(ctx context.Context) (int, error) {
 }
 
 func (s *Service) handOffNewsletters(ctx context.Context, orgID *uuid.UUID) (int, error) {
-	now, owner := s.Now(), id.New().String()
-	due, err := s.store.ClaimDueHandoffs(ctx, orgID, owner, s.mailProviders(), now, handoffLease, 20)
-	if err != nil {
-		return 0, err
-	}
+	owner := id.New().String()
 	n := 0
-	for _, d := range due {
-		if err := s.handOff(ctx, d, owner, now); err != nil {
+	// One at a time, so each lease starts when its work does; a batch
+	// claimed at once would run out behind slow providers.
+	for range handoffBatch {
+		now := s.Now()
+		due, err := s.store.ClaimDueHandoffs(ctx, orgID, owner, s.mailProviders(), now, handoffLease, 1)
+		if err != nil || len(due) == 0 {
+			return n, err
+		}
+		d := due[0]
+		stop := s.keepHandoffLease(ctx, d, owner)
+		err = s.handOff(ctx, d, owner, now)
+		stop()
+		if err != nil {
 			if errors.Is(err, store.ErrNotFound) { // its lease ran out and another worker has it
 				s.log.WarnContext(ctx, "a newsletter hand-off outlived its lease", "delivery", id.Format(id.IssueDelivery, d.ID))
 				continue
@@ -1247,6 +1261,29 @@ func (s *Service) handOffNewsletters(ctx context.Context, orgID *uuid.UUID) (int
 		n++
 	}
 	return n, nil
+}
+
+// keepHandoffLease renews a delivery's lease while its worker hands it
+// off, so a slow provider never lets a second worker in beside it.
+func (s *Service) keepHandoffLease(ctx context.Context, d *model.IssueDelivery, owner string) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(handoffLease / 3)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if err := s.store.ExtendHandoffLease(context.WithoutCancel(ctx), d.OrgID, d.ID, owner, s.Now().Add(handoffLease)); err != nil {
+					s.log.WarnContext(ctx, "renewing a newsletter hand-off lease failed", "delivery", id.Format(id.IssueDelivery, d.ID), "err", err)
+				}
+			}
+		}
+	}()
+	return func() { close(done) }
 }
 
 func (s *Service) mailProviders() []string {
@@ -1278,14 +1315,20 @@ func (s *Service) handOff(ctx context.Context, d *model.IssueDelivery, owner str
 		return end(model.DeliveryFailed, "The mail account was disconnected.")
 	}
 	ma, err := s.store.MailAccount(ctx, d.OrgID, *d.MailAccountID)
-	if err != nil {
+	if errors.Is(err, store.ErrNotFound) {
 		return end(model.DeliveryFailed, "The mail account was disconnected.")
+	}
+	if err != nil { // the database, for now: try again
+		return s.retryHandoff(ctx, d, is, owner, now, err)
 	}
 	if ma.Status != model.ConnectionActive {
 		return end(model.DeliveryFailed, "The mail account needs connecting again: "+ma.StatusNote)
 	}
 	m, creds, err := s.mailerFor(ctx, ma)
 	if err != nil {
+		if apperr.As(err).Kind == apperr.KindUnavailable { // the master keys, for now: try again
+			return s.retryHandoff(ctx, d, is, owner, now, err)
+		}
 		return end(model.DeliveryFailed, err.Error())
 	}
 	b, err := s.store.Brand(ctx, d.OrgID, is.BrandID)
@@ -1328,7 +1371,13 @@ func (s *Service) handOff(ctx context.Context, d *model.IssueDelivery, owner str
 	if errors.Is(err, store.ErrNotFound) {
 		// Canceled, or moved, while it was being handed off: take the
 		// campaign back; a moved issue's delivery is handed off again on
-		// its new schedule.
+		// its new schedule. Unless another worker took the hand-off over
+		// and found this campaign, or is finding it now: it is theirs.
+		taken, terr := s.store.HandoffTaken(context.WithoutCancel(ctx), d.OrgID, d.ID, owner, campaignID)
+		if terr != nil || taken {
+			s.log.WarnContext(ctx, "a newsletter hand-off lost its lease; leaving the campaign to the worker that has it", "delivery", tag, "err", terr)
+			return nil
+		}
 		if cerr := m.Cancel(ctx, creds, campaignID); cerr != nil {
 			s.log.WarnContext(ctx, "removing a campaign canceled during hand-off failed", "delivery", tag, "err", cerr)
 		}
@@ -1417,7 +1466,7 @@ func (s *Service) readDelivery(ctx context.Context, d *model.IssueDelivery, now 
 	if d.MailAccountID == nil {
 		err = errors.New("the mail account was disconnected")
 	} else {
-		err = s.atProvider(ctx, d.OrgID, *d, func(m email.Mailer, c platform.Credentials) error {
+		err = s.atProvider(ctx, d.OrgID, *d, func(ctx context.Context, m email.Mailer, c platform.Credentials) error {
 			var rerr error
 			cp, rerr = m.Campaign(ctx, c, d.CampaignID)
 			return rerr

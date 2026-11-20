@@ -341,6 +341,22 @@ func (s *Store) ClaimDueHandoffs(ctx context.Context, orgID *uuid.UUID, owner st
 		RETURNING `+deliveryCols, orgID, now, now.Add(lease), limit, providers, owner))
 }
 
+// ExtendHandoffLease keeps owner's lease on a delivery it is handing off.
+// It is ErrNotFound if owner no longer holds it.
+func (s *Store) ExtendHandoffLease(ctx context.Context, orgID, id uuid.UUID, owner string, until time.Time) error {
+	return s.execOne(ctx, `UPDATE newsletter_deliveries SET lease_until = $4 WHERE org_id = $1 AND id = $2 AND status = 'queued'
+		AND lease_owner = $3`, orgID, id, owner, until)
+}
+
+// HandoffTaken reports whether another worker took a delivery's hand-off
+// over from owner: it holds the lease now, or recorded campaignID.
+func (s *Store) HandoffTaken(ctx context.Context, orgID, id uuid.UUID, owner, campaignID string) (bool, error) {
+	var taken bool
+	err := s.q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM newsletter_deliveries WHERE org_id = $1 AND id = $2
+		AND ((lease_owner IS NOT NULL AND lease_owner <> $3) OR campaign_id = $4))`, orgID, id, owner, campaignID).Scan(&taken)
+	return taken, err
+}
+
 // DeliveryHandedOff records a delivery's campaign at its provider. It is
 // ErrNotFound if the delivery stopped being queued meanwhile, or owner no
 // longer holds its lease.

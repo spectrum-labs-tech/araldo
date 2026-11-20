@@ -550,6 +550,20 @@ func TestNewsletterHandoffLeaseOwner(t *testing.T) {
 	if err := st.EndDelivery(ctx, w.org.ID, d.ID, first, model.DeliveryFailed, "late"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("the first worker ended a hand-off it lost: %v", err)
 	}
+	if err := st.ExtendHandoffLease(ctx, w.org.ID, d.ID, first, sendAt.Add(time.Hour)); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the first worker renewed a lease it lost: %v", err)
+	}
+	if err := st.ExtendHandoffLease(ctx, w.org.ID, d.ID, second, sendAt.Add(time.Hour)); err != nil {
+		t.Errorf("the worker holding the lease could not renew it: %v", err)
+	}
+	// The first worker must leave its campaign alone: the second has the
+	// hand-off, and will find the campaign by its tag.
+	if taken, err := st.HandoffTaken(ctx, w.org.ID, d.ID, first, "camp-1"); err != nil || !taken {
+		t.Errorf("taken over, for the first worker: %v, %v", taken, err)
+	}
+	if taken, err := st.HandoffTaken(ctx, w.org.ID, d.ID, second, "camp-1"); err != nil || taken {
+		t.Errorf("taken over, for the worker holding it: %v, %v", taken, err)
+	}
 	if err := st.RetryHandoff(ctx, w.org.ID, d.ID, second, "try again", sendAt); err != nil {
 		t.Errorf("the worker holding the lease could not retry: %v", err)
 	}

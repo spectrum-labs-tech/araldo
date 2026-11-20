@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"strings"
 	"time"
@@ -89,6 +90,7 @@ func (s *Service) BeginIdempotent(ctx context.Context, a Actor, key string, fing
 	if len(key) > 255 {
 		return nil, apperr.Invalid("idempotency_key_invalid", "Idempotency-Key", "Idempotency keys are at most 255 characters.")
 	}
+	fingerprint = scopedFingerprint(a, fingerprint)
 	now := s.Now()
 	rec, claimed, err := s.store.BeginIdempotent(ctx, *owner, key, fingerprint, now, now.Add(-IdempotencyWindow), now.Add(-idempotencyAbandoned))
 	if err != nil || claimed {
@@ -101,6 +103,22 @@ func (s *Service) BeginIdempotent(ctx context.Context, a Actor, key string, fing
 		return nil, apperr.Conflict("idempotency_key_in_use", "A request with this Idempotency-Key is still in progress; retry shortly.")
 	}
 	return &IdempotentReplay{Status: rec.ResponseStatus, Body: rec.ResponseBody, Withheld: rec.ResponseBody == nil}, nil
+}
+
+// scopedFingerprint ties a request to the org and mode it ran in. A user
+// token picks its org on every request, so the same key and body sent to
+// another org is another request (a 409), never a replay of the first
+// org's response.
+func scopedFingerprint(a Actor, fingerprint []byte) []byte {
+	h := sha256.New()
+	h.Write(a.OrgID[:])
+	if a.Livemode {
+		h.Write([]byte{1})
+	} else {
+		h.Write([]byte{0})
+	}
+	h.Write(fingerprint)
+	return h.Sum(nil)
 }
 
 // FinishIdempotent stores the response for a claimed key. Only a

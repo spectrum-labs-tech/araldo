@@ -191,6 +191,11 @@ func TestPostFormCarriesImages(t *testing.T) {
 	}
 	mediaRef := m[1]
 
+	// A signed-in upload may run past MaxForm, which bounds every other post.
+	if rec := post(append(form, [2]string{"action", "preview"}, [2]string{"pad", strings.Repeat("x", web.MaxForm)}), img.Bytes()); rec.Code != http.StatusOK {
+		t.Fatalf("an upload past MaxForm: %d\n%s", rec.Code, rec.Body.String())
+	}
+
 	rec = send(httptest.NewRequest(http.MethodGet, "/media/"+mediaRef, nil))
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/png" || !bytes.Equal(rec.Body.Bytes(), img.Bytes()) {
 		t.Fatalf("GET /media: %d %q, %d bytes", rec.Code, rec.Header().Get("Content-Type"), rec.Body.Len())

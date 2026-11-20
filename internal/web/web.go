@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -113,14 +114,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	nonce, _ := authn.NewToken() // the token, not its hash
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'nonce-"+nonce+"'; "+
 		"script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-	if r.Method == http.MethodPost && !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
-		// Uploads are bounded in app(), at MaxPostForm.
+	ctx := context.WithValue(r.Context(), nonceKey{}, nonce)
+	if r.Method == http.MethodPost {
+		// Every post is bounded at MaxForm, signed out ones included. Only
+		// app() takes uploads: it bounds the unread body again at
+		// MaxPostForm once the session is known.
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			ctx = context.WithValue(ctx, uploadBodyKey{}, r.Body)
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, MaxForm)
 	}
-	s.cop.Handler(s.mux).ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), nonceKey{}, nonce)))
+	s.cop.Handler(s.mux).ServeHTTP(w, r.WithContext(ctx))
 }
 
 type nonceKey struct{}
+
+// uploadBodyKey holds a multipart post's body before MaxForm bounds it.
+type uploadBodyKey struct{}
 
 // cspNonce is the request's style nonce.
 func cspNonce(r *http.Request) string {
@@ -306,6 +316,9 @@ func (s *Server) app(nav string, fn pageFunc) http.HandlerFunc {
 		}
 		if r.Method == http.MethodPost && strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 			// In memory: the container's file system is read-only.
+			if raw, ok := r.Context().Value(uploadBodyKey{}).(io.ReadCloser); ok {
+				r.Body = raw
+			}
 			r.Body = http.MaxBytesReader(w, r.Body, MaxPostForm)
 			if err := r.ParseMultipartForm(MaxPostForm); err != nil { //nolint:gosec // G120: the body is bounded on the line above
 				s.renderError(c, http.StatusRequestEntityTooLarge, fmt.Sprintf("The upload is too large: images are up to %d MiB each, and %d MiB in all.",

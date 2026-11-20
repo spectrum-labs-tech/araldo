@@ -788,6 +788,41 @@ func TestAbandonedIdempotencyKey(t *testing.T) {
 	}
 }
 
+// TestIdempotencyKeysStayInTheirOrg checks that a key used in one org
+// and mode is never replayed in another: a user token chooses its org on
+// each request, and a replay would hand over the first org's response.
+func TestIdempotencyKeysStayInTheirOrg(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	plain, _, err := w.s.CreateAPIKey(ctx, w.owner, w.session, core.APIKeyInput{Name: "idempotent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := w.s.AuthenticateKey(ctx, plain, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, req := uuid.NewString(), []byte("POST /v1/posts {}")
+	if _, err := w.s.BeginIdempotent(ctx, a, key, req); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.s.FinishIdempotent(ctx, a, key, http.StatusCreated, []byte(`{"id":"x"}`), false); err != nil {
+		t.Fatal(err)
+	}
+	otherOrg, otherMode := a, a
+	otherOrg.OrgID = uuid.New()
+	otherMode.Livemode = !a.Livemode
+	for name, b := range map[string]core.Actor{"another org": otherOrg, "the other mode": otherMode} {
+		if replay, err := w.s.BeginIdempotent(ctx, b, key, req); replay != nil || apperr.As(err).Code != "idempotency_key_reused" {
+			t.Fatalf("%s: replay %+v, %v; want idempotency_key_reused", name, replay, err)
+		}
+	}
+	if replay, err := w.s.BeginIdempotent(ctx, a, key, req); err != nil || replay == nil {
+		t.Fatalf("the same org and mode still replays: %+v, %v", replay, err)
+	}
+}
+
 // TestReadyThroughADatabaseOutage checks that a server that found its
 // schema current stays ready when the database goes away, so the load
 // balancer keeps sending requests that get Araldo's own 503, and that one

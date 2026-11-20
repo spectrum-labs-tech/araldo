@@ -37,12 +37,15 @@ var (
 	secretParam   = regexp.MustCompile(`(?i)\b((?:access|refresh|id)_token|client_secret|token|key|signature|sig|password)=[^&\s"'\\]+`)
 	discordHook   = regexp.MustCompile(`(?i)(discord(?:app)?\.com/api/(?:v\d+/)?webhooks/\d+/)[A-Za-z0-9_.-]+`)
 	telegramToken = regexp.MustCompile(`/bot\d+:[A-Za-z0-9_-]+`)
+	resendKey     = regexp.MustCompile(`\bre_[A-Za-z0-9_]{8,}`)
 )
 
 // Scrub replaces credentials in text with REDACTED: token-like query
-// parameters, Discord webhook tokens and Telegram bot tokens.
+// parameters, Discord webhook tokens, Telegram bot tokens and Resend API
+// keys.
 func Scrub(s string) string {
 	s = secretParam.ReplaceAllString(s, "${1}=REDACTED")
 	s = discordHook.ReplaceAllString(s, "${1}REDACTED")
-	return telegramToken.ReplaceAllString(s, "/botREDACTED")
+	s = telegramToken.ReplaceAllString(s, "/botREDACTED")
+	return resendKey.ReplaceAllString(s, "re_REDACTED")
 }

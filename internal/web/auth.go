@@ -34,16 +34,18 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
-	data := loginData{Email: r.PostFormValue("email"), Next: r.PostFormValue("next")}
+	var data loginData
 	fail := func(status int, msg string) {
 		v := s.view(nil, "", "Sign in", data)
 		v.Error = msg
 		s.render(w, status, "login", v)
 	}
+	// Limited before the form is read, so a flood costs no parsing.
 	if !s.login.allow(s.clientIP(r), time.Now()) {
 		fail(http.StatusTooManyRequests, "Too many sign-in attempts from your network. Wait a minute and try again.")
 		return
 	}
+	data = loginData{Email: r.PostFormValue("email"), Next: r.PostFormValue("next")}
 	res, err := s.svc.Login(r.Context(), data.Email, r.PostFormValue("password"), r.UserAgent(), s.clientIP(r))
 	if status, msg, fault := s.serverFault(w, r, "sign-in failed", err); fault {
 		fail(status, msg)

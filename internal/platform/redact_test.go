@@ -22,6 +22,8 @@ func TestScrub(t *testing.T) {
 		{"https://discordapp.com/api/v10/webhooks/1/tok", "https://discordapp.com/api/v10/webhooks/1/REDACTED"},
 		{"https://api.telegram.org/bot123:AAH-x_y/sendMessage", "https://api.telegram.org/botREDACTED/sendMessage"},
 		{"https://www.googleapis.com/youtube/v3/videos?part=id&key=AIza1", "https://www.googleapis.com/youtube/v3/videos?part=id&key=REDACTED"},
+		{`Resend refused the API key: key re_AbC123_xyz789 is invalid`, `Resend refused the API key: key re_REDACTED is invalid`},
+		{"feature_flags_enabled and store_procedures", "feature_flags_enabled and store_procedures"},
 		{"rejected: the caption is too long", "rejected: the caption is too long"},
 		{"a token of thanks; tokens=3 left", "a token of thanks; tokens=3 left"},
 	}

@@ -5,6 +5,7 @@
 package web_test
 
 import (
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -68,25 +69,43 @@ func TestCrossSitePostsAreRefused(t *testing.T) {
 	}
 }
 
-// TestOversizedFormsAreNotRead checks that a form post is read only up to
-// MaxForm: valid credentials after a megabyte of padding are never seen.
+// TestOversizedFormsAreNotRead checks that a signed-out post is read only
+// up to MaxForm, as a form or as multipart (which only signed-in uploads
+// may exceed it with): valid credentials after a megabyte of padding are
+// never seen.
 func TestOversizedFormsAreNotRead(t *testing.T) {
 	t.Parallel()
 	d := newDash(t)
-	creds := "&email=" + url.QueryEscape(d.login.User.Email) + "&password=" + url.QueryEscape("correct horse battery")
+	email, password := d.login.User.Email, "correct horse battery"
+	form := func(padding int) (string, string) {
+		return "pad=" + strings.Repeat("x", padding) + "&email=" + url.QueryEscape(email) + "&password=" + url.QueryEscape(password),
+			"application/x-www-form-urlencoded"
+	}
+	multi := func(padding int) (string, string) {
+		var buf strings.Builder
+		w := multipart.NewWriter(&buf)
+		_ = w.WriteField("pad", strings.Repeat("x", padding))
+		_ = w.WriteField("email", email)
+		_ = w.WriteField("password", password)
+		_ = w.Close()
+		return buf.String(), w.FormDataContentType()
+	}
 	for _, tt := range []struct {
 		name    string
+		encode  func(int) (string, string)
 		padding int
 		signsIn bool
 	}{
-		{"within the limit", 1000, true},
-		{"past the limit", web.MaxForm, false},
+		{"a form within the limit", form, 1000, true},
+		{"a form past the limit", form, web.MaxForm, false},
+		{"multipart within the limit", multi, 1000, true},
+		{"multipart past the limit", multi, web.MaxForm, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			body := "pad=" + strings.Repeat("x", tt.padding) + creds
+			body, contentType := tt.encode(tt.padding)
 			r := httptest.NewRequest(http.MethodPost, "https://araldo.test/login", strings.NewReader(body))
-			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			r.Header.Set("Content-Type", contentType)
 			rec := httptest.NewRecorder()
 			d.srv.ServeHTTP(rec, r)
 			if signedIn := rec.Code == http.StatusSeeOther; signedIn != tt.signsIn || rec.Code >= 500 {

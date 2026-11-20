@@ -119,6 +119,21 @@ type Mailer interface {
 	SendTest(ctx context.Context, c platform.Credentials, m Message, to []string) error
 }
 
+// AudienceLimiter is a Mailer whose campaigns go to at most a few
+// audiences. A Mailer that does not implement it takes any number.
+type AudienceLimiter interface {
+	MaxAudiences() int
+}
+
+// MaxAudiences returns how many audiences one of m's campaigns can go to,
+// or 0 for any number.
+func MaxAudiences(m Mailer) int {
+	if l, ok := m.(AudienceLimiter); ok {
+		return l.MaxAudiences()
+	}
+	return 0
+}
+
 // Registry holds the providers an install can send through.
 type Registry struct {
 	mailers map[Provider]Mailer

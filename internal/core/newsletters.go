@@ -196,7 +196,17 @@ func (s *Service) checkAudiences(ctx context.Context, m email.Mailer, creds plat
 			out = append(out, model.Audience{ID: au.ID, Name: au.Name, Kind: au.Kind, Size: au.Size})
 		}
 	}
-	return out, ps.Err("Some audiences are not the provider's.")
+	if err := ps.Err("Some audiences are not the provider's."); err != nil {
+		return nil, err
+	}
+	if limit := email.MaxAudiences(m); limit > 0 && len(out) > limit {
+		n := fmt.Sprintf("at most %d audiences", limit)
+		if limit == 1 {
+			n = "one audience"
+		}
+		return nil, apperr.Invalid("audience_too_many", field, "%s sends a campaign to %s; choose fewer, or make one in %s that covers them.", m.Name(), n, m.Name())
+	}
+	return out, nil
 }
 
 func audienceIDs(as []model.Audience) []string {

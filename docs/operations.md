@@ -786,8 +786,8 @@ verified under Domains; the mail account is named after that domain.
 Audiences are Resend's segments, and their sizes are not shown: Resend
 reports none without listing the contacts, which Araldo never reads. A
 Resend broadcast goes to **one segment**, so give each Resend delivery
-exactly one; hand-off refuses more. Issues become broadcasts created and
-scheduled in one request, named after the issue and ending with the
+exactly one; an issue or default with more is refused when it is saved.
+Issues become broadcasts created and scheduled in one request, named after the issue and ending with the
 delivery's ID, which is how a hand-off with an unknown outcome finds its
 broadcast again; renaming one in Resend before then hides it, and the
 delivery waits for a person. Moving a handed-off issue cancels the

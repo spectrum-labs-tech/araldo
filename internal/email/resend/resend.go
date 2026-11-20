@@ -67,6 +67,10 @@ func (m *Mailer) Name() string             { return "Resend" }
 // (https://resend.com/docs/api-reference/broadcasts/create-broadcast).
 func (m *Mailer) Unsubscribe() string { return "{{{RESEND_UNSUBSCRIBE_URL}}}" }
 
+// MaxAudiences is one: a broadcast has a single segment_id
+// (https://resend.com/docs/api-reference/broadcasts/create-broadcast).
+func (m *Mailer) MaxAudiences() int { return 1 }
+
 // Fields: broadcasts, segments and domains need a full-access key; a
 // sending-access key "can only send emails"
 // (https://resend.com/docs/dashboard/api-keys/introduction).

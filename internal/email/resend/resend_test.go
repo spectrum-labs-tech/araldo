@@ -208,6 +208,15 @@ func TestVerifySaysWhatTheKeyLacks(t *testing.T) {
 	}
 }
 
+// TestOneSegmentPerBroadcast checks Resend tells core its limit, so an
+// issue with two segments is refused when it is made, not at hand-off.
+func TestOneSegmentPerBroadcast(t *testing.T) {
+	t.Parallel()
+	if got := email.MaxAudiences(New(nil)); got != 1 {
+		t.Fatalf("MaxAudiences = %d, want 1", got)
+	}
+}
+
 func TestAudiences(t *testing.T) {
 	t.Parallel()
 	_, m, c := setup(t)

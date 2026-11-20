@@ -779,6 +779,23 @@ active Brevo sender or on a domain authenticated there. Audiences are
 Brevo's contact lists and segments. Tests go through Brevo's
 transactional API.
 
+**Resend**: an API key from API Keys with **Full access**. A
+sending-access key cannot create broadcasts or read segments and domains,
+so connecting refuses it. The sender must be on a domain Resend shows as
+verified under Domains; the mail account is named after that domain.
+Audiences are Resend's segments, and their sizes are not shown: Resend
+reports none without listing the contacts, which Araldo never reads. A
+Resend broadcast goes to **one segment**, so give each Resend delivery
+exactly one; hand-off refuses more. Issues become broadcasts created and
+scheduled in one request, named after the issue and ending with the
+delivery's ID, which is how a hand-off with an unknown outcome finds its
+broadcast again; renaming one in Resend before then hides it, and the
+delivery waits for a person. Moving a handed-off issue cancels the
+broadcast back to a draft and schedules it again. Results come from
+Resend's email metrics: sent (shown as recipients), delivered, unique
+opens and clicks (with tracking on for the domain), unsubscribes, bounces
+and complaints. Tests go through Resend's email API, up to 50 addresses.
+
 Links to the brand's UTM domains carry `utm_medium=email`, the provider as
 source, the issue's ID as campaign and `link-N` as content, so the
 Performance page credits signups to issues. Images from the media library

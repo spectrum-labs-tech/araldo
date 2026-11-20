@@ -36,7 +36,7 @@ own products, but the API may still change.
   to stream events to your machine while you develop.
 - **Results**: engagement read back from the platforms, ad spend from ad
   networks, signups from Plausible or GA4, and a monthly report per brand.
-- **Newsletters** handed to your email provider (Brevo first), with
+- **Newsletters** handed to your email provider (Brevo or Resend), with
   approval and results, beside the posts.
 - **AI assistants** can use it: `araldo mcp` is an MCP server, so Claude
   and other assistants can list your brands, draft a post, check it against

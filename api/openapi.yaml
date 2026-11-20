@@ -1319,7 +1319,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/ID" }]
     get:
       summary: List an account's audiences
-      description: What the provider groups subscribers by (Brevo's lists and segments), read from it now. Never their members.
+      description: What the provider groups subscribers by (Brevo's lists and segments, Resend's segments), read from it now. Never their members.
       tags: [Newsletters]
       responses:
         "200":

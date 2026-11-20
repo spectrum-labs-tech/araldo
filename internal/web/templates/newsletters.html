@@ -79,7 +79,7 @@
 <ol class="guide-steps">
   {{if .Livemode}}<li>{{template "guideMark" (list "1" "false")}}<div><strong>Send from a subdomain</strong> of its own, like <code>news.example.com</code>, authenticated at your provider (see below), so newsletter complaints never reach your sign-in and receipt mail.</div></li>
   {{else}}<li>{{template "guideMark" (list "1" "false")}}<div><strong>Try it in test mode</strong>: the sandbox sends nothing. Switch to live mode for a real provider.</div></li>{{end}}
-  <li{{if $d.Accounts}} class="done"{{end}}>{{template "guideMark" (list "2" (printf "%t" (gt (len $d.Accounts) 0)))}}<div><strong>Connect a mail account</strong> below{{if .Livemode}}: a Brevo API key, and a sender Brevo has verified{{end}}.</div></li>
+  <li{{if $d.Accounts}} class="done"{{end}}>{{template "guideMark" (list "2" (printf "%t" (gt (len $d.Accounts) 0)))}}<div><strong>Connect a mail account</strong> below{{if .Livemode}}{{with $d.Provider}}: a {{.Name}} API key, and a sender {{.Name}} has verified{{end}}{{end}}.</div></li>
   <li{{if $d.HasDefaults}} class="done"{{end}}>{{template "guideMark" (list "3" (printf "%t" $d.HasDefaults))}}<div><strong>Choose its audiences</strong>: the lists or segments new issues go to.</div></li>
   <li{{if $d.HasAddress}} class="done"{{end}}>{{template "guideMark" (list "4" (printf "%t" $d.HasAddress))}}<div><strong>Set the email theme</strong> on the <a href="/brands">brand</a>: logo, color and the postal address the law requires in every newsletter.</div></li>
   <li{{if $d.HasSent}} class="done"{{end}}>{{template "guideMark" (list "5" (printf "%t" $d.HasSent))}}<div><strong>Write and schedule an issue.</strong> Send yourself a test first. It is handed to the provider a day ahead, which then sends it on its own.</div></li>
@@ -87,10 +87,10 @@
 
 {{if .Livemode}}
 <h3>Authenticate the sending domain</h3>
-<p>In Brevo, under Senders, Domains &amp; Dedicated IPs, add your newsletter subdomain and publish the records it shows:</p>
+<p>Add your newsletter subdomain at your provider (Brevo: Senders, Domains &amp; Dedicated IPs; Resend: Domains) and publish the records it shows:</p>
 <ul class="guide-tips">
-  <li><strong>DKIM</strong>: the TXT or CNAME record Brevo gives, so receivers can check the mail is yours.</li>
-  <li><strong>SPF</strong>: include Brevo in the subdomain's <code>v=spf1</code> record.</li>
+  <li><strong>DKIM</strong>: the TXT or CNAME record the provider gives, so receivers can check the mail is yours.</li>
+  <li><strong>SPF</strong>: the records the provider gives (at Brevo, an include in the subdomain's <code>v=spf1</code> record).</li>
   <li><strong>DMARC</strong>: start with <code>v=DMARC1; p=none</code> on the subdomain, then tighten it once reports look clean.</li>
 </ul>
 {{end}}
@@ -100,6 +100,7 @@
   <li><strong>Judge by clicks,</strong> not opens: mail apps that load images on their own inflate opens.</li>
   <li><strong>One provider per subscriber.</strong> Araldo cannot see addresses, so someone on lists at two providers gets two copies.</li>
   <li><strong>Unsubscribes stay with the provider.</strong> Each copy carries the provider's own unsubscribe link.</li>
+  <li><strong>Resend sends a broadcast to one segment.</strong> Give each Resend issue one segment, or make a segment there that covers the others.</li>
   <li><strong>Links are tagged</strong> <code>utm_medium=email</code> with the issue, so signups show on the Performance page next to posts and ads.</li>
   <li><strong>Moving providers is cheap:</strong> export the list there, import it at the new one, connect it, and keep writing here.</li>
 </ul>

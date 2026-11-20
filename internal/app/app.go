@@ -35,6 +35,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/email"
 	"github.com/spectrum-labs-tech/araldo/internal/email/brevo"
+	"github.com/spectrum-labs-tech/araldo/internal/email/resend"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
 	"github.com/spectrum-labs-tech/araldo/internal/netguard"
 	"github.com/spectrum-labs-tech/araldo/internal/opsched"
@@ -190,7 +191,7 @@ func Open(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error
 	ccfg := core.Config{BaseURL: cfg.BaseURL, PrivateWebhooks: cfg.PrivateWebhooks, MaxVideoBytes: cfg.MaxVideoBytes,
 		SignupURL: cfg.SignupURL, BillingURL: cfg.BillingURL, BillingLinkKey: []byte(cfg.BillingLinkKey),
 		AdNetworks: []ads.Reporter{reddit.New(apiClient)}, AnalyticsSources: []analytics.Source{plausible.New(apiClient), ga4.New(apiClient)},
-		Mailers: []email.Mailer{brevo.New(apiClient)}}
+		Mailers: []email.Mailer{brevo.New(apiClient), resend.New(apiClient)}}
 	if s := cfg.S3; s.Bucket != "" {
 		b, err := blob.NewS3(s.Endpoint, s.Bucket, s.Region, s.AccessKeyID, s.SecretAccessKey, s.Prefix)
 		if err != nil {

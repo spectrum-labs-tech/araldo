@@ -164,7 +164,11 @@ into spam.
 - **Phase 2:** templates with data for issues, a "top posts" block from
   engagement, MCP tools.
 - **Phase 3:** more providers (Listmonk, Buttondown), and send slots per
-  brand.
+  brand. Resend came first, as broadcasts: one segment per broadcast, so
+  one audience per Resend delivery; no tag, so the delivery's ID ends the
+  broadcast's name and is found there (decision 14 holds while nobody
+  renames it in Resend); no segment sizes; and a move cancels the
+  scheduled broadcast to a draft and schedules it again.
 
 ## Alternatives considered
 

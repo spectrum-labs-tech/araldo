@@ -25,7 +25,11 @@ func TestTemplatesCommands(t *testing.T) {
 				_, _ = io.WriteString(w, `{"object":"list","data":[]}`)
 				return
 			}
-			_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"tmpl_1","key":"release","name":"Release","approval":"inherit","latest_version":3}]}`)
+			_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"tmpl_1","key":"release","name":"Release","approval":"inherit","latest_version":3},`+
+				`{"id":"tmpl_2","key":"weekly","name":"Weekly","kind":"newsletter","approval":"not_required","latest_version":1}]}`)
+		case "/v1/templates/tmpl_2":
+			_, _ = io.WriteString(w, `{"id":"tmpl_2","key":"weekly","name":"Weekly","kind":"newsletter","approval":"not_required","latest_version":1,`+
+				`"latest":{"version":1,"subject":"Week of {{.week}}","preview_text":"What shipped","body":"# Week of {{md .week}}","examples":[]}}`)
 		case "/v1/templates/tmpl_1":
 			_, _ = io.WriteString(w, `{"id":"tmpl_1","key":"release","name":"Release","approval":"inherit","latest_version":3,`+
 				`"latest":{"version":3,"body":"Shipped {{.version}}","overrides":{"x":"v{{.version}} is out"},`+
@@ -39,8 +43,12 @@ func TestTemplatesCommands(t *testing.T) {
 	cliEnv(t, srv, true)
 
 	code, out, errOut := runCLI(t, "", "templates", "list", "--brand", "araldo")
-	if code != ExitOK || out != "release\tRelease\tv3\tinherit\ttmpl_1\n" {
+	if code != ExitOK || out != "release\tRelease\tposts\tv3\tinherit\ttmpl_1\nweekly\tWeekly\tnewsletters\tv1\tnot_required\ttmpl_2\n" {
 		t.Fatalf("list: exit %d %q %q", code, out, errOut)
+	}
+	code, out, errOut = runCLI(t, "", "templates", "get", "tmpl_2")
+	if code != ExitOK || !strings.Contains(out, "weekly  Weekly  v1  for newsletters") || !strings.Contains(out, "subject: Week of {{.week}}\npreview text: What shipped\n\n# Week of") {
+		t.Fatalf("a newsletter template: exit %d\n%s%s", code, out, errOut)
 	}
 	code, out, errOut = runCLI(t, "", "templates", "get", "release", "--brand", "araldo")
 	for _, want := range []string{"release  Release  v3", "Shipped {{.version}}", "for x:\nv{{.version}} is out", `"required"`, `example data: {"version":"1.0"}`} {

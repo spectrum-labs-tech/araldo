@@ -16,7 +16,7 @@ import (
 )
 
 // templateFields are what --json can pick, as GET /v1/templates names them.
-var templateFields = []string{"approval", "brand", "created_at", "id", "key", "latest", "latest_version", "name", "updated_at"}
+var templateFields = []string{"approval", "brand", "created_at", "id", "key", "kind", "latest", "latest_version", "name", "updated_at"}
 
 const templatesUsage = "usage: araldo templates list [--brand B] | get KEY or ID [--brand B] [--version N]  " +
 	"[--live] [--org ORG] [--hostname H] [--json fields] [--jq expr]"
@@ -91,9 +91,9 @@ func runTemplates(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		rows := make([][]string, 0, len(tpls.Data))
 		for _, tp := range tpls.Data {
 			v, _ := tp["latest_version"].(float64)
-			rows = append(rows, []string{str(tp, "key"), str(tp, "name"), fmt.Sprintf("v%d", int(v)), str(tp, "approval"), str(tp, "id")})
+			rows = append(rows, []string{str(tp, "key"), str(tp, "name"), templateKind(tp), fmt.Sprintf("v%d", int(v)), str(tp, "approval"), str(tp, "id")})
 		}
-		return out.table([]string{"KEY", "NAME", "VERSION", "APPROVAL", "ID"}, rows)
+		return out.table([]string{"KEY", "NAME", "FOR", "VERSION", "APPROVAL", "ID"}, rows)
 	}
 	if !strings.HasPrefix(ref, "tmpl_") {
 		if len(tpls.Data) == 0 {
@@ -119,12 +119,28 @@ func runTemplates(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	return printTemplate(stdout, tp)
 }
 
+// templateKind is what a template makes, in words: posts (also on a server
+// older than template kinds) or newsletters.
+func templateKind(tp map[string]any) string {
+	if str(tp, "kind") == "newsletter" {
+		return "newsletters"
+	}
+	return "posts"
+}
+
 // printTemplate writes a template's text and the data it takes for a person.
 func printTemplate(w io.Writer, tp map[string]any) error {
 	var b strings.Builder
 	latest, _ := tp["latest"].(map[string]any)
 	v, _ := latest["version"].(float64)
-	fmt.Fprintf(&b, "%s  %s  v%d  approval: %s  [%s]\n\n", str(tp, "key"), str(tp, "name"), int(v), str(tp, "approval"), str(tp, "id"))
+	fmt.Fprintf(&b, "%s  %s  v%d  for %s  approval: %s  [%s]\n\n", str(tp, "key"), str(tp, "name"), int(v), templateKind(tp), str(tp, "approval"), str(tp, "id"))
+	if subject := str(latest, "subject"); subject != "" {
+		fmt.Fprintf(&b, "subject: %s\n", subject)
+		if preview := str(latest, "preview_text"); preview != "" {
+			fmt.Fprintf(&b, "preview text: %s\n", preview)
+		}
+		b.WriteString("\n")
+	}
 	fmt.Fprintf(&b, "%s\n", str(latest, "body"))
 	if ov, ok := latest["overrides"].(map[string]any); ok {
 		for _, p := range slices.Sorted(maps.Keys(ov)) {

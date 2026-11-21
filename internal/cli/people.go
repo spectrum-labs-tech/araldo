@@ -18,8 +18,8 @@ import (
 
 // Members and org settings as client commands (ADR 0028 step 3): they call
 // /v1/members, /v1/invitations and /v1/org as the person signed in with
-// araldo auth login, in the org --org names. The operator's versions, which
-// act on the database directly, are under araldo admin.
+// araldo auth login, in the org --org names. The operator's versions, with
+// an operator key over the operator API, are under araldo admin.
 
 // memberFields are what --json can pick, as GET /v1/members names them.
 var memberFields = []string{"email", "id", "joined_at", "mfa", "name", "role"}
@@ -27,7 +27,7 @@ var memberFields = []string{"email", "id", "joined_at", "mfa", "name", "role"}
 // movedToClient explains that a command no longer acts as someone else.
 func movedToClient(name string, args []string) error {
 	if slices.ContainsFunc(args, func(a string) bool { return a == "--as" || strings.HasPrefix(a, "--as=") || a == "-as" }) {
-		return usageErr("araldo %s now acts as you, signed in with araldo auth login, so it takes no --as; the operator's command, on the database, is araldo admin %s", name, name)
+		return usageErr("araldo %s now acts as you, signed in with araldo auth login, so it takes no --as; the operator's command, with an operator key, is araldo admin %s", name, name)
 	}
 	return nil
 }

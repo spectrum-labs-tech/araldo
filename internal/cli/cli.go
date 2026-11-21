@@ -34,7 +34,7 @@ type command struct {
 // Help groups: using a server from anywhere, and running one (ADR 0028).
 const (
 	groupClient = "Use an Araldo server (from anywhere; sign in with araldo auth login):"
-	groupServer = "Run and administer a server (where its configuration and database are):"
+	groupServer = "Run and administer a server (where its configuration is; admin also with an operator key):"
 )
 
 func commands() []command {
@@ -52,7 +52,7 @@ func commands() []command {
 		{name: "worker", group: groupServer, summary: "Publish posts, deliver webhooks and run background tasks", run: runWorker},
 		{name: "all", group: groupServer, summary: "Run server and worker in one process (small installs, development)", run: runAll},
 		{name: "migrate", group: groupServer, summary: "Bring the database schema up to date", run: runMigrate},
-		{name: "admin", group: groupServer, summary: "Administer the server: bootstrap, users, keys, apikeys, members, org", run: runAdmin},
+		{name: "admin", group: groupServer, summary: "Administer the server: bootstrap (database); users, keys, apikeys, members, org, operator-keys, apps (operator key)", run: runAdmin},
 		{name: "version", summary: "Print the araldo version", run: runVersion},
 	}
 }

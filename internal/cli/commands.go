@@ -11,16 +11,18 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/apiclient"
 	"github.com/spectrum-labs-tech/araldo/internal/app"
 	"github.com/spectrum-labs-tech/araldo/internal/config"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
-	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
@@ -142,28 +144,57 @@ var stdin io.Reader = os.Stdin
 
 func runBootstrap(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	var email, name, org, brand, tz string
-	var pwStdin, sandboxChannel bool
+	var pwStdin, sandboxChannel, operatorKey bool
 	if err := flags("bootstrap", stderr, args, func(fs *flag.FlagSet) {
-		fs.StringVar(&email, "email", "", "the owner's email (required)")
+		fs.StringVar(&email, "email", "", "the owner's email (required, unless only --operator-key)")
 		fs.StringVar(&name, "name", "", "the owner's name")
-		fs.StringVar(&org, "org", "", "the org's name (required)")
+		fs.StringVar(&org, "org", "", "the org's name (required, unless only --operator-key)")
 		fs.StringVar(&brand, "brand", "", "a first brand to create")
 		fs.StringVar(&tz, "timezone", "UTC", "the brand's IANA time zone")
 		fs.BoolVar(&sandboxChannel, "sandbox", true, "connect a test-mode sandbox channel to the brand")
 		fs.BoolVar(&pwStdin, "password-stdin", false, "read the password from stdin instead of generating one")
+		fs.BoolVar(&operatorKey, "operator-key", false, "also make an operator key, for the other admin commands, and print only it on stdout (the rest goes to stderr); alone, make only the key")
 	}); err != nil {
 		return err
 	}
-	if email == "" || org == "" {
-		return usageErr("--email and --org are required")
+	keyOnly := operatorKey && email == "" && org == "" && brand == ""
+	if !keyOnly && (email == "" || org == "") {
+		return usageErr("--email and --org are required (or --operator-key alone, to make only an operator key)")
 	}
 	a, err := open(ctx)
 	if err != nil {
 		return err
 	}
 	defer a.Close()
+	// With an operator key, stdout carries only the key, for piping into a
+	// secret store; everything else is said on stderr.
+	say := stdout
+	if operatorKey {
+		say = stderr
+	}
+	if !keyOnly {
+		if err := bootstrapOrg(ctx, a, email, name, org, brand, tz, pwStdin, sandboxChannel, say); err != nil {
+			return err
+		}
+	}
+	if operatorKey {
+		plain, k, err := a.Svc.CreateOperatorKey(ctx, core.InstallOperator("araldo admin bootstrap"), "araldo admin")
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(stderr, "Created operator key %s (%s). It is shown once: keep it where the admin commands read it (ARALDO_OPERATOR_KEY).\n",
+			k.Name, id.Format(id.OperatorKey, k.ID))
+		_, _ = fmt.Fprintln(stdout, plain)
+	}
+	return nil
+}
+
+// bootstrapOrg creates the first user, their org and, if named, a brand,
+// and says so on w.
+func bootstrapOrg(ctx context.Context, a *app.App, email, name, org, brand, tz string, pwStdin, sandboxChannel bool, w io.Writer) error {
 	password := generatePassword()
 	if pwStdin {
+		var err error
 		if password, err = readPassword(stdin); err != nil {
 			return err
 		}
@@ -176,7 +207,7 @@ func runBootstrap(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(stdout, "Created %s (owner of %s).\n", u.Email, o.Name)
+	_, _ = fmt.Fprintf(w, "Created %s (owner of %s).\n", u.Email, o.Name)
 	if brand != "" {
 		actor, _, err := a.Svc.MemberActor(ctx, u.ID, o.ID, false, "bootstrap")
 		if err != nil {
@@ -186,98 +217,110 @@ func runBootstrap(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		if err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(stdout, "Created brand %s (%s).\n", b.Name, b.Slug)
+		_, _ = fmt.Fprintf(w, "Created brand %s (%s).\n", b.Name, b.Slug)
 		if sandboxChannel {
 			if _, err := a.Svc.ConnectChannel(ctx, actor, core.ConnectInput{BrandID: b.ID, Provider: platform.Sandbox,
 				Fields: map[string]string{"emulates": string(platform.Bluesky)}}); err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintln(stdout, "Connected a test-mode sandbox channel (imitating Bluesky).")
+			_, _ = fmt.Fprintln(w, "Connected a test-mode sandbox channel (imitating Bluesky).")
 		}
 	}
 	if !pwStdin {
-		_, _ = fmt.Fprintf(stdout, "Password: %s\n(Shown once. Sign in and turn on two-factor authentication.)\n", password)
+		_, _ = fmt.Fprintf(w, "Password: %s\n(Shown once. Sign in and turn on two-factor authentication.)\n", password)
 	}
 	return nil
+}
+
+// newPassword is a generated password, or the one on stdin when asked.
+func newPassword(fromStdin bool) (string, error) {
+	if fromStdin {
+		return readPassword(stdin)
+	}
+	return generatePassword(), nil
 }
 
 func runUsers(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return usageErr("users create | reset-password")
 	}
+	var of operatorFlags
+	var email, name string
+	var pwStdin bool
 	switch args[0] {
 	case "create":
-		var email, name string
-		var pwStdin bool
 		if err := flags("users create", stderr, args[1:], func(fs *flag.FlagSet) {
+			of.define(fs)
 			fs.StringVar(&email, "email", "", "email (required)")
 			fs.StringVar(&name, "name", "", "name")
 			fs.BoolVar(&pwStdin, "password-stdin", false, "read the password from stdin instead of generating one")
 		}); err != nil {
 			return err
 		}
-		if email == "" {
-			return usageErr("--email is required")
-		}
-		a, err := open(ctx)
-		if err != nil {
-			return err
-		}
-		defer a.Close()
-		password := generatePassword()
-		if pwStdin {
-			if password, err = readPassword(stdin); err != nil {
-				return err
-			}
-		}
-		u, err := a.Svc.CreateUser(ctx, email, name, password)
-		if err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintf(stdout, "Created %s.\n", u.Email)
-		if !pwStdin {
-			_, _ = fmt.Fprintf(stdout, "Password: %s\n", password)
-		}
-		return nil
 	case "reset-password":
-		var email string
-		var pwStdin bool
 		if err := flags("users reset-password", stderr, args[1:], func(fs *flag.FlagSet) {
+			of.define(fs)
 			fs.StringVar(&email, "email", "", "email (required)")
 			fs.BoolVar(&pwStdin, "password-stdin", false, "read the password from stdin instead of generating one")
 		}); err != nil {
 			return err
 		}
-		if email == "" {
-			return usageErr("--email is required")
+	default:
+		return usageErr("unknown users command %q", args[0])
+	}
+	if email == "" {
+		return usageErr("--email is required")
+	}
+	c, err := operatorClient(of.hostname)
+	if err != nil {
+		return err
+	}
+	password, err := newPassword(pwStdin)
+	if err != nil {
+		return err
+	}
+	if args[0] == "create" {
+		var u adminUser
+		if err := call(ctx, c, http.MethodPost, "/v1/operator/users", nil, map[string]string{"email": email, "name": name, "password": password}, &u); err != nil {
+			return err
 		}
-		a, err := open(ctx)
+		_, _ = fmt.Fprintf(stdout, "Created %s.\n", u.Email)
+	} else {
+		u, err := mustFindUser(ctx, c, email)
 		if err != nil {
 			return err
 		}
-		defer a.Close()
-		password := generatePassword()
-		if pwStdin {
-			if password, err = readPassword(stdin); err != nil {
-				return err
-			}
-		}
-		if err := a.Svc.ResetPassword(ctx, core.InstallOperator("araldo admin users reset-password"), email, password); err != nil {
+		if err := call(ctx, c, http.MethodPost, "/v1/operator/users/"+u.ID+"/password", nil, map[string]string{"password": password}, nil); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintf(stdout, "Password reset for %s; their sessions were signed out.\n", email)
-		if !pwStdin {
-			_, _ = fmt.Fprintf(stdout, "Password: %s\n", password)
-		}
-		return nil
 	}
-	return usageErr("unknown users command %q", args[0])
+	if !pwStdin {
+		_, _ = fmt.Fprintf(stdout, "Password: %s\n", password)
+	}
+	return nil
+}
+
+// masterKey is a master key's use, as the operator API answers.
+type masterKey struct {
+	ID         string `json:"id"`
+	Configured bool   `json:"configured"`
+	Primary    bool   `json:"primary"`
+	DataKeys   int    `json:"data_keys"`
+}
+
+// rewrapBatch is what one batch of a rotation did and left.
+type rewrapBatch struct {
+	Rewrapped    int `json:"rewrapped"`
+	Remaining    int `json:"remaining"`
+	Unconfigured int `json:"unconfigured"`
 }
 
 func runKeys(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return usageErr("keys generate | rotate | status")
 	}
+	var of operatorFlags
 	switch args[0] {
 	case "generate":
 		var kid string
@@ -293,36 +336,66 @@ func runKeys(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		_, _ = fmt.Fprintln(stdout, k)
 		return nil
 	case "rotate":
-		if err := flags("keys rotate", stderr, args[1:], func(*flag.FlagSet) {}); err != nil {
+		var batch int
+		if err := flags("keys rotate", stderr, args[1:], func(fs *flag.FlagSet) {
+			of.define(fs)
+			fs.IntVar(&batch, "batch-size", core.DefaultRewrapBatch, fmt.Sprintf("data keys to rewrap per request, 1 to %d", core.MaxRewrapBatch))
+		}); err != nil {
 			return err
 		}
-		a, err := open(ctx)
+		if batch < 1 || batch > core.MaxRewrapBatch {
+			return usageErr("--batch-size is 1 to %d", core.MaxRewrapBatch)
+		}
+		c, err := operatorClient(of.hostname)
 		if err != nil {
 			return err
 		}
-		defer a.Close()
-		n, err := a.Keys.RewrapAll(ctx)
-		if err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintf(stdout, "Rewrapped %d data keys under the primary master key. Run araldo admin keys status to see which master keys can be retired.\n", n)
-		return nil
+		return rotateKeys(ctx, c, batch, stdout, stderr)
 	case "status":
-		if err := flags("keys status", stderr, args[1:], func(*flag.FlagSet) {}); err != nil {
+		if err := flags("keys status", stderr, args[1:], of.define); err != nil {
 			return err
 		}
-		a, err := open(ctx)
+		c, err := operatorClient(of.hostname)
 		if err != nil {
 			return err
 		}
-		defer a.Close()
-		use, err := a.Keys.Usage(ctx)
-		if err != nil {
+		var keys listOf[masterKey]
+		if err := call(ctx, c, http.MethodGet, "/v1/operator/master_keys", nil, nil, &keys); err != nil {
 			return err
+		}
+		use := make([]keyring.KeyUse, 0, len(keys.Data))
+		for _, k := range keys.Data {
+			use = append(use, keyring.KeyUse{ID: k.ID, Configured: k.Configured, Primary: k.Primary, DataKeys: k.DataKeys})
 		}
 		return printKeyUsage(stdout, use)
 	}
 	return usageErr("unknown keys command %q", args[0])
+}
+
+// rotateKeys rewraps every data key under the server's primary master key,
+// a batch per request, until none is left. Stopped part way, it can be run
+// again: what is done stays done.
+func rotateKeys(ctx context.Context, c *apiclient.Client, batch int, stdout, stderr io.Writer) error {
+	total := 0
+	var last rewrapBatch
+	for {
+		if err := call(ctx, c, http.MethodPost, "/v1/operator/master_keys/rewrap", nil, map[string]int{"batch_size": batch}, &last); err != nil {
+			if total > 0 {
+				_, _ = fmt.Fprintf(stderr, "Rewrapped %d data keys before this; run araldo admin keys rotate again to finish.\n", total)
+			}
+			return err
+		}
+		total += last.Rewrapped
+		if last.Remaining == 0 || last.Rewrapped == 0 {
+			break
+		}
+		_, _ = fmt.Fprintf(stderr, "Rewrapped %d data keys; %d to go.\n", total, last.Remaining)
+	}
+	_, _ = fmt.Fprintf(stdout, "Rewrapped %d data keys under the primary master key. Run araldo admin keys status to see which master keys can be retired.\n", total)
+	if last.Unconfigured > 0 {
+		return fmt.Errorf("%d data keys are wrapped by a master key the server does not have: add it back to the server and run this again", last.Unconfigured)
+	}
+	return nil
 }
 
 // printKeyUsage shows each master key, what it wraps, and what to do
@@ -359,12 +432,14 @@ func runAPIKeys(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if args[0] != "create" {
 		return usageErr("unknown apikeys command %q", args[0])
 	}
-	var email, org, brand, name, scopes string
+	var of operatorFlags
+	var org, brand, name, scopes string
 	var live bool
 	var expires time.Duration
 	if err := flags("apikeys create", stderr, args[1:], func(fs *flag.FlagSet) {
+		of.define(fs)
+		of.defineAs(fs, "email")
 		fs.StringVar(&org, "org", "", "the org, by ID or name (needed when the server has more than one)")
-		fs.StringVar(&email, "email", "", "no longer needed (picks that member's org if --org is not given)")
 		fs.StringVar(&brand, "brand", "", "limit the key to this brand (slug or ID)")
 		fs.StringVar(&name, "name", "", "the key's name (required)")
 		fs.StringVar(&scopes, "scopes", "", "comma-separated scopes, e.g. posts:write,templates:write (default full access)")
@@ -373,48 +448,45 @@ func runAPIKeys(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	}); err != nil {
 		return err
 	}
+	if err := of.check("email"); err != nil {
+		return err
+	}
 	if name == "" {
 		return usageErr("--name is required")
 	}
 	if expires < 0 {
 		return usageErr("--expires is a length of time from now, like 8760h; leave it out for a key that never expires")
 	}
-	a, actor, o, err := adminActor(ctx, org, email, live, "araldo admin apikeys create", stderr)
+	c, err := operatorClient(of.hostname)
 	if err != nil {
 		return err
 	}
-	defer a.Close()
-	in := core.APIKeyInput{Name: name, Livemode: live, Scopes: splitList(scopes)}
+	o, err := resolveOrg(ctx, c, org)
+	if err != nil {
+		return err
+	}
+	body := map[string]any{"name": name, "livemode": live, "scopes": splitList(scopes)}
 	if brand != "" {
-		b, err := a.Svc.ResolveBrand(ctx, actor, brand)
-		if err != nil {
-			return err
-		}
-		in.BrandID = &b.ID
+		body["brand"] = brand
 	}
 	if expires > 0 {
-		at := time.Now().Add(expires)
-		in.Expires = &at
+		body["expires_at"] = time.Now().Add(expires).UTC().Format(time.RFC3339)
 	}
-	plain, k, err := a.Svc.CreateOperatorAPIKey(ctx, actor, in)
-	if err != nil {
+	var k struct {
+		Name   string `json:"name"`
+		Hint   string `json:"hint"`
+		Secret string `json:"secret"`
+	}
+	if err := call(ctx, c, http.MethodPost, "/v1/operator/orgs/"+o.ID+"/api_keys", nil, body, &k); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(stderr, "Created API key %q (%s) in %s.\n", k.Name, k.Hint, o.Name)
-	_, _ = fmt.Fprintln(stdout, plain)
+	_, _ = fmt.Fprintln(stdout, k.Secret)
 	return nil
 }
 
-// onlyOrg is the member's one org; with more, or none, --org must name one.
-func onlyOrg(ms []model.Membership) (model.Membership, error) {
-	if len(ms) != 1 {
-		return model.Membership{}, usageErr("the member belongs to %d orgs; name one with --org", len(ms))
-	}
-	return ms[0], nil
-}
-
 func splitList(s string) []string {
-	var out []string
+	out := []string{}
 	for _, v := range strings.Split(s, ",") {
 		if v = strings.TrimSpace(v); v != "" {
 			out = append(out, v)

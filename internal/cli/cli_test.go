@@ -4,15 +4,11 @@ package cli
 
 import (
 	"bytes"
-	"errors"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
-
 	"github.com/spectrum-labs-tech/araldo/internal/keyring"
-	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
 func TestRun(t *testing.T) {
@@ -66,30 +62,21 @@ func TestRun(t *testing.T) {
 	}
 }
 
-func TestOnlyOrg(t *testing.T) {
+// An admin command beside the server finds it where it listens.
+func TestLocalServer(t *testing.T) {
 	t.Parallel()
-	a := model.Membership{OrgID: uuid.New(), OrgName: "Araldo"}
-	b := model.Membership{OrgID: uuid.New(), OrgName: "Other"}
-	tests := []struct {
-		name string
-		ms   []model.Membership
-		ok   bool
-	}{
-		{"the only org", []model.Membership{a}, true},
-		{"several orgs need --org", []model.Membership{a, b}, false},
-		{"no orgs", nil, false},
+	tests := []struct{ listen, want string }{
+		{"", "http://127.0.0.1:8080"},
+		{":9090", "http://127.0.0.1:9090"},
+		{"0.0.0.0:8081", "http://127.0.0.1:8081"},
+		{"[::]:8082", "http://127.0.0.1:8082"},
+		{"10.0.0.5:8080", "http://10.0.0.5:8080"},
+		{"not an address", "http://127.0.0.1:8080"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			m, err := onlyOrg(tt.ms)
-			if tt.ok && (err != nil || m.OrgID != a.OrgID) {
-				t.Fatalf("onlyOrg = %v, %v; want %v", m.OrgID, err, a.OrgID)
-			}
-			if !tt.ok && !errors.Is(err, errUsage) {
-				t.Fatalf("onlyOrg = %v, want a usage error", err)
-			}
-		})
+		if got := localServer(tt.listen); got != tt.want {
+			t.Errorf("localServer(%q) = %q, want %q", tt.listen, got, tt.want)
+		}
 	}
 }
 

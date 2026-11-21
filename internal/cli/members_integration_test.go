@@ -5,7 +5,6 @@
 package cli
 
 import (
-	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -15,102 +14,94 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
-// TestMembersAndOrg drives the admin commands end to end. It sets
-// environment variables, which the commands read, so it cannot run in
+// TestMembersAndOrg drives the admin commands for accounts, members, org
+// settings and API keys end to end, over the operator API (ADR 0035). It
+// sets environment variables, which the commands read, so it cannot run in
 // parallel.
 func TestMembersAndOrg(t *testing.T) {
-	dsn := os.Getenv("ARALDO_TEST_DSN")
-	if dsn == "" {
-		t.Skip("ARALDO_TEST_DSN not set (task db:up && task test:integration)")
-	}
-	t.Setenv("ARALDO_DATABASE_URL", dsn)
-	t.Setenv("ARALDO_MASTER_KEYS", "test:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
-	t.Setenv("ARALDO_BASE_URL", "https://araldo.test")
 	suffix := uuid.NewString()[:8]
 	owner := "owner-" + suffix + "@example.com"
 	newcomer := "new-" + suffix + "@example.com"
 	org := "Org " + suffix
-	run := func(args ...string) (string, string) {
-		t.Helper()
-		var stdout, stderr bytes.Buffer
-		if code := Run(t.Context(), args, &stdout, &stderr); code != ExitOK {
-			t.Fatalf("araldo %s: exit %d\n%s", strings.Join(args, " "), code, stderr.String())
-		}
-		return stdout.String(), stderr.String()
-	}
-	run("admin", "bootstrap", "--email", owner, "--org", org, "--brand", "Brand "+suffix)
+	run := adminServer(t, "--email", owner, "--org", org, "--brand", "Brand "+suffix)
 
-	out, errOut := run("admin", "members", "add", "--org", org, "--email", newcomer, "--role", "editor")
+	out, errOut := run.must(t, "", "admin", "members", "add", "--org", org, "--email", newcomer, "--role", "editor")
 	if strings.TrimSpace(out) == "" || !strings.Contains(errOut, "temporary password") {
 		t.Fatalf("add printed %q / %q, want a temporary password", out, errOut)
 	}
-	run("admin", "members", "role", "--org", org, "--email", newcomer, "--role", "admin")
-	out, _ = run("admin", "members", "list", "--org", org)
+	run.must(t, "", "admin", "members", "role", "--org", org, "--email", newcomer, "--role", "admin")
+	out, _ = run.must(t, "", "admin", "members", "list", "--org", org)
 	if !hasRow(out, newcomer, "admin") || !hasRow(out, owner, "owner") {
 		t.Fatalf("list after the role change:\n%s", out)
 	}
-	run("admin", "members", "remove", "--org", org, "--email", newcomer)
-	out, _ = run("admin", "members", "list", "--org", org)
+	run.must(t, "", "admin", "members", "remove", "--org", org, "--email", newcomer)
+	out, _ = run.must(t, "", "admin", "members", "list", "--org", org)
 	if strings.Contains(out, newcomer) {
 		t.Fatalf("list after removing:\n%s", out)
 	}
 
-	// --as still works, and says it is no longer needed.
-	_, errOut = run("admin", "org", "update", "--as", owner, "--name", "Renamed "+suffix, "--require-mfa", "false")
-	for _, want := range []string{"--as is no longer needed", "Renamed " + suffix, "two-factor required: false"} {
-		if !strings.Contains(errOut, want) {
-			t.Errorf("org update with --as: %q, want %q", errOut, want)
-		}
+	// Accounts: a password from stdin, then a generated one on reset.
+	other := "made-" + suffix + "@example.com"
+	if out, _ = run.must(t, "a long chosen password\n", "admin", "users", "create", "--email", other, "--password-stdin"); out != "Created "+other+".\n" {
+		t.Fatalf("users create: %q", out)
+	}
+	if out, _ = run.must(t, "", "admin", "users", "reset-password", "--email", other); !strings.Contains(out, "Password reset for "+other) || !strings.Contains(out, "Password: ") {
+		t.Fatalf("users reset-password: %q", out)
+	}
+
+	// An API key, alone on stdout.
+	out, errOut = run.must(t, "", "admin", "apikeys", "create", "--org", org, "--brand", "brand-"+suffix, "--name", "ci", "--scopes", "posts:write", "--expires", "24h")
+	if !strings.HasPrefix(out, "ald_test_") || strings.Count(out, "\n") != 1 || !strings.Contains(errOut, `Created API key "ci"`) {
+		t.Fatalf("apikeys create: %q / %q", out, errOut)
+	}
+
+	_, errOut = run.must(t, "", "admin", "org", "update", "--org", org, "--name", "Renamed "+suffix, "--require-mfa", "false")
+	if !strings.Contains(errOut, "Renamed "+suffix) || !strings.Contains(errOut, "two-factor required: false") {
+		t.Errorf("org update: %q", errOut)
 	}
 	org = "Renamed " + suffix
 
 	// The core's rules still apply: the last owner cannot be demoted.
-	var stdout, stderr bytes.Buffer
-	if code := Run(t.Context(), []string{"admin", "members", "role", "--org", org, "--email", owner, "--role", "viewer"}, &stdout, &stderr); code == ExitOK {
-		t.Fatalf("demoted the only owner: %s", stderr.String())
+	if _, errOut, code := run("", "admin", "members", "role", "--org", org, "--email", owner, "--role", "viewer"); code == ExitOK || !strings.Contains(errOut, "last_owner") {
+		t.Fatalf("demoted the only owner: %s", errOut)
 	}
 
-	// The audit log names the operator and the command, not a member.
-	st, err := store.Open(t.Context(), dsn)
+	// The audit log names the operator's key, not a member.
+	st, err := store.Open(t.Context(), os.Getenv("ARALDO_TEST_DSN"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	var withUser int
-	var commands []string
-	rows, err := st.Pool().Query(t.Context(), `SELECT a.actor_user IS NOT NULL, a.detail->>'operator_command' FROM audit_events a
+	var withUser, withKey int
+	rows, err := st.Pool().Query(t.Context(), `SELECT a.actor_user IS NOT NULL, a.detail->>'operator_key' IS NOT NULL FROM audit_events a
 		JOIN orgs o ON o.id = a.org_id WHERE o.name = $1 AND a.action LIKE 'member.%'`, org)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for rows.Next() {
-		var hasUser bool
-		var cmd *string
-		if err := rows.Scan(&hasUser, &cmd); err != nil {
+		var hasUser, hasKey bool
+		if err := rows.Scan(&hasUser, &hasKey); err != nil {
 			t.Fatal(err)
 		}
 		if hasUser {
 			withUser++
 		}
-		if cmd != nil {
-			commands = append(commands, *cmd)
+		if hasKey {
+			withKey++
 		}
 	}
-	if withUser != 0 || !strings.Contains(strings.Join(commands, ";"), "araldo admin members add") {
-		t.Fatalf("member changes audited with a member %d times; commands %v", withUser, commands)
+	if withUser != 0 || withKey != 3 {
+		t.Fatalf("member changes: %d audited with a member, %d with the operator key; want 0 and 3", withUser, withKey)
 	}
 
 	// The operator deletes the org, naming it twice.
-	stdout.Reset()
-	stderr.Reset()
-	if code := Run(t.Context(), []string{"admin", "org", "delete", "--org", org, "--confirm", "not it"}, &stdout, &stderr); code == ExitOK {
+	if _, _, code := run("", "admin", "org", "delete", "--org", org, "--confirm", "not it"); code == ExitOK {
 		t.Fatal("deleted with the wrong name")
 	}
-	if _, errOut = run("admin", "org", "delete", "--org", org, "--confirm", org); !strings.Contains(errOut, "Deleted "+org) {
+	if _, errOut = run.must(t, "", "admin", "org", "delete", "--org", org, "--confirm", org); !strings.Contains(errOut, "Deleted "+org) {
 		t.Fatalf("delete: %q", errOut)
 	}
-	stderr.Reset()
-	if code := Run(t.Context(), []string{"admin", "members", "list", "--org", org}, &stdout, &stderr); code == ExitOK {
+	if _, _, code := run("", "admin", "members", "list", "--org", org); code == ExitOK {
 		t.Fatal("the deleted org is still there")
 	}
 }

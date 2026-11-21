@@ -6,7 +6,7 @@
 <p class="mb-4 text-muted">{{if .Livemode}}Live channels post to real accounts.{{else}}Test mode uses sandbox channels: each follows a real platform's rules but publishes nowhere.{{end}}</p>
 {{if .Data.Channels}}
 <table>
-  <thead><tr><th>Account</th><th>Platform</th><th>Brand</th><th>Status</th><th></th></tr></thead>
+  <thead><tr><th>Account</th><th>Platform</th><th>Brand</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
   <tbody>
   {{range .Data.Channels}}
   <tr>

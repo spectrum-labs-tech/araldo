@@ -16,7 +16,7 @@
 
 {{if .Data.Keys}}
 <table>
-  <thead><tr><th>Name</th><th>Key</th><th>Access</th><th>Created</th><th>Last used</th><th>Expires</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th>Key</th><th>Access</th><th>Created</th><th>Last used</th><th>Expires</th><th><span class="sr-only">Actions</span></th></tr></thead>
   <tbody>
   {{range .Data.Keys}}
   {{$dead := or .RevokedAt (expired .ExpiresAt)}}

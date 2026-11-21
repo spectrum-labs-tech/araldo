@@ -32,7 +32,7 @@
   <p class="mb-3">People sign in through your provider with email at these domains, once you prove you hold each by publishing a DNS TXT record.</p>
   {{if $d.Domains}}
   <table>
-    <thead><tr><th>Domain</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Domain</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
     {{range $d.Domains}}
     <tr>

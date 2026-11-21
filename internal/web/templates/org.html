@@ -38,7 +38,7 @@
 <section class="card">
   <h2>Members</h2>
   <table>
-    <thead><tr><th>Email</th><th>2FA</th><th>Role</th>{{if $d.IsAdmin}}<th></th>{{end}}</tr></thead>
+    <thead><tr><th>Email</th><th>2FA</th><th>Role</th>{{if $d.IsAdmin}}<th><span class="sr-only">Actions</span></th>{{end}}</tr></thead>
     <tbody>
     {{range $d.Members}}
     <tr>
@@ -81,7 +81,7 @@
   {{if $d.Invitations}}
   <h3 class="mt-4">Open invitations</h3>
   <table>
-    <thead><tr><th>Email</th><th>Role</th><th>Expires</th><th></th></tr></thead>
+    <thead><tr><th>Email</th><th>Role</th><th>Expires</th><th><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
     {{range $d.Invitations}}
     <tr>

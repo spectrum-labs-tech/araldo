@@ -119,8 +119,10 @@
   body {
     @apply flex min-h-screen flex-col bg-bg font-sans leading-normal text-ink antialiased;
   }
+  /* Underlined, so a link never relies on color alone (WCAG 1.4.1);
+     navigation and buttons take theirs off. */
   a {
-    @apply text-accent underline-offset-2 hover:underline;
+    @apply text-accent underline decoration-1 underline-offset-2 hover:decoration-2;
   }
   :focus-visible {
     @apply outline-2 outline-offset-1 outline-accent;
@@ -138,8 +140,10 @@
   pre {
     @apply font-mono text-[0.9em];
   }
+  /* On narrow screens a wide table scrolls inside itself, never the page
+     (WCAG 1.4.10 exempts data tables from reflow). */
   table {
-    @apply w-full border-collapse overflow-hidden rounded-lg border border-line bg-panel;
+    @apply relative block w-full max-w-full border-collapse overflow-x-auto rounded-lg border border-line bg-panel md:table md:overflow-hidden;
   }
   th,
   td {
@@ -192,6 +196,10 @@
   .topbar {
     @apply flex flex-wrap items-center gap-5 border-b border-line bg-panel px-5 py-2.5;
   }
+  /* The top bar's links are navigation, not text: underlined on hover. */
+  .topbar a {
+    @apply no-underline hover:underline;
+  }
   .brandmark {
     @apply inline-flex items-center gap-2 font-bold text-ink no-underline hover:no-underline;
   }
@@ -214,13 +222,15 @@
   /* The signed-in page: navigation beside the content on wide screens,
      above it on narrow ones, filling the window's height. */
   .shell {
-    @apply grid grow grid-rows-[auto_1fr] md:grid-cols-[var(--spacing-sidebar)_minmax(0,1fr)] md:grid-rows-1;
+    @apply grid grow grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr] md:grid-cols-[var(--spacing-sidebar)_minmax(0,1fr)] md:grid-rows-1;
   }
+  /* On a phone, one row that scrolls sideways rather than a screenful of
+     links before the page. */
   .side-nav {
-    @apply flex flex-row flex-wrap gap-0.5 border-b border-line p-3 md:flex-col md:border-r md:border-b-0;
+    @apply flex flex-row gap-0.5 overflow-x-auto border-b border-line px-3 py-2 md:flex-col md:overflow-visible md:border-r md:border-b-0 md:p-3;
   }
   .side-nav a {
-    @apply rounded-md px-2.5 py-1.5 text-ink no-underline hover:bg-subtle hover:no-underline;
+    @apply shrink-0 rounded-md px-2.5 py-1.5 whitespace-nowrap text-ink no-underline hover:bg-subtle;
   }
   .side-nav a.active {
     @apply bg-accent-soft font-semibold text-accent;
@@ -268,7 +278,11 @@
   }
   /* A checkbox or radio button with its label on one line. */
   label.check {
-    @apply flex-row items-center gap-1.5 font-normal;
+    @apply min-h-7 flex-row items-center gap-2 font-normal;
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    @apply size-[18px] shrink-0 accent-accent;
   }
 
   /* Blocks */
@@ -358,13 +372,14 @@
     @apply max-h-[36rem] overflow-auto rounded-md border border-line bg-bg p-3 font-mono text-sm whitespace-pre-wrap;
   }
   .facts {
-    @apply my-2 grid grid-cols-[max-content_1fr] gap-x-5 gap-y-1;
+    @apply my-2 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-5 gap-y-1;
   }
   .facts dt {
     @apply text-muted;
   }
+  /* Long IDs and URLs break rather than widen the page. */
   .facts dd {
-    @apply m-0;
+    @apply m-0 break-words [overflow-wrap:anywhere];
   }
 
   /* Pills and tags */

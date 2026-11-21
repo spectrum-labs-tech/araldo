@@ -11,3 +11,6 @@ coverage.html
 
 # Node tooling (dashboard stylesheet build)
 node_modules/
+
+# Files for people to look at (screenshots, reports)
+/tmp/

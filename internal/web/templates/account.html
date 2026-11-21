@@ -53,7 +53,7 @@
   <p class="mb-3 text-muted">Sign in with your fingerprint, face or device PIN instead of a password. A passkey counts as two-factor authentication.</p>
   {{if $d.Passkeys}}
   <table class="mb-3">
-    <thead><tr><th>Name</th><th>Added</th><th>Last used</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Added</th><th>Last used</th><th><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>{{range $d.Passkeys}}<tr><td>{{.Name}}</td><td>{{fmtTime .CreatedAt}}</td><td>{{with .LastUsedAt}}{{ago .}}{{else}}never{{end}}</td>
       <td><form method="post" action="/account/passkeys/{{.ID}}/delete" data-confirm="Remove the passkey {{.Name}}? It will no longer sign you in.">
         <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger" aria-label="Remove {{.Name}}">Remove</button></form></td></tr>{{end}}</tbody>
@@ -76,7 +76,7 @@
   <h2>Devices</h2>
   <p class="mb-3 text-muted">Computers signed in with <code>araldo auth login</code>. Each acts as you, in the mode shown, until you sign it out.</p>
   <table>
-    <thead><tr><th>Device</th><th>Mode</th><th>Signed in</th><th>Last used</th><th></th></tr></thead>
+    <thead><tr><th>Device</th><th>Mode</th><th>Signed in</th><th>Last used</th><th><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
     {{range .Data.Devices}}
     <tr>

@@ -6,7 +6,7 @@
 <p class="mb-4 text-muted">Templates turn your product's data into posts. Your code sends <code>{"template": "featured-build", "data": {…}}</code>; the wording lives here, and changes without a deploy.</p>
 {{if .Data.Templates}}
 <table>
-  <thead><tr><th>Key</th><th>Name</th><th>Brand</th><th>Version</th><th>Updated</th><th></th></tr></thead>
+  <thead><tr><th>Key</th><th>Name</th><th>Brand</th><th>Version</th><th>Updated</th><th><span class="sr-only">Actions</span></th></tr></thead>
   <tbody>
   {{range .Data.Templates}}
   <tr>

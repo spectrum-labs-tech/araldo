@@ -81,7 +81,11 @@ the order it is being built in (update its status with the work).
   skipped heading levels; selects never submit on change (add a button);
   new colors go through tokens that `TestContrast` checks (text 4.5:1,
   control edges 3:1, both themes). Add a new page to the list in
-  `TestPagesAreAccessible`.
+  `TestPagesAreAccessible`. After a UI change, run `task web:shots`
+  (needs `task db:up` and Chrome): it photographs every page at phone and
+  desktop width in both themes into `tmp/shots/`, runs axe on each and
+  fails on any violation, a sideways scroll on a phone or a console error.
+  Look at the shots, not just the result.
 - **Context** flows end to end; logging is `log/slog` only.
 - **Every Go file starts with** `// SPDX-License-Identifier: AGPL-3.0-or-later`.
 - **Dependencies**: standard library first; justify any new module.

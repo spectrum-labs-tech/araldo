@@ -130,6 +130,13 @@ tasks:
           echo "app.css or editor.js was not current with its sources: rebuilt it; commit the result"; rm -rf "$tmp"; exit 1; }
         rm -rf "$tmp"
 
+  web:shots:
+    desc: "Photograph every dashboard page (phone and desktop, light and dark) into tmp/shots/ and run axe on each; needs task db:up and Chrome. SHOTS=keys,webhooks limits the pages"
+    deps: [web:deps]
+    env:
+      ARALDO_TEST_DSN: "{{.DEV_DSN}}"
+    cmd: go test -tags=integration,shots -count=1 -run TestScreenshots -timeout 20m ./internal/web
+
   web:icons:
     desc: Regenerate the platform icon sprite (internal/web/templates/_icons.html) from Simple Icons
     deps: [web:deps]

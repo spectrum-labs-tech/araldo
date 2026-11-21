@@ -16,7 +16,7 @@
 {{if $is.Deliveries}}
 <section class="card">
   <h2>Deliveries</h2>
-  <table class="text-sm">
+  <table class="text-sm" tabindex="0" aria-label="Deliveries">
     <thead><tr><th>Account</th><th>Audiences</th><th>Status</th><th class="text-right">Delivered</th><th class="text-right">Clicks</th><th class="text-right">Opens</th><th class="text-right">Unsubscribes</th></tr></thead>
     <tbody>{{range $is.Deliveries}}<tr>
       <td>{{.AccountName}} <span class="text-muted">{{.Provider}}</span></td>

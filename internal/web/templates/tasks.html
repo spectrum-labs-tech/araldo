@@ -2,7 +2,7 @@
 <p class="crumbs"><a href="/org">Organization</a></p>
 <h1>Background tasks</h1>
 <p class="mb-4 text-muted">These run in <code>araldo worker</code>, each on one worker at a time.</p>
-<table>
+<table tabindex="0" aria-label="Tasks">
   <thead><tr><th>Task</th><th>Every</th><th>Last run</th><th>Last success</th><th>Next</th><th>Failures</th></tr></thead>
   <tbody>
   {{range .Data.Tasks}}

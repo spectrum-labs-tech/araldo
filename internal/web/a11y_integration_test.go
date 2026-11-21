@@ -41,6 +41,48 @@ import (
 func TestPagesAreAccessible(t *testing.T) {
 	t.Parallel()
 	d := newDash(t, threads.New(http.DefaultClient)) // an OAuth platform, so the apps page has its form
+	pages := seedPages(t, d)
+	for _, path := range pages {
+		rec := d.send(httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s: %d", path, rec.Code)
+			continue
+		}
+		for _, issue := range a11yIssues(rec.Body.String(), true) {
+			t.Errorf("%s: %s", path, issue)
+		}
+	}
+
+	// A form shown again with its problems.
+	form := url.Values{"csrf": {d.login.Session.CSRFToken}, "mode": {"content"}, "brand": {d.brand.Slug}, "body": {""}, "publish": {"now"}, "action": {"create"}}
+	r := httptest.NewRequest(http.MethodPost, "/posts", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := d.send(r)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid post: %d", rec.Code)
+	}
+	for _, issue := range a11yIssues(rec.Body.String(), true) {
+		t.Errorf("POST /posts (with errors): %s", issue)
+	}
+
+	// Signed out.
+	srv, err := web.New(d.s, slog.New(slog.NewTextHandler(io.Discard, nil)), web.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/login", "/login/sso"} {
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		for _, issue := range a11yIssues(rec.Body.String(), false) {
+			t.Errorf("%s (signed out): %s", path, issue)
+		}
+	}
+}
+
+// seedPages fills d's org with one of everything a page can show and
+// returns every signed-in page's path.
+func seedPages(t *testing.T, d *dash) []string {
+	t.Helper()
 	ctx := t.Context()
 
 	// One of everything a page can show.
@@ -121,7 +163,7 @@ func TestPagesAreAccessible(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pages := []string{
+	return []string{
 		"/", "/posts", "/posts?q=accessible&status=published", "/posts/new", "/posts/" + id.Format(id.Post, p.ID), "/posts/" + id.Format(id.Post, scheduled.ID),
 		"/sandbox/" + id.Format(id.Target, target.ID), "/performance", "/ads", "/ads?tag_url=https://example.com/&tag_campaign=launch",
 		"/newsletters", "/newsletters/new", "/newsletters/" + id.Format(id.Issue, draft.ID), "/newsletters/" + id.Format(id.Issue, queued.ID),
@@ -132,41 +174,6 @@ func TestPagesAreAccessible(t *testing.T) {
 		"/keys", "/keys/" + id.Format(id.APIKey, key.ID), "/cli?device=laptop", "/cli?device=laptop&mode=live", "/webhooks", "/webhooks/" + id.Format(id.WebhookEndpoint, ep.ID),
 		"/events", "/events/" + id.Format(id.Event, events[0].ID), "/logs", "/logs?status=4xx", "/api-reference",
 		"/org", "/org/members/" + id.Format(id.User, *d.owner.UserID), "/org/audit", "/org/tasks", "/org/sso", "/account", "/confirm", "/notifications", "/notifications/settings",
-	}
-	for _, path := range pages {
-		rec := d.send(httptest.NewRequest(http.MethodGet, path, nil))
-		if rec.Code != http.StatusOK {
-			t.Errorf("GET %s: %d", path, rec.Code)
-			continue
-		}
-		for _, issue := range a11yIssues(rec.Body.String(), true) {
-			t.Errorf("%s: %s", path, issue)
-		}
-	}
-
-	// A form shown again with its problems.
-	form := url.Values{"csrf": {d.login.Session.CSRFToken}, "mode": {"content"}, "brand": {d.brand.Slug}, "body": {""}, "publish": {"now"}, "action": {"create"}}
-	r := httptest.NewRequest(http.MethodPost, "/posts", strings.NewReader(form.Encode()))
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rec := d.send(r)
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("invalid post: %d", rec.Code)
-	}
-	for _, issue := range a11yIssues(rec.Body.String(), true) {
-		t.Errorf("POST /posts (with errors): %s", issue)
-	}
-
-	// Signed out.
-	srv, err := web.New(d.s, slog.New(slog.NewTextHandler(io.Discard, nil)), web.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{"/login", "/login/sso"} {
-		rec := httptest.NewRecorder()
-		srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
-		for _, issue := range a11yIssues(rec.Body.String(), false) {
-			t.Errorf("%s (signed out): %s", path, issue)
-		}
 	}
 }
 

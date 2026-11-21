@@ -2,7 +2,7 @@
 <p class="crumbs"><a href="/org">Organization</a></p>
 <h1>Audit log</h1>
 {{if .Data}}
-<table class="text-sm">
+<table class="text-sm" tabindex="0" aria-label="Audit log">
   <thead><tr><th>When</th><th>Action</th><th>Target</th><th>Actor</th><th>Request</th></tr></thead>
   <tbody>
   {{range .Data}}

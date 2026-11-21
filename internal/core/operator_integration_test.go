@@ -154,11 +154,11 @@ func TestOperatedOrgs(t *testing.T) {
 		t.Fatalf("the org as its owner sees it: %+v, %v", got, err)
 	}
 
-	found, _, err := s.OperatedOrgs(ctx, op, store.Page{}, ref)
+	found, _, err := s.OperatedOrgs(ctx, op, store.Page{}, core.OrgFilter{ExternalRef: ref})
 	if err != nil || len(found) != 1 || found[0].ID != o.ID {
 		t.Fatalf("by reference: %v, %v", found, err)
 	}
-	if none, _, err := s.OperatedOrgs(ctx, op, store.Page{}, "cus_none_"+uuid.NewString()); err != nil || len(none) != 0 {
+	if none, _, err := s.OperatedOrgs(ctx, op, store.Page{}, core.OrgFilter{ExternalRef: "cus_none_" + uuid.NewString()}); err != nil || len(none) != 0 {
 		t.Fatalf("an unknown reference: %v, %v", none, err)
 	}
 

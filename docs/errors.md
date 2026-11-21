@@ -427,6 +427,16 @@ with another page), shown on the ad account and retried later.
 - **limit_invalid**: a limit is a number from 0 up, or null for none.
 - **status_invalid**, **status_note_invalid**: a status is `active`,
   `read_only` or `suspended`, and its note at most 500 characters.
+- **operator_key_self** (409): an operator key cannot revoke itself;
+  revoke it with another (`araldo admin bootstrap --operator-key` makes one
+  if none is left).
+- **email_taken** (409): an account with that email already exists.
+- **password_invalid**: a password is too short or too long; the message
+  says which.
+- **password_required**: the person has no account yet, so adding them
+  needs a temporary password for it (or invite them instead).
+- **already_member** (409): the person is already in the org.
+- **batch_size_invalid**: a rewrap batch is 1 to 1,000 data keys.
 
 ## CLI sign-in
 

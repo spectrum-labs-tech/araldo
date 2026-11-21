@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/keyring"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
@@ -542,6 +543,92 @@ type OperatedOrgView struct {
 // ViewOperatedOrg renders an org for the operator.
 func ViewOperatedOrg(o *model.Org) OperatedOrgView {
 	return OperatedOrgView{OrgView: ViewOrg(o), ExternalRef: o.ExternalRef}
+}
+
+// UserView is an account, as the operator API shows it (ADR 0035): never
+// its password or second factor, only whether it has one.
+type UserView struct {
+	ID        string    `json:"id"`
+	Object    string    `json:"object"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	MFA       bool      `json:"mfa"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ViewUser renders an account for the operator.
+func ViewUser(u *model.User) UserView {
+	return UserView{ID: id.Format(id.User, u.ID), Object: "user", Email: u.Email, Name: u.Name, MFA: u.SecondFactor(), CreatedAt: u.CreatedAt.UTC()}
+}
+
+// OperatorKeyView is an operator key. Secret is set only when it is new.
+type OperatorKeyView struct {
+	ID         string     `json:"id"`
+	Object     string     `json:"object"`
+	Name       string     `json:"name"`
+	Hint       string     `json:"hint"`
+	Secret     string     `json:"secret,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+// ViewOperatorKey renders an operator key, without its secret.
+func ViewOperatorKey(k *model.OperatorKey) OperatorKeyView {
+	v := OperatorKeyView{ID: id.Format(id.OperatorKey, k.ID), Object: "operator_key", Name: k.Name, Hint: k.Hint, CreatedAt: k.CreatedAt.UTC()}
+	if k.LastUsedAt != nil {
+		t := k.LastUsedAt.UTC()
+		v.LastUsedAt = &t
+	}
+	return v
+}
+
+// InstallAppView is a developer app every org can connect through (ADR
+// 0030), never with its client secret.
+type InstallAppView struct {
+	ID           string            `json:"id"`
+	Object       string            `json:"object"`
+	Provider     platform.Provider `json:"provider"`
+	ProviderName string            `json:"provider_name"`
+	Name         string            `json:"name"`
+	ClientID     string            `json:"client_id"`
+	// RedirectURI is what to register with the platform.
+	RedirectURI string    `json:"redirect_uri"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ViewInstallApp renders an install app, with its platform's name and the
+// redirect URI to register (Service.ProviderName, ConnectRedirectURI).
+func ViewInstallApp(app *model.ProviderApp, providerName, redirectURI string) InstallAppView {
+	return InstallAppView{ID: id.Format(id.ProviderApp, app.ID), Object: "install_app", Provider: app.Provider, ProviderName: providerName,
+		Name: app.Name, ClientID: app.ClientID, RedirectURI: redirectURI, CreatedAt: app.CreatedAt.UTC()}
+}
+
+// MasterKeyView is one master key and what it wraps (ADR 0008): its ID,
+// never the key.
+type MasterKeyView struct {
+	ID         string `json:"id"`
+	Object     string `json:"object"`
+	Configured bool   `json:"configured"`
+	Primary    bool   `json:"primary"`
+	DataKeys   int    `json:"data_keys"`
+}
+
+// ViewMasterKey renders a master key's use.
+func ViewMasterKey(u keyring.KeyUse) MasterKeyView {
+	return MasterKeyView{ID: u.ID, Object: "master_key", Configured: u.Configured, Primary: u.Primary, DataKeys: u.DataKeys}
+}
+
+// RewrapView is what one batch of a master key rotation did and left.
+type RewrapView struct {
+	Object       string `json:"object"`
+	Rewrapped    int    `json:"rewrapped"`
+	Remaining    int    `json:"remaining"`
+	Unconfigured int    `json:"unconfigured"`
+}
+
+// ViewRewrap renders a rewrap batch.
+func ViewRewrap(r keyring.Rewrapped) RewrapView {
+	return RewrapView{Object: "master_key_rewrap", Rewrapped: r.Rewrapped, Remaining: r.Remaining, Unconfigured: r.Unconfigured}
 }
 
 // UsageView is what an org has, and did in a month (ADR 0031).

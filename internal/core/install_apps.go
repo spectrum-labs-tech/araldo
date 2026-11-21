@@ -21,14 +21,15 @@ import (
 // them.
 
 // InstallOperator is the server's operator acting on the install itself,
-// in no org, through `araldo admin`.
+// in no org, with the database (`araldo admin bootstrap`); command names
+// it in the audit log.
 func InstallOperator(command string) Actor {
 	return Actor{Operator: true, Role: model.RoleOwner, OperatorCommand: command, RequestID: OperatorRequestID}
 }
 
 func requireOperator(a Actor) error {
 	if !a.Operator {
-		return apperr.Forbidden("The server's apps are managed by its operator, with araldo admin apps.")
+		return apperr.Forbidden("Only the server's operator does this, with an operator key (araldo admin).")
 	}
 	return nil
 }

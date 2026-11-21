@@ -4,6 +4,7 @@ package api
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	contract "github.com/spectrum-labs-tech/araldo/api"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/keyring"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
@@ -169,8 +171,9 @@ func TestMeViewMatchesContract(t *testing.T) {
 	}
 }
 
-// Orgs, as members and the operator see them, and usage render as the
-// contract says, with limits set and unset (ADR 0031).
+// Orgs, as members and the operator see them, usage, and what the operator
+// administers (ADR 0035) render as the contract says, with limits set and
+// unset.
 func TestOperatorViewsMatchContract(t *testing.T) {
 	t.Parallel()
 	doc, err := openapi3.NewLoader().LoadFromData(contract.OpenAPI)
@@ -184,6 +187,9 @@ func TestOperatorViewsMatchContract(t *testing.T) {
 	inv.URL = "https://araldo.example/invite/x"
 	created := core.ViewOperatedOrg(o)
 	created.OwnerInvitation = &inv
+	used := time.Now()
+	newOpKey := core.ViewOperatorKey(&model.OperatorKey{ID: uuid.New(), Name: "billing", Hint: "ab12", CreatedAt: time.Now(), LastUsedAt: &used})
+	newOpKey.Secret = "ald_op_secret"
 	tests := []struct {
 		name, schema string
 		view         any
@@ -193,6 +199,13 @@ func TestOperatorViewsMatchContract(t *testing.T) {
 		{"an operated org", "OperatedOrg", core.ViewOperatedOrg(o)},
 		{"a created org", "OperatedOrg", created},
 		{"usage", "Usage", core.ViewUsage(o.ID, &model.OrgUsage{Brands: 2, MediaBytes: 1 << 40, PeriodStart: time.Now(), PeriodEnd: time.Now()})},
+		{"a user", "User", core.ViewUser(&model.User{ID: uuid.New(), Email: "a@araldo.dev", Name: "A", CreatedAt: time.Now()})},
+		{"an operator key", "OperatorKey", core.ViewOperatorKey(&model.OperatorKey{ID: uuid.New(), Name: "billing", Hint: "ab12", CreatedAt: time.Now()})},
+		{"a new operator key", "OperatorKey", newOpKey},
+		{"an install app", "InstallApp", core.ViewInstallApp(&model.ProviderApp{ID: uuid.New(), Install: true, Provider: platform.LinkedIn, Name: "LinkedIn",
+			ClientID: "cid", ClientSecret: []byte("sealed"), CreatedAt: time.Now()}, "LinkedIn", "https://araldo.example/connect/linkedin/callback")},
+		{"a master key", "MasterKey", core.ViewMasterKey(keyring.KeyUse{ID: "k1", Configured: true, Primary: true, DataKeys: 4})},
+		{"a rewrap", "MasterKeyRewrap", core.ViewRewrap(keyring.Rewrapped{Rewrapped: 100, Remaining: 3, Unconfigured: 1})},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -207,6 +220,35 @@ func TestOperatorViewsMatchContract(t *testing.T) {
 			}
 			if err := doc.Components.Schemas[tt.schema].Value.VisitJSON(v); err != nil {
 				t.Fatalf("does not match the contract: %v\n%s", err, raw)
+			}
+		})
+	}
+}
+
+// What the operator reads back never carries a secret: an app's client
+// secret, a user's password hash, or an operator key's secret once it is
+// no longer new (ADR 0035).
+func TestOperatorViewsHoldNoSecrets(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		view   any
+		secret string
+	}{
+		{"an install app", core.ViewInstallApp(&model.ProviderApp{ID: uuid.New(), Provider: platform.LinkedIn, ClientID: "cid",
+			ClientSecret: []byte("sealed-secret")}, "LinkedIn", ""), "sealed"},
+		{"a user", core.ViewUser(&model.User{ID: uuid.New(), Email: "a@araldo.dev", PasswordHash: "argon2id-hash", TOTPSecret: []byte("totp-secret")}), "hash"},
+		{"an operator key", core.ViewOperatorKey(&model.OperatorKey{ID: uuid.New(), Name: "billing", Hint: "ab12"}), "secret"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			raw, err := json.Marshal(tt.view)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(raw), tt.secret) || strings.Contains(string(raw), "totp") {
+				t.Fatalf("holds a secret: %s", raw)
 			}
 		})
 	}

@@ -30,7 +30,9 @@ import (
 // Operator keys.
 
 // CreateOperatorKey makes a key for the operator API and returns it, shown
-// once. Only the operator makes them, with `araldo admin operator-keys`.
+// once. Only the operator makes them: with another operator key, through
+// the operator API (`araldo admin operator-keys`), or the first one with
+// `araldo admin bootstrap --operator-key` (ADR 0035).
 func (s *Service) CreateOperatorKey(ctx context.Context, a Actor, name string) (string, *model.OperatorKey, error) {
 	if err := requireOperator(a); err != nil {
 		return "", nil, err
@@ -58,10 +60,15 @@ func (s *Service) OperatorKeys(ctx context.Context, a Actor) ([]*model.OperatorK
 	return s.store.OperatorKeys(ctx)
 }
 
-// RevokeOperatorKey stops a key working at once.
+// RevokeOperatorKey stops a key working at once. A key cannot revoke
+// itself, so the operator API always keeps a key that can make more (ADR
+// 0035): another key, or bootstrap's, revokes it.
 func (s *Service) RevokeOperatorKey(ctx context.Context, a Actor, keyID uuid.UUID) error {
 	if err := requireOperator(a); err != nil {
 		return err
+	}
+	if a.OperatorKeyID != nil && *a.OperatorKeyID == keyID {
+		return apperr.Conflict("operator_key_self", "An operator key cannot revoke itself: revoke it with another operator key.")
 	}
 	return s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.RevokeOperatorKey(ctx, keyID, s.Now()); err != nil {
@@ -72,7 +79,7 @@ func (s *Service) RevokeOperatorKey(ctx context.Context, a Actor, keyID uuid.UUI
 }
 
 var errOperatorKeyInvalid = &apperr.Error{Kind: apperr.KindUnauthorized, Code: "operator_key_invalid",
-	Message: "Invalid operator key. Operator keys look like ald_op_…; make one with araldo admin operator-keys create."}
+	Message: "Invalid operator key. Operator keys look like ald_op_…; the first comes from araldo admin bootstrap --operator-key, more from araldo admin operator-keys create."}
 
 // AuthenticateOperatorKey turns an operator key into the operator, acting
 // on the whole install.
@@ -122,13 +129,24 @@ type OperatedOrgInput struct {
 }
 
 // OrgChange changes what the operator sets on an org; nil leaves a field
-// as it is.
+// as it is. RequireMFA and RequireSSO are the owners' settings, which the
+// operator can also change, as when an org's identity provider is gone
+// (ADR 0033).
 type OrgChange struct {
 	Name        *string
 	Status      *model.OrgStatus
 	StatusNote  *string
 	ExternalRef *string
 	Limits      *model.OrgLimits
+	RequireMFA  *bool
+	RequireSSO  *bool
+}
+
+// OrgFilter narrows the operator's list of orgs: to the one with an
+// external reference, or those with a name (in any case).
+type OrgFilter struct {
+	ExternalRef string
+	Name        string
 }
 
 func checkExternalRef(ref string, ps *apperr.Problems) {
@@ -191,13 +209,26 @@ func (s *Service) CreateOperatedOrg(ctx context.Context, a Actor, in OperatedOrg
 	return o, link, inv, nil
 }
 
-// OperatedOrgs lists the install's orgs, or the one with externalRef.
-func (s *Service) OperatedOrgs(ctx context.Context, a Actor, p store.Page, externalRef string) ([]*model.Org, bool, error) {
+// OperatedOrgs lists the install's orgs, or those f picks: the one with
+// its external reference, or those with its name, oldest first, which are
+// not paged beyond the first page.
+func (s *Service) OperatedOrgs(ctx context.Context, a Actor, p store.Page, f OrgFilter) ([]*model.Org, bool, error) {
 	if err := requireOperator(a); err != nil {
 		return nil, false, err
 	}
-	if externalRef != "" {
-		o, err := s.store.OrgByExternalRef(ctx, externalRef)
+	if name := strings.TrimSpace(f.Name); name != "" && f.ExternalRef == "" {
+		limit := p.Size()
+		orgs, err := s.store.FindOrgs(ctx, name, limit+1)
+		if err != nil {
+			return nil, false, err
+		}
+		if len(orgs) > limit {
+			return orgs[:limit], true, nil
+		}
+		return orgs, false, nil
+	}
+	if f.ExternalRef != "" {
+		o, err := s.store.OrgByExternalRef(ctx, f.ExternalRef)
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, false, nil
 		}
@@ -214,6 +245,18 @@ func (s *Service) OperatedOrgs(ctx context.Context, a Actor, p store.Page, exter
 func (s *Service) ChangeOrg(ctx context.Context, a Actor, ch OrgChange) (*model.Org, error) {
 	if err := requireOperator(a); err != nil {
 		return nil, err
+	}
+	// The owners' settings first: they have their own rules and audit
+	// entries, and a change they refuse leaves the rest undone.
+	if ch.RequireMFA != nil {
+		if err := s.PatchOrg(ctx, a, nil, OrgPatch{RequireMFA: ch.RequireMFA}); err != nil {
+			return nil, err
+		}
+	}
+	if ch.RequireSSO != nil {
+		if err := s.SetRequireSSO(ctx, a, nil, *ch.RequireSSO); err != nil {
+			return nil, err
+		}
 	}
 	// Read and written with the row locked: two changes at once apply one
 	// after the other, each to what the other left, so neither undoes the

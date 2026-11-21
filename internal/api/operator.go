@@ -15,13 +15,14 @@ import (
 // keys only, by the install's own service, to create and manage orgs.
 
 func (h *Handler) operatorRoutes() {
-	h.operator("GET /v1/operator/orgs", h.listOperatedOrgs, paged("external_ref")...)
+	h.operator("GET /v1/operator/orgs", h.listOperatedOrgs, paged("external_ref", "name")...)
 	h.operator("POST /v1/operator/orgs", h.createOperatedOrg)
 	h.operator("GET /v1/operator/orgs/{id}", h.getOperatedOrg)
 	h.operator("POST /v1/operator/orgs/{id}", h.changeOperatedOrg)
 	h.operator("DELETE /v1/operator/orgs/{id}", h.deleteOperatedOrg, "confirm")
 	h.operator("POST /v1/operator/orgs/{id}/invitations", h.operatorInvite)
 	h.operator("GET /v1/operator/orgs/{id}/usage", h.operatedOrgUsage, "month")
+	h.administrationRoutes()
 }
 
 // operator registers a route for operator keys only.
@@ -44,7 +45,8 @@ func (h *Handler) listOperatedOrgs(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	orgs, more, err := h.svc.OperatedOrgs(r.Context(), actor(r), pg, r.URL.Query().Get("external_ref"))
+	q := r.URL.Query()
+	orgs, more, err := h.svc.OperatedOrgs(r.Context(), actor(r), pg, core.OrgFilter{ExternalRef: q.Get("external_ref"), Name: q.Get("name")})
 	if err != nil {
 		return err
 	}
@@ -103,12 +105,14 @@ func (h *Handler) changeOperatedOrg(w http.ResponseWriter, r *http.Request) erro
 		StatusNote  *string          `json:"status_note"`
 		ExternalRef *string          `json:"external_ref"`
 		Limits      *model.OrgLimits `json:"limits"`
+		RequireMFA  *bool            `json:"require_mfa"`
+		RequireSSO  *bool            `json:"require_sso"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
 	}
 	o, err := h.svc.ChangeOrg(r.Context(), a, core.OrgChange{Name: body.Name, Status: body.Status, StatusNote: body.StatusNote,
-		ExternalRef: body.ExternalRef, Limits: body.Limits})
+		ExternalRef: body.ExternalRef, Limits: body.Limits, RequireMFA: body.RequireMFA, RequireSSO: body.RequireSSO})
 	if err != nil {
 		return err
 	}

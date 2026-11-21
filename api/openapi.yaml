@@ -71,9 +71,14 @@ tags:
   - name: MCP
   - name: Operator
     description: |
-      The install's operator API (ADR 0031), for the service that runs a
-      hosted install: create and manage orgs from outside. Operator keys
-      only (`ald_op_…`, from `araldo admin operator-keys create`).
+      The install's operator API (ADR 0031, ADR 0035): for the service that
+      runs a hosted install, to create and manage orgs from outside, and for
+      `araldo admin`, which administers the server through it (accounts,
+      members, keys, install-wide apps, master key rotation). Operator keys
+      only (`ald_op_…`): the first from `araldo admin bootstrap
+      --operator-key`, more from `POST /v1/operator/operator_keys`. Keep it
+      off the internet: call it at an internal address and refuse
+      `/v1/operator/` at the public edge.
 
 paths:
   /v1/openapi.yaml:
@@ -1977,7 +1982,7 @@ paths:
   /v1/operator/orgs:
     get:
       summary: List orgs
-      description: Every org on the install, newest first; or, with `external_ref`, the one org with it (an empty list if none).
+      description: Every org on the install, newest first; or, with `external_ref`, the one org with it (an empty list if none); or, with `name`, the orgs with that name.
       tags: [Operator]
       security: [{ operatorKey: [] }]
       parameters:
@@ -1985,6 +1990,7 @@ paths:
         - { $ref: "#/components/parameters/StartingAfter" }
         - { $ref: "#/components/parameters/EndingBefore" }
         - { name: external_ref, in: query, schema: { type: string } }
+        - { name: name, in: query, schema: { type: string }, description: "Only orgs with this name, in any case, oldest first (one page)." }
       responses:
         "200":
           description: Orgs.
@@ -2045,7 +2051,10 @@ paths:
         nothing; it stops more. `read_only` lets the org read but change
         nothing (scheduled posts still go out); `suspended` refuses its keys
         and tokens, shows its members only a notice, and publishes and sends
-        nothing. The note is shown to the org.
+        nothing. The note is shown to the org. `require_mfa` and
+        `require_sso` are the owners' settings, which the operator can change
+        too: turning off required single sign-on lets members in with a
+        password when the org's identity provider is gone.
       tags: [Operator]
       security: [{ operatorKey: [] }]
       requestBody:
@@ -2060,6 +2069,8 @@ paths:
                 status_note: { type: string, maxLength: 500 }
                 external_ref: { type: string, maxLength: 200 }
                 limits: { $ref: "#/components/schemas/OrgLimits" }
+                require_mfa: { type: boolean }
+                require_sso: { type: boolean, description: "Turning it on needs the org's identity provider connected and a domain verified." }
       responses:
         "200":
           description: The org.
@@ -2115,6 +2126,358 @@ paths:
         "200":
           description: Usage.
           content: { application/json: { schema: { $ref: "#/components/schemas/Usage" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/orgs/{id}/members:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: List an org's members
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      responses:
+        "200":
+          description: Members.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Member" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Add a member to an org
+      description: |
+        Adds a person with any role, owners included. Someone without an
+        account gets one with `password`, a temporary password to share with
+        them out of band; without it they are refused (`password_required`).
+        Invite them instead (`POST /v1/operator/orgs/{id}/invitations`) to
+        let them choose their own.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email: { type: string, format: email }
+                role: { type: string, enum: [owner, admin, editor, viewer] }
+                password: { type: string, writeOnly: true, description: "A temporary password, for someone without an account. Never returned." }
+      responses:
+        "201":
+          description: The member.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Member" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/orgs/{id}/members/{user}:
+    parameters:
+      - { $ref: "#/components/parameters/ID" }
+      - { name: user, in: path, required: true, schema: { type: string }, description: "The member's user ID." }
+    post:
+      summary: Change a member's role
+      description: An org always keeps at least one owner (`last_owner`).
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [owner, admin, editor, viewer] }
+      responses:
+        "200":
+          description: The member.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Member" } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Remove a member from an org
+      description: The person keeps their account. An org always keeps at least one owner (`last_owner`).
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      responses:
+        "200":
+          description: Removed.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/orgs/{id}/api_keys:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Create an API key in an org
+      description: |
+        Makes a key for a service, to provision straight into its secret
+        store: `secret` is the full key, in this response only. Any scope,
+        administrative ones included, in either mode.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+                livemode: { type: boolean, default: false }
+                scopes: { type: array, items: { type: string }, description: Empty means every integration scope. }
+                brand: { type: string, description: "Limit the key to this brand (ID or slug)." }
+                expires_at: { type: string, format: date-time }
+      responses:
+        "201":
+          description: The key, with its secret.
+          content: { application/json: { schema: { $ref: "#/components/schemas/APIKey" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/users:
+    get:
+      summary: Find a person by email
+      description: A list of the one account with the email, or an empty list.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      parameters:
+        - { name: email, in: query, required: true, schema: { type: string, format: email } }
+      responses:
+        "200":
+          description: The account, if there is one.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/User" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Create an account
+      description: |
+        An account with a password the caller chose, to share with the
+        person out of band; they should sign in and change it. People
+        usually join by invitation instead, choosing their own.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                name: { type: string }
+                password: { type: string, writeOnly: true, description: Never returned. }
+      responses:
+        "201":
+          description: The account.
+          content: { application/json: { schema: { $ref: "#/components/schemas/User" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/users/{id}/password:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Reset a person's password
+      description: |
+        Sets the password and signs the person out everywhere, their CLI
+        tokens included: how a locked-out or taken-over account is
+        recovered. They are told by notification.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, writeOnly: true, description: Never returned. }
+      responses:
+        "200":
+          description: The account.
+          content: { application/json: { schema: { $ref: "#/components/schemas/User" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/operator_keys:
+    get:
+      summary: List operator keys
+      description: The keys not revoked, without their secrets.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      responses:
+        "200":
+          description: Keys.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/OperatorKey" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Create an operator key
+      description: "`secret` is the full key, in this response only."
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100, description: What uses the key. }
+      responses:
+        "201":
+          description: The key, with its secret.
+          content: { application/json: { schema: { $ref: "#/components/schemas/OperatorKey" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/operator_keys/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    delete:
+      summary: Revoke an operator key
+      description: It stops working at once. A key cannot revoke itself (`operator_key_self`), so the install always keeps one that can make more.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      responses:
+        "200":
+          description: Revoked.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/apps:
+    get:
+      summary: List install-wide developer apps
+      description: Apps every org can connect channels through (ADR 0030), without their client secrets.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      responses:
+        "200":
+          description: Apps.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/InstallApp" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Add an install-wide developer app
+      description: |
+        Every org can then connect the platform through it. The client
+        secret is sealed with the install's key and never returned; register
+        `redirect_uri` with the platform.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, client_id, client_secret]
+              properties:
+                provider: { type: string, example: linkedin }
+                name: { type: string, maxLength: 100, description: "What orgs see; default the platform's name." }
+                client_id: { type: string, maxLength: 500 }
+                client_secret: { type: string, maxLength: 500, writeOnly: true }
+      responses:
+        "201":
+          description: The app.
+          content: { application/json: { schema: { $ref: "#/components/schemas/InstallApp" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/apps/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Rename an install-wide developer app
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+      responses:
+        "200":
+          description: The app.
+          content: { application/json: { schema: { $ref: "#/components/schemas/InstallApp" } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Remove an install-wide developer app
+      description: Channels connected through it keep working until their token needs renewing.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      responses:
+        "200":
+          description: Removed.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/master_keys:
+    get:
+      summary: List master keys
+      description: |
+        Each configured master key, primary first, and any that is not
+        configured but still wraps data keys (those cannot be read until it
+        is added back), with how many data keys each wraps. IDs only, never
+        keys.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      responses:
+        "200":
+          description: Master keys.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/MasterKey" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/operator/master_keys/rewrap:
+    post:
+      summary: Rewrap a batch of data keys
+      description: |
+        Moves up to `batch_size` data keys to the primary master key and
+        says how many are left. Call it until `remaining` is 0 to retire an
+        older master key; it is safe to stop and call again at any point,
+        and a key already under the primary is never touched. Data keys
+        under a master key that is not configured are counted in
+        `unconfigured` and left alone.
+      tags: [Operator]
+      security: [{ operatorKey: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                batch_size: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+      responses:
+        "200":
+          description: What the batch did.
+          content: { application/json: { schema: { $ref: "#/components/schemas/MasterKeyRewrap" } } }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/api_keys:
@@ -2943,6 +3306,58 @@ components:
             owner_invitation:
               allOf: [{ $ref: "#/components/schemas/Invitation" }]
               description: The first owner's invitation, with its link; only in the response that created the org.
+
+    User:
+      type: object
+      description: An account, as the operator sees it; never its password or second factor.
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [user] }
+        email: { type: string }
+        name: { type: string }
+        mfa: { type: boolean, description: Whether they use two-factor authentication or a passkey. }
+        created_at: { type: string, format: date-time }
+
+    OperatorKey:
+      type: object
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [operator_key] }
+        name: { type: string }
+        hint: { type: string, description: The key's last characters. }
+        secret: { type: string, description: The full key; only when it is created. }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time }
+
+    InstallApp:
+      type: object
+      description: A developer app every org can connect through (ADR 0030); never its client secret.
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [install_app] }
+        provider: { type: string }
+        provider_name: { type: string }
+        name: { type: string }
+        client_id: { type: string }
+        redirect_uri: { type: string, description: What to register with the platform. }
+        created_at: { type: string, format: date-time }
+
+    MasterKey:
+      type: object
+      properties:
+        id: { type: string, description: "The key's ID, as in ARALDO_MASTER_KEYS, or the Transit key's." }
+        object: { type: string, enum: [master_key] }
+        configured: { type: boolean, description: "False for a key that wraps data keys but is not configured: they cannot be read." }
+        primary: { type: boolean, description: The key new data keys are wrapped with. }
+        data_keys: { type: integer }
+
+    MasterKeyRewrap:
+      type: object
+      properties:
+        object: { type: string, enum: [master_key_rewrap] }
+        rewrapped: { type: integer, description: Data keys this call moved to the primary. }
+        remaining: { type: integer, description: Data keys an older configured master key still wraps. }
+        unconfigured: { type: integer, description: "Data keys under a master key that is not configured, which no call can move." }
 
     Usage:
       type: object

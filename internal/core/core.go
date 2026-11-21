@@ -228,10 +228,12 @@ type Actor struct {
 	KeyExpiresAt *time.Time
 	// RequestID ties events and audit entries to a request.
 	RequestID string
-	// Operator marks the server's operator acting through `araldo admin`
-	// (ADR 0028), who already holds the database and master keys: an
-	// owner's permissions, no member, and no sudo mode, which would add
-	// nothing. OperatorCommand is the command, for the audit log.
+	// Operator marks the server's operator (ADR 0028), with an operator key
+	// through the operator API or with the database itself (bootstrap; ADR
+	// 0035), either of which already reaches every org: an owner's
+	// permissions, no member, and no sudo mode, which would add nothing.
+	// OperatorCommand is the command, for the audit log, when it acted with
+	// the database.
 	Operator        bool
 	OperatorCommand string
 	// OperatorKeyID is the operator key acting through the operator API

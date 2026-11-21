@@ -624,6 +624,62 @@ func (k *Keyring) RewrapAll(ctx context.Context) (int, error) {
 	return n, nil
 }
 
+// Rewrapped is what one Rewrap did and what it left.
+type Rewrapped struct {
+	// Rewrapped is how many data keys this call moved to the primary.
+	Rewrapped int
+	// Remaining is how many data keys a configured master key other than
+	// the primary still wraps: the next call's work.
+	Remaining int
+	// Unconfigured is how many data keys a master key that is not
+	// configured wraps. No call can rewrap them until it is added back.
+	Unconfigured int
+}
+
+// Rewrap rewraps up to limit data keys under the primary master key, as
+// RewrapAll does but in batches, so that rotating a large install is a
+// series of short calls, each safe to interrupt and repeat: a key already
+// under the primary is never touched again. Keys wrapped by a master key
+// that is not configured are skipped and counted, not an error.
+func (k *Keyring) Rewrap(ctx context.Context, limit int) (Rewrapped, error) {
+	var out Rewrapped
+	if k.master == nil {
+		return out, unavailable(errNoMasterKeys)
+	}
+	if limit <= 0 {
+		return out, errors.New("keyring: rewrap limit must be positive")
+	}
+	keys, err := k.store.DataKeys(ctx)
+	if err != nil {
+		return out, err
+	}
+	for _, wk := range keys {
+		switch _, configured := k.master.keys[wk.KEKID]; {
+		case wk.KEKID == k.master.primary:
+			continue
+		case !configured:
+			out.Unconfigured++
+			continue
+		case out.Rewrapped == limit:
+			out.Remaining++
+			continue
+		}
+		dek, err := k.master.unwrap(ctx, wk)
+		if err != nil {
+			return out, err
+		}
+		re, err := k.master.wrap(ctx, wk.Scope, wk.Version, dek)
+		if err != nil {
+			return out, err
+		}
+		if err := k.store.RewrapDataKey(ctx, re); err != nil {
+			return out, err
+		}
+		out.Rewrapped++
+	}
+	return out, nil
+}
+
 // KeyUse is how many stored data keys one master key wraps.
 type KeyUse struct {
 	ID string

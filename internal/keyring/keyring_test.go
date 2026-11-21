@@ -132,6 +132,58 @@ func TestRotationKeepsOldSecretsReadable(t *testing.T) {
 	}
 }
 
+// Rewrap moves data keys to the primary master key a batch at a time,
+// says how many are left, and skips keys whose master key is gone.
+func TestRewrapInBatches(t *testing.T) {
+	t.Parallel()
+	st := NewMemStore()
+	k1, k2 := masterKeys(t, "k1"), masterKeys(t, "k2")
+	old := newKeyring(t, k1, st)
+	var secrets [][]byte
+	var orgs []uuid.UUID
+	for range 5 {
+		org := uuid.New()
+		ct, err := old.Encrypt(t.Context(), org, "a", []byte("secret"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		orgs, secrets = append(orgs, org), append(secrets, ct)
+	}
+	// One data key under a master key no keyring here has.
+	if err := st.InsertDataKey(t.Context(), WrappedKey{Scope: uuid.New(), Version: 1, KEKID: "gone", Wrapped: []byte("x")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newKeyring(t, k2+","+k1, st).Rewrap(t.Context(), 0); err == nil {
+		t.Fatal("Rewrap with no limit worked")
+	}
+
+	kr := newKeyring(t, k2+","+k1, st)
+	tests := []struct {
+		limit int
+		want  Rewrapped
+	}{
+		{limit: 2, want: Rewrapped{Rewrapped: 2, Remaining: 3, Unconfigured: 1}},
+		{limit: 2, want: Rewrapped{Rewrapped: 2, Remaining: 1, Unconfigured: 1}},
+		{limit: 2, want: Rewrapped{Rewrapped: 1, Remaining: 0, Unconfigured: 1}},
+		{limit: 2, want: Rewrapped{Rewrapped: 0, Remaining: 0, Unconfigured: 1}}, // done: rerunning changes nothing
+	}
+	for i, tt := range tests {
+		got, err := kr.Rewrap(t.Context(), tt.limit)
+		if err != nil || got != tt.want {
+			t.Fatalf("call %d: Rewrap(%d) = %+v, %v; want %+v", i+1, tt.limit, got, err, tt.want)
+		}
+	}
+	onlyK2 := newKeyring(t, k2, st)
+	for i, ct := range secrets {
+		if got, err := onlyK2.Decrypt(t.Context(), orgs[i], "a", ct); err != nil || string(got) != "secret" {
+			t.Fatalf("Decrypt after rewrap = %q, %v", got, err)
+		}
+	}
+	if _, err := New(nil, st).Rewrap(t.Context(), 10); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("Rewrap without master keys = %v, want ErrUnavailable", err)
+	}
+}
+
 func TestDeletedScopeCannotBeRead(t *testing.T) {
 	t.Parallel()
 	st := NewMemStore()

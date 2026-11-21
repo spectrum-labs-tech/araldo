@@ -68,7 +68,7 @@ posts on every platform your users read. This page is the map; the
 | Analytics source | A site's web analytics (Plausible, GA4) whose signups are read, under a brand ([ADR 0025](adr/0025-web-analytics.md)). |
 | Issue | A newsletter, handed to a brand's mail accounts' providers to send ([ADR 0024](adr/0024-newsletters.md)). |
 | Report | A brand's month beside the one before, across everything above ([ADR 0026](adr/0026-reports.md)). |
-| Operator | Whoever runs the server: `araldo admin` and the operator API, outside any org ([ADR 0028](adr/0028-cli-as-api-client.md), [ADR 0031](adr/0031-operator-api.md)). |
+| Operator | Whoever runs the server, outside any org: the operator API, with operator keys, which `araldo admin` also calls; only `araldo admin bootstrap` opens the database ([ADR 0028](adr/0028-cli-as-api-client.md), [ADR 0031](adr/0031-operator-api.md), [ADR 0035](adr/0035-admin-over-the-operator-api.md)). |
 
 ## Code layout
 

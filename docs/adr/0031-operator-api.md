@@ -1,6 +1,6 @@
 # ADR 0031: An operator API, org limits and status, and links out for accounts and billing
 
-- Status: accepted; built
+- Status: accepted; built; extended by [ADR 0035](0035-admin-over-the-operator-api.md) (server administration)
 - Date: 2026-10-05
 - Builds on: [ADR 0004](0004-tenancy-roles-approvals.md) (orgs),
   [ADR 0028](0028-cli-as-api-client.md) (the operator), [ADR 0030](0030-install-wide-apps.md)

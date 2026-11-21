@@ -33,10 +33,11 @@ open a pull request.
 | [0025](0025-web-analytics.md) | Web analytics are provider adapters that report visits and signups by Araldo's own link tags | accepted; built for Plausible and GA4 |
 | [0026](0026-reports.md) | A brand's report is computed on demand from what Araldo already reads, one period at a time | accepted; phase 1 and share links built; monthly email not yet |
 | [0027](0027-video-and-resizing.md) | Images too big for a platform are resized for it, and video is media stored in object storage | accepted; built |
-| [0028](0028-cli-as-api-client.md) | The CLI is an API client, modeled on `gh`; only server administration touches the database | accepted; built (device sign-in and user tokens, a test and a live credential per server, `/v1/members` and `/v1/org`, `araldo admin`); `araldo listen`; `auth switch` not yet |
+| [0028](0028-cli-as-api-client.md) | The CLI is an API client, modeled on `gh`; only server administration touches the database | accepted; built (device sign-in and user tokens, a test and a live credential per server, `/v1/members` and `/v1/org`, `araldo admin`); `araldo listen`; `auth switch` not yet; amended by ADR 0035 |
 | [0029](0029-backward-compatible-migrations.md) | Migrations work with the release still running, and a test enforces it | accepted; built |
 | [0030](0030-install-wide-apps.md) | Install-wide developer apps, managed by the operator, offered to every org beside its own | accepted; built |
-| [0031](0031-operator-api.md) | An operator API, org limits and status, and links out for sign-up and billing | accepted; built |
+| [0031](0031-operator-api.md) | An operator API, org limits and status, and links out for sign-up and billing | accepted; built; extended by ADR 0035 |
 | [0032](0032-request-log.md) | A request log of every authenticated API request, for the org's developers | accepted; built |
 | [0033](0033-single-sign-on.md) | OIDC single sign-on by DNS-verified domain, joining automatically, optionally required | accepted; built |
 | [0034](0034-notifications-and-email.md) | Notifications in the dashboard and by email, with SMTP set by the operator and self-service password reset | accepted; built |
+| [0035](0035-admin-over-the-operator-api.md) | `araldo admin` is a client of the operator API; only bootstrap opens the database | accepted; built |

@@ -1,6 +1,6 @@
 # ADR 0028: The CLI is an API client, modeled on `gh`; only server administration touches the database
 
-- Status: accepted; built (device sign-in and user tokens, a test and a live credential per server, `/v1/members` and `/v1/org`, `araldo admin`); `araldo listen`; `auth switch` not yet
+- Status: accepted; built (device sign-in and user tokens, a test and a live credential per server, `/v1/members` and `/v1/org`, `araldo admin`); `araldo listen`; `auth switch` not yet. Amended by [ADR 0035](0035-admin-over-the-operator-api.md): `araldo admin` calls the operator API, and only `bootstrap` keeps direct access
 - Date: 2026-10-04
 - Supersedes: [ADR 0019](0019-administration-api.md) decision 1 ("the CLI takes operators with
   database access; there is no session-authenticated API") and decision 6's CLI half
@@ -36,7 +36,9 @@ which `gh` has no counterpart of, the model is the Stripe CLI.
 1. **Two kinds of command.**
    - **Client commands call `/v1` over HTTPS and never open the database**: `channels`, `members`,
      `org`, and later posts and templates. They work from anywhere `/v1` is reachable.
-   - **Server administration lives under `araldo admin …`** and keeps direct access: `bootstrap`,
+   - **Server administration lives under `araldo admin …`** (amended by
+     [ADR 0035](0035-admin-over-the-operator-api.md): all but `bootstrap` now call the
+     operator API with an operator key) and keeps direct access: `bootstrap`,
      `keys generate|rotate|status`, `users create|reset-password`, `apikeys create`. It runs where the
      deployment's configuration is (a pod, the host). It acts as **the operator**, not as a member:
      audit entries carry no member, request ID `admin-cli`, and the command's name. `--as` goes away.

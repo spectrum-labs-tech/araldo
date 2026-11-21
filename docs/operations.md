@@ -40,22 +40,60 @@ Everything comes from environment variables.
 ```sh
 araldo admin keys generate --id k1          # keep this safe, outside the database
 export ARALDO_MASTER_KEYS=k1:…
-araldo admin bootstrap --email you@example.com --org "Your org" --brand "Your product"
+araldo admin bootstrap --email you@example.com --org "Your org" --brand "Your product" \
+  --operator-key | your-secret-store put araldo-operator-key
 araldo server & araldo worker         # or: araldo all
 ```
 
 `bootstrap` prints a generated password once. Sign in, then turn on
-two-factor authentication under **Your account**.
+two-factor authentication under **Your account**. With `--operator-key` it
+also makes the install's first operator key and prints only that on
+stdout (the rest, password included, goes to stderr), for the other
+`araldo admin` commands (see [Server administration](#server-administration)).
+
+## Server administration
+
+`araldo admin bootstrap` is the only command that opens the database: it
+runs before anyone or anything can sign in ([ADR 0035](adr/0035-admin-over-the-operator-api.md)).
+Every other `araldo admin` command (`users`, `keys rotate` and `status`,
+`apikeys`, `members`, `org`, `operator-keys`, `apps`) is a client of the
+**operator API** (`/v1/operator/`), with an operator key, and acts as the
+operator: no member, an owner's permissions in any org. `keys generate`
+needs neither: it only prints a new master key.
+
+| Variable or flag | Meaning |
+|---|---|
+| `ARALDO_OPERATOR_KEY` | The operator key (`ald_op_…`). Only from the environment, never a flag, so it stays out of shell history. |
+| `--hostname`, or `ARALDO_OPERATOR_HOST` | The server's operator API, such as `http://araldo.araldo.svc:8080`. A bare name means HTTPS. |
+| (neither) | The server on this machine, at `ARALDO_LISTEN` (`http://127.0.0.1:8080`): what a shell in the server's pod reaches. |
+
+The admin commands never use `ARALDO_HOST` or the server signed in to with
+`araldo auth login`: those are the public hostname, and the operator API
+belongs on an internal address (see *Keep the operator API off the
+internet* under [Hosting orgs for others](#hosting-orgs-for-others)). In
+Kubernetes, `kubectl exec` into a server pod with the key in its
+environment, or port-forward the service and set `ARALDO_OPERATOR_HOST`.
+
+An install from before the operator API did administration makes its first
+operator key with `araldo admin bootstrap --operator-key` alone, which
+creates nothing else; it is also the way back in if every operator key is
+lost. A key cannot revoke itself, so another key, or a new one from
+bootstrap, revokes it. Changes are audited with the key's ID.
 
 ## Keys
 
 - **Back up the master keys separately from the database.** Without them,
   connected channels must be reconnected (posts and history survive).
 - Rotate: generate a new key, put it first in `ARALDO_MASTER_KEYS` (keep the
-  old one after it), restart, run `araldo admin keys rotate`, then remove the old
-  key once `araldo admin keys status` says it wraps nothing.
-- `araldo admin keys status` lists each master key and how many data keys it
-  wraps, and fails if any are wrapped by a key that is not configured.
+  old one after it), restart **the server** (rotation uses the server's
+  keys, through the operator API), run `araldo admin keys rotate`, then
+  remove the old key once `araldo admin keys status` says it wraps nothing.
+  `rotate` rewraps a batch of data keys per request (`--batch-size`,
+  default 100) until none is left; stopped part way, run it again.
+- `araldo admin keys status` lists each master key the server has and how
+  many data keys it wraps, and fails if any are wrapped by a key that is
+  not configured; `rotate` skips those, rewraps the rest, and then fails
+  the same way.
 - Signed media links survive both: they are signed with a key stored like a
   data key, not with the master key itself.
 
@@ -79,7 +117,8 @@ To move an install from a local key to Transit:
 
 1. Configure Transit and keep `ARALDO_MASTER_KEYS`: Transit becomes primary,
    and the local key still unwraps what it wrapped.
-2. Run `araldo admin keys rotate` to rewrap every data key under Transit.
+2. Restart the server, then run `araldo admin keys rotate` to rewrap every
+   data key under Transit.
 3. Check `araldo admin keys status`: the local key should wrap nothing.
 4. Remove `ARALDO_MASTER_KEYS`, and keep the old key in offline escrow for
    database backups taken before step 2.
@@ -87,7 +126,9 @@ To move an install from a local key to Transit:
 ## Users
 
 - `araldo admin users create --email …` and `araldo admin users reset-password --email …`
-  print a generated password (or read one with `--password-stdin`).
+  print a generated password (or read one with `--password-stdin`). The
+  password goes to the server, which never returns it. A reset signs the
+  person out everywhere.
 - **Forgotten passwords**: with `ARALDO_SMTP_HOST` set, the sign-in page
   offers *Forgot your password?*, which emails a link that works once,
   for 30 minutes, and signs the person out everywhere when used. The page
@@ -161,8 +202,9 @@ araldo admin apikeys create --org "Your org" --brand your-product \
   | your-secret-store put …
 ```
 
-The operator makes it, in the org named by `--org`, and the audit log says
-so. Add `--live` for a live key and `--expires 8760h` to expire it.
+The operator makes it, in the org named by `--org`, through the operator
+API (`POST /v1/operator/orgs/{id}/api_keys`), and the audit log says so.
+Add `--live` for a live key and `--expires 8760h` to expire it.
 
 ### Administration by key
 
@@ -418,10 +460,10 @@ araldo api -X POST posts --input post.json   # ...and otherwise make it a POST, 
   prints is this computer's and stays the same, so the receiver is set up
   once. `--events` picks types; it reconnects and resumes on its own.
 
-Commands that change the server itself (`migrate`, and under `araldo
-admin`: `bootstrap`, `keys`, `users`, `apikeys create`, and the operator's
-`members` and `org`) still run where the deployment's configuration is,
-with direct access to its database.
+`migrate` and `araldo admin bootstrap` run where the deployment's
+configuration is, with direct access to its database. The rest of
+`araldo admin` acts as the operator through the operator API, with an
+operator key (see [Server administration](#server-administration)).
 
 ## AI assistants (MCP)
 
@@ -501,11 +543,12 @@ email does not arrive. Through the API, `send_email: true` on
 `POST /v1/invitations` (and the operator API's invitations and new orgs)
 emails it too, and `araldo members invite` asks for that unless given
 `--no-email`. The operator can also use these
-server administration commands, run where the
-server's configuration is. They act as the operator, with an owner's
-permissions, in the org named by `--org` (an ID or name; not needed on a
-server with one org), and the audit log records the command, not a member
-([ADR 0028](adr/0028-cli-as-api-client.md)):
+server administration commands, over the operator API with an operator key
+(see [Server administration](#server-administration)). They act as the
+operator, with an owner's permissions, in the org named by `--org` (an ID
+or name; not needed on a server with one org), and the audit log records
+the operator key, not a member
+([ADR 0035](adr/0035-admin-over-the-operator-api.md)):
 
 ```bash
 araldo admin members list   --org "Spectrum Labs"
@@ -525,8 +568,9 @@ credentials stay unreadable even in old database backups
 audit log keeps the record. An owner does it at the bottom of the org's
 page, confirming their password and typing its name; the operator, with
 `araldo admin org delete --org NAME --confirm NAME`. The old names
-(`araldo members`, `araldo org`, and the other commands now under `admin`)
-still work for now, and say where they went; `--as` is no longer needed.
+(`araldo users`, `araldo keys` and the other commands now under `admin`)
+still work for now, and say where they went; `--as` is refused: name the
+org with `--org`.
 
 `members add` prints a temporary password for someone without an account
 (or reads one with `--password-stdin`).
@@ -541,8 +585,9 @@ service, which drives Araldo from outside
 and to pay; it knows nothing of plans, prices or payment providers.
 
 **Operator keys** call the operator API, under `/v1/operator/`, and
-nothing else; org keys and user tokens cannot call it. Each key is shown
-once:
+nothing else; org keys and user tokens cannot call it. The first comes
+from `araldo admin bootstrap --operator-key`; with it, make one for each
+service. Each key is shown once, and a key cannot revoke itself:
 
 ```bash
 araldo admin operator-keys create --name "billing service"
@@ -560,11 +605,14 @@ usage for a month, and deletes it. Every change is audited with the key's
 ID. The API reference lists the operations under Operator.
 
 **Keep the operator API off the internet.** An operator key acts in every
-org: it can create an org with no limits, invite anyone into any org and
-delete one. When the service runs beside Araldo, have it call Araldo's
+org and on the install: it can create an org with no limits, invite anyone
+into any org, delete one, create accounts, reset anyone's password and
+mint API keys. When the service runs beside Araldo, have it call Araldo's
 internal address and refuse `/v1/operator/` at the proxy or edge in front
 of the public hostnames; members' own API, the rest of `/v1`, stays
-public. A stolen key is then useless from outside.
+public. A stolen key is then useless from outside. `araldo admin` follows
+the same rule: it calls `ARALDO_OPERATOR_HOST` or the server on the same
+machine, never the public host.
 
 **Limits** cap brands, live channels, members (with open invitations) and
 live posts a calendar month (UTC); each is unlimited unless set, and
@@ -861,8 +909,9 @@ application ([ADR 0013](adr/0013-backups.md) explains why).
 
 To restore, load the database into an empty Postgres, point
 `ARALDO_DATABASE_URL` at it with the same master keys, and run `araldo
-migrate` (or let the server migrate at startup). `araldo admin keys status`
-then shows whether every data key can be unwrapped.
+migrate` (or let the server migrate at startup). With the server running,
+`araldo admin keys status` then shows whether every data key can be
+unwrapped.
 
 ## Health
 

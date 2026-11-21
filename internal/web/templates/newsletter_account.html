@@ -10,7 +10,7 @@
   <label>Sender name <input name="from_name" value="{{$d.Form.FromName}}" required maxlength="100" {{if not $d.CanWrite}}disabled{{end}}></label>
   <label>Sender address <input name="from_email" type="email" value="{{$d.Form.FromEmail}}" required {{if not $d.CanWrite}}disabled{{end}}>
     <span class="hint">Checked with {{$d.Account.Provider}} when it changes.</span></label>
-  <label>Reply-to <span class="hint">(optional)</span> <input name="reply_to" type="email" value="{{$d.Form.ReplyTo}}" {{if not $d.CanWrite}}disabled{{end}}></label>
+  <label><span>Reply-to <span class="hint">(optional)</span></span> <input name="reply_to" type="email" value="{{$d.Form.ReplyTo}}" {{if not $d.CanWrite}}disabled{{end}}></label>
   <fieldset>
     <legend>Default audiences</legend>
     <p class="mt-0 text-sm text-muted">New issues for this brand go to these, read from {{$d.Account.Provider}} now. Araldo sees their names and sizes, never their members.</p>

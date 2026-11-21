@@ -1,0 +1,34 @@
+{{define "content"}}
+{{$d := .Data}}
+<p class="crumbs"><a href="/ads">Ads</a></p>
+<h1>Connect an ad account</h1>
+{{if not $d.Network}}
+<p class="text-muted">This install reads no ad networks in live mode yet. Each network is added once its ads API approves the install (ADR 0023).</p>
+{{else}}
+{{if gt (len $d.Networks) 1}}<nav class="choices" aria-label="Network">{{range $d.Networks}}<a class="chip" href="/ads/accounts/new?network={{.Network}}" {{if eq .Network $d.Network.Network}}aria-current="true"{{end}}>{{.Name}}</a>{{end}}</nav>{{end}}
+{{if $d.Network.OAuth}}
+{{if $d.Apps}}
+<form method="get" action="/connect/{{$d.Network.Provider}}/start" class="form-stack">
+  <label>Brand
+    {{template "brandSelect" (brandOptions $d.Brands $d.Brand "")}}
+  </label>
+  <label>Through
+    <select name="app">{{range $d.Apps}}<option value="{{appID .ID}}">{{.Name}}{{if .Install}} (provided by this server){{end}}</option>{{end}}</select></label>
+  <p class="text-sm text-muted">You sign in with {{$d.Network.Name}} and choose the ad accounts to read. Araldo asks only to read them; it stores the token encrypted. Connecting spends nothing.</p>
+  <div class="controls"><button class="btn-primary">Sign in with {{$d.Network.Name}}</button> <a class="btn" href="/ads">Cancel</a></div>
+</form>
+{{else}}<p>{{$d.Network.Name}} connects through a developer app. <a href="/channels/apps/new?provider={{$d.Network.Provider}}">Add your {{$d.Network.Name}} Ads app</a> first.</p>{{end}}
+{{else}}
+<form method="post" action="/ads/accounts" class="form-stack">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <input type="hidden" name="network" value="{{$d.Network.Network}}">
+  <label>Brand
+    {{template "brandSelect" (brandOptions $d.Brands $d.Brand "")}}
+  </label>
+  {{range $d.Network.Fields}}{{template "providerField" (fieldInput . $d.Values)}}{{end}}
+  <p class="text-sm text-muted">Araldo checks these with {{$d.Network.Name}} and stores secrets encrypted. Connecting spends nothing.</p>
+  <div class="controls"><button class="btn-primary">Connect</button> <a class="btn" href="/ads">Cancel</a></div>
+</form>
+{{end}}
+{{end}}
+{{end}}

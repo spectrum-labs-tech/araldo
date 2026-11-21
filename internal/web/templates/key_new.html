@@ -1,0 +1,36 @@
+{{define "content"}}
+<p class="crumbs"><a href="/keys">API keys</a></p>
+<h1>New {{if .Livemode}}live{{else}}test{{end}} key</h1>
+<form method="post" action="/keys" class="form-stack">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  {{$f := .Data.Form}}
+  <label>Name <input name="name" value="{{$f.Get "name"}}" required maxlength="100" placeholder="araldo.dev production"></label>
+  <fieldset class="flex flex-wrap gap-5"><legend>Access</legend>
+    <label class="check"><input type="radio" name="access" value="full" {{if ne ($f.Get "access") "restricted"}}checked{{end}} data-toggle="access"> Full</label>
+    <label class="check"><input type="radio" name="access" value="restricted" {{if eq ($f.Get "access") "restricted"}}checked{{end}} data-toggle="access"> Restricted</label>
+  </fieldset>
+  <fieldset data-when="access=restricted"><legend>Scopes</legend>
+    {{range .Data.Scopes}}<label class="check"><input type="checkbox" name="scopes" value="{{.}}" {{if contains (index $f "scopes") (printf "%s" .)}}checked{{end}}> <code>{{.}}</code></label>{{end}}
+  </fieldset>
+  <fieldset><legend>Administration <span class="hint">(only when checked; for tools like Terraform, Slack approvals or audit export)</span></legend>
+    {{range .Data.Admin}}<label class="check"><input type="checkbox" name="admin" value="{{.Scope}}" {{if contains (index $f "admin") (printf "%s" .Scope)}}checked{{end}}> <code>{{.Scope}}</code>
+      <span class="text-sm text-muted">{{.Description}}</span></label>{{end}}
+  </fieldset>
+  <div class="grid gap-4 sm:grid-cols-2">
+    <label>Expires
+      <select name="expires" data-toggle="expires">
+        {{$e := or ($f.Get "expires") "90d"}}
+        <option value="never" {{if eq $e "never"}}selected{{end}}>Never</option>
+        <option value="30d" {{if eq $e "30d"}}selected{{end}}>In 30 days</option>
+        <option value="90d" {{if eq $e "90d"}}selected{{end}}>In 90 days</option>
+        <option value="1y" {{if eq $e "1y"}}selected{{end}}>In a year</option>
+        <option value="date" {{if eq $e "date"}}selected{{end}}>On a date…</option>
+      </select></label>
+    <label data-when="expires=date">Date <input type="date" name="expires_on" value="{{$f.Get "expires_on"}}"></label>
+  </div>
+  <label>Limit to one brand
+    {{template "brandSelect" (brandOptions .Data.Brands ($f.Get "brand") "All brands")}}</label>
+  <div class="controls"><button class="btn-primary">Create key</button> <a class="btn" href="/keys">Cancel</a></div>
+  <p class="text-sm text-muted">Creating a key asks you to confirm your password.</p>
+</form>
+{{end}}

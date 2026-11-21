@@ -1,5 +1,8 @@
 {{define "content"}}
-<h1>API keys <span class="pill {{if .Livemode}}bad{{else}}warn{{end}}">{{if .Livemode}}live{{else}}test{{end}}</span></h1>
+<div class="page-head">
+  <h1>API keys <span class="pill {{if .Livemode}}bad{{else}}warn{{end}}">{{if .Livemode}}live{{else}}test{{end}}</span></h1>
+  <a class="btn btn-primary" href="/keys/new">New key</a>
+</div>
 {{if .Data.NewKey}}
 <section class="card secret" role="alert">
   <h2>Copy your new key now</h2>
@@ -38,39 +41,6 @@
   {{end}}
   </tbody>
 </table>
-{{else}}<p class="text-muted">No {{if .Livemode}}live{{else}}test{{end}} keys yet.</p>{{end}}
+{{else}}<p class="text-muted">No {{if .Livemode}}live{{else}}test{{end}} keys yet. <a href="/keys/new">Create one</a> for your app or agent to call the API.</p>{{end}}
 
-<section class="card">
-  <h2>Create a {{if .Livemode}}live{{else}}test{{end}} key</h2>
-  <form method="post" action="/keys" class="form-stack">
-    <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <label>Name <input name="name" required maxlength="100" placeholder="araldo.dev production"></label>
-    <fieldset class="flex flex-wrap gap-5"><legend>Access</legend>
-      <label class="check"><input type="radio" name="access" value="full" checked data-toggle="access"> Full</label>
-      <label class="check"><input type="radio" name="access" value="restricted" data-toggle="access"> Restricted</label>
-    </fieldset>
-    <fieldset data-when="access=restricted"><legend>Scopes</legend>
-      {{range .Data.Scopes}}<label class="check"><input type="checkbox" name="scopes" value="{{.}}"> <code>{{.}}</code></label>{{end}}
-    </fieldset>
-    <fieldset><legend>Administration <span class="hint">(only when checked; for tools like Terraform, Slack approvals or audit export)</span></legend>
-      {{range .Data.Admin}}<label class="check"><input type="checkbox" name="admin" value="{{.Scope}}"> <code>{{.Scope}}</code>
-        <span class="text-sm text-muted">{{.Description}}</span></label>{{end}}
-    </fieldset>
-    <div class="grid gap-4 sm:grid-cols-2">
-      <label>Expires
-        <select name="expires" data-toggle="expires">
-          <option value="never">Never</option>
-          <option value="30d">In 30 days</option>
-          <option value="90d" selected>In 90 days</option>
-          <option value="1y">In a year</option>
-          <option value="date">On a date…</option>
-        </select></label>
-      <label data-when="expires=date">Date <input type="date" name="expires_on"></label>
-    </div>
-    <label>Limit to one brand
-      {{template "brandSelect" (brandOptions .Data.Brands "" "All brands")}}</label>
-    <div><button class="btn-primary">Create key</button></div>
-    <p class="text-sm text-muted">Creating a key asks you to confirm your password.</p>
-  </form>
-</section>
 {{end}}

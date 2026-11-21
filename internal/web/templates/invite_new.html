@@ -1,0 +1,20 @@
+{{define "content"}}
+{{$d := .Data}}
+<p class="crumbs"><a href="/org">Organization</a></p>
+<h1>Invite a member</h1>
+<form method="post" action="/org/invitations" class="form-stack">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <label>Email <input type="email" name="email" value="{{$d.InviteEmail}}" required autocomplete="off"></label>
+  <label>Role <select name="role">{{range $r := (list "editor" "viewer" "admin")}}<option {{if eq $r $d.InviteRole}}selected{{end}}>{{$r}}</option>{{end}}{{if $d.IsOwner}}<option {{if eq "owner" $d.InviteRole}}selected{{end}}>owner</option>{{end}}</select></label>
+  <p class="text-sm text-muted">{{if $.MailEnabled}}We email them a link, and show it to you too.{{else}}You get a link to share.{{end}} They join when they open it and sign in, or create their account with their own password.</p>
+  <div class="controls"><button class="btn-primary">Create invitation</button> <a class="btn" href="/org">Cancel</a></div>
+</form>
+
+<h2 class="mt-6">Roles</h2>
+<dl class="facts text-sm">
+  <dt>viewer</dt><dd>Reads everything except secrets.</dd>
+  <dt>editor</dt><dd>Creates and edits templates and posts, and schedules them, subject to the brand's approvals.</dd>
+  <dt>admin</dt><dd>Also manages members, API keys, channels, webhooks and brand settings, and approves posts.</dd>
+  <dt>owner</dt><dd>Everything, including deleting the org and managing owners.</dd>
+</dl>
+{{end}}

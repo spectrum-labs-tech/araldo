@@ -72,6 +72,13 @@ the order it is being built in (update its status with the work).
   `internal/web/static/editor.js` (CI checks it too). Pages must work
   without JavaScript. Styles that scripts inject need the per-request CSP
   nonce (`data-nonce`); never loosen the policy with `unsafe-inline`.
+- **Forms**: a form that creates something has its own page (`/keys/new`,
+  `/mail-accounts/new`), reached from one primary button in the list's
+  page head (or its card's head, when a page lists several things), with
+  breadcrumbs back and a Cancel beside the submit. Shown again with its
+  problems, it keeps what was typed (never a secret). Never put a create
+  form under a list. A secret made by the form (a key, a signing secret,
+  an invite link) is shown once on the list page it returns to.
 - **Guides**: a page whose work takes setup elsewhere (developer apps, ad
   networks) defines a `guide` template: steps that tick themselves off from
   real state, then tips. The layout shows it beside the content on wide

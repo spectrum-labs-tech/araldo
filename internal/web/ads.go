@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/ads"
+	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
@@ -125,6 +126,19 @@ func (s *Server) adsData(c *reqCtx) (*adsData, error) {
 	return d, nil
 }
 
+// newAdAccount is the form for connecting an ad account, to ?network= if
+// given.
+func (s *Server) newAdAccount(c *reqCtx) error {
+	d, err := s.adsData(c)
+	if err != nil {
+		return err
+	}
+	if !d.CanWrite {
+		return apperr.Forbidden("Your role cannot connect ad accounts.")
+	}
+	return s.page(c, "ads_account_new", "ads", "Connect an ad account", d)
+}
+
 func (s *Server) connectAdAccount(c *reqCtx) error {
 	f := c.r.PostForm
 	in := core.AdAccountInput{Network: ads.Network(f.Get("network"))}
@@ -146,7 +160,7 @@ func (s *Server) connectAdAccount(c *reqCtx) error {
 				d.Network = &d.Networks[i]
 			}
 		}
-		return s.formErr(c, "ads", "ads", "Ads", d, err)
+		return s.formErr(c, "ads_account_new", "ads", "Connect an ad account", d, err)
 	}
 	b, err := s.svc.ResolveBrand(c.ctx(), c.actor, f.Get("brand"))
 	if err != nil {

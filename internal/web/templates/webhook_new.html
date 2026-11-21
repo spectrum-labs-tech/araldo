@@ -1,0 +1,14 @@
+{{define "content"}}
+<p class="crumbs"><a href="/webhooks">Webhooks</a></p>
+<h1>New {{if .Livemode}}live{{else}}test{{end}} endpoint</h1>
+<form method="post" action="/webhooks" class="form-stack">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <label>URL <input type="url" name="url" value="{{.Data.Form.URL}}" required placeholder="https://example.com/araldo/webhooks"></label>
+  <label>Description <input name="description" value="{{.Data.Form.Description}}" maxlength="500"></label>
+  <fieldset><legend>Events</legend>
+    <label class="check"><input type="checkbox" name="all" value="1" checked> Every event</label>
+    <details><summary>Or choose</summary>{{range .Data.EventTypes}}<label class="check"><input type="checkbox" name="events" value="{{.}}"> <code>{{.}}</code></label>{{end}}</details>
+  </fieldset>
+  <div class="controls"><button class="btn-primary">Add endpoint</button> <a class="btn" href="/webhooks">Cancel</a></div>
+</form>
+{{end}}

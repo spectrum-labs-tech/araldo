@@ -91,6 +91,19 @@ func (s *Server) newslettersData(c *reqCtx) (*newslettersData, error) {
 	return d, nil
 }
 
+// newMailAccount is the form for connecting a mail account, at ?provider=
+// if given.
+func (s *Server) newMailAccount(c *reqCtx) error {
+	d, err := s.newslettersData(c)
+	if err != nil {
+		return err
+	}
+	if !d.CanConnect {
+		return apperr.Forbidden("Your role cannot connect mail accounts.")
+	}
+	return s.page(c, "mail_account_new", "newsletters", "Connect a mail account", d)
+}
+
 func (s *Server) connectMailAccount(c *reqCtx) error {
 	f := c.r.PostForm
 	in := core.MailAccountInput{Provider: email.Provider(f.Get("provider")), FromName: f.Get("from_name"), FromEmail: f.Get("from_email"),
@@ -114,7 +127,7 @@ func (s *Server) connectMailAccount(c *reqCtx) error {
 				d.Provider = &d.Providers[i]
 			}
 		}
-		return s.formErr(c, "newsletters", "newsletters", "Newsletters", d, err)
+		return s.formErr(c, "mail_account_new", "newsletters", "Connect a mail account", d, err)
 	}
 	b, err := s.svc.ResolveBrand(c.ctx(), c.actor, f.Get("brand"))
 	if err != nil {

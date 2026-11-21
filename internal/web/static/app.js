@@ -24,13 +24,15 @@
     }
     var select = document.querySelector('select[name="' + name + '"]');
     if (select) { return select.value; }
+    if (!document.querySelector('input[name="' + name + '"]')) { return undefined; } // no such control: show it
     var checked = document.querySelector('input[name="' + name + '"]:checked');
     return checked ? checked.value : null;
   }
   function syncToggles() {
     document.querySelectorAll("[data-when]").forEach(function (block) {
       var parts = block.getAttribute("data-when").split("=");
-      block.hidden = currentValue(block, parts[0]) !== parts[1];
+      var v = currentValue(block, parts[0]);
+      block.hidden = v !== undefined && v !== parts[1];
     });
   }
   document.querySelectorAll("[data-toggle]").forEach(function (el) { el.addEventListener("change", syncToggles); });

@@ -1,7 +1,10 @@
 {{define "content"}}
 {{$d := .Data}}
-<h1>Ads</h1>
-<p class="text-muted">Spend and results of your ad accounts' campaigns, read daily, including campaigns made in each network's own tools. Araldo spends nothing: run campaigns in the network, and tag their links below. With web analytics connected on the Performance page, each campaign shows the signups its links brought and what each cost.{{if not .Livemode}} In test mode the sandbox invents these numbers.{{end}}</p>
+<div class="page-head">
+  <h1>Ads</h1>
+  {{if and $d.CanWrite $d.Network}}<a class="btn btn-primary" href="/ads/accounts/new">Connect an ad account</a>{{end}}
+</div>
+<p class="text-muted">Spend and results of your ad accounts' campaigns, read daily, including campaigns made in each network's own tools. Araldo spends nothing: run campaigns in the network, and tag their links with the guide's link builder. With web analytics connected on the Performance page, each campaign shows the signups its links brought and what each cost.{{if not .Livemode}} In test mode the sandbox invents these numbers.{{end}}</p>
 
 <form method="get" action="/ads" class="my-4 flex flex-wrap items-end gap-3">
   <label>Brand
@@ -47,43 +50,9 @@
         <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger" aria-label="Disconnect {{.Name}}">Disconnect</button></form></td>{{end}}
     </tr>{{end}}</tbody>
   </table>
-  {{else}}<p class="text-muted">No ad accounts are connected.</p>{{end}}
+  {{else}}<p class="text-muted">No ad accounts are connected.{{if and $d.CanWrite $d.Network}} <a href="/ads/accounts/new">Connect one</a> to see its spend here.{{end}}</p>{{end}}
 </section>
 
-{{if $d.CanWrite}}
-<section class="card">
-  <h2>Connect an ad account</h2>
-  {{if not $d.Network}}
-  <p class="text-muted">This install reads no ad networks in live mode yet. Each network is added once its ads API approves the install (ADR 0023).</p>
-  {{else}}
-  {{if gt (len $d.Networks) 1}}<nav class="choices" aria-label="Network">{{range $d.Networks}}<a class="chip" href="/ads?network={{.Network}}" {{if eq .Network $d.Network.Network}}aria-current="true"{{end}}>{{.Name}}</a>{{end}}</nav>{{end}}
-  {{if $d.Network.OAuth}}
-  {{if $d.Apps}}
-  <form method="get" action="/connect/{{$d.Network.Provider}}/start" class="form-stack">
-    <label>Brand
-      {{template "brandSelect" (brandOptions $d.Brands $d.Brand "")}}
-    </label>
-    <label>Through
-      <select name="app">{{range $d.Apps}}<option value="{{appID .ID}}">{{.Name}}{{if .Install}} (provided by this server){{end}}</option>{{end}}</select></label>
-    <p class="text-sm text-muted">You sign in with {{$d.Network.Name}} and choose the ad accounts to read. Araldo asks only to read them; it stores the token encrypted. Connecting spends nothing.</p>
-    <div><button class="btn-primary">Sign in with {{$d.Network.Name}}</button></div>
-  </form>
-  {{else}}<p>{{$d.Network.Name}} connects through a developer app. <a href="/channels/apps">Add your {{$d.Network.Name}} Ads app</a> first.</p>{{end}}
-  {{else}}
-  <form method="post" action="/ads/accounts" class="form-stack">
-    <input type="hidden" name="csrf" value="{{$.CSRF}}">
-    <input type="hidden" name="network" value="{{$d.Network.Network}}">
-    <label>Brand
-      {{template "brandSelect" (brandOptions $d.Brands $d.Brand "")}}
-    </label>
-    {{range $d.Network.Fields}}{{template "providerField" (fieldInput . $d.Values)}}{{end}}
-    <p class="text-sm text-muted">Araldo checks these with {{$d.Network.Name}} and stores secrets encrypted. Connecting spends nothing.</p>
-    <div><button class="btn-primary">Connect</button></div>
-  </form>
-  {{end}}
-  {{end}}
-</section>
-{{end}}
 {{end}}
 
 {{define "adsHead"}}<th class="text-right">Spend</th><th class="text-right">Impressions</th><th class="text-right">Clicks</th><th class="text-right">Cost per click</th><th class="text-right">Results</th>{{end}}
@@ -95,7 +64,7 @@
 {{if not .Livemode}}
 <p>Test mode reads a sandbox network whose numbers are invented, so you can try this page safely.</p>
 <ol class="guide-steps">
-  <li{{if $d.Accounts}} class="done"{{end}}>{{template "guideMark" (list "1" (printf "%t" (gt (len $d.Accounts) 0)))}}<div><strong>Connect a sandbox account</strong> below. Give it any name.</div></li>
+  <li{{if $d.Accounts}} class="done"{{end}}>{{template "guideMark" (list "1" (printf "%t" (gt (len $d.Accounts) 0)))}}<div><strong><a href="/ads/accounts/new">Connect a sandbox account</a>.</strong> Give it any name.</div></li>
   <li{{if $d.HasResults}} class="done"{{end}}>{{template "guideMark" (list "2" (printf "%t" $d.HasResults))}}<div><strong>See results.</strong> They are read within a few minutes, then daily.</div></li>
   <li>{{template "guideMark" (list "3" "false")}}<div><strong>Switch to live mode</strong> to connect a real network.</div></li>
 </ol>
@@ -106,7 +75,7 @@
     <code id="guide-redirect" class="copy-box mt-1 block">{{$d.Redirect}}</code> <button type="button" data-copy="guide-redirect">Copy</button></div></li>
   <li>{{template "guideMark" (list "2" "false")}}<div><strong>Ask {{$n}} for Ads API access</strong> for that app. Approval can take days; run your first campaigns in {{$n}}'s own tools meanwhile. Araldo reads their history once connected.</div></li>
   <li{{if $d.Apps}} class="done"{{end}}>{{template "guideMark" (list "3" (printf "%t" (gt (len $d.Apps) 0)))}}<div><strong>Add the app</strong> under <a href="/channels/apps">Developer apps</a>: its client ID and secret, as {{$n}} Ads.</div></li>
-  <li{{if $d.Accounts}} class="done"{{end}}>{{template "guideMark" (list "4" (printf "%t" (gt (len $d.Accounts) 0)))}}<div><strong>Sign in</strong> below and choose the ad accounts to read. Araldo asks only to read them.</div></li>
+  <li{{if $d.Accounts}} class="done"{{end}}>{{template "guideMark" (list "4" (printf "%t" (gt (len $d.Accounts) 0)))}}<div><strong><a href="/ads/accounts/new">Sign in</a></strong> and choose the ad accounts to read. Araldo asks only to read them.</div></li>
   <li{{if $d.HasResults}} class="done"{{end}}>{{template "guideMark" (list "5" (printf "%t" $d.HasResults))}}<div><strong>See results</strong> within a few minutes: the last 30 days, then a daily update.</div></li>
 </ol>
 {{else}}
@@ -120,7 +89,7 @@
   <label>Landing page <input name="tag_url" type="url" value="{{$d.Tag.URL}}" placeholder="https://example.com/pricing" required></label>
   <label>Network <input name="tag_source" value="{{$d.Tag.Source}}" placeholder="reddit"></label>
   <label>Campaign <input name="tag_campaign" value="{{$d.Tag.Campaign}}" placeholder="alpha-launch" required></label>
-  <label>Ad <span class="hint">(optional)</span> <input name="tag_content" value="{{$d.Tag.Content}}" placeholder="localllama-1"></label>
+  <label><span>Ad <span class="hint">(optional)</span></span> <input name="tag_content" value="{{$d.Tag.Content}}" placeholder="localllama-1"></label>
   <div><button>Build link</button></div>
 </form>
 {{if $d.Tag.Err}}<div class="alert" role="alert">{{$d.Tag.Err}}</div>{{end}}

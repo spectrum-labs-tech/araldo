@@ -1,0 +1,26 @@
+{{define "content"}}
+{{$d := .Data}}
+<p class="crumbs"><a href="/newsletters">Newsletters</a></p>
+<h1>Connect a mail account</h1>
+{{if not $d.Provider}}
+<p class="text-muted">This install sends through no email providers in live mode yet.</p>
+{{else}}
+{{if gt (len $d.Providers) 1}}<nav class="choices" aria-label="Provider">{{range $d.Providers}}<a class="chip" href="/mail-accounts/new?provider={{.Provider}}" {{if eq .Provider $d.Provider.Provider}}aria-current="true"{{end}}>{{.Name}}</a>{{end}}</nav>{{end}}
+<form method="post" action="/mail-accounts" class="form-stack">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <input type="hidden" name="provider" value="{{$d.Provider.Provider}}">
+  <label>Brand
+    {{template "brandSelect" (brandOptions $d.Brands $d.Brand "")}}
+  </label>
+  <label>Sender name <input name="from_name" value="{{index $d.Values "from_name"}}" required maxlength="100" placeholder="Open B00KS"></label>
+  <label>Sender address <input name="from_email" type="email" value="{{index $d.Values "from_email"}}" required placeholder="news@news.example.com">
+    <span class="hint">One {{$d.Provider.Name}} will send as: a verified sender, or any address on a domain authenticated there.</span></label>
+  <label><span>Reply-to <span class="hint">(optional)</span></span> <input name="reply_to" type="email" value="{{index $d.Values "reply_to"}}" placeholder="hello@example.com"></label>
+  {{range $d.Provider.Fields}}{{template "providerField" (fieldInput . $d.Values)}}{{end}}
+  <p class="text-sm text-muted">Araldo checks these with {{$d.Provider.Name}} and stores the key encrypted. Next you choose the audiences new issues go to.</p>
+  <div class="controls"><button class="btn-primary">Connect</button> <a class="btn" href="/newsletters">Cancel</a></div>
+</form>
+{{end}}
+{{end}}
+
+{{define "guide"}}{{template "newslettersGuide" .}}{{end}}

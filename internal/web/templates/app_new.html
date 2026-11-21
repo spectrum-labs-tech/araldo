@@ -1,0 +1,32 @@
+{{define "content"}}
+{{$d := .Data}}
+<p class="crumbs"><a href="/channels">Channels</a> / <a href="/channels/apps">Developer apps</a></p>
+<h1>New developer app</h1>
+{{if not $d.Providers}}<p class="text-muted">No platform on this server connects through a developer app.</p>{{else}}
+<form method="post" action="/channels/apps" class="flex flex-col gap-4">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <label>Platform
+    <select name="provider" data-toggle>{{range $d.Providers}}<option value="{{.Provider}}" {{if eq (index $d.Form "provider") (printf "%s" .Provider)}}selected{{end}}>{{.Name}}</option>{{end}}</select></label>
+  {{/* Every platform's links without JavaScript; with it, only the chosen one's. */}}
+  {{range $d.Providers}}
+  <div data-when="provider={{.Provider}}" class="flex flex-col gap-1 text-sm">
+    <span class="text-muted">{{.Name}} redirect URI</span>
+    <span class="controls"><code id="redirect-{{.Provider}}" class="copy-box">{{index $d.Redirects .Provider}}</code>
+      <button type="button" data-copy="redirect-{{.Provider}}" aria-label="Copy the {{.Name}} redirect URI">Copy</button></span>
+    {{with index $d.Sites .Provider}}<span>Register the app at <a href="{{.}}" rel="noopener" target="_blank">{{.}}</a></span>{{end}}
+    {{with index $d.Guides .Provider}}
+    <ol class="app-guide">{{range .Steps}}<li>{{.}}</li>{{end}}</ol>
+    <p>Then here: <strong>Client ID</strong> is {{.ClientID}}, and <strong>Client secret</strong> is {{.Confidential}}.</p>
+    {{with .Notes}}<ul class="app-guide-notes">{{range .}}<li>{{.}}</li>{{end}}</ul>{{end}}
+    {{end}}
+  </div>
+  {{end}}
+  <label>Name <input name="name" maxlength="100" value="{{index $d.Form "name"}}" placeholder="Threads app"></label>
+  <label>Client ID (app ID) <input name="client_id" required maxlength="500" value="{{index $d.Form "client_id"}}" autocomplete="off"></label>
+  <label>Client secret (app secret) <input name="client_secret" type="password" required maxlength="500" autocomplete="off"></label>
+  <div class="controls"><button class="btn-primary">Add app</button> <a class="btn" href="/channels/apps">Cancel</a></div>
+</form>
+{{end}}
+{{end}}
+
+{{define "guide"}}{{template "appsGuide" .}}{{end}}

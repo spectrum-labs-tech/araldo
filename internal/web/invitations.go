@@ -22,17 +22,30 @@ import (
 // for.
 const inviteSendTimeout = 20 * time.Second
 
+func (s *Server) newInvitation(c *reqCtx) error {
+	d, err := s.orgData(c)
+	if err != nil {
+		return err
+	}
+	if !d.IsAdmin {
+		return apperr.Forbidden("Only admins and owners invite members.")
+	}
+	d.InviteRole = string(model.RoleEditor)
+	return s.page(c, "invite_new", "org", "Invite a member", d)
+}
+
 func (s *Server) inviteMember(c *reqCtx) error {
 	d, err := s.orgData(c)
 	if err != nil {
 		return err
 	}
+	d.InviteEmail, d.InviteRole = c.r.PostFormValue("email"), c.r.PostFormValue("role")
 	link, inv, err := s.svc.InviteMember(c.ctx(), c.actor, c.session, c.r.PostFormValue("email"), model.Role(c.r.PostFormValue("role")))
 	if err != nil {
 		if core.NeedsReauth(err) {
-			return redirect(c, "/confirm?next=/org", "Confirm your password to invite an owner.")
+			return redirect(c, "/confirm?next=/org/invitations/new", "Confirm your password to invite an owner.")
 		}
-		return s.formErr(c, "org", "org", "Organization", d, err)
+		return s.formErr(c, "invite_new", "org", "Invite a member", d, err)
 	}
 	// The link is shown once, here; only its hash is kept. It is emailed
 	// too when the server sends email; if that fails, it can be shared.

@@ -1,5 +1,8 @@
 {{define "content"}}
-<h1>Webhooks <span class="pill {{if .Livemode}}bad{{else}}warn{{end}}">{{if .Livemode}}live{{else}}test{{end}}</span></h1>
+<div class="page-head">
+  <h1>Webhooks <span class="pill {{if .Livemode}}bad{{else}}warn{{end}}">{{if .Livemode}}live{{else}}test{{end}}</span></h1>
+  <a class="btn btn-primary" href="/webhooks/new">New endpoint</a>
+</div>
 {{if .Data.Secret}}
 <section class="card secret" role="alert">
   <h2>Copy the signing secret now</h2>
@@ -19,19 +22,6 @@
   {{end}}
   </tbody>
 </table>
-{{else}}<p class="text-muted">No endpoints yet.</p>{{end}}
+{{else}}<p class="text-muted">No endpoints yet. <a href="/webhooks/new">Add one</a> to hear about posts as they happen.</p>{{end}}
 
-<section class="card">
-  <h2>Add an endpoint</h2>
-  <form method="post" action="/webhooks" class="form-stack">
-    <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <label>URL <input type="url" name="url" value="{{.Data.Form.URL}}" required placeholder="https://example.com/araldo/webhooks"></label>
-    <label>Description <input name="description" value="{{.Data.Form.Description}}" maxlength="500"></label>
-    <fieldset><legend>Events</legend>
-      <label class="check"><input type="checkbox" name="all" value="1" checked> Every event</label>
-      <details><summary>Or choose</summary>{{range .Data.EventTypes}}<label class="check"><input type="checkbox" name="events" value="{{.}}"> <code>{{.}}</code></label>{{end}}</details>
-    </fieldset>
-    <div><button class="btn-primary">Add endpoint</button></div>
-  </form>
-</section>
 {{end}}

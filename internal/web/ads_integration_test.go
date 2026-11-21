@@ -50,8 +50,12 @@ func TestAdsPage(t *testing.T) {
 		return rec.Body.String()
 	}
 	got := page()
-	if !strings.Contains(got, "No ad accounts are connected.") || !strings.Contains(got, `action="/ads/accounts"`) {
-		t.Fatalf("an owner should see the connect form:\n%s", got)
+	if !strings.Contains(got, "No ad accounts are connected.") || !strings.Contains(got, `href="/ads/accounts/new"`) {
+		t.Fatalf("an owner should be offered to connect:\n%s", got)
+	}
+	if rec := d.send(httptest.NewRequest(http.MethodGet, "/ads/accounts/new", nil)); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `action="/ads/accounts"`) {
+		t.Fatalf("the connect page: %d\n%s", rec.Code, rec.Body.String())
 	}
 	// The guide's first step is not done yet.
 	if !strings.Contains(got, `<aside class="guide" aria-label="Guide">`) || strings.Contains(got, `<li class="done">`) {

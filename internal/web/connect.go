@@ -125,6 +125,16 @@ func (s *Server) apps(c *reqCtx) error {
 	return s.page(c, "apps", "channels", "Developer apps", d)
 }
 
+// newApp is the form for adding an app, for ?provider= if given.
+func (s *Server) newApp(c *reqCtx) error {
+	d, err := s.appsData(c)
+	if err != nil {
+		return err
+	}
+	d.Form["provider"] = c.r.URL.Query().Get("provider")
+	return s.page(c, "app_new", "channels", "New developer app", d)
+}
+
 func (s *Server) createApp(c *reqCtx) error {
 	d, err := s.appsData(c)
 	if err != nil {
@@ -136,7 +146,7 @@ func (s *Server) createApp(c *reqCtx) error {
 	}
 	if _, err := s.svc.CreateProviderApp(c.ctx(), c.actor, core.ProviderAppInput{Provider: platform.Provider(f.Get("provider")),
 		Name: f.Get("name"), ClientID: f.Get("client_id"), ClientSecret: f.Get("client_secret")}); err != nil {
-		return s.formErr(c, "apps", "channels", "Developer apps", d, err)
+		return s.formErr(c, "app_new", "channels", "New developer app", d, err)
 	}
 	return redirect(c, "/channels/apps", "App added. Connect channels through it from Channels.")
 }

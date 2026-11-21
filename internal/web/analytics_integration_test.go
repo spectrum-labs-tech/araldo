@@ -34,8 +34,12 @@ func TestPerformanceShowsSignupsByPost(t *testing.T) {
 		}
 		return rec.Body.String()
 	}
-	if got := page(); !strings.Contains(got, "Connect the brand's web analytics below") || !strings.Contains(got, `action="/performance/analytics"`) {
-		t.Fatalf("before connecting, the page should offer the form:\n%s", got)
+	if got := page(); !strings.Contains(got, `<a href="/performance/analytics/new">Connect the brand's web analytics</a>`) {
+		t.Fatalf("before connecting, the page should offer to connect:\n%s", got)
+	}
+	if rec := d.send(httptest.NewRequest(http.MethodGet, "/performance/analytics/new", nil)); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `action="/performance/analytics"`) {
+		t.Fatalf("the connect page: %d\n%s", rec.Code, rec.Body.String())
 	}
 
 	form := url.Values{"csrf": {d.login.Session.CSRFToken}, "provider": {"sandbox"}, "brand": {id.Format(id.Brand, d.brand.ID)},

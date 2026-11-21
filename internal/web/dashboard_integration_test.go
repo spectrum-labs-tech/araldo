@@ -307,8 +307,11 @@ func TestRollKeyKeepsTheOldSecretForADay(t *testing.T) {
 		t.Fatalf("the old key during the overlap: %v", err)
 	}
 	// The create form offers each admin scope with what it allows.
+	page = d.send(httptest.NewRequest(http.MethodGet, "/keys/new", nil)).Body.String()
 	for _, s := range core.AdminScopeInfo() {
-		if !strings.Contains(page, `value="`+string(s.Scope)+`"> <code>`+string(s.Scope)+`</code>`+"\n        "+`<span class="text-sm text-muted">`+s.Description+`</span>`) {
+		offered := regexp.MustCompile(`value="` + regexp.QuoteMeta(string(s.Scope)) + `"[^>]*> <code>` + regexp.QuoteMeta(string(s.Scope)) +
+			`</code>\s*<span class="text-sm text-muted">` + regexp.QuoteMeta(s.Description) + `</span>`)
+		if !offered.MatchString(page) {
 			t.Errorf("admin scope %s is not offered with its description", s.Scope)
 		}
 	}
@@ -483,7 +486,7 @@ func TestPostsListFiltersAndPages(t *testing.T) {
 func TestAppsPageLinksPerPlatform(t *testing.T) {
 	t.Parallel()
 	d := newDash(t, threads.New(http.DefaultClient), linkedin.New(http.DefaultClient))
-	rec := d.send(httptest.NewRequest(http.MethodGet, "/channels/apps", nil))
+	rec := d.send(httptest.NewRequest(http.MethodGet, "/channels/apps/new", nil))
 	page := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.Contains(page, `<select name="provider" data-toggle>`) {
 		t.Fatalf("apps page: %d\n%s", rec.Code, page)
@@ -500,7 +503,7 @@ func TestAppsPageLinksPerPlatform(t *testing.T) {
 		}
 	}
 	if strings.Contains(page, "max-w-xl") || strings.Contains(page, "form-stack") {
-		t.Error("the form is still narrower than its card")
+		t.Error("the form is narrower than the page: its setup steps need the width")
 	}
 	if strings.Contains(page, `<li class="done">`) {
 		t.Error("with no app of the org's own, a guide step is ticked off")

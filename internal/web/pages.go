@@ -89,6 +89,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /channels", s.app("channels", s.channels))
 	s.mux.HandleFunc("GET /channels/new", s.app("channels", s.newChannel))
 	s.mux.HandleFunc("GET /channels/apps", s.app("channels", s.apps))
+	s.mux.HandleFunc("GET /channels/apps/new", s.app("channels", s.newApp))
 	s.mux.HandleFunc("POST /channels/apps", s.app("channels", s.createApp))
 	s.mux.HandleFunc("POST /channels/apps/{id}/rename", s.app("channels", s.renameApp))
 	s.mux.HandleFunc("POST /channels/apps/{id}/delete", s.app("channels", s.deleteApp))
@@ -110,11 +111,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /cli", s.app("keys", s.cliPage))
 	s.mux.HandleFunc("POST /cli", s.app("keys", s.cliCreateKey))
 	s.mux.HandleFunc("GET /keys", s.app("keys", s.keys))
+	s.mux.HandleFunc("GET /keys/new", s.app("keys", s.newKey))
 	s.mux.HandleFunc("POST /keys", s.app("keys", s.createKey))
 	s.mux.HandleFunc("GET /keys/{id}", s.app("keys", s.keyDetail))
 	s.mux.HandleFunc("POST /keys/{id}/revoke", s.app("keys", s.revokeKey))
 	s.mux.HandleFunc("POST /keys/{id}/roll", s.app("keys", s.rollKey))
 	s.mux.HandleFunc("GET /webhooks", s.app("webhooks", s.webhooks))
+	s.mux.HandleFunc("GET /webhooks/new", s.app("webhooks", s.newWebhook))
 	s.mux.HandleFunc("POST /webhooks", s.app("webhooks", s.createWebhook))
 	s.mux.HandleFunc("GET /webhooks/{id}", s.app("webhooks", s.webhookDetail))
 	s.mux.HandleFunc("POST /webhooks/{id}", s.app("webhooks", s.updateWebhook))
@@ -134,6 +137,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /org", s.app("org", s.orgPage))
 	s.mux.HandleFunc("POST /org", s.app("org", s.saveOrg))
 	s.mux.HandleFunc("POST /org/delete", s.app("org", s.deleteOrg))
+	s.mux.HandleFunc("GET /org/invitations/new", s.app("org", s.newInvitation))
 	s.mux.HandleFunc("POST /org/invitations", s.app("org", s.inviteMember))
 	s.mux.HandleFunc("POST /org/invitations/{id}/revoke", s.app("org", s.revokeInvitation))
 	s.mux.HandleFunc("GET /org/members/{id}", s.app("org", s.memberDetail))
@@ -167,9 +171,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /sandbox/{id}", s.app("posts", s.sandboxPost))
 	s.mux.HandleFunc("GET /media/{id}", s.app("posts", s.mediaFile))
 	s.mux.HandleFunc("GET /performance", s.app("performance", s.performance))
+	s.mux.HandleFunc("GET /performance/analytics/new", s.app("performance", s.newAnalytics))
 	s.mux.HandleFunc("POST /performance/analytics", s.app("performance", s.connectAnalytics))
 	s.mux.HandleFunc("POST /performance/analytics/{id}/delete", s.app("performance", s.deleteAnalytics))
 	s.mux.HandleFunc("GET /ads", s.app("ads", s.adsPage))
+	s.mux.HandleFunc("GET /ads/accounts/new", s.app("ads", s.newAdAccount))
 	s.mux.HandleFunc("POST /ads/accounts", s.app("ads", s.connectAdAccount))
 	s.mux.HandleFunc("POST /ads/accounts/{id}/delete", s.app("ads", s.deleteAdAccount))
 	s.mux.HandleFunc("GET /reports", s.app("reports", s.reportsPage))
@@ -177,6 +183,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /reports/recipients", s.app("reports", s.reportRecipients))
 	s.mux.HandleFunc("POST /reports/shares/{id}/revoke", s.app("reports", s.unshareReport))
 	s.mux.HandleFunc("GET /newsletters", s.app("newsletters", s.newslettersPage))
+	s.mux.HandleFunc("GET /mail-accounts/new", s.app("newsletters", s.newMailAccount))
 	s.mux.HandleFunc("POST /mail-accounts", s.app("newsletters", s.connectMailAccount))
 	s.mux.HandleFunc("GET /mail-accounts/{id}", s.app("newsletters", s.mailAccountPage))
 	s.mux.HandleFunc("POST /mail-accounts/{id}", s.app("newsletters", s.saveMailAccount))
@@ -264,7 +271,7 @@ func (s *Server) home(c *reqCtx) error {
 	d.Steps = []step{
 		{"Create a brand", "/brands/new", len(d.Brands) > 0},
 		{"Connect a " + mode + "-mode channel", "/channels/new", len(d.Channels) > 0},
-		{"Create a " + mode + " API key", "/keys", d.Keys > 0},
+		{"Create a " + mode + " API key", "/keys/new", d.Keys > 0},
 		{"Publish your first post", "/posts/new", len(d.Posts) > 0},
 		{"Turn on two-factor authentication", "/account", c.user.SecondFactor()},
 	}
@@ -660,6 +667,19 @@ func (s *Server) performanceData(c *reqCtx) (*performanceData, error) {
 	return d, nil
 }
 
+// newAnalytics is the form for connecting a site's web analytics, from
+// ?provider= if given.
+func (s *Server) newAnalytics(c *reqCtx) error {
+	d, err := s.performanceData(c)
+	if err != nil {
+		return err
+	}
+	if !d.CanConnect {
+		return apperr.Forbidden("Your role cannot connect web analytics.")
+	}
+	return s.page(c, "analytics_new", "performance", "Connect a site", d)
+}
+
 func (s *Server) connectAnalytics(c *reqCtx) error {
 	f := c.r.PostForm
 	in := core.AnalyticsSourceInput{Provider: analytics.Provider(f.Get("provider")), Goals: strings.Split(f.Get("goals"), ",")}
@@ -682,7 +702,7 @@ func (s *Server) connectAnalytics(c *reqCtx) error {
 				d.Provider = &d.Providers[i]
 			}
 		}
-		return s.formErr(c, "performance", "performance", "Performance", d, err)
+		return s.formErr(c, "analytics_new", "performance", "Connect a site", d, err)
 	}
 	b, err := s.svc.ResolveBrand(c.ctx(), c.actor, f.Get("brand"))
 	if err != nil {

@@ -165,15 +165,15 @@ func seedPages(t *testing.T, d *dash) []string {
 
 	return []string{
 		"/", "/posts", "/posts?q=accessible&status=published", "/posts/new", "/posts/" + id.Format(id.Post, p.ID), "/posts/" + id.Format(id.Post, scheduled.ID),
-		"/sandbox/" + id.Format(id.Target, target.ID), "/performance", "/ads", "/ads?tag_url=https://example.com/&tag_campaign=launch",
+		"/sandbox/" + id.Format(id.Target, target.ID), "/performance", "/performance/analytics/new", "/ads", "/ads/accounts/new", "/ads?tag_url=https://example.com/&tag_campaign=launch",
 		"/newsletters", "/newsletters/new", "/newsletters/" + id.Format(id.Issue, draft.ID), "/newsletters/" + id.Format(id.Issue, queued.ID),
-		"/mail-accounts/" + id.Format(id.MailAccount, mailAcct.ID), "/reports", "/reports?month=" + thisMonth(t, d.brand),
+		"/mail-accounts/" + id.Format(id.MailAccount, mailAcct.ID), "/mail-accounts/new", "/reports", "/reports?month=" + thisMonth(t, d.brand),
 		"/templates", "/templates/new", "/templates/" + id.Format(id.Template, tpl.ID),
-		"/channels", "/channels/apps", "/channels/new", "/channels/new?provider=bluesky", "/channels/" + id.Format(id.Channel, chans[0].ID) + "/reconnect",
+		"/channels", "/channels/apps", "/channels/apps/new", "/channels/new", "/channels/new?provider=bluesky", "/channels/" + id.Format(id.Channel, chans[0].ID) + "/reconnect",
 		"/brands", "/brands/new", "/brands/" + id.Format(id.Brand, d.brand.ID),
-		"/keys", "/keys/" + id.Format(id.APIKey, key.ID), "/cli?device=laptop", "/cli?device=laptop&mode=live", "/webhooks", "/webhooks/" + id.Format(id.WebhookEndpoint, ep.ID),
+		"/keys", "/keys/new", "/keys/" + id.Format(id.APIKey, key.ID), "/cli?device=laptop", "/cli?device=laptop&mode=live", "/webhooks", "/webhooks/new", "/webhooks/" + id.Format(id.WebhookEndpoint, ep.ID),
 		"/events", "/events/" + id.Format(id.Event, events[0].ID), "/logs", "/logs?status=4xx", "/api-reference",
-		"/org", "/org/members/" + id.Format(id.User, *d.owner.UserID), "/org/audit", "/org/tasks", "/org/sso", "/account", "/confirm", "/notifications", "/notifications/settings",
+		"/org", "/org/invitations/new", "/org/members/" + id.Format(id.User, *d.owner.UserID), "/org/audit", "/org/tasks", "/org/sso", "/account", "/confirm", "/notifications", "/notifications/settings",
 	}
 }
 

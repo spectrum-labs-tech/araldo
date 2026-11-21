@@ -60,7 +60,7 @@
 
   <div class="grid gap-4 xl:grid-cols-2">
     <label>Variables (JSON Schema) <textarea name="variables" rows="10" class="font-mono" data-editor="json">{{$f.Variables}}</textarea></label>
-    <label>Example data <span class="hint">(checks and the preview use it)</span><textarea name="example" rows="10" class="font-mono" data-editor="json">{{$f.Example}}</textarea></label>
+    <label><span>Example data <span class="hint">(checks and the preview use it)</span></span><textarea name="example" rows="10" class="font-mono" data-editor="json">{{$f.Example}}</textarea></label>
   </div>
   <div><button class="btn-primary">{{if $f.Template}}Save{{else}}Create template{{end}}</button>
     {{if $f.Template}}<span class="ml-2 text-sm text-muted">Changing the text makes version {{inc $f.Template.LatestVersion}}; queued posts keep theirs.</span>{{end}}</div>

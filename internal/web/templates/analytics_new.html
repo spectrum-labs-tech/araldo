@@ -1,0 +1,20 @@
+{{define "content"}}
+<p class="crumbs"><a href="/performance">Performance</a></p>
+<h1>Connect a site</h1>
+{{$p := .Data.Provider}}
+{{if not $p}}<p class="text-muted">This install reads no web analytics in live mode yet.</p>{{else}}
+{{if gt (len .Data.Providers) 1}}<nav class="choices" aria-label="Provider">{{range .Data.Providers}}<a class="chip" href="/performance/analytics/new?provider={{.Provider}}" {{if eq .Provider $p.Provider}}aria-current="true"{{end}}>{{.Name}}</a>{{end}}</nav>{{end}}
+<form method="post" action="/performance/analytics" class="form-stack">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <input type="hidden" name="provider" value="{{$p.Provider}}">
+  <label>Brand
+    {{template "brandSelect" (brandOptions .Data.Brands $.Data.Brand "")}}
+  </label>
+  {{range $p.Fields}}{{template "providerField" (fieldInput . $.Data.Values)}}{{end}}
+  <label><span>Goals that count as signups <span class="hint">(comma-separated, as {{$p.Name}} names them)</span></span>
+    <input name="goals" value="{{index .Data.Values "goals"}}" placeholder="Waitlist Signup"></label>
+  <p class="text-sm text-muted">Araldo reads counts by link tag, never visitors, and stores the key encrypted.</p>
+  <div class="controls"><button class="btn-primary">Connect</button> <a class="btn" href="/performance">Cancel</a></div>
+</form>
+{{end}}
+{{end}}

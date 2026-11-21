@@ -5,6 +5,7 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -30,6 +31,8 @@ type keysData struct {
 	// Rolled says NewKey replaced a key whose old secret still works.
 	Rolled  bool
 	BaseURL string
+	// Form is the new-key form's values, shown again with its problems.
+	Form url.Values
 }
 
 func (s *Server) keysData(c *reqCtx) (*keysData, error) {
@@ -60,11 +63,20 @@ func (s *Server) keys(c *reqCtx) error {
 	return s.page(c, "keys", "keys", "API keys", d)
 }
 
+func (s *Server) newKey(c *reqCtx) error {
+	d, err := s.keysData(c)
+	if err != nil {
+		return err
+	}
+	return s.page(c, "key_new", "keys", "New API key", d)
+}
+
 func (s *Server) createKey(c *reqCtx) error {
 	d, err := s.keysData(c)
 	if err != nil {
 		return err
 	}
+	d.Form = c.r.PostForm
 	in := core.APIKeyInput{Name: c.r.PostFormValue("name"), Livemode: c.actor.Livemode, Scopes: c.r.PostForm["scopes"]}
 	if c.r.PostFormValue("access") == "full" {
 		in.Scopes = nil
@@ -81,22 +93,22 @@ func (s *Server) createKey(c *reqCtx) error {
 	}
 	expires, err := keyExpiry(c.r.PostFormValue("expires"), c.r.PostFormValue("expires_on"), time.Now())
 	if err != nil {
-		return s.formErr(c, "keys", "keys", "API keys", d, err)
+		return s.formErr(c, "key_new", "keys", "New API key", d, err)
 	}
 	in.Expires = expires
 	if ref := c.r.PostFormValue("brand"); ref != "" {
 		b, err := s.svc.ResolveBrand(c.ctx(), c.actor, ref)
 		if err != nil {
-			return s.formErr(c, "keys", "keys", "API keys", d, err)
+			return s.formErr(c, "key_new", "keys", "New API key", d, err)
 		}
 		in.BrandID = &b.ID
 	}
 	plain, k, err := s.svc.CreateAPIKey(c.ctx(), c.actor, c.session, in)
 	if err != nil {
 		if core.NeedsReauth(err) {
-			return redirect(c, "/confirm?next=/keys", "Confirm your password to create a key.")
+			return redirect(c, "/confirm?next=/keys/new", "Confirm your password to create a key.")
 		}
-		return s.formErr(c, "keys", "keys", "API keys", d, err)
+		return s.formErr(c, "key_new", "keys", "New API key", d, err)
 	}
 	d.NewKey, d.NewName = plain, k.Name
 	d.Keys = append([]*model.APIKey{k}, d.Keys...)
@@ -245,6 +257,10 @@ func (s *Server) webhooks(c *reqCtx) error {
 	return s.page(c, "webhooks", "webhooks", "Webhooks", webhooksData{Endpoints: eps, EventTypes: core.EventTypes})
 }
 
+func (s *Server) newWebhook(c *reqCtx) error {
+	return s.page(c, "webhook_new", "webhooks", "New endpoint", webhooksData{EventTypes: core.EventTypes})
+}
+
 func (s *Server) createWebhook(c *reqCtx) error {
 	eps, err := s.svc.Endpoints(c.ctx(), c.actor)
 	if err != nil {
@@ -257,7 +273,7 @@ func (s *Server) createWebhook(c *reqCtx) error {
 	}
 	ep, secret, err := s.svc.CreateEndpoint(c.ctx(), c.actor, core.EndpointInput{URL: d.Form.URL, Description: &d.Form.Description, EventTypes: types})
 	if err != nil {
-		return s.formErr(c, "webhooks", "webhooks", "Webhooks", d, err)
+		return s.formErr(c, "webhook_new", "webhooks", "New endpoint", d, err)
 	}
 	d.Endpoints = append(d.Endpoints, ep)
 	d.Secret, d.SecretFor, d.Form = secret, ep.URL, endpointForm{}
@@ -455,8 +471,11 @@ type orgData struct {
 	Invited          *model.Invitation
 	InviteEmailed    bool
 	InviteEmailError string
-	IsOwner          bool
-	IsAdmin          bool
+	// InviteEmail and InviteRole are the invite form's, shown again with
+	// its problems.
+	InviteEmail, InviteRole string
+	IsOwner                 bool
+	IsAdmin                 bool
 	// Usage is shown, against the org's limits, to those who manage it
 	// when it has limits (ADR 0031).
 	Usage *model.OrgUsage

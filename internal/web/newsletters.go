@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -222,6 +223,10 @@ type issueData struct {
 	SendAt    string
 	// TestTo is the test form's addresses, kept across a failed send.
 	TestTo string
+	// TopDays and TopCount are the top posts block's choices; Inserted
+	// says the block was just added to the body, unsaved.
+	TopDays, TopCount int
+	Inserted          bool
 }
 
 // Open says the issue can still be scheduled, moved or canceled: it is
@@ -256,7 +261,7 @@ func (d *issueData) Editable() bool {
 func (a accountChoice) Field() string { return "audience_" + id.Format(id.MailAccount, a.Account.ID) }
 
 func (s *Server) issueData(c *reqCtx, is *model.Issue, brandRef string) (*issueData, error) {
-	d := &issueData{Issue: is, CanWrite: c.actor.Can(core.PermNewslettersWrite), CanReview: c.actor.Can(core.PermPostsApprove)}
+	d := &issueData{Issue: is, CanWrite: c.actor.Can(core.PermNewslettersWrite), CanReview: c.actor.Can(core.PermPostsApprove), TopDays: 7, TopCount: 3}
 	var err error
 	if d.Brands, err = s.svc.Brands(c.ctx(), c.actor); err != nil {
 		return nil, err
@@ -350,11 +355,34 @@ func (s *Server) createIssue(c *reqCtx) error {
 		return err
 	}
 	in := d.formInput(c)
+	if c.r.PostFormValue("insert") == "top_posts" {
+		return s.insertTopPosts(c, d, "New issue")
+	}
 	is, err := s.svc.CreateIssue(c.ctx(), c.actor, in)
 	if err != nil {
 		return s.formErr(c, "newsletter_edit", "newsletters", "New issue", d, err)
 	}
 	return redirect(c, "/newsletters/"+id.Format(id.Issue, is.ID), "Saved the draft.")
+}
+
+// insertTopPosts adds the brand's top posts to the end of the body being
+// written and shows the editor again, saving nothing: the writer edits
+// the block like the rest of the issue (ADR 0024 phase 2).
+func (s *Server) insertTopPosts(c *reqCtx, d *issueData, title string) error {
+	if d.Brand == nil {
+		return s.formErr(c, "newsletter_edit", "newsletters", title, d, chooseBrand(apperr.NotFound("brand")))
+	}
+	d.TopDays, _ = strconv.Atoi(c.r.PostFormValue("top_days"))
+	d.TopCount, _ = strconv.Atoi(c.r.PostFormValue("top_count"))
+	md, err := s.svc.TopPostsBlock(c.ctx(), c.actor, d.Brand.ID, d.TopDays, d.TopCount)
+	if err != nil {
+		return s.formErr(c, "newsletter_edit", "newsletters", title, d, err)
+	}
+	if body := strings.TrimRight(d.Body, " \r\n"); body != "" {
+		md = body + "\n\n" + md
+	}
+	d.Body, d.Inserted = md, true
+	return s.page(c, "newsletter_edit", "newsletters", title, d)
 }
 
 func (s *Server) loadIssue(c *reqCtx) (*model.Issue, error) {
@@ -387,6 +415,9 @@ func (s *Server) saveIssue(c *reqCtx) error {
 		return err
 	}
 	in := d.formInput(c)
+	if c.r.PostFormValue("insert") == "top_posts" {
+		return s.insertTopPosts(c, d, is.Subject)
+	}
 	if _, err := s.svc.UpdateIssue(c.ctx(), c.actor, is.ID, in); err != nil {
 		return s.formErr(c, "newsletter_edit", "newsletters", is.Subject, d, err)
 	}

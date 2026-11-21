@@ -774,6 +774,14 @@ stores no subscriber address.
    canceling reach the provider too. `newsletters.read` reads each
    delivery's results 1 hour, 1, 3, 7 and 30 days after it is sent.
 
+The editor's preview follows the writing. **Insert top posts** adds the
+brand's most engaging posts of the last week, 30 or 90 days to the end of
+the body as ordinary Markdown: each post's text as published, its first
+image that has alt text, a link to its most engaging copy and its likes,
+reposts and replies. Edit or cut it like the rest of the issue; it is not
+saved until the draft is. Posts need engagement read first (ADR 0018), so
+a brand whose posts have none yet is told so.
+
 **Brevo**: an API key from SMTP & API → API keys. The sender must be an
 active Brevo sender or on a domain authenticated there. Audiences are
 Brevo's contact lists and segments. Tests go through Brevo's

@@ -363,6 +363,7 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	checks["test issue"] = b.s.SendTestIssue(ctx, b.owner, issue.ID, core.TestIssueInput{MailAccountID: mailAcct.ID, To: []string{"b@b.example"}})
 	_, checks["issue for their brand"] = b.s.CreateIssue(ctx, b.owner, core.IssueInput{BrandID: a.brand.ID, Subject: "x", Body: "x"})
 	_, checks["preview for their brand"] = b.s.PreviewIssue(ctx, b.owner, core.IssueInput{BrandID: a.brand.ID, Subject: "x", Body: "x"})
+	_, checks["top posts of their brand"] = b.s.TopPostsBlock(ctx, b.owner, a.brand.ID, 7, 3)
 	_, checks["retry"] = b.s.RetryTarget(ctx, b.owner, p.Targets[0].ID)
 	_, checks["post to their brand"] = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: a.brand.ID, Content: &model.Content{Body: "x"}})
 	for what, err := range checks {

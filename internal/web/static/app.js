@@ -139,4 +139,20 @@
     });
   }
 
+  // A preview button marked data-live-preview presses itself a moment
+  // after its form stops changing, so the preview follows the writing.
+  // Without JavaScript the button is pressed by hand.
+  document.querySelectorAll("button[data-live-preview]").forEach(function (btn) {
+    var form = btn.form;
+    if (!form || !form.requestSubmit) { return; }
+    var timer;
+    var refresh = function (e) {
+      if (e.target && e.target.closest && e.target.closest("[data-no-live-preview]")) { return; }
+      clearTimeout(timer);
+      timer = setTimeout(function () { form.requestSubmit(btn); }, 800);
+    };
+    form.addEventListener("input", refresh);
+    form.addEventListener("change", refresh);
+    if (btn.hasAttribute("data-live-preview-now")) { form.requestSubmit(btn); }
+  });
 })();

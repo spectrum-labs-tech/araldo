@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/store"
 )
 
 func TestNewslettersInTheDashboard(t *testing.T) {
@@ -136,5 +138,35 @@ func TestNewslettersInTheDashboard(t *testing.T) {
 	}
 	if accts, err := d.s.MailAccounts(ctx, d.owner, nil); err != nil || len(accts) != 0 {
 		t.Fatalf("after disconnecting: %d, %v", len(accts), err)
+	}
+}
+
+// TestInsertTopPosts checks the editor's top posts button shows the editor
+// again with what was typed and saves nothing, saying why when the brand
+// has no posts with engagement yet.
+func TestInsertTopPosts(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	form := url.Values{"csrf": {d.login.Session.CSRFToken}, "brand": {id.Format(id.Brand, d.brand.ID)}, "subject": {"Weekly"},
+		"body": {"Hello there"}, "insert": {"top_posts"}, "top_days": {"7"}, "top_count": {"3"}}
+	r := httptest.NewRequest(http.MethodPost, "/newsletters", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := d.send(r)
+	page := rec.Body.String()
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(page, "No post of this brand has engagement") ||
+		!strings.Contains(page, ">Hello there</textarea>") || !strings.Contains(page, `value="Weekly"`) {
+		t.Fatalf("insert with nothing to insert: %d\n%s", rec.Code, page)
+	}
+	if issues, _, err := d.s.Issues(t.Context(), d.owner, core.IssueFilter{BrandID: &d.brand.ID}, store.Page{Limit: 10}); err != nil || len(issues) != 0 {
+		t.Fatalf("inserting saved an issue: %d, %v", len(issues), err)
+	}
+	// The editor offers it, and asks for the preview to follow the writing.
+	page = d.send(httptest.NewRequest(http.MethodGet, "/newsletters/new", nil)).Body.String()
+	if !strings.Contains(page, `<button name="insert" value="top_posts" formnovalidate>Insert top posts</button>`) || !strings.Contains(page, "data-live-preview") {
+		t.Fatalf("the editor:\n%s", page)
+	}
+	// Enter in a field presses the form's first button: it must save.
+	if strings.Index(page, `<button class="btn-primary">Save draft</button>`) > strings.Index(page, `name="insert"`) {
+		t.Fatal("the insert button comes before Save draft, so Enter would insert rather than save")
 	}
 }

@@ -62,12 +62,26 @@
           {{.Name}} <span class="text-muted">{{.Kind}}{{if ge .Size 0}}, {{.Size}}{{end}}</span></label>{{end}}
       </fieldset>{{end}}
     </div>
-    {{else}}<p class="text-sm text-muted">This brand has no mail accounts; <a href="/newsletters">connect one</a> to send. You can still write a draft.</p>{{end}}
+    {{else}}<p class="text-sm text-muted">This brand has no mail accounts; <a href="/mail-accounts/new">connect one</a> to send. You can still write a draft.</p>{{end}}
   </fieldset>
   <div class="flex gap-3">
     <button class="btn-primary">Save draft</button>
-    <button formaction="/newsletters/preview" formtarget="nl-preview" formnovalidate>Preview changes</button>
+    <button formaction="/newsletters/preview" formtarget="nl-preview" formnovalidate data-live-preview {{if or $d.Inserted (and (not $is) $d.Body)}}data-live-preview-now{{end}}>Preview changes</button>
   </div>
+  {{/* After Save: Enter in a field presses the form's first button. */}}
+  {{if $d.Inserted}}<p class="notice" role="status">Added the top posts at the end of the body. Edit them as you like; nothing is saved until you save the draft.</p>{{end}}
+  <fieldset class="flex flex-wrap items-end gap-3" data-no-live-preview>
+    <legend>Top posts <span class="hint">the brand's most engaging recent posts, added to the body for you to edit</span></legend>
+    <label>How many
+      <select name="top_count">{{range $n := (list "3" "5" "10")}}<option {{if eq (printf "%d" $d.TopCount) $n}}selected{{end}}>{{$n}}</option>{{end}}</select></label>
+    <label>From the last
+      <select name="top_days">
+        <option value="7" {{if eq $d.TopDays 7}}selected{{end}}>week</option>
+        <option value="30" {{if eq $d.TopDays 30}}selected{{end}}>30 days</option>
+        <option value="90" {{if eq $d.TopDays 90}}selected{{end}}>90 days</option>
+      </select></label>
+    <button name="insert" value="top_posts" formnovalidate>Insert top posts</button>
+  </fieldset>
 </form>
 {{end}}
 
@@ -83,7 +97,7 @@
     <summary>Plain text</summary>
     <pre class="preview-text">{{$d.Rendered.Text}}</pre>
   </details>{{end}}
-  {{else}}<p class="text-sm text-muted">Press “Preview changes” to see it here.</p>{{end}}
+  {{else}}<p class="text-sm text-muted">The preview follows what you write (or press “Preview changes”).</p>{{end}}
 </section>
 
 {{if $is}}

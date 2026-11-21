@@ -162,7 +162,12 @@ into spam.
   tools came early: an agent can preview an issue, save it as a draft and
   follow results, and a person schedules it.
 - **Phase 2:** templates with data for issues, a "top posts" block from
-  engagement, MCP tools.
+  engagement, MCP tools. The top posts block came first, in the
+  dashboard's editor: it inserts the posts as ordinary Markdown (text as
+  published, first described image, link and counts) for the writer to
+  edit, rather than a block the renderer fills at hand-off, so what is
+  previewed is still what is sent and an issue keeps reading the same
+  after its posts' engagement changes.
 - **Phase 3:** more providers (Listmonk, Buttondown), and send slots per
   brand. Resend came first, as broadcasts: one segment per broadcast, so
   one audience per Resend delivery (an optional `email.AudienceLimiter`

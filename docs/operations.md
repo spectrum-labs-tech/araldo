@@ -867,7 +867,12 @@ exactly one; an issue or default with more is refused when it is saved.
 Issues become broadcasts created and scheduled in one request, named after the issue and ending with the
 delivery's ID, which is how a hand-off with an unknown outcome finds its
 broadcast again; renaming one in Resend before then hides it, and the
-delivery waits for a person. Moving a handed-off issue cancels the
+delivery waits for a person. The footer's unsubscribe link is Resend's
+`{{{RESEND_UNSUBSCRIBE_URL}}}`, so Resend gives each recipient their own
+link and adds the one-click `List-Unsubscribe` headers Gmail and Yahoo
+require of bulk senders; unsubscribing there opts the contact out of all
+of the account's broadcasts
+([Resend](https://resend.com/docs/dashboard/segments/introduction)). Moving a handed-off issue cancels the
 broadcast back to a draft and schedules it again. Results come from
 Resend's email metrics: sent (shown as recipients), delivered, unique
 opens and clicks (with tracking on for the domain), unsubscribes, bounces

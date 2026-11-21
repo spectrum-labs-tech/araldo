@@ -449,7 +449,7 @@ person in several orgs).
 | `analytics_summary` | Visitors and signups by post, network, campaign or day, from the brand's web analytics (read-only). |
 | `brand_report` | A brand's month beside the one before: publishing, engagement, web traffic, ads and newsletters (read-only). |
 | `list_notifications` | What Araldo told the person signed in with `araldo auth login`: approvals waiting, posts needing attention, channels to reconnect, account changes (read-only; not for API keys). |
-| `preview_newsletter`, `draft_newsletter`, `list_newsletters` | Write and check a newsletter issue and save it as a draft for a person to schedule; follow issues' results. |
+| `preview_newsletter`, `draft_newsletter`, `list_newsletters`, `newsletter_top_posts` | Write and check a newsletter issue and save it as a draft for a person to schedule; follow issues' results; get the brand's top posts as Markdown to put in an issue. |
 
 Claude Code:
 

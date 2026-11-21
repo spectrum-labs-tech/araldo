@@ -83,3 +83,26 @@ func TestNewslettersOverTheAPI(t *testing.T) {
 		t.Fatalf("disconnect: %d %v", status, got)
 	}
 }
+
+// TestTopPostsOverTheAPI checks the endpoint's parameters and that a brand
+// with nothing read yet is told why.
+func TestTopPostsOverTheAPI(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	for _, tt := range []struct {
+		query  string
+		status int
+		code   string
+	}{
+		{"", http.StatusUnprocessableEntity, "brand_required"},
+		{"?brand=" + c.brand + "&days=week", http.StatusUnprocessableEntity, "days_invalid"},
+		{"?brand=" + c.brand + "&count=11", http.StatusUnprocessableEntity, "count_invalid"},
+		{"?brand=" + c.brand, http.StatusUnprocessableEntity, "no_top_posts"},
+		{"?brand=brand_01aaaaaaaaaaaaaaaaaaaaaaaa", http.StatusNotFound, ""},
+	} {
+		status, body := c.json(http.MethodGet, "/v1/newsletters/top_posts"+tt.query, nil)
+		if status != tt.status || tt.code != "" && body["code"] != tt.code {
+			t.Errorf("GET top_posts%s: %d %v, want %d %s", tt.query, status, body, tt.status, tt.code)
+		}
+	}
+}

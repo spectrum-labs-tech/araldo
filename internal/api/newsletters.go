@@ -5,10 +5,12 @@ package api
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/email"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
@@ -264,6 +266,35 @@ func (h *Handler) previewIssueInput(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	ok(w, http.StatusOK, previewView(rd))
+	return nil
+}
+
+// topPosts writes a brand's top posts as issue Markdown (ADR 0024 phase 2).
+func (h *Handler) topPosts(w http.ResponseWriter, r *http.Request) error {
+	q := r.URL.Query()
+	if q.Get("brand") == "" {
+		return apperr.Invalid("brand_required", "brand", "Name the brand, by ID or slug.")
+	}
+	b, err := h.svc.ResolveBrand(r.Context(), actor(r), q.Get("brand"))
+	if err != nil {
+		return err
+	}
+	days, count := 7, 3
+	for _, p := range []struct {
+		name string
+		v    *int
+	}{{"days", &days}, {"count", &count}} {
+		if s := q.Get(p.name); s != "" {
+			if *p.v, err = strconv.Atoi(s); err != nil {
+				return apperr.Invalid(p.name+"_invalid", p.name, "%s is a whole number.", p.name)
+			}
+		}
+	}
+	md, err := h.svc.TopPostsBlock(r.Context(), actor(r), b.ID, days, count)
+	if err != nil {
+		return err
+	}
+	ok(w, http.StatusOK, map[string]any{"object": "newsletter_block", "markdown": md})
 	return nil
 }
 

@@ -96,6 +96,7 @@ func (h *Handler) routes() {
 	h.handle("GET /v1/newsletters", h.listIssues, paged("brand", "status")...)
 	h.handle("POST /v1/newsletters", h.createIssue)
 	h.handle("POST /v1/newsletters/preview", h.previewIssueInput)
+	h.handle("GET /v1/newsletters/top_posts", h.topPosts, "brand", "days", "count")
 	h.handle("GET /v1/newsletters/{id}", h.getIssue)
 	h.handle("POST /v1/newsletters/{id}", h.updateIssue)
 	h.handle("GET /v1/newsletters/{id}/preview", h.renderIssue)

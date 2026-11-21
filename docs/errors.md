@@ -318,6 +318,9 @@ with another page), shown on the ad account and retried later.
 - **audience_unknown**: the provider has no audience with that ID.
 - **audience_missing**: a delivery needs at least one audience, given or
   set as the account's defaults.
+- **audience_too_many**: the provider sends a campaign to fewer
+  audiences than chosen (a Resend broadcast goes to one segment); choose
+  fewer, or make one audience at the provider that covers them.
 - **delivery_duplicate**: list each mail account once in `deliveries`,
   with all its audiences.
 - **subject_invalid**, **preview_text_too_long**: a subject is 1 to 200
@@ -348,6 +351,10 @@ with another page), shown on the ad account and retried later.
   approved or rejected.
 - **handoff_in_progress** (409): the issue is being handed to its
   providers right now; retry in a minute.
+- **brand_required**, **days_invalid**, **count_invalid**: a top posts
+  block names its brand, looks back 1 to 90 days and takes 1 to 10 posts.
+- **no_top_posts**: none of the brand's posts from that period has
+  engagement read yet; it is read within hours of publishing.
 
 ## Webhooks
 

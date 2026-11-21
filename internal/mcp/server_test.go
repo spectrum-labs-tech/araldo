@@ -137,8 +137,8 @@ func TestToolsList(t *testing.T) {
 	t.Parallel()
 	out, _, _ := session(t, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	list, _ := result(t, out["1"])["tools"].([]any)
-	if len(list) != 22 {
-		t.Fatalf("%d tools, want 22", len(list))
+	if len(list) != 23 {
+		t.Fatalf("%d tools, want 23", len(list))
 	}
 	names := map[string]map[string]any{}
 	for _, raw := range list {
@@ -175,8 +175,9 @@ func TestToolsCallTheAPI(t *testing.T) {
 		call(14, "list_newsletters", `{"status":"sent"}`),
 		call(15, "retry_target", `{"target":"ptgt_1"}`),
 		call(16, "mark_target_published", `{"target":"ptgt_2","permalink":"https://bsky.app/profile/araldo.dev/post/1"}`),
+		call(17, "newsletter_top_posts", `{"brand":"araldo","days":30,"count":5}`),
 	)
-	for i := 1; i <= 16; i++ {
+	for i := 1; i <= 17; i++ {
 		if text, isErr := toolText(t, out[itoa(i)]); isErr {
 			t.Fatalf("call %d failed: %s", i, text)
 		}
@@ -243,6 +244,9 @@ func TestToolsCallTheAPI(t *testing.T) {
 	}
 	if q := byPath["GET /v1/newsletters"].Query; q != "status=sent" {
 		t.Fatalf("list_newsletters query %q", q)
+	}
+	if q := byPath["GET /v1/newsletters/top_posts"].Query; q != "brand=araldo&count=5&days=30" {
+		t.Fatalf("newsletter_top_posts query %q", q)
 	}
 }
 

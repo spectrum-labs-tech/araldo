@@ -428,6 +428,21 @@ func tools(api *Client) []Tool {
 			},
 		},
 		{
+			Name: "newsletter_top_posts", Title: "Write a top posts block", ReadOnly: true, Idempotent: true,
+			Description: "The brand's most engaging recent posts as newsletter Markdown: each post's text as published, its " +
+				"first described image, a link to it and its likes, reposts and replies, under a heading. Put it in a draft's body " +
+				"(draft_newsletter) and edit it to read well, e.g. a line on why each post mattered. Fails with no_top_posts while " +
+				"no post has engagement yet.",
+			Input: object([]string{"brand"}, map[string]any{
+				"brand": str(brandDesc),
+				"days":  map[string]any{"type": "integer", "minimum": 1, "maximum": 90, "description": "How far back (default 7)."},
+				"count": map[string]any{"type": "integer", "minimum": 1, "maximum": 10, "description": "How many posts (default 3)."},
+			}),
+			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
+				return get("/v1/newsletters/top_posts", query(args, "brand", "days", "count"))(ctx)
+			},
+		},
+		{
 			Name: "draft_newsletter", Title: "Draft a newsletter issue",
 			Description: "Saves a newsletter issue as a draft, going to each of the brand's mail accounts with their default " +
 				"audiences. A person reviews, schedules and approves it in Araldo; nothing is sent from here. " + newsletterBodyHelp,

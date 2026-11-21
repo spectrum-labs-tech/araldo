@@ -1408,6 +1408,35 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/IssuePreview" } } }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/newsletters/top_posts:
+    get:
+      summary: Write a top posts block
+      description: |
+        The brand's most engaging posts published in the last `days`, as
+        issue Markdown under a heading: each post's text as published, its
+        first image that has alt text, a link to its most engaging copy and
+        its likes, reposts and replies. Put it in an issue's body and edit
+        it like the rest. Posts need their engagement read first; a brand
+        with none yet gets `no_top_posts`. Needs `newsletters:write` and
+        `posts:read`.
+      tags: [Newsletters]
+      parameters:
+        - { name: brand, in: query, required: true, schema: { type: string }, description: Brand ID or slug. }
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 90, default: 7 } }
+        - { name: count, in: query, schema: { type: integer, minimum: 1, maximum: 10, default: 3 } }
+      responses:
+        "200":
+          description: The block.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [object, markdown]
+                properties:
+                  object: { type: string, enum: [newsletter_block] }
+                  markdown: { type: string }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/newsletters/{id}:
     parameters: [{ $ref: "#/components/parameters/ID" }]
     get:

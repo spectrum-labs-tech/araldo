@@ -171,7 +171,7 @@ func TestToolsCallTheAPI(t *testing.T) {
 		call(10, "analytics_summary", `{"group_by":"post","days":14}`),
 		call(11, "brand_report", `{"brand":"araldo","month":"2026-09"}`),
 		call(12, "draft_newsletter", `{"brand":"araldo","subject":"October","body":"# Hi"}`),
-		call(13, "preview_newsletter", `{"brand":"araldo","subject":"October","preview_text":"What shipped","body":"# Hi"}`),
+		call(13, "preview_newsletter", `{"brand":"araldo","template":"weekly","data":{"week":"May 4"}}`),
 		call(14, "list_newsletters", `{"status":"sent"}`),
 		call(15, "retry_target", `{"target":"ptgt_1"}`),
 		call(16, "mark_target_published", `{"target":"ptgt_2","permalink":"https://bsky.app/profile/araldo.dev/post/1"}`),
@@ -239,7 +239,8 @@ func TestToolsCallTheAPI(t *testing.T) {
 	if d := byPath["POST /v1/newsletters"]; d.Body["subject"] != "October" || d.Body["brand"] != "araldo" || d.IdemKey == "" {
 		t.Fatalf("draft_newsletter %+v", d)
 	}
-	if p := byPath["POST /v1/newsletters/preview"]; p.Body["preview_text"] != "What shipped" || p.IdemKey != "" {
+	if p := byPath["POST /v1/newsletters/preview"]; p.Body["template"] != "weekly" || p.Body["data"].(map[string]any)["week"] != "May 4" ||
+		p.Body["subject"] != nil || p.IdemKey != "" {
 		t.Fatalf("preview_newsletter %+v", p)
 	}
 	if q := byPath["GET /v1/newsletters"].Query; q != "status=sent" {

@@ -6,15 +6,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/newsletter"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
 	"github.com/spectrum-labs-tech/araldo/internal/tmpl"
@@ -27,6 +31,8 @@ type TemplateInput struct {
 	BrandID uuid.UUID
 	Key     string
 	Name    string
+	// Kind is what the template renders; empty means a post.
+	Kind model.TemplateKind
 	// Approval overrides the brand's approval policy for posts made from
 	// this template; empty means inherit.
 	Approval model.TemplateApproval
@@ -62,13 +68,20 @@ func (s *Service) CreateTemplate(ctx context.Context, a Actor, in TemplateInput)
 	if in.Approval == "" {
 		in.Approval = model.TemplateApprovalInherit
 	}
+	if in.Kind == "" {
+		in.Kind = model.TemplatePost
+	}
+	if !in.Kind.Valid() {
+		return nil, nil, apperr.Invalid("kind_invalid", "kind", "A template's kind is post or newsletter.")
+	}
 	if err := checkApprovalSetting(a, in.Approval); err != nil {
 		return nil, nil, err
 	}
-	if _, err := tmpl.Compile(in.Source); err != nil {
+	if err := checkSource(in.Kind, in.Source); err != nil {
 		return nil, nil, err
 	}
-	t := &model.Template{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Key: in.Key, Name: strings.TrimSpace(in.Name), Approval: in.Approval}
+	t := &model.Template{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Key: in.Key, Name: strings.TrimSpace(in.Name), Kind: in.Kind,
+		Approval: in.Approval}
 	v := versionOf(t, in.Source, 1, a.UserID)
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.CreateTemplate(ctx, t); err != nil {
@@ -125,6 +138,9 @@ func (s *Service) AddTemplateVersion(ctx context.Context, a Actor, templateID uu
 
 // addVersion saves src as t's next version, in tx. src is compiled.
 func (s *Service) addVersion(ctx context.Context, tx *store.Store, a Actor, t *model.Template, src tmpl.Source) error {
+	if err := checkSource(t.Kind, src); err != nil {
+		return err
+	}
 	// An approver exempted this template's posts from review, trusting
 	// its text; new text needs one too (ADR 0004).
 	if t.Approval == model.TemplateApprovalNotRequired && !a.Can(PermPostsApprove) {
@@ -204,7 +220,7 @@ func (s *Service) UpdateTemplate(ctx context.Context, a Actor, templateID uuid.U
 
 func versionOf(t *model.Template, src tmpl.Source, version int, by *uuid.UUID) *model.TemplateVersion {
 	return &model.TemplateVersion{OrgID: t.OrgID, TemplateID: t.ID, Version: version, Variables: src.Variables, Examples: src.Examples,
-		Body: src.Body, Overrides: src.Overrides, Fit: src.Fit, CreatedBy: by}
+		Body: src.Body, Subject: src.Subject, PreviewText: src.PreviewText, Overrides: src.Overrides, Fit: src.Fit, CreatedBy: by}
 }
 
 func (s *Service) reloadTemplate(ctx context.Context, orgID, templateID uuid.UUID) (*model.Template, *model.TemplateVersion, error) {
@@ -218,7 +234,7 @@ func (s *Service) reloadTemplate(ctx context.Context, orgID, templateID uuid.UUI
 
 // Template returns a template and a version (0: latest).
 func (s *Service) Template(ctx context.Context, a Actor, templateID uuid.UUID, version int) (*model.Template, *model.TemplateVersion, error) {
-	if err := a.requireAny(PermTemplatesRead, PermPostsWrite); err != nil {
+	if err := a.requireAny(PermTemplatesRead, PermPostsWrite, PermNewslettersWrite); err != nil {
 		return nil, nil, err
 	}
 	t, err := s.store.Template(ctx, a.OrgID, templateID)
@@ -275,7 +291,7 @@ func (s *Service) TemplateByRef(ctx context.Context, a Actor, brandID uuid.UUID,
 
 // Templates lists templates, optionally for one brand.
 func (s *Service) Templates(ctx context.Context, a Actor, brandID *uuid.UUID) ([]*model.Template, error) {
-	if err := a.requireAny(PermTemplatesRead, PermPostsWrite); err != nil {
+	if err := a.requireAny(PermTemplatesRead, PermPostsWrite, PermNewslettersWrite); err != nil {
 		return nil, err
 	}
 	if a.BrandID != nil {
@@ -302,7 +318,75 @@ func (s *Service) DeleteTemplate(ctx context.Context, a Actor, templateID uuid.U
 }
 
 func sourceOf(v *model.TemplateVersion) tmpl.Source {
-	return tmpl.Source{Variables: v.Variables, Examples: v.Examples, Body: v.Body, Overrides: v.Overrides, Fit: v.Fit}
+	return tmpl.Source{Variables: v.Variables, Examples: v.Examples, Body: v.Body, Subject: v.Subject, PreviewText: v.PreviewText,
+		Overrides: v.Overrides, Fit: v.Fit}
+}
+
+// checkSource compiles src and checks it fits a template of kind k: a
+// newsletter template has a subject and no per-platform parts, and its
+// examples render as an issue; a post template has neither subject nor
+// preview text.
+func checkSource(k model.TemplateKind, src tmpl.Source) error {
+	var ps apperr.Problems
+	if k == model.TemplateNewsletter {
+		if strings.TrimSpace(src.Subject) == "" {
+			ps.Add("subject_missing", "subject", "A newsletter template needs a subject.")
+		}
+		if len(src.Overrides) > 0 || len(src.Fit) > 0 {
+			ps.Add("overrides_not_allowed", "overrides", "A newsletter template has one body, not one per platform.")
+		}
+	} else if src.Subject != "" || src.PreviewText != "" {
+		ps.Add("subject_not_allowed", "subject", "Only newsletter templates have a subject and preview text.")
+	}
+	if err := ps.Err("The template is not valid."); err != nil {
+		return err
+	}
+	c, err := tmpl.Compile(src)
+	if err != nil || k != model.TemplateNewsletter {
+		return err
+	}
+	for i, ex := range src.Examples {
+		if _, err := renderTemplateIssue(c, ex, time.UTC); err != nil {
+			var ae *apperr.Error
+			if errors.As(err, &ae) {
+				ps.Add(ae.Code, fmt.Sprintf("examples[%d]", i), "Example %d: %s", i+1, ae.Message)
+				continue
+			}
+			return err
+		}
+	}
+	return ps.Err("The template does not render its examples.")
+}
+
+// renderTemplateIssue renders a newsletter template with data and checks
+// the result is an issue: a subject, a body, and Markdown the renderer
+// takes. Images are not looked up; saving the issue does that.
+func renderTemplateIssue(c *tmpl.Compiled, data json.RawMessage, loc *time.Location) (tmpl.Issue, error) {
+	if err := c.Validate(data); err != nil {
+		return tmpl.Issue{}, err
+	}
+	out, err := c.RenderIssue(data, loc)
+	if err != nil {
+		return tmpl.Issue{}, err
+	}
+	var ps apperr.Problems
+	if n := utf8.RuneCountInString(out.Subject); n == 0 || n > maxSubject {
+		ps.Add("subject_invalid", "subject", "The rendered subject is %d characters; a subject is 1 to %d.", n, maxSubject)
+	}
+	if utf8.RuneCountInString(out.PreviewText) > maxPreviewText {
+		ps.Add("preview_text_too_long", "preview_text", "The rendered preview text is over %d characters.", maxPreviewText)
+	}
+	if n := len(out.Body); n == 0 || n > maxIssueBody {
+		ps.Add("body_invalid", "body", "The rendered body is %d bytes; a body is 1 to %d.", n, maxIssueBody)
+	} else if _, err := newsletter.Render(newsletter.Issue{Subject: out.Subject, PreviewText: out.PreviewText, Body: out.Body},
+		newsletter.Options{Image: func(string) (newsletter.Image, error) { return newsletter.Image{URL: "https://images.invalid/"}, nil }}); err != nil {
+		var re *newsletter.Error
+		if !errors.As(err, &re) {
+			return tmpl.Issue{}, err
+		}
+		ps.Add("body_invalid", "body", "Line %d of the rendered body: %s.", re.Line, re.Msg)
+	}
+	return out, ps.Err("The template does not render a valid issue.")
 }
 
 // Rendition is content rendered for one platform.
@@ -359,6 +443,29 @@ func (s *Service) PreviewTemplate(ctx context.Context, a Actor, src tmpl.Source,
 		out = append(out, rendition(rules, rules.Split(text, c.FitFor(p)), "", nil))
 	}
 	return out, nil
+}
+
+// PreviewNewsletterTemplate renders a (possibly unsaved) newsletter
+// template with data, or its first example, into an issue's subject,
+// preview text and Markdown body, without side effects.
+func (s *Service) PreviewNewsletterTemplate(ctx context.Context, a Actor, src tmpl.Source, data json.RawMessage, tz string) (tmpl.Issue, error) {
+	if err := a.requireAny(PermTemplatesRead, PermNewslettersWrite); err != nil {
+		return tmpl.Issue{}, err
+	}
+	// The examples are checked by rendering the one previewed.
+	noExamples := src
+	noExamples.Examples = nil
+	if err := checkSource(model.TemplateNewsletter, noExamples); err != nil {
+		return tmpl.Issue{}, err
+	}
+	c, err := tmpl.Compile(src)
+	if err != nil {
+		return tmpl.Issue{}, err
+	}
+	if len(data) == 0 && len(c.Examples()) > 0 {
+		data = c.Examples()[0]
+	}
+	return renderTemplateIssue(c, data, location(tz))
 }
 
 // rendition checks parts and media against rules, which must already be

@@ -83,18 +83,30 @@ func (s *Store) DeleteMailAccount(ctx context.Context, orgID, id uuid.UUID) erro
 
 // Issues.
 
-const issueCols = `id, org_id, brand_id, livemode, subject, preview_text, body, status, send_at, approval_needed, reviewed_by_user,
+const issueCols = `id, org_id, brand_id, livemode, subject, preview_text, body, template_id, template_version, data, status, send_at, approval_needed, reviewed_by_user,
 	reviewed_by_key, reviewed_at, review_note, created_by_user, created_by_key, created_at, updated_at`
 
 func scanIssue(r pgx.Row) (*model.Issue, error) {
 	var is model.Issue
-	err := r.Scan(&is.ID, &is.OrgID, &is.BrandID, &is.Livemode, &is.Subject, &is.PreviewText, &is.Body, &is.Status, &is.SendAt,
+	var data []byte
+	err := r.Scan(&is.ID, &is.OrgID, &is.BrandID, &is.Livemode, &is.Subject, &is.PreviewText, &is.Body, &is.TemplateID,
+		&is.TemplateVersion, &data, &is.Status, &is.SendAt,
 		&is.ApprovalNeeded, &is.ReviewedByUser, &is.ReviewedByKey, &is.ReviewedAt, &is.ReviewNote, &is.CreatedByUser, &is.CreatedByKey,
 		&is.CreatedAt, &is.UpdatedAt)
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	is.Data = data
 	return &is, nil
+}
+
+// issueData is an issue's template data for a jsonb column: NULL when it
+// has none.
+func issueData(is *model.Issue) any {
+	if len(is.Data) == 0 {
+		return nil
+	}
+	return is.Data
 }
 
 const deliveryCols = `id, org_id, issue_id, mail_account_id, livemode, provider, account_name, audiences, status, handoff_at, attempts,
@@ -122,10 +134,12 @@ func collectDeliveries(rows pgx.Rows, err error) ([]*model.IssueDelivery, error)
 
 // CreateIssue stores an issue with its deliveries and media.
 func (s *Store) CreateIssue(ctx context.Context, is *model.Issue) error {
-	if err := s.q.QueryRow(ctx, `INSERT INTO newsletter_issues (id, org_id, brand_id, livemode, subject, preview_text, body, status,
-		send_at, approval_needed, created_by_user, created_by_key) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		RETURNING created_at, updated_at`, is.ID, is.OrgID, is.BrandID, is.Livemode, is.Subject, is.PreviewText, is.Body, is.Status,
-		is.SendAt, is.ApprovalNeeded, is.CreatedByUser, is.CreatedByKey).Scan(&is.CreatedAt, &is.UpdatedAt); err != nil {
+	if err := s.q.QueryRow(ctx, `INSERT INTO newsletter_issues (id, org_id, brand_id, livemode, subject, preview_text, body, template_id,
+		template_version, data, status, send_at, approval_needed, created_by_user, created_by_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		RETURNING created_at, updated_at`, is.ID, is.OrgID, is.BrandID, is.Livemode, is.Subject, is.PreviewText, is.Body, is.TemplateID,
+		is.TemplateVersion, issueData(is), is.Status, is.SendAt, is.ApprovalNeeded, is.CreatedByUser, is.CreatedByKey).
+		Scan(&is.CreatedAt, &is.UpdatedAt); err != nil {
 		return mapErr(err)
 	}
 	return s.replaceIssueParts(ctx, is)
@@ -161,8 +175,9 @@ func (s *Store) replaceIssueParts(ctx context.Context, is *model.Issue) error {
 
 // UpdateIssue rewrites a draft's content, deliveries and media.
 func (s *Store) UpdateIssue(ctx context.Context, is *model.Issue) error {
-	if err := s.execOne(ctx, `UPDATE newsletter_issues SET subject = $3, preview_text = $4, body = $5, send_at = $6, updated_at = now()
-		WHERE org_id = $1 AND id = $2`, is.OrgID, is.ID, is.Subject, is.PreviewText, is.Body, is.SendAt); err != nil {
+	if err := s.execOne(ctx, `UPDATE newsletter_issues SET subject = $3, preview_text = $4, body = $5, send_at = $6, template_id = $7,
+		template_version = $8, data = $9, updated_at = now() WHERE org_id = $1 AND id = $2`, is.OrgID, is.ID, is.Subject, is.PreviewText,
+		is.Body, is.SendAt, is.TemplateID, is.TemplateVersion, issueData(is)); err != nil {
 		return err
 	}
 	return s.replaceIssueParts(ctx, is)

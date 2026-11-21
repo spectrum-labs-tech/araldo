@@ -4,32 +4,48 @@
 <div class="mb-4 flex flex-wrap items-start justify-between gap-4">
   <h1 class="mb-0">{{if $f.Template}}<code>{{$f.Template.Key}}</code> <span class="text-base font-normal text-muted">v{{$f.Version.Version}} of {{$f.Template.LatestVersion}}</span>{{else}}New template{{end}}</h1>
   {{if $f.Template}}<div class="controls">
-    <a class="btn" href="/posts/new?template={{tmplID $f.Template.ID}}">Use in a post</a>
+    {{if eq $f.Kind "post"}}<a class="btn" href="/posts/new?template={{tmplID $f.Template.ID}}">Use in a post</a>{{end}}
     <form method="post" action="/templates/{{tmplID $f.Template.ID}}/delete" data-confirm="Delete this template? Posts made from it keep their text.">
       <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn-danger">Delete</button></form>
   </div>{{end}}
 </div>
 
+{{if not $f.Template}}<nav class="choices" aria-label="Kind of template">
+  <a class="chip" href="/templates/new" {{if eq $f.Kind "post"}}aria-current="true"{{end}}>Posts</a>
+  <a class="chip" href="/templates/new?kind=newsletter" {{if eq $f.Kind "newsletter"}}aria-current="true"{{end}}>Newsletter issues</a>
+</nav>{{end}}
+{{if eq $f.Kind "newsletter"}}<p class="mb-4 text-muted">Your code sends <code>{"template": "{{or $f.Key "weekly-builds"}}", "data": {…}}</code> to <code>POST /v1/newsletters</code>; this renders the issue's subject, preview text and body, and the issue then goes through the brand's approval and scheduling like any other.</p>{{end}}
+
 <div class="grid items-start gap-6 lg:grid-cols-2">
 <form method="post" action="{{if $f.Template}}/templates/{{tmplID $f.Template.ID}}{{else}}/templates{{end}}" class="flex min-w-0 flex-col gap-4" id="template-form" data-nonce="{{$.Nonce}}">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <input type="hidden" name="kind" value="{{$f.Kind}}">
   <div class="grid gap-4 sm:grid-cols-2">
     {{if not $f.Template}}
     <label>Brand
       {{template "brandSelect" (brandOptions $f.Brands $f.Brand "")}}
     </label>
-    <label>Key <input name="key" value="{{$f.Key}}" required pattern="[a-z0-9][a-z0-9_\-]*" placeholder="featured-build" title="lowercase letters, digits, - and _"></label>
+    <label>Key <input name="key" value="{{$f.Key}}" required pattern="[a-z0-9][a-z0-9_\-]*" placeholder="{{if eq $f.Kind "newsletter"}}weekly-builds{{else}}featured-build{{end}}" title="lowercase letters, digits, - and _"></label>
     {{else}}<input type="hidden" name="brand" value="{{brandID $f.Template.BrandID}}">{{end}}
-    <label>Name <input name="name" value="{{$f.Name}}" placeholder="Featured build"></label>
+    <label>Name <input name="name" value="{{$f.Name}}" placeholder="{{if eq $f.Kind "newsletter"}}Weekly builds{{else}}Featured build{{end}}"></label>
     <label>Approval
       <select name="approval" {{if not $f.CanApprove}}disabled{{end}}>
         <option value="inherit" {{if eq $f.Approval "inherit"}}selected{{end}}>Follow the brand's policy</option>
         <option value="not_required" {{if eq $f.Approval "not_required"}}selected{{end}}>Never needs approval</option>
         <option value="required" {{if eq $f.Approval "required"}}selected{{end}}>Always needs approval</option>
       </select>
-      {{if not $f.CanApprove}}<span class="hint">Only admins and owners can change this.</span>{{end}}</label>
+      {{if not $f.CanApprove}}<span class="hint">Only admins and owners can change this.</span>{{end}}
+      {{if eq $f.Kind "newsletter"}}<span class="hint">For issues whose text is as this template rendered it; editing an issue by hand makes it follow the brand's policy.</span>{{end}}</label>
   </div>
 
+  {{if eq $f.Kind "newsletter"}}
+  <label>Subject <span class="hint">a template too, on one line</span>
+    <input name="subject" value="{{$f.Subject}}" required class="font-mono"></label>
+  <label>Preview text <span class="hint">(optional) the line inboxes show after the subject</span>
+    <input name="preview_text" value="{{$f.PreviewText}}" class="font-mono"></label>
+  <label>Body <span class="hint">Markdown from a Go template: <code>{{"{{range .items}}"}}</code>…<code>{{"{{end}}"}}</code> repeats, and <code>{{"{{md .name}}"}}</code> keeps data from reading as Markdown</span>
+    <textarea name="body" rows="14" class="font-mono" data-editor="gotemplate" required>{{$f.Body}}</textarea></label>
+  {{else}}
   <section data-tabs>
     <div class="mb-1 text-sm font-semibold">Body</div>
     <p class="mb-2 text-sm text-muted">Go template: <code>{{"{{.name}}"}}</code>, <code>{{"{{truncate 80 .summary}}"}}</code>, <code>{{"{{hashtags .tags}}"}}</code>, <code>{{"{{thread}}"}}</code> starts a new thread part.
@@ -57,14 +73,24 @@
     </div>
     {{end}}
   </section>
+  {{end}}
 
   <div class="grid gap-4 xl:grid-cols-2">
     <label>Variables (JSON Schema) <textarea name="variables" rows="10" class="font-mono" data-editor="json">{{$f.Variables}}</textarea></label>
     <label><span>Example data <span class="hint">(checks and the preview use it)</span></span><textarea name="example" rows="10" class="font-mono" data-editor="json">{{$f.Example}}</textarea></label>
   </div>
-  <div><button class="btn-primary">{{if $f.Template}}Save{{else}}Create template{{end}}</button>
-    {{if $f.Template}}<span class="ml-2 text-sm text-muted">Changing the text makes version {{inc $f.Template.LatestVersion}}; queued posts keep theirs.</span>{{end}}</div>
+  <div class="flex flex-wrap items-center gap-3"><button class="btn-primary">{{if $f.Template}}Save{{else}}Create template{{end}}</button>
+    {{/* After Save: Enter in a field presses the form's first button. */}}
+    {{if eq $f.Kind "newsletter"}}<button formaction="/templates/newsletter_preview" formtarget="tpl-preview" formnovalidate data-live-preview data-live-preview-now>Preview</button>{{end}}
+    {{if $f.Template}}<span class="text-sm text-muted">Changing the text makes version {{inc $f.Template.LatestVersion}}; {{if eq $f.Kind "newsletter"}}issues keep the text they were made with{{else}}queued posts keep theirs{{end}}.</span>{{end}}</div>
 </form>
+{{if eq $f.Kind "newsletter"}}
+<section class="min-w-0 rounded-lg border border-line bg-panel p-4 lg:sticky lg:top-4" aria-labelledby="preview-heading">
+  <h2 id="preview-heading" class="mb-1">Preview</h2>
+  <p class="mb-3 text-sm text-muted">The email the example data makes, in the brand's theme. It follows what you write (or press “Preview”).</p>
+  <iframe name="tpl-preview" title="Preview of the issue the example makes" class="preview-frame"></iframe>
+</section>
+{{else}}
 
 <aside class="min-w-0 rounded-lg border border-line bg-panel p-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-auto" aria-labelledby="preview-heading">
   <h2 id="preview-heading" class="mb-1">Preview</h2>
@@ -75,6 +101,7 @@
   </div>
   <div id="preview" data-csrf="{{$.CSRF}}" data-default-platforms="{{$f.DefaultPreview}}"><p class="text-sm text-muted">The preview needs JavaScript.</p></div>
 </aside>
+{{end}}
 </div>
 <script src="/static/editor.js" defer></script>
 {{end}}

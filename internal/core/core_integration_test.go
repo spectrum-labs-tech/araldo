@@ -364,6 +364,15 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	_, checks["issue for their brand"] = b.s.CreateIssue(ctx, b.owner, core.IssueInput{BrandID: a.brand.ID, Subject: "x", Body: "x"})
 	_, checks["preview for their brand"] = b.s.PreviewIssue(ctx, b.owner, core.IssueInput{BrandID: a.brand.ID, Subject: "x", Body: "x"})
 	_, checks["top posts of their brand"] = b.s.TopPostsBlock(ctx, b.owner, a.brand.ID, 7, 3)
+	nlTemplate, _, err := a.s.CreateTemplate(ctx, a.owner, core.TemplateInput{BrandID: a.brand.ID, Key: "weekly", Kind: model.TemplateNewsletter,
+		Source: tmpl.Source{Subject: "Weekly", Body: "Hello"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, checks["issue from their template"] = b.s.CreateIssue(ctx, b.owner, core.IssueInput{BrandID: b.brand.ID,
+		Template: id.Format(id.Template, nlTemplate.ID)})
+	_, checks["preview of their template"] = b.s.PreviewIssue(ctx, b.owner, core.IssueInput{BrandID: b.brand.ID,
+		Template: id.Format(id.Template, nlTemplate.ID)})
 	_, checks["retry"] = b.s.RetryTarget(ctx, b.owner, p.Targets[0].ID)
 	_, checks["post to their brand"] = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: a.brand.ID, Content: &model.Content{Body: "x"}})
 	for what, err := range checks {

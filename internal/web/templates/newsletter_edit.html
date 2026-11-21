@@ -12,6 +12,8 @@
 <p><span class="pill {{statusClass $is.Status}}">{{$is.Status}}</span>
   {{if $is.SendAt}} Sends {{fmtIn $is.SendAt $d.Brand.Timezone}}{{end}}
   {{if $is.ApprovalNeeded}} · needs approval{{end}}</p>
+{{if $d.FromTemplate}}<p class="text-sm text-muted">Made from the template <a href="/templates/{{tmplID $d.FromTemplate.ID}}"><code>{{$d.FromTemplate.Key}}</code></a>, version {{$is.TemplateVersion}}.
+  {{if $d.Editable}}Editing the text by hand makes it this issue's own, and it then follows the brand's approval policy.{{end}}</p>{{end}}
 {{if $is.ReviewNote}}<div class="callout" role="status"><strong>Review note:</strong> {{$is.ReviewNote}}</div>{{end}}
 {{if $is.Deliveries}}
 <section class="card">

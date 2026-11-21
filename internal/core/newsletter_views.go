@@ -3,6 +3,7 @@
 package core
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/email"
@@ -127,21 +128,26 @@ type IssueDeliveryView struct {
 
 // IssueView is a newsletter issue in the API.
 type IssueView struct {
-	ID          string              `json:"id"`
-	Object      string              `json:"object"`
-	Brand       string              `json:"brand"`
-	Livemode    bool                `json:"livemode"`
-	Subject     string              `json:"subject"`
-	PreviewText string              `json:"preview_text"`
-	Body        string              `json:"body"`
-	Status      string              `json:"status"`
-	SendAt      *time.Time          `json:"send_at"`
-	Approval    ApprovalView        `json:"approval"`
-	Deliveries  []IssueDeliveryView `json:"deliveries"`
-	Results     MailResultsView     `json:"results"`
-	Media       []string            `json:"media"`
-	CreatedAt   time.Time           `json:"created_at"`
-	UpdatedAt   time.Time           `json:"updated_at"`
+	ID          string `json:"id"`
+	Object      string `json:"object"`
+	Brand       string `json:"brand"`
+	Livemode    bool   `json:"livemode"`
+	Subject     string `json:"subject"`
+	PreviewText string `json:"preview_text"`
+	Body        string `json:"body"`
+	// Template, TemplateVersion and Data are the newsletter template the
+	// text was rendered from, while it is as rendered.
+	Template        string              `json:"template,omitempty"`
+	TemplateVersion *int                `json:"template_version,omitempty"`
+	Data            json.RawMessage     `json:"data,omitempty"`
+	Status          string              `json:"status"`
+	SendAt          *time.Time          `json:"send_at"`
+	Approval        ApprovalView        `json:"approval"`
+	Deliveries      []IssueDeliveryView `json:"deliveries"`
+	Results         MailResultsView     `json:"results"`
+	Media           []string            `json:"media"`
+	CreatedAt       time.Time           `json:"created_at"`
+	UpdatedAt       time.Time           `json:"updated_at"`
 }
 
 // ViewIssue renders an issue; its results add up its deliveries'.
@@ -151,6 +157,9 @@ func ViewIssue(is *model.Issue) IssueView {
 		Approval:   ApprovalView{Required: is.ApprovalNeeded, ReviewedAt: utc(is.ReviewedAt), Note: is.ReviewNote},
 		Deliveries: make([]IssueDeliveryView, 0, len(is.Deliveries)), Media: make([]string, 0, len(is.Media)),
 		CreatedAt: is.CreatedAt.UTC(), UpdatedAt: is.UpdatedAt.UTC()}
+	if is.TemplateID != nil {
+		v.Template, v.TemplateVersion, v.Data = id.Format(id.Template, *is.TemplateID), is.TemplateVersion, is.Data
+	}
 	if is.ReviewedByUser != nil {
 		v.Approval.ReviewedBy = id.Format(id.User, *is.ReviewedByUser)
 	}

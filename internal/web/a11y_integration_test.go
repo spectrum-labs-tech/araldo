@@ -139,6 +139,16 @@ func seedPages(t *testing.T, d *dash) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	nlTpl, _, err := d.s.CreateTemplate(ctx, d.owner, core.TemplateInput{BrandID: d.brand.ID, Key: "weekly", Name: "Weekly", Kind: model.TemplateNewsletter,
+		Source: tmpl.Source{Subject: "Week of {{.week}}", PreviewText: "What shipped", Body: "# Week of {{md .week}}\n\n[Go](https://a11y.example){.button}",
+			Examples: []json.RawMessage{json.RawMessage(`{"week":"May 4"}`)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromTpl, err := d.s.CreateIssue(ctx, d.owner, core.IssueInput{BrandID: d.brand.ID, Template: "weekly", Data: json.RawMessage(`{"week":"May 11"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	queued, err := d.s.CreateIssue(ctx, d.owner, core.IssueInput{BrandID: d.brand.ID, Subject: "Scheduled issue", Body: "Hello"})
 	if err != nil {
 		t.Fatal(err)
@@ -167,8 +177,10 @@ func seedPages(t *testing.T, d *dash) []string {
 		"/", "/posts", "/posts?q=accessible&status=published", "/posts/new", "/posts/" + id.Format(id.Post, p.ID), "/posts/" + id.Format(id.Post, scheduled.ID),
 		"/sandbox/" + id.Format(id.Target, target.ID), "/performance", "/performance/analytics/new", "/ads", "/ads/accounts/new", "/ads?tag_url=https://example.com/&tag_campaign=launch",
 		"/newsletters", "/newsletters/new", "/newsletters/" + id.Format(id.Issue, draft.ID), "/newsletters/" + id.Format(id.Issue, queued.ID),
+		"/newsletters/" + id.Format(id.Issue, fromTpl.ID),
 		"/mail-accounts/" + id.Format(id.MailAccount, mailAcct.ID), "/mail-accounts/new", "/reports", "/reports?month=" + thisMonth(t, d.brand),
 		"/templates", "/templates/new", "/templates/" + id.Format(id.Template, tpl.ID),
+		"/templates/new?kind=newsletter", "/templates/" + id.Format(id.Template, nlTpl.ID),
 		"/channels", "/channels/apps", "/channels/apps/new", "/channels/new", "/channels/new?provider=bluesky", "/channels/" + id.Format(id.Channel, chans[0].ID) + "/reconnect",
 		"/brands", "/brands/new", "/brands/" + id.Format(id.Brand, d.brand.ID),
 		"/keys", "/keys/new", "/keys/" + id.Format(id.APIKey, key.ID), "/cli?device=laptop", "/cli?device=laptop&mode=live", "/webhooks", "/webhooks/new", "/webhooks/" + id.Format(id.WebhookEndpoint, ep.ID),

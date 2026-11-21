@@ -360,6 +360,19 @@ func (a TemplateApproval) Valid() bool {
 	return a == TemplateApprovalInherit || a == TemplateApprovalRequired || a == TemplateApprovalNotRequired
 }
 
+// TemplateKind is what a template renders: a post, or a newsletter issue
+// (ADR 0024 phase 2).
+type TemplateKind string
+
+// Template kinds.
+const (
+	TemplatePost       TemplateKind = "post"
+	TemplateNewsletter TemplateKind = "newsletter"
+)
+
+// Valid reports whether k is known.
+func (k TemplateKind) Valid() bool { return k == TemplatePost || k == TemplateNewsletter }
+
 // Template is a named, versioned template in a brand.
 type Template struct {
 	ID            uuid.UUID
@@ -367,6 +380,7 @@ type Template struct {
 	BrandID       uuid.UUID
 	Key           string
 	Name          string
+	Kind          TemplateKind
 	Approval      TemplateApproval
 	LatestVersion int
 	CreatedAt     time.Time
@@ -381,10 +395,13 @@ type TemplateVersion struct {
 	Variables  json.RawMessage
 	Examples   []json.RawMessage
 	Body       string
-	Overrides  map[platform.Provider]string
-	Fit        map[platform.Provider]platform.Fit
-	CreatedBy  *uuid.UUID
-	CreatedAt  time.Time
+	// Subject and PreviewText are a newsletter template's, "" for a post's.
+	Subject     string
+	PreviewText string
+	Overrides   map[platform.Provider]string
+	Fit         map[platform.Provider]platform.Fit
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
 }
 
 // PostStatus summarizes a post's targets (ADR 0011).
@@ -584,24 +601,30 @@ const (
 // Issue is a newsletter issue: a document sent to audiences at one or
 // more mail accounts.
 type Issue struct {
-	ID             uuid.UUID
-	OrgID          uuid.UUID
-	BrandID        uuid.UUID
-	Livemode       bool
-	Subject        string
-	PreviewText    string
-	Body           string
-	Status         IssueStatus
-	SendAt         *time.Time
-	ApprovalNeeded bool
-	ReviewedByUser *uuid.UUID
-	ReviewedByKey  *uuid.UUID
-	ReviewedAt     *time.Time
-	ReviewNote     string
-	CreatedByUser  *uuid.UUID
-	CreatedByKey   *uuid.UUID
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID          uuid.UUID
+	OrgID       uuid.UUID
+	BrandID     uuid.UUID
+	Livemode    bool
+	Subject     string
+	PreviewText string
+	Body        string
+	// TemplateID and TemplateVersion are the newsletter template the text
+	// was rendered from, with Data, while the text is as rendered: editing
+	// it by hand clears them (ADR 0024 phase 2).
+	TemplateID      *uuid.UUID
+	TemplateVersion *int
+	Data            json.RawMessage
+	Status          IssueStatus
+	SendAt          *time.Time
+	ApprovalNeeded  bool
+	ReviewedByUser  *uuid.UUID
+	ReviewedByKey   *uuid.UUID
+	ReviewedAt      *time.Time
+	ReviewNote      string
+	CreatedByUser   *uuid.UUID
+	CreatedByKey    *uuid.UUID
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 	// Deliveries and Media are filled by reads.
 	Deliveries []IssueDelivery
 	Media      []uuid.UUID

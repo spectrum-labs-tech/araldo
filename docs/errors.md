@@ -177,6 +177,12 @@ every problem in `errors`, each with its own `code` and `param`.
   or `not_required`.
 - **template_missing**, **template_invalid**: the brand has no such
   template, or the reference is not `key`, `key@3` or a template ID.
+- **kind_invalid**: a template's `kind` is `post` or `newsletter`.
+- **template_kind**: a post names a newsletter template, or an issue a
+  post template.
+- **subject_missing**, **subject_not_allowed**, **overrides_not_allowed**:
+  a newsletter template has a subject and one body, no per-platform
+  bodies or `fit`; a post template has no subject or preview text.
 - **provider_unknown**: an override, `fit` or preview names a platform
   Araldo does not know.
 - **data_too_large**, **output_too_large**: template data, and the text it
@@ -355,6 +361,10 @@ with another page), shown on the ad account and retried later.
   block names its brand, looks back 1 to 90 days and takes 1 to 10 posts.
 - **no_top_posts**: none of the brand's posts from that period has
   engagement read yet; it is read within hours of publishing.
+- **content_conflict**: an issue takes a newsletter `template` (with
+  `data`) or a subject and body, not both. A template's rendered text is
+  held to an issue's limits (**subject_invalid**, **body_invalid**…); when
+  saving a newsletter template, each example must render a valid issue.
 
 ## Webhooks
 

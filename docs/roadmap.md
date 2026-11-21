@@ -59,9 +59,10 @@ Principles every feature keeps:
 - Web analytics read from Plausible and GA4: signups by post, network and
   campaign, and cost per signup beside ad spend
   ([ADR 0025](adr/0025-web-analytics.md)).
-- Newsletters phase 1: mail accounts (Brevo and Resend), issues with approval,
+- Newsletters: mail accounts (Brevo and Resend), issues with approval,
   a delivery per account handed to its provider a day ahead, email-safe
-  rendering with a brand theme, test sends and results
+  rendering with a brand theme, test sends and results; a top posts
+  block and newsletter templates with data
   ([ADR 0024](adr/0024-newsletters.md)).
 - Video (streamed through S3-compatible storage, never transcoded) on every
   platform that takes it, YouTube and TikTok among them, and images resized
@@ -82,7 +83,7 @@ Principles every feature keeps:
 | 1 | Prove the adapters with real accounts on every network; a daily credential check per channel; a daily test post on dedicated test accounts so a platform change is caught early | ADR 0011 | Adapters and the daily check built; real-account runs and test posts not yet |
 | 2 | MCP over HTTP at `POST /v1/mcp` | ADR 0020 | Done |
 | 3 | Web analytics adapters: signups by post, network and campaign (Plausible), then cost per signup beside ad spend and GA4 | ADR 0025 | Done: Plausible and GA4, signups by post, cost per signup by ad campaign |
-| 4 | Newsletters phase 1: mail accounts, issues with a delivery per account, renderer and theme, Brevo and sandbox providers | ADR 0024 | Done: Brevo, Resend (broadcasts to one segment each) and the sandbox, approval, hand-off, results, dashboard, API and MCP drafting; a top-posts block in the editor and a live preview; templates with data are the rest of phase 2 |
+| 4 | Newsletters phase 1: mail accounts, issues with a delivery per account, renderer and theme, Brevo and sandbox providers | ADR 0024 | Done: Brevo, Resend (broadcasts to one segment each) and the sandbox, approval, hand-off, results, dashboard, API and MCP drafting; a top-posts block in the editor and a live preview, and newsletter templates with data (phase 2 done) |
 | 5 | Client reports: one page per brand per month across posts, ads, newsletters and analytics | ADR 0026 | Done: the page with a print stylesheet, the API and the MCP tool, share links, and the monthly email to chosen addresses |
 | 6 | Pinterest (images) | ADR 0009 | Done: boards as channels, by sign-in or pasted token, and engagement read back |
 | 7 | Video media and resizing images to fit each platform, then YouTube and TikTok | ADR 0027 | Done: images resized per platform; video on Bluesky, X, Mastodon, Gab, LinkedIn, Facebook, Instagram (reels), Threads, Telegram, Discord, YouTube and TikTok |

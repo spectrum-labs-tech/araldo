@@ -3,7 +3,9 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -22,6 +24,7 @@ import (
 	"github.com/spectrum-labs-tech/araldo/internal/newsletter"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
+	"github.com/spectrum-labs-tech/araldo/internal/tmpl"
 	"github.com/spectrum-labs-tech/araldo/internal/utm"
 )
 
@@ -426,6 +429,11 @@ type IssueInput struct {
 	PreviewText string
 	// Body is the Markdown subset internal/newsletter renders.
 	Body string
+	// Template is a newsletter template ("key", "key@3" or its ID) that
+	// renders the subject, preview text and body from Data instead; those
+	// three are then left empty (ADR 0024 phase 2).
+	Template string
+	Data     json.RawMessage
 	// Deliveries are the mail accounts and their audiences it goes to. Nil
 	// means, for a new issue, each of the brand's active accounts with
 	// default audiences, and for an edit, the ones it has.
@@ -444,6 +452,44 @@ type issuePlan struct {
 	brand      *model.Brand
 	deliveries []model.IssueDelivery
 	media      []uuid.UUID
+	// template and version rendered the text, from data; nil when it was
+	// written by hand.
+	template *model.Template
+	version  *model.TemplateVersion
+	data     json.RawMessage
+}
+
+// issueFromTemplate renders one of brand b's newsletter templates with
+// data into an issue's subject, preview text and body.
+func (s *Service) issueFromTemplate(ctx context.Context, a Actor, b *model.Brand, ref string, data json.RawMessage) (*model.Template,
+	*model.TemplateVersion, tmpl.Issue, error) {
+	t, v, err := s.TemplateByRef(ctx, a, b.ID, ref)
+	if err != nil {
+		return nil, nil, tmpl.Issue{}, err
+	}
+	if t.Kind != model.TemplateNewsletter {
+		return nil, nil, tmpl.Issue{}, apperr.Invalid("template_kind", "template", "%s is a post template; issues use newsletter templates.", t.Key)
+	}
+	c, err := tmpl.Compile(sourceOf(v))
+	if err != nil {
+		return nil, nil, tmpl.Issue{}, err
+	}
+	out, err := renderTemplateIssue(c, data, location(b.Timezone))
+	return t, v, out, err
+}
+
+// fillFromTemplate renders in.Template into in's subject, preview text and
+// body, refusing text given beside it.
+func (s *Service) fillFromTemplate(ctx context.Context, a Actor, b *model.Brand, in *IssueInput) (*model.Template, *model.TemplateVersion, error) {
+	if in.Subject != "" || in.PreviewText != "" || strings.TrimSpace(in.Body) != "" {
+		return nil, nil, apperr.Invalid("content_conflict", "template", "Send either a template with data, or a subject and body, not both.")
+	}
+	t, v, out, err := s.issueFromTemplate(ctx, a, b, in.Template, in.Data)
+	if err != nil {
+		return nil, nil, err
+	}
+	in.Subject, in.PreviewText, in.Body = out.Subject, out.PreviewText, out.Body
+	return t, v, nil
 }
 
 // prepareIssue checks an issue and resolves its deliveries' audiences.
@@ -454,6 +500,15 @@ func (s *Service) prepareIssue(ctx context.Context, a Actor, in *IssueInput) (*i
 	b, err := s.Brand(ctx, a, in.BrandID)
 	if err != nil {
 		return nil, err
+	}
+	pl := &issuePlan{brand: b}
+	if in.Template != "" {
+		if pl.template, pl.version, err = s.fillFromTemplate(ctx, a, b, in); err != nil {
+			return nil, err
+		}
+		if d := bytes.TrimSpace(in.Data); len(d) > 0 && string(d) != "null" {
+			pl.data = d
+		}
 	}
 	in.Subject, in.PreviewText = strings.TrimSpace(in.Subject), strings.TrimSpace(in.PreviewText)
 	in.Body = strings.TrimSpace(strings.ReplaceAll(in.Body, "\r\n", "\n"))
@@ -467,7 +522,6 @@ func (s *Service) prepareIssue(ctx context.Context, a Actor, in *IssueInput) (*i
 	if n := len(in.Body); n == 0 || n > maxIssueBody {
 		ps.Add("body_invalid", "body", "A body is 1 to %d bytes.", maxIssueBody)
 	}
-	pl := &issuePlan{brand: b}
 	if len(ps) == 0 {
 		images := s.issueImages(ctx, a.OrgID, b.ID, a.Livemode)
 		if _, err := newsletter.Render(newsletter.Issue{Subject: in.Subject, PreviewText: in.PreviewText, Body: in.Body},
@@ -589,6 +643,7 @@ func (s *Service) CreateIssue(ctx context.Context, a Actor, in IssueInput) (*mod
 	is := &model.Issue{ID: id.New(), OrgID: a.OrgID, BrandID: pl.brand.ID, Livemode: a.Livemode, Subject: in.Subject,
 		PreviewText: in.PreviewText, Body: in.Body, Status: model.IssueDraft, CreatedByUser: a.UserID, CreatedByKey: a.KeyID,
 		Deliveries: pl.deliveries, Media: pl.media}
+	pl.setTemplate(is)
 	var out *model.Issue
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.CreateIssue(ctx, is); err != nil {
@@ -634,7 +689,14 @@ func (s *Service) UpdateIssue(ctx context.Context, a Actor, issueID uuid.UUID, i
 		if is.Status != model.IssueDraft {
 			return apperr.Conflict("issue_not_draft", "Only a draft can be edited; unschedule the issue first.")
 		}
+		asRendered := is.Subject == in.Subject && is.PreviewText == in.PreviewText && is.Body == in.Body
 		is.Subject, is.PreviewText, is.Body, is.Deliveries, is.Media = in.Subject, in.PreviewText, in.Body, pl.deliveries, pl.media
+		// The template stays the issue's while its text is as rendered:
+		// text edited by hand is the editor's, and no template's approval
+		// rule covers it (ADR 0004).
+		if pl.template != nil || !asRendered {
+			pl.setTemplate(is)
+		}
 		if err := tx.UpdateIssue(ctx, is); err != nil {
 			return err
 		}
@@ -647,6 +709,15 @@ func (s *Service) UpdateIssue(ctx context.Context, a Actor, issueID uuid.UUID, i
 		return s.emit(ctx, tx, a.OrgID, a.Livemode, a.RequestID, "newsletter.updated", ViewIssue(out))
 	})
 	return out, err
+}
+
+// setTemplate records on is the template that rendered its text, or
+// clears it.
+func (pl *issuePlan) setTemplate(is *model.Issue) {
+	is.TemplateID, is.TemplateVersion, is.Data = nil, nil, nil
+	if pl.template != nil {
+		is.TemplateID, is.TemplateVersion, is.Data = &pl.template.ID, &pl.version.Version, pl.data
+	}
 }
 
 // Issue returns one of the actor's issues.
@@ -706,6 +777,11 @@ func (s *Service) PreviewIssue(ctx context.Context, a Actor, in IssueInput) (new
 	if len(in.Deliveries) > 0 {
 		if ma, err := s.MailAccount(ctx, a, in.Deliveries[0].MailAccountID); err == nil {
 			provider = ma.Provider
+		}
+	}
+	if in.Template != "" {
+		if _, _, err := s.fillFromTemplate(ctx, a, b, &in); err != nil {
+			return newsletter.Rendered{}, err
 		}
 	}
 	r, err := s.renderIssue(ctx, b, a.Livemode, uuid.Nil, newsletter.Issue{Subject: strings.TrimSpace(in.Subject),
@@ -816,7 +892,15 @@ func (s *Service) ScheduleIssue(ctx context.Context, a Actor, issueID uuid.UUID,
 	if err := ps.Err("The issue cannot be scheduled yet."); err != nil {
 		return nil, err
 	}
-	needs := approvalNeeded(b.ApprovalPolicy, nil, a)
+	// An issue still as its template rendered it follows the template's
+	// approval rule, as a post does (ADR 0004).
+	var t *model.Template
+	if cur.TemplateID != nil {
+		if t, err = s.store.Template(ctx, a.OrgID, *cur.TemplateID); err != nil && !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
+	}
+	needs := approvalNeeded(b.ApprovalPolicy, t, a)
 	var out *model.Issue
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
 		is, err := s.lockIssue(ctx, tx, a, issueID)

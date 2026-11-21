@@ -5,6 +5,7 @@
 package api_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -104,5 +105,41 @@ func TestTopPostsOverTheAPI(t *testing.T) {
 		if status != tt.status || tt.code != "" && body["code"] != tt.code {
 			t.Errorf("GET top_posts%s: %d %v, want %d %s", tt.query, status, body, tt.status, tt.code)
 		}
+	}
+}
+
+// TestNewsletterTemplatesOverTheAPI checks a caller makes a newsletter
+// template, previews it, and creates issues from it with its own data.
+func TestNewsletterTemplatesOverTheAPI(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	src := map[string]any{"brand": c.brand, "key": "weekly", "kind": "newsletter", "subject": "Week of {{.week}}", "preview_text": "What shipped",
+		"body":      "# Week of {{md .week}}",
+		"variables": map[string]any{"type": "object", "required": []string{"week"}, "properties": map[string]any{"week": map[string]any{"type": "string"}}},
+		"examples":  []any{map[string]any{"week": "May 4"}}}
+	status, tpl := c.json(http.MethodPost, "/v1/templates", src)
+	latest, _ := tpl["latest"].(map[string]any)
+	if status != http.StatusCreated || tpl["kind"] != "newsletter" || latest["subject"] != "Week of {{.week}}" {
+		t.Fatalf("create: %d %v", status, tpl)
+	}
+	if status, body := c.json(http.MethodPost, "/v1/templates", map[string]any{"brand": c.brand, "key": "nosubject", "kind": "newsletter", "body": "x"}); status != http.StatusUnprocessableEntity ||
+		!strings.Contains(func() string { b, _ := json.Marshal(body); return string(b) }(), "subject_missing") {
+		t.Errorf("no subject: %d %v", status, body)
+	}
+	status, list := c.json(http.MethodGet, "/v1/templates?brand="+c.brand+"&kind=newsletter", nil)
+	if data, _ := list["data"].([]any); status != http.StatusOK || len(data) != 1 || data[0].(map[string]any)["key"] != "weekly" {
+		t.Fatalf("list by kind: %d %v", status, list)
+	}
+	status, prev := c.json(http.MethodPost, "/v1/templates/preview", map[string]any{"brand": c.brand, "template": "weekly", "data": map[string]any{"week": "May 11"}})
+	if issue, _ := prev["issue"].(map[string]any); status != http.StatusOK || issue["subject"] != "Week of May 11" || issue["body"] != "# Week of May 11" {
+		t.Fatalf("preview: %d %v", status, prev)
+	}
+	status, is := c.json(http.MethodPost, "/v1/newsletters", map[string]any{"brand": c.brand, "template": "weekly", "data": map[string]any{"week": "May 18"}})
+	if status != http.StatusCreated || is["subject"] != "Week of May 18" || is["template"] != tpl["id"] || is["template_version"] != float64(1) {
+		t.Fatalf("issue from the template: %d %v", status, is)
+	}
+	if status, body := c.json(http.MethodPost, "/v1/newsletters", map[string]any{"brand": c.brand, "template": "weekly", "subject": "x",
+		"data": map[string]any{"week": "May 18"}}); status != http.StatusUnprocessableEntity || body["code"] != "content_conflict" {
+		t.Errorf("template and subject: %d %v", status, body)
 	}
 }

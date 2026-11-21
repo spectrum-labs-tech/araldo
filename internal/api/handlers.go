@@ -43,7 +43,7 @@ func (h *Handler) routes() {
 	h.handle("POST /v1/channels/{id}/reconnect", h.reconnectChannel)
 	h.handle("DELETE /v1/channels/{id}", h.deleteChannel)
 
-	h.handle("GET /v1/templates", h.listTemplates, "brand", "key")
+	h.handle("GET /v1/templates", h.listTemplates, "brand", "key", "kind")
 	h.handle("POST /v1/templates", h.createTemplate)
 	h.handle("POST /v1/templates/preview", h.previewTemplate)
 	h.handle("GET /v1/templates/{id}", h.getTemplate, "version")
@@ -455,11 +455,14 @@ func (h *Handler) deleteChannel(w http.ResponseWriter, r *http.Request) error {
 // Templates.
 
 type sourceBody struct {
-	Variables json.RawMessage                    `json:"variables"`
-	Examples  []json.RawMessage                  `json:"examples"`
-	Body      string                             `json:"body"`
-	Overrides map[platform.Provider]string       `json:"overrides"`
-	Fit       map[platform.Provider]platform.Fit `json:"fit"`
+	Variables json.RawMessage   `json:"variables"`
+	Examples  []json.RawMessage `json:"examples"`
+	Body      string            `json:"body"`
+	// Subject and PreviewText are a newsletter template's.
+	Subject     string                             `json:"subject"`
+	PreviewText string                             `json:"preview_text"`
+	Overrides   map[platform.Provider]string       `json:"overrides"`
+	Fit         map[platform.Provider]platform.Fit `json:"fit"`
 }
 
 func (b sourceBody) source() tmpl.Source {
@@ -467,7 +470,8 @@ func (b sourceBody) source() tmpl.Source {
 	if string(vars) == "null" {
 		vars = nil
 	}
-	return tmpl.Source{Variables: vars, Examples: b.Examples, Body: b.Body, Overrides: b.Overrides, Fit: b.Fit}
+	return tmpl.Source{Variables: vars, Examples: b.Examples, Body: b.Body, Subject: b.Subject, PreviewText: b.PreviewText,
+		Overrides: b.Overrides, Fit: b.Fit}
 }
 
 func (h *Handler) listTemplates(w http.ResponseWriter, r *http.Request) error {
@@ -484,10 +488,13 @@ func (h *Handler) listTemplates(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	key := r.URL.Query().Get("key")
+	key, kind := r.URL.Query().Get("key"), model.TemplateKind(r.URL.Query().Get("kind"))
+	if kind != "" && !kind.Valid() {
+		return badRequest("parameter_invalid", "kind", "kind is post or newsletter.")
+	}
 	out := make([]core.TemplateView, 0, len(ts))
 	for _, t := range ts {
-		if key == "" || t.Key == key {
+		if (key == "" || t.Key == key) && (kind == "" || t.Kind == kind) {
 			out = append(out, core.ViewTemplate(t, nil))
 		}
 	}
@@ -502,6 +509,7 @@ func (h *Handler) createTemplate(w http.ResponseWriter, r *http.Request) error {
 		Brand    string `json:"brand"`
 		Key      string `json:"key"`
 		Name     string `json:"name"`
+		Kind     string `json:"kind"`
 		Approval string `json:"approval"`
 	}
 	if err := decode(r, &body); err != nil {
@@ -512,7 +520,7 @@ func (h *Handler) createTemplate(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	t, v, err := h.svc.CreateTemplate(r.Context(), a, core.TemplateInput{BrandID: b.ID, Key: body.Key, Name: body.Name,
-		Approval: model.TemplateApproval(body.Approval), Source: body.source()})
+		Kind: model.TemplateKind(body.Kind), Approval: model.TemplateApproval(body.Approval), Source: body.source()})
 	if err != nil {
 		return err
 	}
@@ -604,13 +612,14 @@ func (h *Handler) previewTemplate(w http.ResponseWriter, r *http.Request) error 
 		sourceBody
 		Brand     string              `json:"brand"`
 		Template  string              `json:"template"`
+		Kind      string              `json:"kind"`
 		Data      json.RawMessage     `json:"data"`
 		Providers []platform.Provider `json:"providers"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
 	}
-	src, tz := body.source(), "UTC"
+	src, tz, kind := body.source(), "UTC", model.TemplateKind(body.Kind)
 	if body.Brand != "" {
 		b, err := h.svc.ResolveBrand(r.Context(), a, body.Brand)
 		if err != nil {
@@ -618,12 +627,27 @@ func (h *Handler) previewTemplate(w http.ResponseWriter, r *http.Request) error 
 		}
 		tz = b.Timezone
 		if body.Template != "" {
-			_, v, err := h.svc.TemplateByRef(r.Context(), a, b.ID, body.Template)
+			t, v, err := h.svc.TemplateByRef(r.Context(), a, b.ID, body.Template)
 			if err != nil {
 				return err
 			}
-			src = tmpl.Source{Variables: v.Variables, Examples: v.Examples, Body: v.Body, Overrides: v.Overrides, Fit: v.Fit}
+			src = tmpl.Source{Variables: v.Variables, Examples: v.Examples, Body: v.Body, Subject: v.Subject, PreviewText: v.PreviewText,
+				Overrides: v.Overrides, Fit: v.Fit}
+			kind = t.Kind
 		}
+	}
+	switch kind {
+	case model.TemplateNewsletter:
+		is, err := h.svc.PreviewNewsletterTemplate(r.Context(), a, src, body.Data, tz)
+		if err != nil {
+			return err
+		}
+		ok(w, http.StatusOK, map[string]any{"object": "preview",
+			"issue": map[string]string{"subject": is.Subject, "preview_text": is.PreviewText, "body": is.Body}})
+		return nil
+	case "", model.TemplatePost:
+	default:
+		return badRequest("parameter_invalid", "kind", "kind is post or newsletter.")
 	}
 	renders, err := h.svc.PreviewTemplate(r.Context(), a, src, body.Data, body.Providers, tz)
 	if err != nil {

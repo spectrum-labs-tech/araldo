@@ -23,6 +23,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
+	"github.com/spectrum-labs-tech/araldo/internal/newsletter"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
 )
 
@@ -48,6 +49,9 @@ type Source struct {
 	// Examples are sample data, used to check the bodies and for previews.
 	Examples []json.RawMessage
 	Body     string
+	// Subject and PreviewText are a newsletter template's (ADR 0024
+	// phase 2), rendered with the same data; "" for a post template.
+	Subject, PreviewText string
 	// Overrides replace Body on a platform.
 	Overrides map[platform.Provider]string
 	// Fit says what to do with text that is too long, per platform.
@@ -59,6 +63,8 @@ type Compiled struct {
 	src       Source
 	schema    *jsonschema.Schema
 	body      *template.Template
+	subject   *template.Template
+	preview   *template.Template
 	overrides map[platform.Provider]*template.Template
 }
 
@@ -71,6 +77,12 @@ func Compile(src Source) (*Compiled, error) {
 		ps.Add("body_missing", "body", "A template needs a body.")
 	}
 	c.body = parseBody("body", src.Body, &ps)
+	if src.Subject != "" {
+		c.subject = parseBody("subject", src.Subject, &ps)
+	}
+	if src.PreviewText != "" {
+		c.preview = parseBody("preview_text", src.PreviewText, &ps)
+	}
 	for p, body := range src.Overrides {
 		if _, ok := platform.RulesFor(p); !ok {
 			ps.Add("provider_unknown", "overrides."+string(p), "Unknown platform %q.", p)
@@ -359,6 +371,52 @@ func (c *Compiled) Render(p platform.Provider, data json.RawMessage, loc *time.L
 	if o, ok := c.overrides[p]; ok {
 		t = o
 	}
+	return c.execute(t, data, loc)
+}
+
+// Issue is a newsletter issue's text rendered from a template.
+type Issue struct {
+	Subject, PreviewText, Body string
+}
+
+// RenderIssue renders a newsletter template's subject, preview text and
+// body with data. The subject and preview text are single lines.
+func (c *Compiled) RenderIssue(data json.RawMessage, loc *time.Location) (Issue, error) {
+	var out Issue
+	var err error
+	if out.Body, err = c.execute(c.body, data, loc); err != nil {
+		return Issue{}, fieldError(err, "body")
+	}
+	for _, f := range []struct {
+		t     *template.Template
+		dst   *string
+		field string
+	}{{c.subject, &out.Subject, "subject"}, {c.preview, &out.PreviewText, "preview_text"}} {
+		if f.t == nil {
+			continue
+		}
+		text, err := c.execute(f.t, data, loc)
+		if err != nil {
+			return Issue{}, fieldError(err, f.field)
+		}
+		*f.dst = strings.Join(strings.Fields(text), " ")
+	}
+	return out, nil
+}
+
+// fieldError points a render problem at the part of the template that
+// made it.
+func fieldError(err error, field string) error {
+	var ae *apperr.Error
+	if errors.As(err, &ae) && ae.Param == "body" {
+		e := *ae
+		e.Param = field
+		return &e
+	}
+	return err
+}
+
+func (c *Compiled) execute(t *template.Template, data json.RawMessage, loc *time.Location) (string, error) {
 	var m map[string]any
 	dec := json.NewDecoder(bytes.NewReader(orEmptyObject(data)))
 	dec.UseNumber()
@@ -457,8 +515,10 @@ var funcs = template.FuncMap{
 	"default":  dflt,
 	"plural":   plural,
 	"urlquery": url.QueryEscape,
-	"thread":   func() string { return platform.ThreadBreak },
-	"date":     dateIn(time.UTC),
+	// md makes a value read as plain text in a newsletter's Markdown.
+	"md":     func(v any) string { return newsletter.Escape(str(v)) },
+	"thread": func() string { return platform.ThreadBreak },
+	"date":   dateIn(time.UTC),
 	// Replaced per render with a fresh count (see countLoops).
 	loopFunc: func() string { return "" },
 }

@@ -177,18 +177,19 @@ func tools(api *Client) []Tool {
 		},
 		{
 			Name: "list_templates", Title: "List templates", ReadOnly: true, Idempotent: true,
-			Description: "Saved post templates (without their bodies; get_template has those).",
+			Description: "Saved templates, for posts or for newsletter issues (kind), without their bodies; get_template has those.",
 			Input: object(nil, map[string]any{
 				"brand": str("Only this brand's templates. " + brandDesc),
 				"key":   str("Only the template with this key."),
+				"kind":  enum("Only templates for posts, or for newsletter issues.", "post", "newsletter"),
 			}),
 			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
-				return get("/v1/templates", query(args, "brand", "key"))(ctx)
+				return get("/v1/templates", query(args, "brand", "key", "kind"))(ctx)
 			},
 		},
 		{
 			Name: "get_template", Title: "Get a template", ReadOnly: true, Idempotent: true,
-			Description: "A template's body, per-platform overrides, the JSON Schema its data must match, and examples.",
+			Description: "A template's body, per-platform overrides (or a newsletter template's subject and preview text), the JSON Schema its data must match, and examples.",
 			Input: object([]string{"template"}, map[string]any{
 				"template": str("The template's ID (tmpl_…), or its key together with brand."),
 				"brand":    str("The brand, when template is a key. " + brandDesc),
@@ -422,7 +423,7 @@ func tools(api *Client) []Tool {
 			Name: "preview_newsletter", Title: "Preview a newsletter issue", ReadOnly: true, Idempotent: true,
 			Description: "Renders a newsletter issue as the brand's email provider would send it, links tagged, and returns its " +
 				"plain-text version (and HTML) without saving anything. Use it to check a draft. " + newsletterBodyHelp,
-			Input: object([]string{"brand", "subject", "body"}, newsletterProps()),
+			Input: object([]string{"brand"}, newsletterProps()),
 			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
 				return api.Do(ctx, http.MethodPost, "/v1/newsletters/preview", nil, newsletterBody(args), "")
 			},
@@ -449,7 +450,7 @@ func tools(api *Client) []Tool {
 			Input: func() map[string]any {
 				props := newsletterProps()
 				props["idempotency_key"] = str("Any unique string. Sending the same key again returns the first draft.")
-				return object([]string{"brand", "subject", "body"}, props)
+				return object([]string{"brand"}, props)
 			}(),
 			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
 				key := argString(args, "idempotency_key")
@@ -504,8 +505,9 @@ func tools(api *Client) []Tool {
 }
 
 // newsletterBodyHelp is the body syntax, for the newsletter tools.
-const newsletterBodyHelp = "The body is Markdown: # headings, paragraphs, - lists, > quotes, --- dividers, " +
-	"![alt](media_… or https://…) images and [Label](https://…){.button} buttons on lines of their own, and **bold**, *italic* and links."
+const newsletterBodyHelp = "Give a subject and body, or a newsletter template with data. The body is Markdown: # headings, " +
+	"paragraphs, - lists, > quotes, --- dividers, ![alt](media_… or https://…) images and [Label](https://…){.button} buttons " +
+	"on lines of their own, and **bold**, *italic* and links."
 
 func newsletterProps() map[string]any {
 	return map[string]any{
@@ -513,15 +515,22 @@ func newsletterProps() map[string]any {
 		"subject":      str("The subject line; under 50 characters reads whole on phones."),
 		"preview_text": str("The line inboxes show after the subject."),
 		"body":         str("The issue, in the Markdown described above."),
+		"template": str("Instead of subject, preview_text and body: a newsletter template of the brand (its key, key@version or " +
+			"ID; list_templates with kind newsletter), which renders them from data."),
+		"data": map[string]any{"type": "object", "additionalProperties": true,
+			"description": "The template's data, matching its variables (get_template shows them and an example)."},
 	}
 }
 
 func newsletterBody(args map[string]any) map[string]any {
 	body := map[string]any{}
-	for _, k := range []string{"brand", "subject", "preview_text", "body"} {
+	for _, k := range []string{"brand", "subject", "preview_text", "body", "template"} {
 		if v := argString(args, k); v != "" {
 			body[k] = v
 		}
+	}
+	if d, ok := args["data"].(map[string]any); ok {
+		body["data"] = d
 	}
 	return body
 }

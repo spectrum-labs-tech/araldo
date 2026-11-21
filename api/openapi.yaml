@@ -329,6 +329,7 @@ paths:
       parameters:
         - { name: brand, in: query, schema: { type: string }, description: Brand ID or slug. }
         - { name: key, in: query, schema: { type: string }, description: "Only the template with this key (unique within a brand)." }
+        - { name: kind, in: query, schema: { $ref: "#/components/schemas/TemplateKind" }, description: Only templates of this kind. }
       responses:
         "200":
           description: Templates (without their bodies).
@@ -358,6 +359,7 @@ paths:
                     brand: { type: string }
                     key: { type: string, example: featured-build }
                     name: { type: string }
+                    kind: { $ref: "#/components/schemas/TemplateKind" }
                     approval: { $ref: "#/components/schemas/TemplateApproval" }
       responses:
         "201":
@@ -368,7 +370,12 @@ paths:
   /v1/templates/preview:
     post:
       summary: Preview a template
-      description: Render a saved template (`brand` + `template`) or an unsaved one (the source fields) for each platform. Nothing is stored.
+      description: |
+        Render a saved template (`brand` + `template`) or an unsaved one (the
+        source fields) for each platform. A newsletter template (saved, or
+        unsaved with `kind: newsletter`) renders instead into an issue's
+        subject, preview text and Markdown body; `POST /v1/newsletters/preview`
+        with `template` shows it as email. Nothing is stored.
       tags: [Templates]
       requestBody:
         required: true
@@ -381,12 +388,18 @@ paths:
                   properties:
                     brand: { type: string }
                     template: { type: string, description: "key, key@version or template ID" }
+                    kind: { $ref: "#/components/schemas/TemplateKind" }
                     data: { type: object, additionalProperties: true }
                     providers: { type: array, items: { type: string } }
       responses:
         "200":
-          description: One rendition per platform.
-          content: { application/json: { schema: { $ref: "#/components/schemas/Preview" } } }
+          description: One rendition per platform, or for a newsletter template the issue it renders.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Preview"
+                  - $ref: "#/components/schemas/TemplateIssuePreview"
         default: { $ref: "#/components/responses/Error" }
 
   /v1/templates/{id}:
@@ -3007,6 +3020,8 @@ components:
           description: A JSON Schema (2020-12) for the data.
         examples: { type: array, items: { type: object, additionalProperties: true } }
         body: { type: string, example: "Featured build: {{.name}} {{.url}}" }
+        subject: { type: string, description: "A newsletter template's subject, a template too. Required for newsletter templates, refused for post templates." }
+        preview_text: { type: string, description: "A newsletter template's preview text, a template too." }
         overrides:
           type: object
           additionalProperties: { type: string }
@@ -3015,13 +3030,34 @@ components:
           type: object
           additionalProperties: { type: string, enum: [error, truncate, thread] }
 
+    TemplateKind:
+      type: string
+      enum: [post, newsletter]
+      description: |
+        What a template renders: posts (the default), or newsletter issues,
+        whose templates have a subject and preview text beside a Markdown
+        body and no per-platform bodies. The `md` helper makes data read as
+        plain text in Markdown: `{{md .title}}`.
+
+    TemplateIssuePreview:
+      type: object
+      properties:
+        object: { type: string, enum: [preview] }
+        issue:
+          type: object
+          properties:
+            subject: { type: string }
+            preview_text: { type: string }
+            body: { type: string, description: Markdown. }
+
     TemplateApproval:
       type: string
       enum: [inherit, required, not_required]
       description: |
         Whether posts made from the template wait for approval: `inherit`
         follows the brand's policy (the default), `required` always waits,
-        `not_required` never does.
+        `not_required` never does. For a newsletter template the same holds
+        for its issues while their text is as it rendered.
 
     Template:
       type: object
@@ -3031,6 +3067,7 @@ components:
         brand: { type: string }
         key: { type: string }
         name: { type: string }
+        kind: { $ref: "#/components/schemas/TemplateKind" }
         approval: { $ref: "#/components/schemas/TemplateApproval" }
         latest_version: { type: integer }
         latest:
@@ -3558,11 +3595,13 @@ components:
 
     IssueInput:
       type: object
-      required: [subject, body]
+      description: A subject and body written by the caller, or a newsletter template with data that renders them; not both.
       properties:
         subject: { type: string, maxLength: 200 }
         preview_text: { type: string, maxLength: 200, description: The line inboxes show after the subject. }
         body: { type: string, maxLength: 100000 }
+        template: { type: string, description: "A newsletter template of the brand: key, key@version or template ID." }
+        data: { type: object, additionalProperties: true, description: "The template's data, checked against its variables." }
         deliveries:
           type: array
           description: The mail accounts it goes to, each once, with audiences there (empty for the account's defaults).
@@ -3618,6 +3657,9 @@ components:
         subject: { type: string }
         preview_text: { type: string }
         body: { type: string }
+        template: { type: string, description: "The newsletter template the text was rendered from, while it is as rendered; editing it by hand clears this." }
+        template_version: { type: integer }
+        data: { type: object, additionalProperties: true }
         status: { $ref: "#/components/schemas/IssueStatus" }
         send_at: { type: string, format: date-time, nullable: true }
         approval:

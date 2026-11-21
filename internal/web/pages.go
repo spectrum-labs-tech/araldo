@@ -85,6 +85,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /templates/{id}", s.app("templates", s.saveTemplate))
 	s.mux.HandleFunc("POST /templates/{id}/delete", s.app("templates", s.deleteTemplate))
 	s.mux.HandleFunc("POST /preview", s.app("templates", s.previewJSON))
+	s.mux.HandleFunc("POST /templates/newsletter_preview", s.app("templates", s.newsletterTemplatePreview))
 
 	s.mux.HandleFunc("GET /channels", s.app("channels", s.channels))
 	s.mux.HandleFunc("GET /channels/new", s.app("channels", s.newChannel))
@@ -1034,19 +1035,24 @@ func (s *Server) templates(c *reqCtx) error {
 }
 
 type templateForm struct {
-	Template  *model.Template
-	Version   *model.TemplateVersion
-	Brands    []*model.Brand
-	Brand     string
-	Key       string
-	Name      string
-	Approval  string
-	Body      string
-	Variables string
-	Example   string
-	Overrides map[string]string
-	Fit       map[string]string
-	Providers []platformChoice
+	Template *model.Template
+	Version  *model.TemplateVersion
+	Brands   []*model.Brand
+	Brand    string
+	Key      string
+	Name     string
+	Approval string
+	// Kind is "post" or "newsletter"; a newsletter template has Subject
+	// and PreviewText and no per-platform bodies (ADR 0024 phase 2).
+	Kind        string
+	Subject     string
+	PreviewText string
+	Body        string
+	Variables   string
+	Example     string
+	Overrides   map[string]string
+	Fit         map[string]string
+	Providers   []platformChoice
 	// DefaultPreview is the platforms previewed before the person picks:
 	// the brand's channels in this mode, or defaultPreview. The editor's
 	// script takes it from the page (data-default-platforms).
@@ -1100,6 +1106,34 @@ const starterVariables = `{
 
 const starterExample = `{"name": "Atlas build", "url": "https://example.com/builds/1", "tags": ["Wi-Fi 6", "launch day"]}`
 
+// A newsletter template's starting point: a list of items from the
+// product's data, each title made plain text with md.
+const (
+	starterIssueSubject = `{{len .items}} new {{plural (len .items) "build" "builds"}} this week`
+	starterIssuePreview = `Starting with {{(index .items 0).name}}`
+	starterIssueBody    = "# This week's builds\n{{range .items}}\n## {{md .name}}\n{{with .summary}}\n{{md .}}\n{{end}}\n[See the build]({{.url}}){{end}}"
+	starterIssueVars    = `{
+  "type": "object",
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "url"],
+        "properties": {
+          "name": {"type": "string"},
+          "summary": {"type": "string"},
+          "url": {"type": "string"}
+        }
+      }
+    }
+  }
+}`
+	starterIssueExample = `{"items": [{"name": "Atlas build", "summary": "A light build for long days.", "url": "https://example.com/builds/1"}]}`
+)
+
 // withChoices fills what every render of the editor needs.
 func (s *Server) withChoices(c *reqCtx, f *templateForm, brandID uuid.UUID) {
 	f.Providers, f.CanApprove = platformChoices, c.actor.Can(core.PermPostsApprove)
@@ -1139,7 +1173,11 @@ func (s *Server) newTemplate(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	f := templateForm{Brands: bs, Body: starterBody, Variables: starterVariables, Example: starterExample}
+	f := templateForm{Brands: bs, Kind: string(model.TemplatePost), Body: starterBody, Variables: starterVariables, Example: starterExample}
+	if c.r.URL.Query().Get("kind") == string(model.TemplateNewsletter) {
+		f = templateForm{Brands: bs, Kind: string(model.TemplateNewsletter), Subject: starterIssueSubject, PreviewText: starterIssuePreview,
+			Body: starterIssueBody, Variables: starterIssueVars, Example: starterIssueExample}
+	}
 	s.withChoices(c, &f, uuid.Nil)
 	return s.page(c, "template_edit", "templates", "New template", f)
 }
@@ -1148,9 +1186,21 @@ func (s *Server) templateFromForm(c *reqCtx, f *templateForm) (tmpl.Source, erro
 	r := c.r
 	f.Brand, f.Key, f.Name, f.Body = r.PostFormValue("brand"), r.PostFormValue("key"), r.PostFormValue("name"), r.PostFormValue("body")
 	f.Variables, f.Example, f.Approval = r.PostFormValue("variables"), r.PostFormValue("example"), r.PostFormValue("approval")
+	if f.Template != nil {
+		f.Kind = string(f.Template.Kind)
+	} else if f.Kind = r.PostFormValue("kind"); f.Kind == "" {
+		f.Kind = string(model.TemplatePost)
+	}
 	f.Overrides, f.Fit = map[string]string{}, map[string]string{}
 	src := tmpl.Source{Body: f.Body, Overrides: map[platform.Provider]string{}, Fit: map[platform.Provider]platform.Fit{}}
+	if f.Kind == string(model.TemplateNewsletter) {
+		f.Subject, f.PreviewText = r.PostFormValue("subject"), r.PostFormValue("preview_text")
+		src.Subject, src.PreviewText, src.Overrides, src.Fit = f.Subject, f.PreviewText, nil, nil
+	}
 	for _, p := range platform.Emulable() {
+		if src.Overrides == nil {
+			break
+		}
 		if o := strings.TrimSpace(r.PostFormValue("override_" + string(p))); o != "" {
 			f.Overrides[string(p)], src.Overrides[p] = o, o
 		}
@@ -1192,7 +1242,7 @@ func (s *Server) createTemplate(c *reqCtx) error {
 		return s.formErr(c, "template_edit", "templates", "New template", f, apperr.Invalid("brand_required", "brand", "Choose a brand."))
 	}
 	t, _, err := s.svc.CreateTemplate(c.ctx(), c.actor, core.TemplateInput{BrandID: brandID, Key: f.Key, Name: f.Name,
-		Approval: model.TemplateApproval(f.Approval), Source: src})
+		Kind: model.TemplateKind(f.Kind), Approval: model.TemplateApproval(f.Approval), Source: src})
 	if err != nil {
 		return s.formErr(c, "template_edit", "templates", "New template", f, err)
 	}
@@ -1209,7 +1259,8 @@ func (s *Server) templateDetail(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	f := templateForm{Template: t, Version: v, Key: t.Key, Name: t.Name, Approval: string(t.Approval), Body: v.Body}
+	f := templateForm{Template: t, Version: v, Key: t.Key, Name: t.Name, Approval: string(t.Approval), Kind: string(t.Kind),
+		Subject: v.Subject, PreviewText: v.PreviewText, Body: v.Body}
 	if len(v.Variables) > 0 {
 		var pretty any
 		if json.Unmarshal(v.Variables, &pretty) == nil {
@@ -1245,15 +1296,18 @@ func sameSource(a tmpl.Source, v *model.TemplateVersion) bool {
 		for _, e := range src.Examples {
 			ex = append(ex, canon(e))
 		}
-		b, _ := json.Marshal(map[string]any{"b": src.Body, "o": src.Overrides, "f": src.Fit, "v": canon(src.Variables), "e": ex})
+		b, _ := json.Marshal(map[string]any{"b": src.Body, "s": src.Subject, "p": src.PreviewText, "o": src.Overrides, "f": src.Fit,
+			"v": canon(src.Variables), "e": ex})
 		return string(b)
 	}
-	stored := tmpl.Source{Body: v.Body, Overrides: v.Overrides, Fit: v.Fit, Variables: v.Variables, Examples: v.Examples}
-	if stored.Overrides == nil {
-		stored.Overrides = map[platform.Provider]string{}
+	stored := tmpl.Source{Body: v.Body, Subject: v.Subject, PreviewText: v.PreviewText, Overrides: v.Overrides, Fit: v.Fit,
+		Variables: v.Variables, Examples: v.Examples}
+	// No overrides is no overrides, however it is spelled.
+	if len(stored.Overrides) == 0 && len(a.Overrides) == 0 {
+		stored.Overrides, a.Overrides = nil, nil
 	}
-	if stored.Fit == nil {
-		stored.Fit = map[platform.Provider]platform.Fit{}
+	if len(stored.Fit) == 0 && len(a.Fit) == 0 {
+		stored.Fit, a.Fit = nil, nil
 	}
 	return norm(a) == norm(stored)
 }
@@ -1301,6 +1355,29 @@ func (s *Server) deleteTemplate(c *reqCtx) error {
 		return err
 	}
 	return redirect(c, "/templates", "Template deleted.")
+}
+
+// newsletterTemplatePreview renders a newsletter template form, with its
+// example data, into the editor's preview frame as the email it makes.
+func (s *Server) newsletterTemplatePreview(c *reqCtx) error {
+	f := templateForm{Kind: string(model.TemplateNewsletter)}
+	src, err := s.templateFromForm(c, &f)
+	var b *model.Brand
+	if err == nil {
+		b, err = s.svc.ResolveBrand(c.ctx(), c.actor, f.Brand)
+	}
+	var is tmpl.Issue
+	if err == nil {
+		is, err = s.svc.PreviewNewsletterTemplate(c.ctx(), c.actor, src, nil, b.Timezone)
+	}
+	var r newsletter.Rendered
+	if err == nil {
+		r, err = s.svc.PreviewIssue(c.ctx(), c.actor, core.IssueInput{BrandID: b.ID, Subject: is.Subject, PreviewText: is.PreviewText, Body: is.Body})
+	}
+	if err != nil {
+		return s.previewError(c, "previewing a newsletter template", err)
+	}
+	return s.writePreview(c, r.HTML)
 }
 
 // previewJSON renders the template form for the live preview.

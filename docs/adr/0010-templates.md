@@ -65,6 +65,14 @@ should change without redeploying the caller.
    `content.body` and `content.overrides[provider]` written by the caller
    (often an AI agent); the same validation, `fit` and preview apply.
 
+8. **Newsletter templates** ([ADR 0024](0024-newsletters.md) phase 2)
+   are templates of `kind: newsletter`: a subject and preview text
+   beside one Markdown body, with no per-platform overrides or `fit`.
+   They use the same language, helpers and limits, plus `md`, which
+   escapes a value so it reads as plain text in Markdown. Posts take
+   only post templates and issues only newsletter templates
+   (`template_kind`).
+
 ## Alternatives considered
 
 - **Liquid or Handlebars syntax.** More familiar to JavaScript developers,

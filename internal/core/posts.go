@@ -95,6 +95,9 @@ func (s *Service) prepare(ctx context.Context, a Actor, in *PostInput, postID uu
 		if err != nil {
 			return nil, err
 		}
+		if pl.template.Kind == model.TemplateNewsletter {
+			return nil, apperr.Invalid("template_kind", "template", "%s is a newsletter template; posts use post templates.", pl.template.Key)
+		}
 		if compiled, err = tmpl.Compile(sourceOf(pl.version)); err != nil {
 			return nil, err
 		}

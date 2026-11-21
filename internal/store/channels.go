@@ -121,11 +121,11 @@ func (s *Store) DeleteChannel(ctx context.Context, orgID, id uuid.UUID) error {
 
 // Templates.
 
-const templateCols = `id, org_id, brand_id, key, name, approval, latest_version, created_at, updated_at`
+const templateCols = `id, org_id, brand_id, key, name, kind, approval, latest_version, created_at, updated_at`
 
 func scanTemplate(r pgx.Row) (*model.Template, error) {
 	var t model.Template
-	err := r.Scan(&t.ID, &t.OrgID, &t.BrandID, &t.Key, &t.Name, &t.Approval, &t.LatestVersion, &t.CreatedAt, &t.UpdatedAt)
+	err := r.Scan(&t.ID, &t.OrgID, &t.BrandID, &t.Key, &t.Name, &t.Kind, &t.Approval, &t.LatestVersion, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -136,8 +136,11 @@ func (s *Store) CreateTemplate(ctx context.Context, t *model.Template) error {
 	if t.Approval == "" {
 		t.Approval = model.TemplateApprovalInherit
 	}
-	_, err := s.q.Exec(ctx, `INSERT INTO templates (id, org_id, brand_id, key, name, approval) VALUES ($1, $2, $3, $4, $5, $6)`,
-		t.ID, t.OrgID, t.BrandID, t.Key, t.Name, t.Approval)
+	if t.Kind == "" {
+		t.Kind = model.TemplatePost
+	}
+	_, err := s.q.Exec(ctx, `INSERT INTO templates (id, org_id, brand_id, key, name, kind, approval) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		t.ID, t.OrgID, t.BrandID, t.Key, t.Name, t.Kind, t.Approval)
 	return mapErr(err)
 }
 
@@ -191,9 +194,9 @@ func (s *Store) AddTemplateVersion(ctx context.Context, v *model.TemplateVersion
 	if len(v.Variables) > 0 {
 		variables = v.Variables
 	}
-	if _, err := s.q.Exec(ctx, `INSERT INTO template_versions (org_id, template_id, version, variables, examples, body, overrides, fit, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		v.OrgID, v.TemplateID, v.Version, variables, examples, v.Body, v.Overrides, v.Fit, v.CreatedBy); err != nil {
+	if _, err := s.q.Exec(ctx, `INSERT INTO template_versions (org_id, template_id, version, variables, examples, body, subject, preview_text,
+		overrides, fit, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		v.OrgID, v.TemplateID, v.Version, variables, examples, v.Body, v.Subject, v.PreviewText, v.Overrides, v.Fit, v.CreatedBy); err != nil {
 		return mapErr(err)
 	}
 	return s.execOne(ctx, `UPDATE templates SET latest_version = $3, updated_at = now() WHERE org_id = $1 AND id = $2`, v.OrgID, v.TemplateID, v.Version)
@@ -202,9 +205,10 @@ func (s *Store) AddTemplateVersion(ctx context.Context, v *model.TemplateVersion
 func (s *Store) TemplateVersion(ctx context.Context, orgID, templateID uuid.UUID, version int) (*model.TemplateVersion, error) {
 	var v model.TemplateVersion
 	var variables, examples []byte
-	err := s.q.QueryRow(ctx, `SELECT org_id, template_id, version, variables, examples, body, overrides, fit, created_by, created_at
-		FROM template_versions WHERE org_id = $1 AND template_id = $2 AND version = $3`, orgID, templateID, version).
-		Scan(&v.OrgID, &v.TemplateID, &v.Version, &variables, &examples, &v.Body, &v.Overrides, &v.Fit, &v.CreatedBy, &v.CreatedAt)
+	err := s.q.QueryRow(ctx, `SELECT org_id, template_id, version, variables, examples, body, subject, preview_text, overrides, fit,
+		created_by, created_at FROM template_versions WHERE org_id = $1 AND template_id = $2 AND version = $3`, orgID, templateID, version).
+		Scan(&v.OrgID, &v.TemplateID, &v.Version, &variables, &examples, &v.Body, &v.Subject, &v.PreviewText, &v.Overrides, &v.Fit,
+			&v.CreatedBy, &v.CreatedAt)
 	if err != nil {
 		return nil, mapErr(err)
 	}

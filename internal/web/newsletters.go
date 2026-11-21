@@ -227,6 +227,9 @@ type issueData struct {
 	// says the block was just added to the body, unsaved.
 	TopDays, TopCount int
 	Inserted          bool
+	// FromTemplate is the newsletter template that rendered the text,
+	// while the text is as rendered.
+	FromTemplate *model.Template
 }
 
 // Open says the issue can still be scheduled, moved or canceled: it is
@@ -269,6 +272,9 @@ func (s *Server) issueData(c *reqCtx, is *model.Issue, brandRef string) (*issueD
 	switch {
 	case is != nil:
 		d.Subject, d.Preview, d.Body = is.Subject, is.PreviewText, is.Body
+		if is.TemplateID != nil {
+			d.FromTemplate, _, _ = s.svc.Template(c.ctx(), c.actor, *is.TemplateID, 0)
+		}
 		if d.Brand, err = s.svc.Brand(c.ctx(), c.actor, is.BrandID); err == nil && is.SendAt != nil {
 			d.SendAt = is.SendAt.In(brandLoc(d.Brand)).Format("2006-01-02T15:04")
 		}
@@ -544,7 +550,12 @@ func (s *Server) renderPreview(c *reqCtx) error {
 			return s.writePreview(c, r.HTML)
 		}
 	}
-	status, msg, fault := s.serverFault(c.w, c.r, "previewing a newsletter", err)
+	return s.previewError(c, "previewing a newsletter", err)
+}
+
+// previewError shows why a preview could not be rendered, in its frame.
+func (s *Server) previewError(c *reqCtx, doing string, err error) error {
+	status, msg, fault := s.serverFault(c.w, c.r, doing, err)
 	html := template.HTMLEscapeString(msg)
 	if !fault {
 		status, html = http.StatusUnprocessableEntity, template.HTMLEscapeString(apperr.As(err).Message)+problems(err)

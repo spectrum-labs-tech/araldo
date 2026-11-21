@@ -1,6 +1,6 @@
 # ADR 0024: Newsletters are designed and scheduled in Araldo and sent by the email provider, which owns the list
 
-- Status: accepted; phase 1 built
+- Status: accepted; phases 1 and 2 built; phase 3 begun (Resend)
 - Date: 2026-10-03
 
 ## Context
@@ -168,6 +168,20 @@ into spam.
   edit, rather than a block the renderer fills at hand-off, so what is
   previewed is still what is sent and an issue keeps reading the same
   after its posts' engagement changes.
+  Templates with data came next, as a kind of template (ADR 0010):
+  `kind: newsletter` templates have a subject and preview text beside a
+  Markdown body, are rendered with the same engine and limits, and have
+  an `md` helper that makes data read as plain text in Markdown. Saving
+  one renders each example as an issue, so a template that cannot make a
+  valid issue is refused then rather than at send time. An issue made
+  from one (`template` and `data` on `POST /v1/newsletters`) stores the
+  rendered text, as a post does (ADR 0010 decision 5), and records the
+  template, its version and the data. It is still a draft to edit,
+  schedule and approve. The template stays the issue's while its text is
+  as rendered; editing the text by hand clears it. While it holds, the
+  template's approval rule applies to the issue as to a post (ADR 0004),
+  so an approver can let a product's automated issues through without
+  review; text a person changed follows the brand's policy.
 - **Phase 3:** more providers (Listmonk, Buttondown), and send slots per
   brand. Resend came first, as broadcasts: one segment per broadcast, so
   one audience per Resend delivery (an optional `email.AudienceLimiter`

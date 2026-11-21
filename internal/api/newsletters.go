@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -177,7 +178,10 @@ type issueBody struct {
 	Subject     string `json:"subject"`
 	PreviewText string `json:"preview_text"`
 	Body        string `json:"body"`
-	Deliveries  *[]struct {
+	// Template and Data render the subject, preview text and body instead.
+	Template   string          `json:"template"`
+	Data       json.RawMessage `json:"data"`
+	Deliveries *[]struct {
 		MailAccount string   `json:"mail_account"`
 		Audiences   []string `json:"audiences"`
 	} `json:"deliveries"`
@@ -189,7 +193,7 @@ func (h *Handler) issueInput(r *http.Request, withBrand bool) (core.IssueInput, 
 	if err := decode(r, &body); err != nil {
 		return core.IssueInput{}, err
 	}
-	in := core.IssueInput{Subject: body.Subject, PreviewText: body.PreviewText, Body: body.Body}
+	in := core.IssueInput{Subject: body.Subject, PreviewText: body.PreviewText, Body: body.Body, Template: body.Template, Data: body.Data}
 	if withBrand {
 		b, err := h.svc.ResolveBrand(r.Context(), actor(r), body.Brand)
 		if err != nil {

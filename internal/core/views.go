@@ -109,13 +109,16 @@ func nonNilSettings(m map[string]string) map[string]string {
 
 // TemplateVersionView is one version of a template.
 type TemplateVersionView struct {
-	Version   int                                `json:"version"`
-	Variables json.RawMessage                    `json:"variables,omitempty"`
-	Examples  []json.RawMessage                  `json:"examples"`
-	Body      string                             `json:"body"`
-	Overrides map[platform.Provider]string       `json:"overrides"`
-	Fit       map[platform.Provider]platform.Fit `json:"fit"`
-	CreatedAt time.Time                          `json:"created_at"`
+	Version   int               `json:"version"`
+	Variables json.RawMessage   `json:"variables,omitempty"`
+	Examples  []json.RawMessage `json:"examples"`
+	Body      string            `json:"body"`
+	// Subject and PreviewText are a newsletter template's.
+	Subject     string                             `json:"subject,omitempty"`
+	PreviewText string                             `json:"preview_text,omitempty"`
+	Overrides   map[platform.Provider]string       `json:"overrides"`
+	Fit         map[platform.Provider]platform.Fit `json:"fit"`
+	CreatedAt   time.Time                          `json:"created_at"`
 }
 
 // TemplateView is a template and its latest version.
@@ -125,6 +128,7 @@ type TemplateView struct {
 	Brand         string               `json:"brand"`
 	Key           string               `json:"key"`
 	Name          string               `json:"name"`
+	Kind          string               `json:"kind"`
 	Approval      string               `json:"approval"`
 	LatestVersion int                  `json:"latest_version"`
 	Latest        *TemplateVersionView `json:"latest,omitempty"`
@@ -135,14 +139,14 @@ type TemplateView struct {
 // ViewTemplate renders a template with (optionally) a version.
 func ViewTemplate(t *model.Template, v *model.TemplateVersion) TemplateView {
 	tv := TemplateView{ID: id.Format(id.Template, t.ID), Object: "template", Brand: id.Format(id.Brand, t.BrandID), Key: t.Key, Name: t.Name,
-		Approval: string(t.Approval), LatestVersion: t.LatestVersion, CreatedAt: t.CreatedAt.UTC(), UpdatedAt: t.UpdatedAt.UTC()}
+		Kind: string(t.Kind), Approval: string(t.Approval), LatestVersion: t.LatestVersion, CreatedAt: t.CreatedAt.UTC(), UpdatedAt: t.UpdatedAt.UTC()}
 	if v != nil {
 		examples := v.Examples
 		if examples == nil {
 			examples = []json.RawMessage{}
 		}
 		tv.Latest = &TemplateVersionView{Version: v.Version, Variables: v.Variables, Examples: examples, Body: v.Body,
-			Overrides: nonNil(v.Overrides), Fit: nonNilFit(v.Fit), CreatedAt: v.CreatedAt.UTC()}
+			Subject: v.Subject, PreviewText: v.PreviewText, Overrides: nonNil(v.Overrides), Fit: nonNilFit(v.Fit), CreatedAt: v.CreatedAt.UTC()}
 	}
 	return tv
 }

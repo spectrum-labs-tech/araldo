@@ -830,6 +830,27 @@ reposts and replies. Edit or cut it like the rest of the issue; it is not
 saved until the draft is. Posts need engagement read first (ADR 0018), so
 a brand whose posts have none yet is told so.
 
+**Issues from your product's data.** A newsletter template (Templates →
+New template → Newsletter issues, or `POST /v1/templates` with
+`"kind": "newsletter"`) renders an issue's subject, preview text and
+Markdown body from data your code sends, so the wording lives in Araldo
+and changes without a deploy. Use `{{md .name}}` for text from your data,
+so a title with `*` or `#` in it stays plain. Then:
+
+```sh
+curl -X POST "$ARALDO_URL/v1/newsletters" -H "Authorization: Bearer $ARALDO_KEY" \
+  -H "Idempotency-Key: weekly-2026-11-27" -H "Content-Type: application/json" \
+  -d '{"brand": "your-product", "template": "weekly-builds", "data": {"items": [...]}}'
+```
+
+The issue is a draft like any other, with the rendered text stored and
+the template, version and data recorded; schedule it with
+`POST /v1/newsletters/{id}/schedule`. While its text is as rendered it
+follows the template's approval setting, so an admin can set an
+automated newsletter's template to never need approval; once someone
+edits its text it follows the brand's policy. `POST /v1/newsletters/preview`
+takes the same body to show the email without saving anything.
+
 **Brevo**: an API key from SMTP & API → API keys. The sender must be an
 active Brevo sender or on a domain authenticated there. Audiences are
 Brevo's contact lists and segments. Tests go through Brevo's

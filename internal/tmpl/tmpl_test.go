@@ -276,3 +276,44 @@ func TestLoopCountIsPerRender(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderIssue(t *testing.T) {
+	t.Parallel()
+	c, err := Compile(Source{
+		Subject:     "{{len .offers}} {{plural (len .offers) \"deal\" \"deals\"}} this week",
+		PreviewText: "Starting with\n  {{(index .offers 0).title}}",
+		Body:        "# Deals\n{{range .offers}}\n- [{{md .title}}]({{.url}}){{end}}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.RenderIssue(json.RawMessage(`{"offers":[{"title":"*Big* sale","url":"https://a.example"},{"title":"#2","url":"https://b.example"}]}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Issue{Subject: "2 deals this week", PreviewText: "Starting with *Big* sale",
+		Body: "# Deals\n\n- [" + `\*Big\* sale` + "](https://a.example)\n- [" + `\#2` + "](https://b.example)"}
+	if got != want {
+		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+	// A problem in the subject is reported against the subject.
+	c, err = Compile(Source{Subject: "{{.missing}}", Body: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.RenderIssue(json.RawMessage(`{}`), nil)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code != "variable_missing" {
+		t.Fatalf("missing field in the subject: %v", err)
+	}
+	if _, err := Compile(Source{Subject: "{{if}}", Body: "x"}); err == nil || !strings.Contains(err.Error(), "subject") {
+		t.Errorf("a subject that does not parse: %v", err)
+	}
+	c, _ = Compile(Source{Subject: "{{.s}}", Body: "x"})
+	if _, err := c.RenderIssue(json.RawMessage(`{"s": 1}`), nil); err != nil {
+		t.Errorf("a number in the subject: %v", err)
+	}
+	if _, err = Compile(Source{Subject: "{{.s | printf \"%*d\" 9}}", Body: "x"}); err == nil {
+		t.Error("the subject is held to the body's rules")
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/core"
+	"github.com/spectrum-labs-tech/araldo/internal/email"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 	"github.com/spectrum-labs-tech/araldo/internal/store"
@@ -168,5 +169,54 @@ func TestInsertTopPosts(t *testing.T) {
 	// Enter in a field presses the form's first button: it must save.
 	if strings.Index(page, `<button class="btn-primary">Save draft</button>`) > strings.Index(page, `name="insert"`) {
 		t.Fatal("the insert button comes before Save draft, so Enter would insert rather than save")
+	}
+}
+
+// An issue still waiting for approval past its send time says, where it is
+// reviewed, that approving sends it now; before then it does not.
+func TestOverdueApprovalWarns(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	if _, err := d.s.UpdateBrand(ctx, d.owner, d.brand.ID, core.BrandInput{Name: d.brand.Name, Timezone: d.brand.Timezone,
+		ApprovalPolicy: model.ApprovalAll}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.s.ConnectMailAccount(ctx, d.owner, core.MailAccountInput{BrandID: d.brand.ID, Provider: email.Sandbox, FromName: "News",
+		FromEmail: "news@araldo.dev", DefaultAudiences: []string{"list-1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.s.SetEmailTheme(ctx, d.owner, d.brand.ID, core.EmailThemeInput{PostalAddress: "1 Main St"}); err != nil {
+		t.Fatal(err)
+	}
+	is, err := d.s.CreateIssue(ctx, d.owner, core.IssueInput{BrandID: d.brand.ID, Subject: "Today's offers", Body: "Hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendAt := time.Now().Add(time.Hour)
+	if is, err = d.s.ScheduleIssue(ctx, d.owner, is.ID, sendAt); err != nil || is.Status != model.IssuePendingApproval {
+		t.Fatalf("schedule: %v, %+v", err, is)
+	}
+	path := "/newsletters/" + id.Format(id.Issue, is.ID)
+	page := func() string {
+		t.Helper()
+		rec := d.send(httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: %d", path, rec.Code)
+		}
+		return rec.Body.String()
+	}
+	const warning = "Approving sends it now."
+	if got := page(); strings.Contains(got, warning) || !strings.Contains(got, `value="approve"`) {
+		t.Fatalf("before its send time:\n%s", got)
+	}
+
+	d.s.Now = func() time.Time { return sendAt.Add(9 * time.Hour) }
+	got := page()
+	if !strings.Contains(got, warning) || !strings.Contains(got, "9h ago") {
+		t.Fatalf("nine hours past its send time:\n%s", got)
+	}
+	for _, issue := range a11yIssues(got, true) {
+		t.Errorf("%s (overdue): %s", path, issue)
 	}
 }

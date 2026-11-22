@@ -126,6 +126,8 @@
 {{if and $d.CanReview (eq $is.Status "pending_approval")}}
 <section class="card">
   <h2>Review</h2>
+  {{if $d.Overdue}}<p class="callout max-w-xl">It was to send {{fmtIn $is.SendAt $d.Brand.Timezone}}{{with $d.Late}}, {{.}} ago{{end}}.
+    Approving sends it now. If its content is out of date, reject it, or move it first.</p>{{end}}
   <form method="post" action="/newsletters/{{issueID $is.ID}}/action" class="flex max-w-xl flex-col gap-3">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <label>Note <span class="hint">(optional) shown to the author</span><textarea name="note" rows="2"></textarea></label>

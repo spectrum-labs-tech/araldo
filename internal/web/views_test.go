@@ -4,6 +4,7 @@ package web
 
 import (
 	"testing"
+	"time"
 
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
@@ -26,6 +27,36 @@ func TestIssueDataOpen(t *testing.T) {
 	}
 	if (issueData{}).Open() {
 		t.Error("a new issue is open")
+	}
+}
+
+// An issue waiting for approval is overdue once its send time is closer
+// than core lets a send be scheduled: approving then sends it at once.
+func TestIssueDataOverdue(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 24, 18, 0, 0, 0, time.UTC)
+	at := func(d time.Duration) *time.Time { v := now.Add(d); return &v }
+	tests := []struct {
+		name   string
+		status model.IssueStatus
+		sendAt *time.Time
+		want   bool
+	}{
+		{"an hour past", model.IssuePendingApproval, at(-time.Hour), true},
+		{"within the minimum delay", model.IssuePendingApproval, at(time.Minute), true},
+		{"ahead", model.IssuePendingApproval, at(time.Hour), false},
+		{"no send time", model.IssuePendingApproval, nil, false},
+		{"scheduled, not waiting", model.IssueScheduled, at(-time.Hour), false},
+		{"a draft", model.IssueDraft, at(-time.Hour), false},
+	}
+	for _, tt := range tests {
+		d := issueData{Issue: &model.Issue{Status: tt.status, SendAt: tt.sendAt}}
+		if got := d.overdueAt(now); got != tt.want {
+			t.Errorf("%s: overdueAt = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+	if (issueData{}).overdueAt(now) {
+		t.Error("a new issue is overdue")
 	}
 }
 

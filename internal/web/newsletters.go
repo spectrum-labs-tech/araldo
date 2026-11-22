@@ -230,6 +230,10 @@ type issueData struct {
 	// FromTemplate is the newsletter template that rendered the text,
 	// while the text is as rendered.
 	FromTemplate *model.Template
+	// Overdue: it waits for approval past its send time (overdueAt), by
+	// Late ("9h"; empty in the minute around it).
+	Overdue bool
+	Late    string
 }
 
 // Open says the issue can still be scheduled, moved or canceled: it is
@@ -243,6 +247,14 @@ func (d issueData) Open() bool {
 		return true
 	}
 	return false
+}
+
+// overdueAt says the issue waits for approval past its send time at now,
+// so approving sends it within minutes rather than when it was planned
+// (core's ReviewIssue moves the time up to the earliest possible).
+func (d issueData) overdueAt(now time.Time) bool {
+	is := d.Issue
+	return is != nil && is.Status == model.IssuePendingApproval && is.SendAt != nil && is.SendAt.Before(now.Add(core.MinSendDelay))
 }
 
 // accountChoice is a mail account in the editor: whether the issue goes
@@ -265,6 +277,12 @@ func (a accountChoice) Field() string { return "audience_" + id.Format(id.MailAc
 
 func (s *Server) issueData(c *reqCtx, is *model.Issue, brandRef string) (*issueData, error) {
 	d := &issueData{Issue: is, CanWrite: c.actor.Can(core.PermNewslettersWrite), CanReview: c.actor.Can(core.PermPostsApprove), TopDays: 7, TopCount: 3}
+	if now := s.svc.Now(); d.overdueAt(now) {
+		d.Overdue = true
+		if late := now.Sub(*is.SendAt); late >= time.Minute {
+			d.Late = human(late)
+		}
+	}
 	var err error
 	if d.Brands, err = s.svc.Brands(c.ctx(), c.actor); err != nil {
 		return nil, err

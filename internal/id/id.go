@@ -40,6 +40,7 @@ const (
 	AdAccount       Prefix = "adacct"
 	AnalyticsSource Prefix = "anlsrc"
 	MailAccount     Prefix = "mailacct"
+	MailConnection  Prefix = "mailconn"
 	Issue           Prefix = "nl"
 	IssueDelivery   Prefix = "nldel"
 	Invitation      Prefix = "inv"

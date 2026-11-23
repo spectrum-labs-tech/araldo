@@ -35,6 +35,7 @@ type MailAccountView struct {
 	Brand            string    `json:"brand"`
 	Livemode         bool      `json:"livemode"`
 	Provider         string    `json:"provider"`
+	Connection       string    `json:"connection"`
 	Name             string    `json:"name"`
 	FromName         string    `json:"from_name"`
 	FromEmail        string    `json:"from_email"`
@@ -47,9 +48,33 @@ type MailAccountView struct {
 
 // ViewMailAccount renders a mail account.
 func ViewMailAccount(m *model.MailAccount) MailAccountView {
-	return MailAccountView{ID: id.Format(id.MailAccount, m.ID), Object: "mail_account", Brand: id.Format(id.Brand, m.BrandID),
+	v := MailAccountView{ID: id.Format(id.MailAccount, m.ID), Object: "mail_account", Brand: id.Format(id.Brand, m.BrandID),
 		Livemode: m.Livemode, Provider: m.Provider, Name: m.Name, FromName: m.FromName, FromEmail: m.FromEmail, ReplyTo: m.ReplyTo,
 		DefaultAudiences: nonNilList(m.DefaultAudiences), Status: string(m.Status), StatusNote: m.StatusNote, CreatedAt: m.CreatedAt.UTC()}
+	if m.ConnectionID != nil {
+		v.Connection = id.Format(id.MailConnection, *m.ConnectionID)
+	}
+	return v
+}
+
+// MailConnectionView is a mail connection in the API. Its credentials
+// never appear.
+type MailConnectionView struct {
+	ID         string    `json:"id"`
+	Object     string    `json:"object"`
+	Livemode   bool      `json:"livemode"`
+	Provider   string    `json:"provider"`
+	Name       string    `json:"name"`
+	Senders    int       `json:"senders"`
+	Status     string    `json:"status"`
+	StatusNote string    `json:"status_note,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// ViewMailConnection renders a mail connection.
+func ViewMailConnection(c *model.MailConnection) MailConnectionView {
+	return MailConnectionView{ID: id.Format(id.MailConnection, c.ID), Object: "mail_connection", Livemode: c.Livemode, Provider: c.Provider,
+		Name: c.Name, Senders: c.Senders, Status: string(c.Status), StatusNote: c.StatusNote, CreatedAt: c.CreatedAt.UTC()}
 }
 
 // AudienceView is a provider's audience in the API: never its members.

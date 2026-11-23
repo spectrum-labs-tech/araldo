@@ -352,6 +352,12 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	checks["delete mail account"] = b.s.DeleteMailAccount(ctx, b.owner, mailAcct.ID)
 	_, checks["mail account for their brand"] = b.s.ConnectMailAccount(ctx, b.owner, core.MailAccountInput{BrandID: a.brand.ID,
 		Provider: email.Sandbox, FromName: "B", FromEmail: "b@b.example"})
+	_, checks["mail connection"] = b.s.MailConnection(ctx, b.owner, *mailAcct.ConnectionID)
+	_, checks["mail connection audiences"] = b.s.MailConnectionAudiences(ctx, b.owner, *mailAcct.ConnectionID)
+	_, checks["mail connection senders"] = b.s.MailConnectionSenders(ctx, b.owner, *mailAcct.ConnectionID)
+	newName := "B's"
+	_, checks["update mail connection"] = b.s.UpdateMailConnection(ctx, b.owner, *mailAcct.ConnectionID, core.MailConnectionUpdate{Name: &newName})
+	checks["delete mail connection"] = b.s.DeleteMailConnection(ctx, b.owner, *mailAcct.ConnectionID)
 	_, checks["email theme"] = b.s.SetEmailTheme(ctx, b.owner, a.brand.ID, core.EmailThemeInput{PostalAddress: "x"})
 	_, checks["issue"] = b.s.Issue(ctx, b.owner, issue.ID)
 	_, checks["issue preview"] = b.s.IssuePreview(ctx, b.owner, issue.ID)
@@ -397,6 +403,15 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	_, err = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: b.brand.ID, Content: &model.Content{Body: "x"}, Channels: many})
 	if !hasProblem(err, "too_many_channels") {
 		t.Errorf("naming too many channels: %v", err)
+	}
+	// Nor can another org's mail connection send for this one.
+	_, err = b.s.ConnectMailAccount(ctx, b.owner, core.MailAccountInput{BrandID: b.brand.ID, ConnectionID: mailAcct.ConnectionID,
+		FromName: "B", FromEmail: "b@b.example"})
+	if apperr.As(err).Code != "connection_unknown" {
+		t.Errorf("a sender on another org's connection: %v", err)
+	}
+	if cs, err := b.s.MailConnections(ctx, b.owner); err != nil || slices.ContainsFunc(cs, func(c *model.MailConnection) bool { return c.ID == *mailAcct.ConnectionID }) {
+		t.Errorf("another org's connections list shows ours (%v)", err)
 	}
 	// Nor can another org's media be attached.
 	_, err = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: b.brand.ID, Content: &model.Content{Body: "x"}, Media: []uuid.UUID{m.ID}})

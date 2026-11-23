@@ -57,6 +57,7 @@ func (h *Handler) createMailAccount(w http.ResponseWriter, r *http.Request) erro
 	a := actor(r)
 	var body struct {
 		Brand            string            `json:"brand"`
+		Connection       string            `json:"connection"`
 		Provider         string            `json:"provider"`
 		FromName         string            `json:"from_name"`
 		FromEmail        string            `json:"from_email"`
@@ -71,8 +72,16 @@ func (h *Handler) createMailAccount(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	m, err := h.svc.ConnectMailAccount(r.Context(), a, core.MailAccountInput{BrandID: b.ID, Provider: email.Provider(body.Provider),
-		FromName: body.FromName, FromEmail: body.FromEmail, ReplyTo: body.ReplyTo, DefaultAudiences: body.DefaultAudiences, Fields: body.Fields})
+	in := core.MailAccountInput{BrandID: b.ID, Provider: email.Provider(body.Provider), FromName: body.FromName, FromEmail: body.FromEmail,
+		ReplyTo: body.ReplyTo, DefaultAudiences: body.DefaultAudiences, Fields: body.Fields}
+	if body.Connection != "" {
+		cid, err := id.Parse(id.MailConnection, body.Connection)
+		if err != nil {
+			return badRequest("parameter_invalid", "connection", "connection must be a mail connection ID.")
+		}
+		in.ConnectionID = &cid
+	}
+	m, err := h.svc.ConnectMailAccount(r.Context(), a, in)
 	if err != nil {
 		return err
 	}
@@ -428,5 +437,96 @@ func (h *Handler) testIssue(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ok(w, http.StatusOK, map[string]any{"object": "newsletter_test", "sent": len(body.To)})
+	return nil
+}
+
+// Mail connections (ADR 0024 decision 3, amended).
+
+func (h *Handler) listMailConnections(w http.ResponseWriter, r *http.Request) error {
+	cs, err := h.svc.MailConnections(r.Context(), actor(r))
+	if err != nil {
+		return err
+	}
+	out := make([]core.MailConnectionView, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, core.ViewMailConnection(c))
+	}
+	ok(w, http.StatusOK, list{Object: "list", Data: out, URL: "/v1/mail_connections"})
+	return nil
+}
+
+func (h *Handler) createMailConnection(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Provider string            `json:"provider"`
+		Name     string            `json:"name"`
+		Fields   map[string]string `json:"fields"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	c, err := h.svc.CreateMailConnection(r.Context(), actor(r), core.MailConnectionInput{Provider: email.Provider(body.Provider),
+		Name: body.Name, Fields: body.Fields})
+	if err != nil {
+		return err
+	}
+	ok(w, http.StatusCreated, core.ViewMailConnection(c))
+	return nil
+}
+
+func (h *Handler) getMailConnection(w http.ResponseWriter, r *http.Request) error {
+	cid, err := pathID(r, id.MailConnection, "mail connection")
+	if err != nil {
+		return err
+	}
+	c, err := h.svc.MailConnection(r.Context(), actor(r), cid)
+	if err != nil {
+		return err
+	}
+	ok(w, http.StatusOK, core.ViewMailConnection(c))
+	return nil
+}
+
+func (h *Handler) updateMailConnection(w http.ResponseWriter, r *http.Request) error {
+	cid, err := pathID(r, id.MailConnection, "mail connection")
+	if err != nil {
+		return err
+	}
+	var body struct {
+		Name   *string           `json:"name"`
+		Fields map[string]string `json:"fields"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	c, err := h.svc.UpdateMailConnection(r.Context(), actor(r), cid, core.MailConnectionUpdate{Name: body.Name, Fields: body.Fields})
+	if err != nil {
+		return err
+	}
+	ok(w, http.StatusOK, core.ViewMailConnection(c))
+	return nil
+}
+
+func (h *Handler) deleteMailConnection(w http.ResponseWriter, r *http.Request) error {
+	cid, err := pathID(r, id.MailConnection, "mail connection")
+	if err != nil {
+		return err
+	}
+	if err := h.svc.DeleteMailConnection(r.Context(), actor(r), cid); err != nil {
+		return err
+	}
+	ok(w, http.StatusOK, deleted{ID: id.Format(id.MailConnection, cid), Object: "mail_connection", Deleted: true})
+	return nil
+}
+
+func (h *Handler) listMailConnectionAudiences(w http.ResponseWriter, r *http.Request) error {
+	cid, err := pathID(r, id.MailConnection, "mail connection")
+	if err != nil {
+		return err
+	}
+	as, err := h.svc.MailConnectionAudiences(r.Context(), actor(r), cid)
+	if err != nil {
+		return err
+	}
+	ok(w, http.StatusOK, list{Object: "list", Data: core.ViewAudiences(as), URL: "/v1/mail_connections/" + r.PathValue("id") + "/audiences"})
 	return nil
 }

@@ -14,13 +14,134 @@ import (
 
 // Mail accounts, newsletter issues and their deliveries (ADR 0024).
 
-const mailAccountCols = `id, org_id, brand_id, livemode, provider, external_id, name, from_name, from_email, reply_to,
+// Mail connections (ADR 0024 decision 3, amended).
+
+const mailConnectionCols = `c.id, c.org_id, c.livemode, c.provider, c.name, c.settings, c.credentials, c.legacy_aad, c.status,
+	c.status_note, c.created_at, (SELECT count(*) FROM mail_accounts m WHERE m.org_id = c.org_id AND m.connection_id = c.id)`
+
+func scanMailConnection(r pgx.Row) (*model.MailConnection, error) {
+	var c model.MailConnection
+	err := r.Scan(&c.ID, &c.OrgID, &c.Livemode, &c.Provider, &c.Name, &c.Settings, &c.Credentials, &c.LegacyAAD, &c.Status,
+		&c.StatusNote, &c.CreatedAt, &c.Senders)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &c, nil
+}
+
+// CreateMailConnection stores a new connection.
+func (s *Store) CreateMailConnection(ctx context.Context, c *model.MailConnection) error {
+	if c.Settings == nil {
+		c.Settings = map[string]string{}
+	}
+	return mapErr(s.q.QueryRow(ctx, `INSERT INTO mail_connections (id, org_id, livemode, provider, name, settings, credentials, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING created_at`, c.ID, c.OrgID, c.Livemode, c.Provider, c.Name, c.Settings,
+		c.Credentials, c.Status).Scan(&c.CreatedAt))
+}
+
+// MailConnection returns one of an org's connections.
+func (s *Store) MailConnection(ctx context.Context, orgID, id uuid.UUID) (*model.MailConnection, error) {
+	return scanMailConnection(s.q.QueryRow(ctx, `SELECT `+mailConnectionCols+` FROM mail_connections c WHERE c.org_id = $1 AND c.id = $2`, orgID, id))
+}
+
+// MailConnections lists an org's connections in a mode, with how many
+// senders use each.
+func (s *Store) MailConnections(ctx context.Context, orgID uuid.UUID, livemode bool) ([]*model.MailConnection, error) {
+	rows, err := s.q.Query(ctx, `SELECT `+mailConnectionCols+` FROM mail_connections c WHERE c.org_id = $1 AND c.livemode = $2
+		ORDER BY c.provider, c.name, c.id`, orgID, livemode)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.MailConnection, error) { return scanMailConnection(r) })
+}
+
+// RenameMailConnection changes a connection's name.
+func (s *Store) RenameMailConnection(ctx context.Context, orgID, id uuid.UUID, name string) error {
+	return s.execOne(ctx, `UPDATE mail_connections SET name = $3, updated_at = now() WHERE org_id = $1 AND id = $2`, orgID, id, name)
+}
+
+// SetMailConnectionCredentials replaces a connection's credentials, sealed
+// for the connection itself, and marks it and its senders active.
+func (s *Store) SetMailConnectionCredentials(ctx context.Context, orgID, id uuid.UUID, settings map[string]string, sealed []byte) error {
+	if settings == nil {
+		settings = map[string]string{}
+	}
+	if err := s.execOne(ctx, `UPDATE mail_connections SET settings = $3, credentials = $4, legacy_aad = false, status = 'active',
+		status_note = '', updated_at = now() WHERE org_id = $1 AND id = $2`, orgID, id, settings, sealed); err != nil {
+		return err
+	}
+	_, err := s.q.Exec(ctx, `UPDATE mail_accounts SET status = 'active', status_note = '', updated_at = now()
+		WHERE org_id = $1 AND connection_id = $2`, orgID, id)
+	return mapErr(err)
+}
+
+// SetMailConnectionStatus records whether a connection's credentials still
+// work, on it and on every sender that uses it.
+func (s *Store) SetMailConnectionStatus(ctx context.Context, orgID, id uuid.UUID, status model.ConnectionStatus, note string) error {
+	if err := s.execOne(ctx, `UPDATE mail_connections SET status = $3, status_note = $4, updated_at = now() WHERE org_id = $1 AND id = $2`,
+		orgID, id, status, note); err != nil {
+		return err
+	}
+	_, err := s.q.Exec(ctx, `UPDATE mail_accounts SET status = $3, status_note = $4, updated_at = now() WHERE org_id = $1 AND connection_id = $2`,
+		orgID, id, status, note)
+	return mapErr(err)
+}
+
+// DeleteMailConnection forgets a connection. One a sender uses is
+// ErrReferenced.
+func (s *Store) DeleteMailConnection(ctx context.Context, orgID, id uuid.UUID) error {
+	return s.execOne(ctx, `DELETE FROM mail_connections WHERE org_id = $1 AND id = $2`, orgID, id)
+}
+
+// AdoptMailAccounts gives each of an org's senders in a mode that has no
+// connection (connected before connections existed, or by the release
+// before them) one of its own: the sender's ID, provider, settings,
+// credentials (still sealed for the sender: legacy_aad) and status.
+// accountID narrows it to one sender. Senders are few, so this is one
+// plain statement.
+func (s *Store) AdoptMailAccounts(ctx context.Context, orgID uuid.UUID, livemode bool, accountID *uuid.UUID) error {
+	_, err := s.q.Exec(ctx, `WITH orphans AS (
+			SELECT id, org_id, livemode, provider, name, settings, credentials, status, status_note, created_at FROM mail_accounts
+			WHERE org_id = $1 AND livemode = $2 AND connection_id IS NULL AND ($3::uuid IS NULL OR id = $3)
+		), made AS (
+			INSERT INTO mail_connections (id, org_id, livemode, provider, name, settings, credentials, legacy_aad, status, status_note, created_at)
+			SELECT id, org_id, livemode, provider, initcap(provider) || ': ' || name, settings, credentials, true, status, status_note, created_at
+			FROM orphans ON CONFLICT (id) DO NOTHING
+		)
+		UPDATE mail_accounts m SET connection_id = m.id FROM orphans o WHERE m.org_id = o.org_id AND m.id = o.id AND m.connection_id IS NULL`,
+		orgID, livemode, accountID)
+	return mapErr(err)
+}
+
+// ConnectionSenders lists the senders that use a connection.
+func (s *Store) ConnectionSenders(ctx context.Context, orgID, connectionID uuid.UUID) ([]*model.MailAccount, error) {
+	rows, err := s.q.Query(ctx, `SELECT `+mailAccountCols+` FROM mail_accounts WHERE org_id = $1 AND connection_id = $2
+		ORDER BY brand_id, from_email, id`, orgID, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (*model.MailAccount, error) { return scanMailAccount(r) })
+}
+
+// SetMailAccountCredentials replaces a sender's copy of its connection's
+// credentials, which the release before connections reads.
+func (s *Store) SetMailAccountCredentials(ctx context.Context, orgID, id uuid.UUID, settings map[string]string, sealed []byte) error {
+	if settings == nil {
+		settings = map[string]string{}
+	}
+	return s.execOne(ctx, `UPDATE mail_accounts SET settings = $3, credentials = $4, updated_at = now() WHERE org_id = $1 AND id = $2`,
+		orgID, id, settings, sealed)
+}
+
+// Mail accounts (senders).
+
+const mailAccountCols = `id, org_id, brand_id, livemode, connection_id, provider, external_id, name, from_name, from_email, reply_to,
 	default_audiences, settings, credentials, status, status_note, created_at`
 
 func scanMailAccount(r pgx.Row) (*model.MailAccount, error) {
 	var m model.MailAccount
-	err := r.Scan(&m.ID, &m.OrgID, &m.BrandID, &m.Livemode, &m.Provider, &m.ExternalID, &m.Name, &m.FromName, &m.FromEmail, &m.ReplyTo,
-		&m.DefaultAudiences, &m.Settings, &m.Credentials, &m.Status, &m.StatusNote, &m.CreatedAt)
+	err := r.Scan(&m.ID, &m.OrgID, &m.BrandID, &m.Livemode, &m.ConnectionID, &m.Provider, &m.ExternalID, &m.Name, &m.FromName, &m.FromEmail,
+		&m.ReplyTo, &m.DefaultAudiences, &m.Settings, &m.Credentials, &m.Status, &m.StatusNote, &m.CreatedAt)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -33,10 +154,11 @@ func (s *Store) CreateMailAccount(ctx context.Context, m *model.MailAccount) err
 	if m.Settings == nil {
 		m.Settings = map[string]string{}
 	}
-	return mapErr(s.q.QueryRow(ctx, `INSERT INTO mail_accounts (id, org_id, brand_id, livemode, provider, external_id, name, from_name,
-		from_email, reply_to, default_audiences, settings, credentials, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		RETURNING created_at`, m.ID, m.OrgID, m.BrandID, m.Livemode, m.Provider, m.ExternalID, m.Name, m.FromName, m.FromEmail, m.ReplyTo,
-		nonNilStrings(m.DefaultAudiences), m.Settings, m.Credentials, m.Status).Scan(&m.CreatedAt))
+	return mapErr(s.q.QueryRow(ctx, `INSERT INTO mail_accounts (id, org_id, brand_id, livemode, connection_id, provider, external_id, name,
+		from_name, from_email, reply_to, default_audiences, settings, credentials, status, status_note)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING created_at`,
+		m.ID, m.OrgID, m.BrandID, m.Livemode, m.ConnectionID, m.Provider, m.ExternalID, m.Name, m.FromName, m.FromEmail, m.ReplyTo,
+		nonNilStrings(m.DefaultAudiences), m.Settings, m.Credentials, m.Status, m.StatusNote).Scan(&m.CreatedAt))
 }
 
 // MailAccount returns one of an org's mail accounts.

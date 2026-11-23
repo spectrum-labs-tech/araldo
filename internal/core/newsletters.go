@@ -81,9 +81,11 @@ func (s *Service) MailProviders(livemode bool) []MailProviderInfo {
 	return out
 }
 
-// MailAccountInput connects a mail account.
+// MailAccountInput connects a mail account (a sender): through an existing
+// connection, or through a new one made from Provider and Fields.
 type MailAccountInput struct {
 	BrandID          uuid.UUID
+	ConnectionID     *uuid.UUID
 	Provider         email.Provider
 	FromName         string
 	FromEmail        string
@@ -113,8 +115,9 @@ func plainAddress(s string) bool {
 	return err == nil && a.Address == s && a.Name == ""
 }
 
-// ConnectMailAccount checks credentials and the sender with the provider,
-// and stores the account.
+// ConnectMailAccount adds a sender: through an existing connection, or
+// through a new one made from a provider and its fields as before
+// connections. The sender is checked with the provider and stored.
 func (s *Service) ConnectMailAccount(ctx context.Context, a Actor, in MailAccountInput) (*model.MailAccount, error) {
 	if err := a.require(PermChannelsWrite); err != nil {
 		return nil, err
@@ -123,26 +126,46 @@ func (s *Service) ConnectMailAccount(ctx context.Context, a Actor, in MailAccoun
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case !a.Livemode && in.Provider != email.Sandbox:
-		return nil, apperr.Invalid("livemode_required", "provider", "Test mode can only connect sandbox mail accounts.")
-	case a.Livemode && in.Provider == email.Sandbox:
-		return nil, apperr.Invalid("testmode_required", "provider", "Sandbox mail accounts exist only in test mode.")
-	}
-	m, ok := s.mailers.Get(in.Provider)
-	if !ok {
-		return nil, apperr.Invalid("provider_unsupported", "provider", "This install cannot send newsletters through %q.", in.Provider)
+	var (
+		conn             *model.MailConnection
+		m                email.Mailer
+		settings, secret map[string]string
+	)
+	if in.ConnectionID != nil {
+		if in.Provider != "" || len(in.Fields) > 0 {
+			return nil, apperr.Invalid("connection_conflict", "connection", "Send a connection, or a provider and its fields, not both.")
+		}
+		if conn, err = s.MailConnection(ctx, a, *in.ConnectionID); err != nil {
+			if apperr.As(err).Kind == apperr.KindNotFound {
+				return nil, apperr.Invalid("connection_unknown", "connection", "No such mail connection.")
+			}
+			return nil, err
+		}
+		if conn.Status != model.ConnectionActive {
+			return nil, apperr.Invalid("connection_needs_reauth", "connection", "This connection's key was refused: replace it first. %s", conn.StatusNote)
+		}
+		var ok bool
+		if m, ok = s.mailers.Get(email.Provider(conn.Provider)); !ok {
+			return nil, apperr.Conflict("provider_unsupported", "This install cannot send through %s.", conn.Provider)
+		}
+		settings = conn.Settings
+		if secret, err = openSecrets(ctx, s.keys, conn.OrgID, connectionAAD(conn), conn.Credentials); err != nil {
+			return nil, err
+		}
+	} else {
+		if m, err = s.mailerOf(a, in.Provider); err != nil {
+			return nil, err
+		}
+		if settings, secret, err = splitFields(m.Name()+" accounts", m.Fields(), in.Fields); err != nil {
+			return nil, err
+		}
 	}
 	var ps apperr.Problems
 	fromName, fromEmail, replyTo := checkSender(in.FromName, in.FromEmail, in.ReplyTo, &ps)
-	settings, secrets, err := splitFields(m.Name()+" accounts", m.Fields(), in.Fields)
-	if err != nil {
-		return nil, err
-	}
 	if err := ps.Err("The mail account is not valid."); err != nil {
 		return nil, err
 	}
-	creds := mergeCredentials(settings, secrets)
+	creds := mergeCredentials(settings, secret)
 	acct, err := callProvider(ctx, func(ctx context.Context) (email.Account, error) {
 		return m.Verify(ctx, creds, email.Address{Name: fromName, Email: fromEmail})
 	})
@@ -153,20 +176,38 @@ func (s *Service) ConnectMailAccount(ctx context.Context, a Actor, in MailAccoun
 	if err != nil {
 		return nil, err
 	}
-	ma := &model.MailAccount{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, Provider: string(in.Provider),
-		ExternalID: acct.ExternalID, Name: acct.Name, FromName: fromName, FromEmail: fromEmail, ReplyTo: replyTo,
+	if conn == nil {
+		conn = &model.MailConnection{ID: id.New(), OrgID: a.OrgID, Livemode: a.Livemode, Provider: string(in.Provider),
+			Name: truncate(m.Name()+": "+acct.Name, maxConnectionName), Settings: settings, Status: model.ConnectionActive}
+		if conn.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, mailConnectionAAD(conn.ID), secret); err != nil {
+			return nil, err
+		}
+	}
+	ma := &model.MailAccount{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, ConnectionID: &conn.ID,
+		Provider: conn.Provider, ExternalID: acct.ExternalID, Name: acct.Name, FromName: fromName, FromEmail: fromEmail, ReplyTo: replyTo,
 		DefaultAudiences: audienceIDs(defaults), Settings: settings, Status: model.ConnectionActive}
-	if ma.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, mailCredentialsAAD(ma.ID), secrets); err != nil {
+	// The sender's own copy, which the release before connections reads
+	// (ADR 0024, "Connections and senders").
+	if ma.Credentials, err = sealSecrets(ctx, s.keys, a.OrgID, mailCredentialsAAD(ma.ID), secret); err != nil {
 		return nil, err
 	}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		if in.ConnectionID == nil {
+			if err := tx.CreateMailConnection(ctx, conn); err != nil {
+				return err
+			}
+			if err := s.audit(ctx, tx, a, "mail_connection.create", id.Format(id.MailConnection, conn.ID), map[string]any{"provider": in.Provider}); err != nil {
+				return err
+			}
+		}
 		if err := tx.CreateMailAccount(ctx, ma); err != nil {
 			if errors.Is(err, store.ErrConflict) {
 				return apperr.Conflict("mail_account_connected", "%s, sending as %s, is already connected to this brand.", acct.Name, fromEmail)
 			}
 			return err
 		}
-		return s.audit(ctx, tx, a, "mail_account.connect", id.Format(id.MailAccount, ma.ID), map[string]any{"provider": in.Provider})
+		return s.audit(ctx, tx, a, "mail_account.connect", id.Format(id.MailAccount, ma.ID),
+			map[string]any{"provider": conn.Provider, "connection": id.Format(id.MailConnection, conn.ID)})
 	})
 	return ma, err
 }
@@ -235,7 +276,19 @@ func (s *Service) MailAccounts(ctx context.Context, a Actor, brandID *uuid.UUID)
 		}
 		brandID = a.BrandID
 	}
-	return s.store.MailAccounts(ctx, a.OrgID, a.Livemode, brandID)
+	accts, err := s.store.MailAccounts(ctx, a.OrgID, a.Livemode, brandID)
+	if err != nil {
+		return nil, err
+	}
+	for _, ma := range accts {
+		if ma.ConnectionID == nil { // connected before connections: adopt them all, once
+			if err := s.store.AdoptMailAccounts(ctx, a.OrgID, a.Livemode, nil); err != nil {
+				return nil, err
+			}
+			return s.store.MailAccounts(ctx, a.OrgID, a.Livemode, brandID)
+		}
+	}
+	return accts, nil
 }
 
 // MailAccount returns one of the actor's mail accounts.
@@ -249,6 +302,11 @@ func (s *Service) MailAccount(ctx context.Context, a Actor, accountID uuid.UUID)
 	}
 	if ma.Livemode != a.Livemode || a.brandAllowed(ma.BrandID) != nil {
 		return nil, apperr.NotFound("mail account")
+	}
+	if ma.ConnectionID == nil {
+		if err := s.adopt(ctx, ma); err != nil {
+			return nil, err
+		}
 	}
 	return ma, nil
 }
@@ -304,8 +362,9 @@ func (s *Service) UpdateMailAccount(ctx context.Context, a Actor, accountID uuid
 	return ma, err
 }
 
-// DeleteMailAccount forgets a mail account. One with issues still to send
-// is refused: cancel them, or send them elsewhere, first.
+// DeleteMailAccount forgets a mail account (a sender), and its connection
+// when no other sender uses it. One with issues still to send is refused:
+// cancel them, or send them elsewhere, first.
 func (s *Service) DeleteMailAccount(ctx context.Context, a Actor, accountID uuid.UUID) error {
 	if err := a.require(PermChannelsWrite); err != nil {
 		return err
@@ -325,17 +384,33 @@ func (s *Service) DeleteMailAccount(ctx context.Context, a Actor, accountID uuid
 		if err := tx.DeleteMailAccount(ctx, a.OrgID, ma.ID); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, a, "mail_account.delete", id.Format(id.MailAccount, ma.ID), map[string]any{"provider": ma.Provider})
+		if err := s.audit(ctx, tx, a, "mail_account.delete", id.Format(id.MailAccount, ma.ID), map[string]any{"provider": ma.Provider}); err != nil {
+			return err
+		}
+		// The connection's last sender takes its key with it, as deleting a
+		// mail account did before connections.
+		senders, err := tx.ConnectionSenders(ctx, a.OrgID, *ma.ConnectionID)
+		if err != nil || len(senders) > 0 {
+			return err
+		}
+		if err := tx.DeleteMailConnection(ctx, a.OrgID, *ma.ConnectionID); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, a, "mail_connection.delete", id.Format(id.MailConnection, *ma.ConnectionID), map[string]any{"provider": ma.Provider})
 	})
 }
 
-// mailerFor returns an account's provider and credentials.
+// mailerFor returns a sender's provider and its connection's credentials.
 func (s *Service) mailerFor(ctx context.Context, ma *model.MailAccount) (email.Mailer, platform.Credentials, error) {
-	m, ok := s.mailers.Get(email.Provider(ma.Provider))
-	if !ok {
-		return nil, nil, apperr.Conflict("provider_unsupported", "This install cannot send through %s.", ma.Provider)
+	c, err := s.connectionOf(ctx, ma)
+	if err != nil {
+		return nil, nil, err
 	}
-	creds, err := openCredentials(ctx, s.keys, ma.OrgID, mailCredentialsAAD(ma.ID), ma.Settings, ma.Credentials)
+	m, ok := s.mailers.Get(email.Provider(c.Provider))
+	if !ok {
+		return nil, nil, apperr.Conflict("provider_unsupported", "This install cannot send through %s.", c.Provider)
+	}
+	creds, err := s.connectionCredentials(ctx, c)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -360,13 +435,19 @@ func (s *Service) MailAudiences(ctx context.Context, a Actor, accountID uuid.UUI
 	return out, nil
 }
 
-// flagRevoked marks an account whose provider refused its credentials.
+// flagRevoked marks a sender, and its connection and the connection's
+// other senders, when the provider refused the connection's key.
 func (s *Service) flagRevoked(ctx context.Context, ma *model.MailAccount, err error) {
 	if platform.KindOf(err) != platform.AuthRevoked {
 		return
 	}
-	note := truncate("The provider refused the key: connect the account again. "+err.Error(), 500)
-	if serr := s.store.SetMailAccountStatus(ctx, ma.OrgID, ma.ID, model.ConnectionNeedsReauth, note); serr != nil {
+	note := truncate("The provider refused the key: replace it on the mail connection. "+err.Error(), 500)
+	serr := s.store.SetMailAccountStatus(ctx, ma.OrgID, ma.ID, model.ConnectionNeedsReauth, note)
+	if ma.ConnectionID != nil {
+		// The key is the connection's: every sender on it is refused too.
+		serr = s.store.SetMailConnectionStatus(ctx, ma.OrgID, *ma.ConnectionID, model.ConnectionNeedsReauth, note)
+	}
+	if serr != nil {
 		s.log.WarnContext(ctx, "flagging a mail account failed", "mail_account", id.Format(id.MailAccount, ma.ID), "err", serr)
 	}
 }

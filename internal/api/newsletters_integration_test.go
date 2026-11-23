@@ -143,3 +143,52 @@ func TestNewsletterTemplatesOverTheAPI(t *testing.T) {
 		t.Errorf("template and subject: %d %v", status, body)
 	}
 }
+
+// TestMailConnectionsOverTheAPI checks a sender returns its connection, a
+// second sender joins it by ID, the connection lists its audiences and
+// senders count, is renamed, and is refused deletion while used.
+func TestMailConnectionsOverTheAPI(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	status, acct := c.json(http.MethodPost, "/v1/mail_accounts", map[string]any{"brand": c.brand, "provider": "sandbox",
+		"from_name": "Brand", "from_email": "news@brand.example"})
+	conn, _ := acct["connection"].(string)
+	if status != http.StatusCreated || !strings.HasPrefix(conn, "mailconn_") {
+		t.Fatalf("connect: %d %v", status, acct)
+	}
+	status, second := c.json(http.MethodPost, "/v1/mail_accounts", map[string]any{"brand": c.brand, "connection": conn,
+		"from_name": "Brand updates", "from_email": "updates@brand.example"})
+	if status != http.StatusCreated || second["connection"] != conn || second["provider"] != "sandbox" {
+		t.Fatalf("a second sender: %d %v", status, second)
+	}
+	if status, got := c.json(http.MethodPost, "/v1/mail_accounts", map[string]any{"brand": c.brand, "connection": "nope",
+		"from_name": "x", "from_email": "x@brand.example"}); status != http.StatusBadRequest {
+		t.Fatalf("a malformed connection: %d %v", status, got)
+	}
+	status, got := c.json(http.MethodGet, "/v1/mail_connections/"+conn, nil)
+	if status != http.StatusOK || got["object"] != "mail_connection" || got["senders"].(float64) != 2 || got["credentials"] != nil {
+		t.Fatalf("get: %d %v", status, got)
+	}
+	status, list := c.json(http.MethodGet, "/v1/mail_connections", nil)
+	if data, _ := list["data"].([]any); status != http.StatusOK || len(data) != 1 {
+		t.Fatalf("list: %d %v", status, list)
+	}
+	status, aud := c.json(http.MethodGet, "/v1/mail_connections/"+conn+"/audiences", nil)
+	if data, _ := aud["data"].([]any); status != http.StatusOK || len(data) != 3 {
+		t.Fatalf("audiences: %d %v", status, aud)
+	}
+	status, got = c.json(http.MethodPost, "/v1/mail_connections/"+conn, map[string]any{"name": "Brand's sandbox"})
+	if status != http.StatusOK || got["name"] != "Brand's sandbox" {
+		t.Fatalf("rename: %d %v", status, got)
+	}
+	if status, got := c.json(http.MethodDelete, "/v1/mail_connections/"+conn, nil); status != http.StatusConflict || got["code"] != "mail_connection_in_use" {
+		t.Fatalf("deleting a connection in use: %d %v", status, got)
+	}
+	status, made := c.json(http.MethodPost, "/v1/mail_connections", map[string]any{"provider": "sandbox", "fields": map[string]string{}})
+	if status != http.StatusCreated || made["name"] != "Sandbox" || made["senders"].(float64) != 0 {
+		t.Fatalf("create: %d %v", status, made)
+	}
+	if status, got := c.json(http.MethodDelete, "/v1/mail_connections/"+made["id"].(string), nil); status != http.StatusOK || got["deleted"] != true {
+		t.Fatalf("delete: %d %v", status, got)
+	}
+}

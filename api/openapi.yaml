@@ -1237,7 +1237,7 @@ paths:
   /v1/mail_accounts:
     get:
       summary: List mail accounts
-      description: The brands' connected email provider accounts, in the key's mode. Needs `channels:read` or `newsletters:read`.
+      description: The brands' senders (mail accounts), each through a mail connection, in the key's mode. Needs `channels:read` or `newsletters:read`.
       tags: [Newsletters]
       parameters:
         - { name: brand, in: query, schema: { type: string }, description: Brand ID or slug. }
@@ -1256,10 +1256,12 @@ paths:
     post:
       summary: Connect a mail account
       description: |
-        Checks the key with the provider, and that the provider will send as
-        `from_email`, and stores the key encrypted. The provider owns the
-        subscribers, unsubscribes, bounces and complaints; Araldo never
-        stores an address (ADR 0024). Needs `channels:write`.
+        Adds a sender: through an existing mail `connection`, or through a
+        new one made from `provider` and its `fields` (the key, checked with
+        the provider and stored encrypted). Either way the provider must
+        send as `from_email`. The provider owns the subscribers,
+        unsubscribes, bounces and complaints; Araldo never stores an
+        address (ADR 0024). Needs `channels:write`.
       tags: [Newsletters]
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:
@@ -1268,10 +1270,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [brand, provider, from_name, from_email]
+              required: [brand, from_name, from_email]
               properties:
                 brand: { type: string }
-                provider: { type: string, example: brevo }
+                connection:
+                  type: string
+                  example: mailconn_01j9x3k2v7e8f9g0h1j2k3m4n5
+                  description: A mail connection to send through. Instead of `provider` and `fields`.
+                provider: { type: string, example: brevo, description: "With `fields`, makes a connection for this sender." }
                 from_name: { type: string, example: Araldo }
                 from_email: { type: string, example: news@news.araldo.dev }
                 reply_to: { type: string }
@@ -1282,7 +1288,7 @@ paths:
                 fields:
                   type: object
                   additionalProperties: { type: string }
-                  description: The provider's connect fields (see /v1/mail_providers).
+                  description: The provider's connect fields (see /v1/mail_providers). Instead of `connection`.
       responses:
         "201":
           description: The account.
@@ -1324,8 +1330,9 @@ paths:
     delete:
       summary: Disconnect a mail account
       description: |
-        Forgets the account and its key. Refused while scheduled issues go
-        through it; past issues keep their results. Needs `channels:write`.
+        Forgets the sender, and its mail connection and key when no other
+        sender uses it. Refused while scheduled issues go through it; past
+        issues keep their results. Needs `channels:write`.
       tags: [Newsletters]
       responses:
         "200":
@@ -1337,7 +1344,120 @@ paths:
     parameters: [{ $ref: "#/components/parameters/ID" }]
     get:
       summary: List an account's audiences
-      description: What the provider groups subscribers by (Brevo's lists and segments, Resend's segments), read from it now. Never their members.
+      description: What the account's connection groups subscribers by (Brevo's lists and segments, Resend's segments), read from the provider now. Never their members.
+      tags: [Newsletters]
+      responses:
+        "200":
+          description: Audiences.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Audience" } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/mail_connections:
+    get:
+      summary: List mail connections
+      description: |
+        The org's email provider accounts in the key's mode, each the key
+        any number of senders (mail accounts) use (ADR 0024). A key limited
+        to one brand sees those its brand's senders use. Needs
+        `channels:read` or `newsletters:read`.
+      tags: [Newsletters]
+      responses:
+        "200":
+          description: Connections.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListBase"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/MailConnection" } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Connect a mail provider account
+      description: |
+        Checks the key by reading the provider's audiences, and stores it
+        encrypted, for senders to use. Needs `channels:write`, and a key
+        not limited to one brand.
+      tags: [Newsletters]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, fields]
+              properties:
+                provider: { type: string, example: resend }
+                name: { type: string, maxLength: 100, description: "Defaults to the provider's name." }
+                fields:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: The provider's connect fields (see /v1/mail_providers).
+      responses:
+        "201":
+          description: The connection.
+          content: { application/json: { schema: { $ref: "#/components/schemas/MailConnection" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/mail_connections/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Get a mail connection
+      tags: [Newsletters]
+      responses:
+        "200":
+          description: The connection.
+          content: { application/json: { schema: { $ref: "#/components/schemas/MailConnection" } } }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      summary: Rename a mail connection or replace its key
+      description: |
+        `fields` replaces the key (checked with the provider first) for
+        every sender on the connection at once, and marks them usable again.
+        Needs `channels:write`, and a key not limited to one brand.
+      tags: [Newsletters]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+                fields:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: The provider's connect fields, all of them.
+      responses:
+        "200":
+          description: The connection.
+          content: { application/json: { schema: { $ref: "#/components/schemas/MailConnection" } } }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Delete a mail connection
+      description: Forgets the connection and its key. Refused while a sender uses it. Needs `channels:write`, and a key not limited to one brand.
+      tags: [Newsletters]
+      responses:
+        "200":
+          description: Deleted.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deleted" } } }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/mail_connections/{id}/audiences:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: List a connection's audiences
+      description: What the provider account groups subscribers by, read from it now; every sender on the connection offers the same. Never their members.
       tags: [Newsletters]
       responses:
         "200":
@@ -3563,11 +3683,26 @@ components:
         brand: { type: string }
         livemode: { type: boolean }
         provider: { type: string }
+        connection: { type: string, description: The mail connection whose key it sends with. }
         name: { type: string, description: "The provider account, as the provider names it." }
         from_name: { type: string }
         from_email: { type: string }
         reply_to: { type: string }
         default_audiences: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, needs_reauth] }
+        status_note: { type: string }
+        created_at: { type: string, format: date-time }
+
+    MailConnection:
+      type: object
+      description: An email provider account's key, which any number of senders use. The key never appears.
+      properties:
+        id: { type: string, example: mailconn_01j9x3k2v7e8f9g0h1j2k3m4n5 }
+        object: { type: string, enum: [mail_connection] }
+        livemode: { type: boolean }
+        provider: { type: string }
+        name: { type: string }
+        senders: { type: integer, description: How many senders use it. }
         status: { type: string, enum: [active, needs_reauth] }
         status_note: { type: string }
         created_at: { type: string, format: date-time }

@@ -79,8 +79,8 @@ every problem in `errors`, each with its own `code` and `param`.
   names it.
 - **parameter_conflict** (400): give `starting_after` or `ending_before`,
   not both.
-- **name_invalid** (422): a name (of an org, brand, key or developer app)
-  is empty or over 100 characters.
+- **name_invalid** (422): a name (of an org, brand, key, developer app or
+  mail connection) is empty or over 100 characters.
 
 ## Brands
 
@@ -318,6 +318,17 @@ with another page), shown on the ad account and retried later.
   address through that account.
 - **mail_account_in_use** (409): scheduled issues go through this account;
   cancel them first.
+- **connection_conflict** (422): a mail account takes a `connection`, or a
+  `provider` and its `fields`, not both.
+- **connection_unknown** (422): the mail connection is not one of the
+  org's in this mode (a key limited to one brand sees only those its
+  brand's senders use).
+- **connection_needs_reauth** (422): the provider refused the mail
+  connection's key; replace it on the connection
+  (`POST /v1/mail_connections/{id}` with `fields`) before adding a sender.
+- **mail_connection_in_use** (409): senders use this mail connection;
+  delete them, or move them to another, first. Deleting a connection's
+  last sender deletes the connection with it.
 - **mail_account_unknown**: the mail account is not one of the brand's in
   this mode, or was disconnected; edit the issue.
 - **mail_account_needs_reauth**: connect the mail account again.

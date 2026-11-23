@@ -560,26 +560,56 @@ type AnalyticsSource struct {
 	CreatedAt   time.Time
 }
 
-// MailAccount is an email provider account a brand sends newsletters
-// through (ADR 0024). The provider owns the subscribers.
+// MailConnection is one email provider account's credentials, which any
+// number of senders use (ADR 0024 decision 3, amended). It belongs to the
+// org, not a brand.
+type MailConnection struct {
+	ID          uuid.UUID
+	OrgID       uuid.UUID
+	Livemode    bool
+	Provider    string
+	Name        string
+	Settings    map[string]string // non-secret fields
+	Credentials []byte            // encrypted secret fields
+	// LegacyAAD: Credentials are still sealed for the sender this
+	// connection was adopted from (its ID is that sender's), until the key
+	// is next replaced.
+	LegacyAAD  bool
+	Status     ConnectionStatus
+	StatusNote string
+	CreatedAt  time.Time
+	// Senders counts the mail accounts that use it, when listed.
+	Senders int
+}
+
+// MailAccount is a sender a brand sends newsletters as (ADR 0024): a
+// verified address at a provider, through a MailConnection. The provider
+// owns the subscribers.
 type MailAccount struct {
-	ID         uuid.UUID
-	OrgID      uuid.UUID
-	BrandID    uuid.UUID
-	Livemode   bool
-	Provider   string
-	ExternalID string
-	Name       string
-	FromName   string
-	FromEmail  string
-	ReplyTo    string
+	ID       uuid.UUID
+	OrgID    uuid.UUID
+	BrandID  uuid.UUID
+	Livemode bool
+	// ConnectionID is nil only for a sender connected before connections
+	// existed, until Araldo first reads it and adopts it.
+	ConnectionID *uuid.UUID
+	Provider     string
+	ExternalID   string
+	Name         string
+	FromName     string
+	FromEmail    string
+	ReplyTo      string
 	// DefaultAudiences are the provider's audience IDs a new issue goes to.
 	DefaultAudiences []string
-	Settings         map[string]string // non-secret fields
-	Credentials      []byte            // encrypted secret fields
-	Status           ConnectionStatus
-	StatusNote       string
-	CreatedAt        time.Time
+	// Settings and Credentials copy the connection's for the release
+	// before connections, which reads them here (ADR 0024, "Connections
+	// and senders"); Araldo itself reads the connection's.
+	Settings    map[string]string // non-secret fields
+	Credentials []byte            // encrypted secret fields
+	// Status mirrors the connection's.
+	Status     ConnectionStatus
+	StatusNote string
+	CreatedAt  time.Time
 }
 
 // IssueStatus is where a newsletter issue stands, derived from its

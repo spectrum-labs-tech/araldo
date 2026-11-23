@@ -42,7 +42,7 @@ func TestRenderBlocks(t *testing.T) {
 		`<h1 style="margin:0 0 16px;font-size:26px;`,
 		`Hello <strong>builders</strong>, and <em>welcome</em>.<br>`,
 		`<code style="font-family:Menlo,Consolas,monospace;font-size:14px;">code</code>`,
-		`<li style="margin:0 0 6px;">one <a href="https://openb00ks.example/docs#1" style="color:#1d4ed8;text-decoration:underline;">docs</a></li>`,
+		`<li style="margin:0 0 6px;">one <a href="https://openb00ks.example/docs#1" class="link" style="color:#1d4ed8;text-decoration:underline;">docs</a></li>`,
 		`<li style="margin:0 0 6px;">two continued</li>`,
 		`<ol style=`,
 		`quoted<br>`,
@@ -50,7 +50,7 @@ func TestRenderBlocks(t *testing.T) {
 		`<img src="https://araldo.example/v1/media/media_1/content?signature=s" alt="Library alt" width="300" style="display:block;width:100%;max-width:300px;`,
 		`<a href="https://openb00ks.example/try#2" style="display:inline-block;padding:12px 24px;`,
 		`color:#ffffff;text-decoration:none;border-radius:6px;">Try it</a>`,
-		`See <a href="https://openb00ks.example/blog#3" style="color:#1d4ed8;text-decoration:underline;">https://openb00ks.example/blog</a>.`,
+		`See <a href="https://openb00ks.example/blog#3" class="link" style="color:#1d4ed8;text-decoration:underline;">https://openb00ks.example/blog</a>.`,
 		`You signed up at openb00ks.example.<br>`,
 		`Open B00KS &amp; Co · 1 Main St, Springfield<br>`,
 		`<a href="{{ unsubscribe }}" style="color:#6b7280;text-decoration:underline;">Unsubscribe</a>`,
@@ -176,6 +176,50 @@ func TestButtonLinks(t *testing.T) {
 		_, err := Render(Issue{Body: "[Go](" + tt.href + "){.button}"}, opts())
 		if (err == nil) != tt.ok {
 			t.Errorf("%s: %v, want ok %v", tt.href, err, tt.ok)
+		}
+	}
+}
+
+// Links take a lighter accent in a mail app's dark mode, light enough to
+// read on the dark card; an accent that already reads there is kept.
+func TestDarkAccent(t *testing.T) {
+	t.Parallel()
+	for _, accent := range []string{"#1d4ed8", "#7c2d12", "#000000", DefaultAccent, "not a color"} {
+		got := DarkAccent(accent)
+		if c := Contrast(got, DarkCard); c < 4.5 {
+			t.Errorf("DarkAccent(%q) = %s: contrast %.2f on the dark card, want 4.5", accent, got, c)
+		}
+	}
+	if got := DarkAccent("#fbbf24"); got != "#fbbf24" {
+		t.Errorf("an accent that reads on the dark card became %s", got)
+	}
+	r, err := Render(Issue{Subject: "S", Body: "See [the changelog](https://araldo.dev/changelog)."}, Options{Theme: Theme{Accent: "#1d4ed8", BrandName: "Araldo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.HTML, `class="link" style="color:#1d4ed8;`) || !strings.Contains(r.HTML, ".link { color: "+DarkAccent("#1d4ed8")+" !important; }") {
+		t.Errorf("links lack the dark mode accent:\n%s", r.HTML)
+	}
+}
+
+// A preview fixed to a scheme shows the dark styles always or never,
+// whatever the viewer's own setting; the page sent is left as it is.
+func TestInScheme(t *testing.T) {
+	t.Parallel()
+	r, err := Render(Issue{Subject: "S", Body: "Hello"}, Options{Theme: Theme{BrandName: "Araldo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.HTML, darkMedia+" {") || !strings.Contains(r.HTML, `content="light dark"`) {
+		t.Fatal("the page sent follows the reader's mode")
+	}
+	for _, tt := range []struct {
+		dark         bool
+		media, other string
+	}{{false, "@media not all {", `content="light"`}, {true, "@media all {", `content="dark"`}} {
+		got := InScheme(r.HTML, tt.dark)
+		if strings.Contains(got, darkMedia) || !strings.Contains(got, tt.media) || !strings.Contains(got, tt.other) || strings.Contains(got, `content="light dark"`) {
+			t.Errorf("dark=%v:\n%s", tt.dark, got)
 		}
 	}
 }

@@ -378,8 +378,14 @@
   .theme-grid {
     @apply grid items-start gap-6 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)];
   }
+  /* The server fixes a preview's scheme (writePreview); the frame's own
+     scrollbars follow it. */
   .preview-frame {
     @apply block h-[36rem] w-full rounded-md border border-line bg-panel;
+    color-scheme: light;
+  }
+  .preview-dark {
+    color-scheme: dark;
   }
   .preview-phone {
     @apply max-w-[375px];

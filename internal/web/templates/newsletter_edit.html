@@ -95,6 +95,10 @@
     <summary>At phone width</summary>
     <iframe title="Preview at phone width" class="preview-frame preview-phone" src="/newsletters/{{issueID $is.ID}}/preview" loading="lazy"></iframe>
   </details>
+  <details class="mt-3">
+    <summary>In dark mode</summary>
+    <iframe title="Preview in dark mode" class="preview-frame preview-dark" src="/newsletters/{{issueID $is.ID}}/preview?scheme=dark" loading="lazy"></iframe>
+  </details>
   {{if $d.Rendered}}<details class="mt-3">
     <summary>Plain text</summary>
     <pre class="preview-text">{{$d.Rendered.Text}}</pre>

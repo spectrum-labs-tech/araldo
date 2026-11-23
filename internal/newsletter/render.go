@@ -261,7 +261,7 @@ func (r *renderer) inline(s string) (htm, text string) {
 				ih, it := r.inline(m[1])
 				if safeLink(m[2]) {
 					u := r.link(m[2])
-					h.WriteString(`<a href="` + html.EscapeString(u) + `" style="color:` + r.accent + `;text-decoration:underline;">` + ih + `</a>`)
+					h.WriteString(`<a href="` + html.EscapeString(u) + `" class="link" style="color:` + r.accent + `;text-decoration:underline;">` + ih + `</a>`)
 					t.WriteString(it + " (" + u + ")")
 				} else {
 					h.WriteString(ih)
@@ -274,7 +274,7 @@ func (r *renderer) inline(s string) (htm, text string) {
 			if m := bareURL.FindString(rest); m != "" && (i == 0 || !isWordByte(s[i-1])) {
 				m = strings.TrimRight(m, ".,;:!?)'")
 				u := r.link(m)
-				h.WriteString(`<a href="` + html.EscapeString(u) + `" style="color:` + r.accent + `;text-decoration:underline;">` + html.EscapeString(m) + `</a>`)
+				h.WriteString(`<a href="` + html.EscapeString(u) + `" class="link" style="color:` + r.accent + `;text-decoration:underline;">` + html.EscapeString(m) + `</a>`)
 				t.WriteString(u)
 				i += len(m)
 				continue
@@ -408,6 +408,22 @@ func Render(issue Issue, o Options) (Rendered, error) {
 	return Rendered{HTML: page(issue, o, accent, strings.Join(body, "\n")), Text: plain(issue, o, strings.Join(text, "\n\n"))}, nil
 }
 
+// darkMedia opens the page's styles for a mail app in dark mode.
+const darkMedia = "@media (prefers-color-scheme: dark)"
+
+// InScheme is a rendered page's HTML fixed to one color scheme, for a
+// preview to show what a mail app in that mode shows whatever the viewer's
+// own setting: the dark styles always (dark) or never apply.
+func InScheme(page string, dark bool) string {
+	media, scheme := "@media not all", "light"
+	if dark {
+		media, scheme = "@media all", "dark"
+	}
+	page = strings.Replace(page, darkMedia, media, 1)
+	page = strings.Replace(page, `<meta name="color-scheme" content="light dark">`, `<meta name="color-scheme" content="`+scheme+`">`, 1)
+	return strings.Replace(page, `<meta name="supported-color-schemes" content="light dark">`, `<meta name="supported-color-schemes" content="`+scheme+`">`, 1)
+}
+
 func page(issue Issue, o Options, accent, body string) string {
 	t := o.Theme
 	esc := html.EscapeString
@@ -440,11 +456,12 @@ func page(issue Issue, o Options, accent, body string) string {
 <title>` + esc(issue.Subject) + `</title>
 <style>
 body { margin: 0; padding: 0; }
-@media (prefers-color-scheme: dark) {
+` + darkMedia + ` {
   .page { background: #111418 !important; }
-  .card { background: #1b1f24 !important; }
+  .card { background: ` + DarkCard + ` !important; }
   .text { color: #e5e7eb !important; }
   .muted { color: #a1a8b3 !important; }
+  .link { color: ` + DarkAccent(accent) + ` !important; }
 }
 @media (max-width: 620px) {
   .card { width: 100% !important; }

@@ -3,6 +3,7 @@
 package newsletter
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 )
@@ -37,3 +38,32 @@ func luminance(c string) (float64, bool) {
 	}
 	return 0.2126*rgb[0] + 0.7152*rgb[1] + 0.0722*rgb[2], true
 }
+
+// DarkCard is the card's background in a mail app's dark mode (the page's
+// prefers-color-scheme styles).
+const DarkCard = "#1b1f24"
+
+// DarkAccent is accent as links show it in dark mode: the accent itself
+// when it reads on the dark card (4.5:1), else the accent mixed with white
+// just enough to. An accent chosen to read on white is usually too dark
+// for the dark card. Not a "#rrggbb" color, it is DefaultAccent's.
+func DarkAccent(accent string) string {
+	if !hexColor.MatchString(accent) {
+		accent = DefaultAccent
+	}
+	var rgb [3]float64
+	for i := range rgb {
+		v, _ := strconv.ParseUint(accent[1+2*i:3+2*i], 16, 8)
+		rgb[i] = float64(v)
+	}
+	for step := 0; step <= 20; step++ {
+		t := float64(step) / 20
+		c := fmt.Sprintf("#%02x%02x%02x", mix(rgb[0], t), mix(rgb[1], t), mix(rgb[2], t))
+		if Contrast(c, DarkCard) >= 4.5 {
+			return c
+		}
+	}
+	return "#ffffff"
+}
+
+func mix(v, t float64) int { return int(math.Round(v + (255-v)*t)) }

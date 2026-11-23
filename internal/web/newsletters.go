@@ -573,7 +573,12 @@ func (s *Server) issueAction(c *reqCtx) error {
 // in a sandbox of its own origin, framed only by the dashboard.
 const previewCSP = "default-src 'none'; img-src https: data: 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'; sandbox"
 
+// writePreview serves an email's HTML to a preview frame, in light mode,
+// as most mail apps show it, or with ?scheme=dark as apps in dark mode do;
+// never in the viewer's own mode, which would make the preview differ from
+// the inbox.
 func (s *Server) writePreview(c *reqCtx, html string) error {
+	html = newsletter.InScheme(html, c.r.URL.Query().Get("scheme") == "dark")
 	h := c.w.Header()
 	h.Set("Content-Security-Policy", previewCSP)
 	h.Set("X-Frame-Options", "SAMEORIGIN")

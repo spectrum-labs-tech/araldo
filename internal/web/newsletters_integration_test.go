@@ -103,6 +103,14 @@ func TestNewslettersInTheDashboard(t *testing.T) {
 	if got := get(issuePath); !strings.Contains(got, `src="`+issuePath+`/preview"`) || !strings.Contains(got, "Unsubscribe: #unsubscribe") {
 		t.Fatalf("the issue page frames its preview and shows the plain text:\n%s", got)
 	}
+	// The preview is light, as most mail apps show it, whatever the
+	// viewer's own mode; the dark one is asked for.
+	if got := get(issuePath + "/preview"); !strings.Contains(got, "@media not all {") || strings.Contains(got, "prefers-color-scheme") {
+		t.Fatalf("the preview is not fixed to light:\n%s", got)
+	}
+	if got := get(issuePath + "/preview?scheme=dark"); !strings.Contains(got, "@media all {") {
+		t.Fatalf("the dark preview:\n%s", got)
+	}
 
 	action := func(values url.Values) *httptest.ResponseRecorder {
 		t.Helper()

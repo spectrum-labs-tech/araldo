@@ -25,6 +25,11 @@
   <h2 id="preview-heading" class="mb-1">Preview</h2>
   <p class="mb-3 text-sm text-muted">A sample issue with every kind of block, in this theme. It follows the form (or press “Preview”); nothing is saved until you save the theme.</p>
   <iframe name="theme-preview" src="/brands/{{brandID $f.Brand.ID}}/email-theme/preview" title="Preview of a sample issue in this theme" class="preview-frame"></iframe>
+  <p class="mt-2 text-sm text-muted">As most mail apps show it. Some, like Apple Mail, follow the reader's dark mode:</p>
+  <details class="mt-2">
+    <summary>In dark mode <span class="text-muted">(the saved theme)</span></summary>
+    <iframe title="Preview of a sample issue in this theme, in dark mode" class="preview-frame preview-dark" src="/brands/{{brandID $f.Brand.ID}}/email-theme/preview?scheme=dark" loading="lazy"></iframe>
+  </details>
 </section>
 </div>
 {{end}}

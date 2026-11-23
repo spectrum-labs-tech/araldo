@@ -1,6 +1,6 @@
 # ADR 0024: Newsletters are designed and scheduled in Araldo and sent by the email provider, which owns the list
 
-- Status: accepted; phases 1 and 2 built; phase 3 begun (Resend)
+- Status: accepted; phases 1 and 2 built; phase 3 begun (Resend); decision 3 amended 2026-11-23 (mail connections and senders)
 - Date: 2026-10-03
 
 ## Context
@@ -47,6 +47,23 @@ into spam.
    encrypted ([ADR 0008](0008-encryption.md)), the sender (name and an
    address that provider has verified), a reply-to address, and default
    audiences. Connecting one needs `channels:write`.
+   *Amended 2026-11-23:* the key and the sender are separate objects. A
+   **mail connection** (`mail_connections`) is one provider account: the
+   provider, its credentials encrypted, a name, and whether the provider
+   still accepts them. It belongs to the org, not a brand, since one
+   provider account sends for several domains and brands. A **sender** is
+   what was the mail account, and keeps its table, its `mailacct_` IDs and
+   `/v1/mail_accounts`: a brand, a name and verified address, a reply-to
+   and default audiences, through one connection. Any number of senders
+   share a connection, so a second newsletter from another address, or
+   another brand on the same provider account, adds a sender and never
+   asks for the key again; rotating the key is one edit to the connection,
+   and a key the provider refuses marks every sender on it. Audiences are
+   the connection's (a provider's lists and segments belong to the
+   account, not to an address), so every sender on one connection offers
+   the same ones. Issues and deliveries are unchanged: a delivery goes
+   through a sender to its audiences. See "Connections and senders" below
+   for how the change rolls out.
 4. **Audiences are whatever the provider groups subscribers by**: Brevo's
    lists and segments, Listmonk's lists, Buttondown's tags. An audience is
    a mail account's provider ID, a name, its kind and its size, read from
@@ -144,6 +161,38 @@ into spam.
 19. **MCP**: tools to draft and preview an issue, so an agent can write
     "this week's best posts" from engagement. Approval stays with people.
 
+### Connections and senders
+
+Decision 3's amendment, built in one release over the live schema
+([ADR 0029](0029-backward-compatible-migrations.md)):
+
+- **Expand.** `mail_connections` is a new table; `mail_accounts` gains a
+  nullable `connection_id`, with a foreign key added `NOT VALID` and
+  validated in a later migration. No migration rewrites rows (ADR 0029
+  decision 6). A sender without a connection (connected before the
+  change, or by the previous release while the new one rolls out) is
+  adopted the first time Araldo reads it: a connection with the sender's
+  ID, provider, settings, credentials and status is made for it, and the
+  sender points at it. Its credentials stay sealed with the sender's own
+  encryption context until the key is next replaced, so adopting decrypts
+  nothing and copies only ciphertext.
+- **Write both.** Until the contract release, a sender row still carries
+  the provider, settings, credentials and status the previous release
+  reads, kept in step with its connection: a new sender gets a copy of the
+  connection's credentials sealed for the sender, rotating a key rewrites
+  every sender's copy, and a status change is written to the connection
+  and its senders together. Rolling back to the previous release then
+  keeps sending.
+- **Contract,** in a later release: stop writing the sender's copies, make
+  `connection_id` required, and drop the copied columns.
+- **API.** `/v1/mail_connections` lists, creates (checking the key by
+  reading the provider's audiences, since a connection has no sender to
+  verify yet), renames, rotates and deletes connections, a delete refused
+  while a sender uses it. `POST /v1/mail_accounts` takes either a
+  `connection` or, as before, a `provider` and its fields, which makes a
+  connection for it; every sender returns its `connection`.
+  `/v1/mail_accounts/{id}/audiences` reads the sender's connection.
+
 ### Phases
 
 - **Phase 1:** mail accounts and audiences, issues with a delivery per
@@ -220,7 +269,7 @@ into spam.
   sending; a gradual move can send to both while each subscriber is on one
   side only. The same holds for platforms and ad networks: Araldo keeps the
   work, adapters are replaceable.
-- New tables (`mail_accounts`, `newsletter_issues`,
+- New tables (`mail_connections`, `mail_accounts`, `newsletter_issues`,
   `newsletter_deliveries`, results), a package per provider, scopes,
   events (`newsletter.*`) and tasks (hand-off, results).
 - An issue's HTML is Araldo's to keep working across mail clients; the

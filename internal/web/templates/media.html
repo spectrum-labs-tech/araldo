@@ -1,0 +1,33 @@
+{{define "content"}}
+{{$d := .Data}}
+<div class="page-head">
+  <h1>Media</h1>
+  {{if $d.CanWrite}}<a class="btn btn-primary" href="/media/new{{with $d.Brand}}?brand={{.}}{{end}}">Add media</a>{{end}}
+</div>
+<p class="text-sm text-muted">Each brand's images and videos, in this mode. Media added here is kept until you delete it; media uploaded for a post is deleted a day after nothing uses it. Use an image in a newsletter as <code>![what it shows](media_…)</code>, or choose it as a brand's logo.</p>
+
+<form method="get" action="/media" class="mb-4 flex flex-wrap items-end gap-3">
+  <label>Brand
+    {{template "brandSelect" (brandOptions $d.Brands $d.Brand "All brands")}}</label>
+  <button>Filter</button>
+  {{if $d.Brand}}<a class="btn" href="/media">Clear</a>{{end}}
+</form>
+
+{{if $d.Items}}
+<ul class="thumbs" role="list">
+  {{range $d.Items}}
+  <li class="thumb">
+    <a href="/media/{{mediaID .ID}}/edit" class="flex flex-col gap-1.5">
+      {{if .VideoCodec}}<span class="thumb-img flex h-28 items-center justify-center text-sm text-muted">Video · {{duration .DurationMS}}</span>
+      {{else}}<img src="/media/{{mediaID .ID}}" alt="{{with .Alt}}{{.}}{{else}}Image without alt text{{end}}" width="{{.Width}}" height="{{.Height}}" loading="lazy">{{end}}
+      <span class="truncate text-sm">{{if .Filename}}{{.Filename}}{{else}}{{mediaID .ID}}{{end}}</span></a>
+    <span class="text-xs text-muted">{{index $d.BrandNames (brandID .BrandID)}} · {{.Width}}×{{.Height}} · {{fileSize .Size}}</span>
+    <span class="text-xs">{{if .Kept}}<span class="tag">kept</span>{{else}}<span class="text-muted">deleted a day after nothing uses it</span>{{end}}</span>
+  </li>
+  {{end}}
+</ul>
+{{with $d.Older}}<p class="mt-4"><a href="{{.}}">Older</a></p>{{end}}
+{{else}}
+<p class="text-muted">No media{{if $d.Brand}} for this brand{{end}} yet.{{if $d.CanWrite}} <a href="/media/new{{with $d.Brand}}?brand={{.}}{{end}}">Add an image</a>.{{end}}</p>
+{{end}}
+{{end}}

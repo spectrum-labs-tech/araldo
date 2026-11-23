@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
@@ -75,5 +76,23 @@ func TestInviteArticle(t *testing.T) {
 	}
 	if got := (inviteData{}).Article(); got != "a" {
 		t.Errorf("no invitation: %q", got)
+	}
+}
+
+func TestMediaUsedBy(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		uses core.MediaUses
+		want string
+	}{
+		{core.MediaUses{}, "nothing yet"},
+		{core.MediaUses{Posts: 1}, "1 post"},
+		{core.MediaUses{Posts: 1, Logos: 1}, "1 post, 1 email theme"},
+		{core.MediaUses{Posts: 3, Issues: 2, Logos: 2}, "3 posts, 2 newsletter issues, 2 email themes"},
+	}
+	for _, tt := range tests {
+		if got := (&mediaDetailData{Uses: tt.uses}).UsedBy(); got != tt.want {
+			t.Errorf("%+v: %q, want %q", tt.uses, got, tt.want)
+		}
 	}
 }

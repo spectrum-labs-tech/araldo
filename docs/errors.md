@@ -290,7 +290,8 @@ with another page), shown on the ad account and retried later.
 - **alt_too_long**: alt text is at most 1,000 characters.
 - **url_invalid**, **url_unreachable**: the `url` is not http(s), or could
   not be fetched (private addresses are refused).
-- **media_in_use** (409): a post uses this media, so it cannot be deleted.
+- **media_in_use** (409): a post, newsletter issue or email theme uses this
+  media, so it cannot be deleted.
 - **media_unreadable**: the video cannot be read; export it as an MP4
   (H.264 and AAC).
 - **video_needs_s3**: this install cannot store video until its operator

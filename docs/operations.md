@@ -479,7 +479,7 @@ person in several orgs).
 | Tool | Does |
 |---|---|
 | `list_platforms`, `list_brands`, `list_channels`, `list_templates`, `get_template` | Read what there is (read-only). |
-| `upload_media_from_url` | Fetch an image or video for posts to attach. |
+| `upload_media_from_url` | Fetch an image or video for posts to attach, or (`keep`) to keep in the brand's library. |
 | `preview_post` | Render a post per channel and list every rule it breaks (read-only). |
 | `create_post` | Schedule it (with an idempotency key, so a retry does not post twice). |
 | `list_posts`, `get_post` | Follow up: status, links, errors, engagement (read-only). |
@@ -661,11 +661,22 @@ Postgres by default, so server and worker share them with nothing more to
 set up, and database backups include them. An install posting many large
 images should use S3-compatible storage instead (the `ARALDO_S3_*`
 variables): new files go there, files stored earlier stay readable where
-they are, and files in a bucket need their own backups. Media no post uses
-is deleted after a day (the `media.prune` task); media a post uses is kept
-as long as the post. With the Helm chart, put the S3 keys in the
-`existingSecret` and the rest in `extraEnv`; the server and the worker
-must both have them, since one stores files and the other reads them.
+they are, and files in a bucket need their own backups. With the Helm
+chart, put the S3 keys in the `existingSecret` and the rest in
+`extraEnv`; the server and the worker must both have them, since one
+stores files and the other reads them.
+
+**The media library** (the dashboard's Media page) shows each brand's
+images and videos in the current mode. Add media there (files, or a link
+Araldo fetches) or on a brand's email theme ("upload a new logo"), and it
+is **kept**: it stays until someone deletes it, used or not. That is what
+logos and images a newsletter template links as `![alt](media_…)` need,
+since nothing else tracks them. Media uploaded for a post is not kept: it
+is deleted a day after nothing uses it (the `media.prune` task). Nothing
+can be deleted while a post, newsletter issue or email theme uses it. Over
+the API, `POST /v1/media` takes `keep`, and `POST /v1/media/{id}` changes
+`kept`; the MCP tool `upload_media_from_url` takes `keep` too. Each item's
+page in the library shows its ID and the Markdown to put it in an issue.
 
 An image too big for a platform, or of a type it does not take, is resized
 for it when the post is published ([ADR 0027](adr/0027-video-and-resizing.md)):

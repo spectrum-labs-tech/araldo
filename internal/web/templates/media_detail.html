@@ -1,0 +1,45 @@
+{{define "content"}}
+{{$d := .Data}}{{$m := $d.Media}}
+<p class="crumbs"><a href="/media">Media</a> / <code>{{mediaID $m.ID}}</code></p>
+<h1 class="break-all">{{if $m.Filename}}{{$m.Filename}}{{else}}{{mediaID $m.ID}}{{end}}</h1>
+
+<div class="grid gap-6 md:grid-cols-2">
+  <div class="min-w-0">
+    {{if $m.VideoCodec}}<video class="max-h-96 w-full rounded-md border border-line bg-subtle" src="/media/{{mediaID $m.ID}}" controls preload="metadata" width="{{$m.Width}}" height="{{$m.Height}}" aria-label="{{with $m.Alt}}{{.}}{{else}}Video without a description{{end}}"></video>
+    {{else}}<img class="h-auto max-h-96 w-full rounded-md border border-line bg-subtle object-contain" src="/media/{{mediaID $m.ID}}" alt="{{with $m.Alt}}{{.}}{{else}}Image without alt text{{end}}" width="{{$m.Width}}" height="{{$m.Height}}">{{end}}
+  </div>
+  <dl class="facts min-w-0">
+    <dt>ID</dt><dd><code id="media-id" class="copy-box break-all">{{mediaID $m.ID}}</code> <button type="button" data-copy="media-id">Copy</button></dd>
+    <dt>In a newsletter</dt><dd><code id="media-md" class="copy-box break-all">![{{with $m.Alt}}{{.}}{{else}}what it shows{{end}}]({{mediaID $m.ID}})</code> <button type="button" data-copy="media-md">Copy</button></dd>
+    <dt>Brand</dt><dd><a href="/brands/{{brandID $m.BrandID}}">{{with $d.BrandName}}{{.}}{{else}}{{brandID $m.BrandID}}{{end}}</a></dd>
+    <dt>File</dt><dd>{{$m.ContentType}} · {{$m.Width}}×{{$m.Height}}{{if $m.VideoCodec}} · {{duration $m.DurationMS}}{{end}} · {{fileSize $m.Size}}</dd>
+    <dt>Added</dt><dd>{{fmtTime $m.CreatedAt}}</dd>
+    <dt>Used by</dt><dd>{{$d.UsedBy}}</dd>
+    <dt>Kept</dt><dd>{{if $m.Kept}}yes, until you delete it{{else}}no: deleted a day after nothing uses it{{end}}</dd>
+  </dl>
+</div>
+
+{{if $d.CanWrite}}
+<section class="card mt-6 max-w-xl">
+  <h2>Details</h2>
+  <form method="post" action="/media/{{mediaID $m.ID}}" class="form-stack">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <label>Alt text <input name="alt" value="{{$d.Alt}}" maxlength="1000" placeholder="What it shows, for people who cannot see it">
+      <span class="hint">Sent to every platform that takes it, and used in newsletters.</span></label>
+    <label class="check"><input type="checkbox" name="kept" {{if $m.Kept}}checked{{end}}> Keep it in the library until I delete it</label>
+    <div><button class="btn-primary">Save</button></div>
+  </form>
+</section>
+
+<section class="card danger-zone max-w-xl">
+  <h2>Delete</h2>
+  {{if $d.Uses.Total}}<p class="text-sm text-muted">It cannot be deleted while a post, newsletter issue or email theme uses it.</p>
+  {{else}}
+  <form method="post" action="/media/{{mediaID $m.ID}}/delete" data-confirm="Delete this file? It cannot be undone.">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <button class="btn-danger">Delete</button>
+  </form>
+  {{end}}
+</section>
+{{end}}
+{{end}}

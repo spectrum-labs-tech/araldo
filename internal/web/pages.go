@@ -171,6 +171,12 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /sandbox/{id}", s.app("posts", s.sandboxPost))
 	s.mux.HandleFunc("GET /media/{id}", s.app("posts", s.mediaFile))
+	s.mux.HandleFunc("GET /media", s.app("media", s.mediaLibrary))
+	s.mux.HandleFunc("GET /media/new", s.app("media", s.newMedia))
+	s.mux.HandleFunc("POST /media", s.app("media", s.uploadMedia))
+	s.mux.HandleFunc("GET /media/{id}/edit", s.app("media", s.mediaDetail))
+	s.mux.HandleFunc("POST /media/{id}", s.app("media", s.saveMedia))
+	s.mux.HandleFunc("POST /media/{id}/delete", s.app("media", s.deleteMediaItem))
 	s.mux.HandleFunc("GET /performance", s.app("performance", s.performance))
 	s.mux.HandleFunc("GET /performance/analytics/new", s.app("performance", s.newAnalytics))
 	s.mux.HandleFunc("POST /performance/analytics", s.app("performance", s.connectAnalytics))

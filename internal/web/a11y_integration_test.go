@@ -180,6 +180,7 @@ func seedPages(t *testing.T, d *dash) []string {
 		"/newsletters/" + id.Format(id.Issue, fromTpl.ID),
 		"/mail-accounts/" + id.Format(id.MailAccount, mailAcct.ID), "/mail-accounts/new", "/mail-accounts/new?connection=new",
 		"/mail-connections/new", "/mail-connections/" + id.Format(id.MailConnection, *mailAcct.ConnectionID), "/reports", "/reports?month=" + thisMonth(t, d.brand),
+		"/media", "/media?brand=" + d.brand.Slug, "/media/new", "/media/" + id.Format(id.Media, m.ID) + "/edit",
 		"/templates", "/templates/new", "/templates/" + id.Format(id.Template, tpl.ID),
 		"/templates/new?kind=newsletter", "/templates/" + id.Format(id.Template, nlTpl.ID),
 		"/channels", "/channels/apps", "/channels/apps/new", "/channels/new", "/channels/new?provider=bluesky", "/channels/" + id.Format(id.Channel, chans[0].ID) + "/reconnect",

@@ -642,8 +642,39 @@ func (s *Server) saveEmailTheme(c *reqCtx) error {
 	}
 	f := c.r.PostForm
 	in := core.EmailThemeInput{Accent: f.Get("accent"), PostalAddress: f.Get("postal_address"), Footer: f.Get("footer")}
-	if ref := f.Get("logo"); ref != "" {
-		mid, err := id.Parse(id.Media, ref)
+	logo := f.Get("logo")
+	fail := func(err error) error {
+		b, berr := s.svc.Brand(c.ctx(), c.actor, bid)
+		if berr != nil {
+			return berr
+		}
+		bf, ferr := s.brandForm(c, b)
+		if ferr != nil {
+			return ferr
+		}
+		bf.Theme = themeForm{Logo: logo, Accent: f.Get("accent"), PostalAddress: in.PostalAddress, Footer: in.Footer,
+			Images: bf.Theme.Images}
+		return s.formErr(c, "brand_edit", "brands", b.Name, bf, err)
+	}
+	// A new logo uploaded here goes to the media library, kept, and is
+	// chosen; shown again with a problem, the form has it chosen already.
+	if fh := uploadedFile(c, "logo_file"); fh != nil {
+		data, err := readFile(fh)
+		if err != nil {
+			return fail(err)
+		}
+		alt := "Logo"
+		if b, err := s.svc.Brand(c.ctx(), c.actor, bid); err == nil {
+			alt = b.Name
+		}
+		m, err := s.svc.CreateMedia(c.ctx(), c.actor, core.MediaInput{BrandID: bid, Data: data, Filename: fh.Filename, Alt: alt, Keep: true})
+		if err != nil {
+			return fail(err)
+		}
+		logo = id.Format(id.Media, m.ID)
+	}
+	if logo != "" {
+		mid, err := id.Parse(id.Media, logo)
 		if err != nil {
 			return apperr.Invalid("logo_unknown", "logo", "Choose one of the brand's images.")
 		}
@@ -653,17 +684,7 @@ func (s *Server) saveEmailTheme(c *reqCtx) error {
 		in.Accent = ""
 	}
 	if _, err := s.svc.SetEmailTheme(c.ctx(), c.actor, bid, in); err != nil {
-		b, berr := s.svc.Brand(c.ctx(), c.actor, bid)
-		if berr != nil {
-			return berr
-		}
-		bf, ferr := s.brandForm(c, b)
-		if ferr != nil {
-			return ferr
-		}
-		bf.Theme = themeForm{Logo: f.Get("logo"), Accent: f.Get("accent"), PostalAddress: in.PostalAddress, Footer: in.Footer,
-			Images: bf.Theme.Images}
-		return s.formErr(c, "brand_edit", "brands", b.Name, bf, err)
+		return fail(err)
 	}
 	return redirect(c, "/brands/"+c.r.PathValue("id"), "Saved the email theme.")
 }

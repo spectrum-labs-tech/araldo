@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,7 +41,8 @@ func (s *Server) keysData(c *reqCtx) (*keysData, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &keysData{Scopes: core.KeyScopes, Admin: core.AdminScopeInfo(), BaseURL: baseURL(c), Keys: keys}
+	d := &keysData{Scopes: slices.Sorted(slices.Values(core.KeyScopes)), Admin: core.AdminScopeInfo(), BaseURL: baseURL(c), Keys: keys}
+	slices.SortFunc(d.Admin, func(a, b core.ScopeInfo) int { return strings.Compare(string(a.Scope), string(b.Scope)) })
 	if d.Brands, err = s.svc.Brands(c.ctx(), c.actor); err != nil {
 		return nil, err
 	}
@@ -63,12 +65,46 @@ func (s *Server) keys(c *reqCtx) error {
 	return s.page(c, "keys", "keys", "API keys", d)
 }
 
+// keyFormFields are the new-key form's fields, carried through the
+// password confirmation so nothing typed is lost; none is a secret.
+var keyFormFields = []string{"name", "access", "scopes", "admin", "expires", "expires_on", "brand"}
+
+// newKey shows the form, asking first for the password confirmation that
+// creating a key needs, so it is not asked for after the form is filled
+// in. Its query fills the form: what was typed before a confirmation.
 func (s *Server) newKey(c *reqCtx) error {
+	if !s.svc.InSudo(c.session) {
+		return confirmForKey(c, c.r.URL.Query())
+	}
 	d, err := s.keysData(c)
 	if err != nil {
 		return err
 	}
+	if q := c.r.URL.Query(); len(q) > 0 {
+		d.Form = keyForm(q)
+	}
 	return s.page(c, "key_new", "keys", "New API key", d)
+}
+
+// keyForm is form's new-key fields alone.
+func keyForm(form url.Values) url.Values {
+	out := url.Values{}
+	for _, k := range keyFormFields {
+		if v, ok := form[k]; ok {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// confirmForKey sends the person to confirm their password, then back to
+// the new-key form filled with form's fields.
+func confirmForKey(c *reqCtx, form url.Values) error {
+	next := "/keys/new"
+	if q := keyForm(form).Encode(); q != "" {
+		next += "?" + q
+	}
+	return redirect(c, "/confirm?next="+url.QueryEscape(next), "Confirm your password to create a key.")
 }
 
 func (s *Server) createKey(c *reqCtx) error {
@@ -106,7 +142,8 @@ func (s *Server) createKey(c *reqCtx) error {
 	plain, k, err := s.svc.CreateAPIKey(c.ctx(), c.actor, c.session, in)
 	if err != nil {
 		if core.NeedsReauth(err) {
-			return redirect(c, "/confirm?next=/keys/new", "Confirm your password to create a key.")
+			// The confirmation lapsed while the form was filled in.
+			return confirmForKey(c, c.r.PostForm)
 		}
 		return s.formErr(c, "key_new", "keys", "New API key", d, err)
 	}

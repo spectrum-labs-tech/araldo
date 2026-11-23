@@ -31,6 +31,5 @@
   <label>Limit to one brand
     {{template "brandSelect" (brandOptions .Data.Brands ($f.Get "brand") "All brands")}}</label>
   <div class="controls"><button class="btn-primary">Create key</button> <a class="btn" href="/keys">Cancel</a></div>
-  <p class="text-sm text-muted">Creating a key asks you to confirm your password.</p>
 </form>
 {{end}}

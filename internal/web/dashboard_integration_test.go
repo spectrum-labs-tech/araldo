@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -926,5 +927,60 @@ func TestTemplateEditorPreviewsTheBrandsPlatforms(t *testing.T) {
 	page := d.send(httptest.NewRequest(http.MethodGet, "/templates/new", nil)).Body.String()
 	if !strings.Contains(page, `data-default-platforms="bluesky"`) {
 		t.Fatalf("the preview does not default to the brand's platforms:\n%s", page)
+	}
+}
+
+// Creating a key needs a recent password: the form asks for it before it
+// is filled in, and when it lapses while the form is filled in, what was
+// typed comes back after the confirmation. Scopes are listed in order.
+func TestNewKeyConfirmsFirst(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	later := func() time.Time { return time.Now().Add(time.Hour) }
+
+	d.s.Now = later
+	rec := d.send(httptest.NewRequest(http.MethodGet, "/keys/new", nil))
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || loc != "/confirm?next="+url.QueryEscape("/keys/new") || noticeOf(rec) == "" {
+		t.Fatalf("the form outside the window: %d %q", rec.Code, loc)
+	}
+
+	form := url.Values{"csrf": {d.login.Session.CSRFToken}, "name": {"newsletter sync"}, "access": {"restricted"},
+		"scopes": {"newsletters:read", "templates:write"}, "expires": {"never"}, "brand": {d.brand.Slug}}
+	r := httptest.NewRequest(http.MethodPost, "/keys", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = d.send(r)
+	loc := rec.Header().Get("Location")
+	if rec.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/confirm?next=") {
+		t.Fatalf("creating outside the window: %d %q", rec.Code, loc)
+	}
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := u.Query().Get("next")
+	if !strings.HasPrefix(next, "/keys/new?") || strings.Contains(next, "csrf") {
+		t.Fatalf("next = %q: the form's fields, not its CSRF token", next)
+	}
+
+	d.s.Now = time.Now // confirmed
+	rec = d.send(httptest.NewRequest(http.MethodGet, next, nil))
+	page := rec.Body.String()
+	for _, want := range []string{`value="newsletter sync"`, `value="restricted" checked`, `value="newsletters:read" checked`,
+		`value="templates:write" checked`, `value="never" selected`} {
+		if rec.Code != http.StatusOK || !strings.Contains(page, want) {
+			t.Errorf("after confirming, the form lacks %s (%d)", want, rec.Code)
+		}
+	}
+	if strings.Contains(page, `value="posts:read" checked`) {
+		t.Error("a scope not chosen is checked")
+	}
+
+	var listed []string
+	for _, m := range regexp.MustCompile(`name="(?:scopes|admin)" value="([^"]+)"`).FindAllStringSubmatch(page, -1) {
+		listed = append(listed, m[1])
+	}
+	scopes, admin := listed[:len(core.KeyScopes)], listed[len(core.KeyScopes):]
+	if !slices.IsSorted(scopes) || !slices.IsSorted(admin) || len(admin) != len(core.AdminScopes) {
+		t.Errorf("scopes listed %v, admin scopes %v: want each in order", scopes, admin)
 	}
 }

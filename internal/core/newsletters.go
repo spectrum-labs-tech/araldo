@@ -207,7 +207,11 @@ func (s *Service) checkAudiences(ctx context.Context, m email.Mailer, creds plat
 		if limit == 1 {
 			n = "one audience"
 		}
-		return nil, apperr.Invalid("audience_too_many", field, "%s sends a campaign to %s; choose fewer, or make one in %s that covers them.", m.Name(), n, m.Name())
+		msg := fmt.Sprintf("%s sends a campaign to %s; choose fewer, or make one in %s that covers them.", m.Name(), n, m.Name())
+		if field == "default_audiences" {
+			msg += " Defaults are optional: leave them empty when each issue chooses its own."
+		}
+		return nil, apperr.Invalid("audience_too_many", field, "%s", msg)
 	}
 	return out, nil
 }

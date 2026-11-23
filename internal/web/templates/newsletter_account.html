@@ -12,8 +12,8 @@
     <span class="hint">Checked with {{$d.Account.Provider}} when it changes.</span></label>
   <label><span>Reply-to <span class="hint">(optional)</span></span> <input name="reply_to" type="email" value="{{$d.Form.ReplyTo}}" {{if not $d.CanWrite}}disabled{{end}}></label>
   <fieldset>
-    <legend>Default audiences</legend>
-    <p class="mt-0 text-sm text-muted">New issues for this brand go to these, read from {{$d.Account.Provider}} now. Araldo sees their names and sizes, never their members.</p>
+    <legend>Default audiences <span class="hint">(optional)</span></legend>
+    <p class="mt-0 text-sm text-muted">New issues for this brand go to these unless they name their own, read from {{$d.Account.Provider}} now. Leave them empty when every issue chooses its audience, as an app sending through the API does. Araldo sees their names and sizes, never their members.</p>
     {{if $d.AudienceErr}}<div class="alert" role="alert">{{$d.AudienceErr}}</div>
     {{else}}{{range $d.Audiences}}
     <label class="check"><input type="checkbox" name="audience" value="{{.ID}}" {{if contains $d.Form.DefaultAudiences .ID}}checked{{end}} {{if not $d.CanWrite}}disabled{{end}}>

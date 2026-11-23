@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/spectrum-labs-tech/araldo/internal/apperr"
@@ -74,5 +75,21 @@ func TestMaxAudiences(t *testing.T) {
 	}
 	if got := email.MaxAudiences(limitedMailer{}); got != 1 {
 		t.Errorf("limited mailer: %d", got)
+	}
+}
+
+// Too many default audiences says the defaults are optional; too many on
+// one issue does not, since an issue must go somewhere.
+func TestTooManyAudiencesSaysDefaultsAreOptional(t *testing.T) {
+	t.Parallel()
+	for field, want := range map[string]bool{"default_audiences": true, "deliveries[0].audiences": false} {
+		_, err := (&Service{}).checkAudiences(context.Background(), limitedMailer{}, platform.Credentials{}, []string{"a", "b"}, field)
+		e := apperr.As(err)
+		if e == nil || e.Code != "audience_too_many" || e.Param != field {
+			t.Fatalf("%s: err = %v", field, err)
+		}
+		if got := strings.Contains(e.Message, "Defaults are optional"); got != want {
+			t.Errorf("%s: %q, mentions optional defaults = %v, want %v", field, e.Message, got, want)
+		}
 	}
 }

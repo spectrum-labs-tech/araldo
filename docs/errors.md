@@ -326,7 +326,9 @@ with another page), shown on the ad account and retried later.
   set as the account's defaults.
 - **audience_too_many**: the provider sends a campaign to fewer
   audiences than chosen (a Resend broadcast goes to one segment); choose
-  fewer, or make one audience at the provider that covers them.
+  fewer, or make one audience at the provider that covers them. An
+  account's default audiences are optional: leave them empty when each
+  issue names its own.
 - **delivery_duplicate**: list each mail account once in `deliveries`,
   with all its audiences.
 - **subject_invalid**, **preview_text_too_long**: a subject is 1 to 200

@@ -331,7 +331,8 @@ with another page), shown on the ad account and retried later.
   last sender deletes the connection with it.
 - **mail_account_unknown**: the mail account is not one of the brand's in
   this mode, or was disconnected; edit the issue.
-- **mail_account_needs_reauth**: connect the mail account again.
+- **mail_account_needs_reauth**: the provider refused the key; replace it
+  on the sender's mail connection.
 - **audience_unknown**: the provider has no audience with that ID.
 - **audience_missing**: a delivery needs at least one audience, given or
   set as the account's defaults.

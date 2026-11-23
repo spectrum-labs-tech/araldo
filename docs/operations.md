@@ -806,10 +806,19 @@ stores no subscriber address.
    receipt mail use. Authenticate it at the provider: its DKIM record, the
    provider in the subdomain's SPF record, and a DMARC record (start with
    `p=none`).
-2. **Connect a mail account** on the dashboard's **Newsletters** page or
-   with `POST /v1/mail_accounts` (needs `channels:write`): the provider's
-   API key and a sender it will send as. Then choose its default
-   audiences.
+2. **Add a sender** on the dashboard's **Newsletters** page or with
+   `POST /v1/mail_accounts` (needs `channels:write`): an address the
+   provider will send as, through a **mail connection** that holds the
+   provider account's API key. The first sender connects the account
+   (`provider` and `fields`); later ones, for another address or brand on
+   the same account, choose that connection (`connection`) and are never
+   asked for the key again. Rotating the key is one edit to the
+   connection (its page, or `POST /v1/mail_connections/{id}` with
+   `fields`), and every sender on it uses the new one; a key the provider
+   refuses marks them all. Removing a connection's last sender deletes the
+   connection and its key. Then choose the sender's default audiences, if
+   issues should go to some without naming their own (an app that names
+   its audience on every issue leaves them empty).
 3. **Set the brand's email theme** on its page or with
    `POST /v1/brands/{id}/email_theme`: logo, accent color and the postal
    address anti-spam laws require. An issue cannot be scheduled without
@@ -859,7 +868,8 @@ transactional API.
 **Resend**: an API key from API Keys with **Full access**. A
 sending-access key cannot create broadcasts or read segments and domains,
 so connecting refuses it. The sender must be on a domain Resend shows as
-verified under Domains; the mail account is named after that domain.
+verified under Domains; the sender is named after that domain, and one
+connection serves senders on every domain the Resend account has verified.
 Audiences are Resend's segments, and their sizes are not shown: Resend
 reports none without listing the contacts, which Araldo never reads. A
 Resend broadcast goes to **one segment**, so give each Resend delivery

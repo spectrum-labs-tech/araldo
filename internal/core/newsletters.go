@@ -470,6 +470,25 @@ func (s *Service) SetEmailTheme(ctx context.Context, a Actor, brandID uuid.UUID,
 	if err != nil {
 		return nil, err
 	}
+	t, err := s.checkEmailTheme(ctx, a, b, in)
+	if err != nil {
+		return nil, err
+	}
+	err = s.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.UpdateBrandEmailTheme(ctx, a.OrgID, b.ID, t); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, a, "brand.email_theme", id.Format(id.Brand, b.ID), nil)
+	})
+	if err != nil {
+		return nil, err
+	}
+	b.EmailTheme = t
+	return b, nil
+}
+
+// checkEmailTheme validates in as brand b's theme, without saving it.
+func (s *Service) checkEmailTheme(ctx context.Context, a Actor, b *model.Brand, in EmailThemeInput) (model.EmailTheme, error) {
 	t := model.EmailTheme{LogoMediaID: in.LogoMediaID, Accent: strings.ToLower(strings.TrimSpace(in.Accent)),
 		PostalAddress: strings.TrimSpace(strings.ReplaceAll(in.PostalAddress, "\r\n", "\n")), Footer: strings.TrimSpace(in.Footer)}
 	var ps apperr.Problems
@@ -488,23 +507,75 @@ func (s *Service) SetEmailTheme(ctx context.Context, a Actor, brandID uuid.UUID,
 		case errors.Is(err, store.ErrNotFound) || err == nil && m.BrandID != b.ID:
 			ps.Add("logo_unknown", "logo", "The logo must be one of the brand's images.")
 		case err != nil:
-			return nil, err
+			return model.EmailTheme{}, err
 		}
 	}
-	if err := ps.Err("The email theme is not valid."); err != nil {
-		return nil, err
+	return t, ps.Err("The email theme is not valid.")
+}
+
+// sampleIssue is what an email theme is previewed with: one of each block
+// an issue can hold. Its image is sampleImage, drawn in place.
+var sampleIssue = newsletter.Issue{
+	Subject:     "What shipped this week",
+	PreviewText: "A sample issue, to see the theme",
+	Body: `# What shipped this week
+
+A sample issue, to show how this brand's newsletters look. Links like [the changelog](https://araldo.dev/changelog) take the accent color.
+
+![A sample picture](sample-image)
+
+## Highlights
+
+- Scheduling across every channel
+- Templates with data
+- A **bold** word, an *italic* one and ` + "`code`" + `
+
+> A quote stands out with the accent beside it.
+
+[Read the release notes](https://araldo.dev/releases){.button}
+
+---
+
+Thanks for reading.`,
+}
+
+const sampleImage = "sample-image"
+
+// sampleImageURL is a gray picture with a frame in it, drawn inline so
+// the preview needs nothing from the library.
+const sampleImageURL = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MjAiIGhlaWdodD0iMjQwIiB2aWV3Qm94PSIwIDAgNTIwIDI0MCI+PHJlY3Qgd2lkdGg9IjUyMCIgaGVpZ2h0PSIyNDAiIGZpbGw9IiNlNWU3ZWIiLz48cGF0aCBkPSJNMTQwIDE3MCBMMjIwIDkwIEwyOTAgMTUwIEwzMzAgMTIwIEwzODAgMTcwIFoiIGZpbGw9IiM5Y2EzYWYiLz48Y2lyY2xlIGN4PSIzNDAiIGN5PSI4MCIgcj0iMTgiIGZpbGw9IiM5Y2EzYWYiLz48L3N2Zz4="
+
+// PreviewEmailTheme renders a sample issue with in as brand brandID's
+// theme, unsaved: what the brand page shows beside the theme form. The
+// theme is checked as SetEmailTheme checks it.
+func (s *Service) PreviewEmailTheme(ctx context.Context, a Actor, brandID uuid.UUID, in EmailThemeInput) (newsletter.Rendered, error) {
+	if err := a.require(PermBrandsRead); err != nil {
+		return newsletter.Rendered{}, err
 	}
-	err = s.store.InTx(ctx, func(tx *store.Store) error {
-		if err := tx.UpdateBrandEmailTheme(ctx, a.OrgID, b.ID, t); err != nil {
-			return err
-		}
-		return s.audit(ctx, tx, a, "brand.email_theme", id.Format(id.Brand, b.ID), nil)
-	})
+	b, err := s.Brand(ctx, a, brandID)
 	if err != nil {
-		return nil, err
+		return newsletter.Rendered{}, err
 	}
-	b.EmailTheme = t
-	return b, nil
+	t, err := s.checkEmailTheme(ctx, a, b, in)
+	if err != nil {
+		return newsletter.Rendered{}, err
+	}
+	theme := newsletter.Theme{BrandName: b.Name, Accent: t.Accent, PostalAddress: t.PostalAddress, Footer: t.Footer}
+	if theme.PostalAddress == "" {
+		theme.PostalAddress = "(The postal address goes here; an issue cannot be scheduled without it.)"
+	}
+	if t.LogoMediaID != nil {
+		if m, err := s.store.Media(ctx, a.OrgID, *t.LogoMediaID); err == nil {
+			theme.LogoURL = s.EmailMediaLink(ctx, m)
+		}
+	}
+	return newsletter.Render(sampleIssue, newsletter.Options{Theme: theme, Unsubscribe: "#unsubscribe",
+		Image: func(src string) (newsletter.Image, error) {
+			if src != sampleImage {
+				return newsletter.Image{}, errors.New("the sample issue has one image")
+			}
+			return newsletter.Image{URL: sampleImageURL, Alt: "A sample picture", Width: 520, Height: 240}, nil
+		}})
 }
 
 // IssueInput creates or edits an issue.

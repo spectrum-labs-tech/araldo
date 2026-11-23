@@ -361,6 +361,7 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	_, checks["update mail connection"] = b.s.UpdateMailConnection(ctx, b.owner, *mailAcct.ConnectionID, core.MailConnectionUpdate{Name: &newName})
 	checks["delete mail connection"] = b.s.DeleteMailConnection(ctx, b.owner, *mailAcct.ConnectionID)
 	_, checks["email theme"] = b.s.SetEmailTheme(ctx, b.owner, a.brand.ID, core.EmailThemeInput{PostalAddress: "x"})
+	_, checks["email theme preview"] = b.s.PreviewEmailTheme(ctx, b.owner, a.brand.ID, core.EmailThemeInput{PostalAddress: "x"})
 	_, checks["issue"] = b.s.Issue(ctx, b.owner, issue.ID)
 	_, checks["issue preview"] = b.s.IssuePreview(ctx, b.owner, issue.ID)
 	_, checks["update issue"] = b.s.UpdateIssue(ctx, b.owner, issue.ID, core.IssueInput{Subject: "x", Body: "x"})

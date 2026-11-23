@@ -111,8 +111,9 @@ func (s *Service) StageVideo(ctx context.Context, a Actor, r io.Reader, filename
 	return st, nil
 }
 
-// CreateVideo makes a staged video one of a brand's media.
-func (s *Service) CreateVideo(ctx context.Context, a Actor, st *StagedVideo, brandID uuid.UUID, alt string) (*model.Media, error) {
+// CreateVideo makes a staged video one of a brand's media, kept in the
+// library when keep is set.
+func (s *Service) CreateVideo(ctx context.Context, a Actor, st *StagedVideo, brandID uuid.UUID, alt string, keep bool) (*model.Media, error) {
 	if err := a.require(PermPostsWrite); err != nil {
 		return nil, err
 	}
@@ -127,7 +128,7 @@ func (s *Service) CreateVideo(ctx context.Context, a Actor, st *StagedVideo, bra
 	m := &model.Media{ID: st.id, OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, ContentType: v.Type, Size: st.size,
 		Width: v.Width, Height: v.Height, SHA256: st.sha256, Alt: alt, Filename: st.filename, Storage: model.StorageS3, StorageKey: st.key,
 		DurationMS: v.Duration.Milliseconds(), FrameRate: v.FrameRate, VideoCodec: v.VideoCodec, AudioCodec: v.AudioCodec,
-		CreatedByUser: a.UserID, CreatedByKey: a.KeyID}
+		CreatedByUser: a.UserID, CreatedByKey: a.KeyID, Kept: keep}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
 		if err := tx.CreateMedia(ctx, m, nil); err != nil {
 			return err

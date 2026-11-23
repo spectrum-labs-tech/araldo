@@ -497,6 +497,10 @@ type Media struct {
 	CreatedByUser *uuid.UUID
 	CreatedByKey  *uuid.UUID
 	CreatedAt     time.Time
+	// Kept media stays in the library until someone deletes it; other
+	// media is pruned once no post, issue or email theme has used it for
+	// a day (ADR 0017).
+	Kept bool
 }
 
 // ConnectionStatus is whether a connection to a provider still works: an

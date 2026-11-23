@@ -105,8 +105,8 @@ func TestPostWithImagesPublishes(t *testing.T) {
 		t.Fatalf("deleting media a post uses: %v", err)
 	}
 	// Its alt text can still be fixed.
-	if m2, err := w.s.UpdateMediaAlt(ctx, w.owner, m.ID, "The build, left side"); err != nil || m2.Alt != "The build, left side" {
-		t.Fatalf("UpdateMediaAlt = %+v, %v", m2, err)
+	if m2, err := w.s.UpdateMedia(ctx, w.owner, m.ID, core.MediaUpdate{Alt: strPtr("The build, left side")}); err != nil || m2.Alt != "The build, left side" {
+		t.Fatalf("UpdateMedia = %+v, %v", m2, err)
 	}
 	_, rc, err := w.s.MediaContent(ctx, w.owner, m.ID)
 	if err != nil {
@@ -306,17 +306,17 @@ func TestImportMedia(t *testing.T) {
 
 	// The test service allows private addresses; netguard's own tests cover
 	// refusing them. Redirects are followed.
-	m, err := w.s.ImportMedia(ctx, w.owner, w.brand.ID, srv.URL+"/old/logo.png", "Logo")
+	m, err := w.s.ImportMedia(ctx, w.owner, w.brand.ID, srv.URL+"/old/logo.png", "Logo", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if m.Width != 30 || m.Height != 20 || m.Filename != "logo.png" || m.Alt != "Logo" {
 		t.Fatalf("imported %+v", m)
 	}
-	if _, err := w.s.ImportMedia(ctx, w.owner, w.brand.ID, srv.URL+"/missing.png", ""); !hasProblem(err, "url_unreachable") {
+	if _, err := w.s.ImportMedia(ctx, w.owner, w.brand.ID, srv.URL+"/missing.png", "", false); !hasProblem(err, "url_unreachable") {
 		t.Fatalf("a 404: %v", err)
 	}
-	if _, err := w.s.ImportMedia(ctx, w.owner, w.brand.ID, "file:///etc/passwd", ""); !hasProblem(err, "url_invalid") {
+	if _, err := w.s.ImportMedia(ctx, w.owner, w.brand.ID, "file:///etc/passwd", "", false); !hasProblem(err, "url_invalid") {
 		t.Fatalf("a file URL: %v", err)
 	}
 }
@@ -353,6 +353,63 @@ func TestUnusedMediaIsPruned(t *testing.T) {
 	list, _, err := w.s.MediaList(ctx, w.owner, core.MediaFilter{}, store.Page{})
 	if err != nil || len(list) != 1 || list[0].ID != used.ID {
 		t.Fatalf("listing after pruning: %d items, %v", len(list), err)
+	}
+}
+
+func strPtr(v string) *string { return &v }
+
+// Media kept in the library outlives the day unused media gets; let go,
+// it is pruned like the rest. What uses media is counted, and keeps it
+// from being deleted.
+func TestKeptMediaIsNotPruned(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	kept, err := w.s.CreateMedia(ctx, w.owner, core.MediaInput{BrandID: w.brand.ID, Data: pngOf(t, 7, 7), Keep: true})
+	if err != nil || !kept.Kept {
+		t.Fatalf("a kept upload: %+v, %v", kept, err)
+	}
+	loose, err := w.s.CreateMedia(ctx, w.owner, core.MediaInput{BrandID: w.brand.ID, Data: pngOf(t, 8, 8)})
+	if err != nil || loose.Kept {
+		t.Fatalf("an upload not kept: %+v, %v", loose, err)
+	}
+	if u, err := w.s.MediaUsage(ctx, w.owner, kept.ID); err != nil || u.Total() != 0 {
+		t.Fatalf("usage before any use: %+v, %v", u, err)
+	}
+
+	w.s.Now = func() time.Time { return time.Now().Add(core.UnusedMediaTTL + time.Hour) }
+	if n, err := core.PruneUnusedMediaOrg(w.s, w.org.ID); err != nil || n != 1 {
+		t.Fatalf("pruning a day later: %d, %v; want only the loose one", n, err)
+	}
+	if _, err := w.s.Media(ctx, w.owner, kept.ID); err != nil {
+		t.Fatalf("kept media was pruned: %v", err)
+	}
+	if _, err := w.s.Media(ctx, w.owner, loose.ID); kind(err) != apperr.KindNotFound {
+		t.Fatalf("loose media after pruning: %v", err)
+	}
+
+	// Used as a post's image: counted, and deleting it is refused.
+	if _, err := w.s.CreatePost(ctx, w.owner, core.PostInput{BrandID: w.brand.ID, Content: &model.Content{Body: "x"}, Media: []uuid.UUID{kept.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	if u, err := w.s.MediaUsage(ctx, w.owner, kept.ID); err != nil || u.Posts != 1 || u.Total() != 1 {
+		t.Fatalf("usage after a post: %+v, %v", u, err)
+	}
+	if err := w.s.DeleteMedia(ctx, w.owner, kept.ID); apperr.As(err).Code != "media_in_use" {
+		t.Fatalf("deleting used media: %v", err)
+	}
+
+	// Let go and unused, it is pruned.
+	other, err := w.s.CreateMedia(ctx, w.owner, core.MediaInput{BrandID: w.brand.ID, Data: pngOf(t, 9, 9), Keep: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, err := w.s.UpdateMedia(ctx, w.owner, other.ID, core.MediaUpdate{Kept: new(false)}); err != nil || m.Kept || m.Alt != "" {
+		t.Fatalf("letting it go: %+v, %v", m, err)
+	}
+	w.s.Now = func() time.Time { return time.Now().Add(2*core.UnusedMediaTTL + time.Hour) }
+	if n, err := core.PruneUnusedMediaOrg(w.s, w.org.ID); err != nil || n != 1 {
+		t.Fatalf("pruning after letting it go: %d, %v", n, err)
 	}
 }
 

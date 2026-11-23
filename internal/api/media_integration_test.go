@@ -166,7 +166,7 @@ func TestUploadAndPostWithMedia(t *testing.T) {
 	body, ct := form(t, [][2]string{{"brand", c.brand}, {"alt", "Front view"}}, pngOf(t, 1200, 800))
 	status, m := c.do(http.MethodPost, "/v1/media", ct, body, map[string]string{"Idempotency-Key": uuid.NewString()})
 	if status != http.StatusCreated || m["object"] != "media" || m["type"] != media.PNG || m["width"] != float64(1200) ||
-		m["alt"] != "Front view" || m["filename"] != "build.png" || m["brand"] != c.brand {
+		m["alt"] != "Front view" || m["filename"] != "build.png" || m["brand"] != c.brand || m["kept"] != false {
 		t.Fatalf("upload: %d %v", status, m)
 	}
 	mediaID, _ := m["id"].(string)
@@ -176,8 +176,16 @@ func TestUploadAndPostWithMedia(t *testing.T) {
 		t.Fatalf("get: %d %v", status, got)
 	}
 	status, got = c.json(http.MethodPost, "/v1/media/"+mediaID, map[string]any{"alt": "Left side"})
-	if status != http.StatusOK || got["alt"] != "Left side" {
+	if status != http.StatusOK || got["alt"] != "Left side" || got["kept"] != false {
 		t.Fatalf("update: %d %v", status, got)
+	}
+	status, got = c.json(http.MethodPost, "/v1/media/"+mediaID, map[string]any{"kept": true})
+	if status != http.StatusOK || got["kept"] != true || got["alt"] != "Left side" {
+		t.Fatalf("keeping it: %d %v", status, got)
+	}
+	status, got = c.json(http.MethodPost, "/v1/media/"+mediaID, map[string]any{})
+	if status != http.StatusBadRequest || got["code"] != "parameter_missing" {
+		t.Fatalf("an update with nothing in it: %d %v", status, got)
 	}
 	status, got = c.do(http.MethodGet, "/v1/media?brand="+c.brand, "", nil, nil)
 	if data, _ := got["data"].([]any); status != http.StatusOK || len(data) != 1 {
@@ -222,6 +230,7 @@ func TestUploadErrors(t *testing.T) {
 		{"not an image", [][2]string{{"brand", c.brand}}, []byte("GIF? no."), http.StatusUnprocessableEntity, "media_type_unsupported"},
 		{"no brand", nil, pngOf(t, 1, 1), http.StatusUnprocessableEntity, "brand_required"},
 		{"too large", [][2]string{{"brand", c.brand}}, make([]byte, media.MaxBytes+128<<10), http.StatusBadRequest, "body_too_large"},
+		{"keep not a boolean", [][2]string{{"brand", c.brand}, {"keep", "forever"}}, pngOf(t, 1, 1), http.StatusBadRequest, "parameter_invalid"},
 	}
 	for _, tt := range tests {
 		body, ct := form(t, tt.fields, tt.file)
@@ -246,9 +255,13 @@ func TestImportByURL(t *testing.T) {
 	img := pngOf(t, 16, 9)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(img) }))
 	defer srv.Close()
-	status, m := c.json(http.MethodPost, "/v1/media", map[string]any{"brand": c.brand, "url": srv.URL + "/a/logo.png", "alt": "Logo"})
-	if status != http.StatusCreated || m["width"] != float64(16) || m["filename"] != "logo.png" || m["alt"] != "Logo" {
+	status, m := c.json(http.MethodPost, "/v1/media", map[string]any{"brand": c.brand, "url": srv.URL + "/a/logo.png", "alt": "Logo", "keep": true})
+	if status != http.StatusCreated || m["width"] != float64(16) || m["filename"] != "logo.png" || m["alt"] != "Logo" || m["kept"] != true {
 		t.Fatalf("import: %d %v", status, m)
+	}
+	body, ct := form(t, [][2]string{{"brand", c.brand}, {"keep", "true"}}, pngOf(t, 3, 3))
+	if status, m := c.do(http.MethodPost, "/v1/media", ct, body, nil); status != http.StatusCreated || m["kept"] != true {
+		t.Fatalf("a kept upload: %d %v", status, m)
 	}
 }
 

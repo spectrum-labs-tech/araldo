@@ -89,7 +89,7 @@ func TestVideoIsStreamedAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := w.s.CreateVideo(ctx, w.owner, st, w.brand.ID, "A lamp on a desk")
+	m, err := w.s.CreateVideo(ctx, w.owner, st, w.brand.ID, "A lamp on a desk", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestVideoFromAURL(t *testing.T) {
 		_, _ = rw.Write(data)
 	}))
 	defer srv.Close()
-	m, err := w.s.ImportMedia(t.Context(), w.owner, w.brand.ID, srv.URL+"/launch.mp4", "Launch")
+	m, err := w.s.ImportMedia(t.Context(), w.owner, w.brand.ID, srv.URL+"/launch.mp4", "Launch", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestVideoPublishes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := w.s.CreateVideo(ctx, w.owner, st, w.brand.ID, "")
+	m, err := w.s.CreateVideo(ctx, w.owner, st, w.brand.ID, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}

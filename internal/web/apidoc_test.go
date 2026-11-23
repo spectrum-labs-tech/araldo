@@ -63,7 +63,7 @@ func TestAPIDocCoversTheContract(t *testing.T) {
 	for _, f := range upload.Form {
 		form = append(form, f.Name)
 	}
-	if strings.Join(form, ",") != "alt,brand,file" || len(upload.Body) == 0 {
+	if strings.Join(form, ",") != "alt,brand,file,keep" || len(upload.Body) == 0 {
 		t.Errorf("POST /v1/media: form fields %v and %d JSON fields; want the upload form and the URL body", form, len(upload.Body))
 	}
 	if d.Tags[0].Name != "Brands" || d.Tags[0].Ops[0].Path != "/v1/brands" || d.Tags[0].Ops[0].Method != http.MethodGet {

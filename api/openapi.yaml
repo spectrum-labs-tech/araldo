@@ -500,8 +500,10 @@ paths:
         `url` for Araldo to fetch (public addresses only). The type comes
         from the file's bytes. Each platform's own limits are checked when
         a post uses the file; an image too big for a platform is resized
-        for it, never cropped (ADR 0027). Media no post uses is deleted
-        after 24 hours. Needs the `posts:write` scope.
+        for it, never cropped (ADR 0027). Media no post, newsletter issue
+        or email theme uses is deleted after 24 hours, unless it is sent
+        with `keep` (or later updated with `kept`): kept media stays in
+        the brand's library until deleted. Needs the `posts:write` scope.
 
         Video needs the install's S3-compatible storage and is streamed
         into it, up to the install's limit (1 GiB unless configured). Its
@@ -523,6 +525,7 @@ paths:
                 brand: { type: string, description: Brand ID or slug. }
                 file: { type: string, format: binary }
                 alt: { type: string, maxLength: 1000, description: "Alt text, sent to every platform that takes it." }
+                keep: { type: boolean, default: false, description: "Keep it in the library until deleted, used or not." }
           application/json:
             schema:
               type: object
@@ -531,6 +534,7 @@ paths:
                 brand: { type: string, description: Brand ID or slug. }
                 url: { type: string, example: https://araldo.dev/images/release-0.5.0.png }
                 alt: { type: string, maxLength: 1000 }
+                keep: { type: boolean, default: false, description: "Keep it in the library until deleted, used or not." }
       responses:
         "201":
           description: The media.
@@ -549,7 +553,9 @@ paths:
         default: { $ref: "#/components/responses/Error" }
     post:
       summary: Update media
-      description: Changes the alt text. The file itself never changes.
+      description: |
+        Changes the alt text, or whether the library keeps it; send at
+        least one. The file itself never changes.
       tags: [Media]
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:
@@ -558,9 +564,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [alt]
               properties:
                 alt: { type: string, maxLength: 1000 }
+                kept: { type: boolean, description: "True keeps it until deleted; false lets it be deleted once nothing has used it for 24 hours." }
       responses:
         "200":
           description: The media.
@@ -568,7 +574,7 @@ paths:
         default: { $ref: "#/components/responses/Error" }
     delete:
       summary: Delete media
-      description: Only media no post uses can be deleted (otherwise `409 media_in_use`).
+      description: Only media no post, newsletter issue or email theme uses can be deleted (otherwise `409 media_in_use`).
       tags: [Media]
       responses:
         "200":
@@ -3280,6 +3286,7 @@ components:
         alt: { type: string }
         filename: { type: string }
         sha256: { type: string }
+        kept: { type: boolean, description: "Kept in the library until deleted; otherwise deleted once nothing has used it for 24 hours." }
         video:
           type: object
           description: For a video, what its index says (ADR 0027). Araldo does not transcode.

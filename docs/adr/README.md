@@ -22,7 +22,7 @@ open a pull request.
 | [0014](0014-telemetry.md) | OpenTelemetry and slog, with no secrets or unpublished content | accepted; slog and metrics built; traces, logs through OpenTelemetry and publish lateness not yet |
 | [0015](0015-dashboard.md) | A server-rendered dashboard embedded in the binary | accepted; built, except the calendar and the request log |
 | [0016](0016-link-tagging.md) | Tag links with UTM parameters at render time; leave clicks to web analytics | accepted; built |
-| [0017](0017-media.md) | Images are uploaded once, checked against every platform's rules, and stored in Postgres unless S3 is configured | accepted; built; extended by ADR 0027 |
+| [0017](0017-media.md) | Images are uploaded once, checked against every platform's rules, and stored in Postgres unless S3 is configured | accepted; built; extended by ADR 0027; decision 7 amended (kept media) |
 | [0018](0018-engagement.md) | Read each published post's engagement on a fixed schedule and keep every reading | accepted; built; readers for X, LinkedIn, Pinterest and TikTok not yet |
 | [0019](0019-administration-api.md) | The API manages everything a declarative tool needs; admin powers are explicit-only scopes | accepted; built; decision 1 and the CLI half of decision 6 superseded by ADR 0028 |
 | [0020](0020-mcp.md) | An MCP server in the binary, as a client of the public API | accepted; built (sign-in for hosted assistants later) |

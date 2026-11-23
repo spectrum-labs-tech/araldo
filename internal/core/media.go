@@ -74,6 +74,9 @@ type MediaInput struct {
 	Data     []byte
 	Filename string
 	Alt      string
+	// Keep keeps it in the library until deleted; otherwise it is pruned
+	// once no post, issue or email theme has used it for a day.
+	Keep bool
 }
 
 // CreateMedia stores an image for posts to use (ADR 0017).
@@ -110,7 +113,7 @@ func (s *Service) CreateMedia(ctx context.Context, a Actor, in MediaInput) (*mod
 	sum := sha256.Sum256(in.Data)
 	m := &model.Media{ID: id.New(), OrgID: a.OrgID, BrandID: b.ID, Livemode: a.Livemode, ContentType: info.Type, Size: int64(len(in.Data)),
 		Width: info.Width, Height: info.Height, Transparent: info.Transparent, SHA256: sum[:], Alt: alt, Filename: cleanFilename(in.Filename),
-		Storage: model.StoragePostgres, CreatedByUser: a.UserID, CreatedByKey: a.KeyID}
+		Storage: model.StoragePostgres, CreatedByUser: a.UserID, CreatedByKey: a.KeyID, Kept: in.Keep}
 	if s.blobs != nil {
 		m.Storage = model.StorageS3
 		m.StorageKey = id.Format(id.Org, a.OrgID) + "/" + id.Format(id.Media, m.ID) + media.Extension(info.Type)
@@ -133,8 +136,9 @@ func (s *Service) CreateMedia(ctx context.Context, a Actor, in MediaInput) (*mod
 }
 
 // ImportMedia fetches an image or a video from a public URL and stores
-// it. A video streams into storage (ADR 0027).
-func (s *Service) ImportMedia(ctx context.Context, a Actor, brandID uuid.UUID, rawURL, alt string) (*model.Media, error) {
+// it, kept in the library when keep is set. A video streams into storage
+// (ADR 0027).
+func (s *Service) ImportMedia(ctx context.Context, a Actor, brandID uuid.UUID, rawURL, alt string, keep bool) (*model.Media, error) {
 	if err := a.require(PermPostsWrite); err != nil {
 		return nil, err
 	}
@@ -176,7 +180,7 @@ func (s *Service) ImportMedia(ctx context.Context, a Actor, brandID uuid.UUID, r
 		if err != nil {
 			return nil, err
 		}
-		m, err := s.CreateVideo(ctx, a, st, brandID, alt)
+		m, err := s.CreateVideo(ctx, a, st, brandID, alt, keep)
 		if err != nil {
 			s.DiscardVideo(ctx, st)
 		}
@@ -189,7 +193,7 @@ func (s *Service) ImportMedia(ctx context.Context, a Actor, brandID uuid.UUID, r
 	if len(data) > media.MaxBytes {
 		return nil, apperr.Invalid("media_too_large", "url", "Images are limited to %d MiB.", media.MaxBytes>>20)
 	}
-	return s.CreateMedia(ctx, a, MediaInput{BrandID: brandID, Data: data, Filename: path.Base(u.Path), Alt: alt})
+	return s.CreateMedia(ctx, a, MediaInput{BrandID: brandID, Data: data, Filename: path.Base(u.Path), Alt: alt, Keep: keep})
 }
 
 // MaxVideoBytes is the largest video this install accepts, or 0 when it
@@ -256,30 +260,66 @@ func (s *Service) MediaList(ctx context.Context, a Actor, f MediaFilter, page st
 	return s.store.MediaList(ctx, a.OrgID, a.Livemode, f, page)
 }
 
-// UpdateMediaAlt changes a media item's alt text; the file never changes.
-func (s *Service) UpdateMediaAlt(ctx context.Context, a Actor, mediaID uuid.UUID, alt string) (*model.Media, error) {
+// MediaUpdate changes what can change about media: its alt text, and
+// whether the library keeps it. Nil leaves a field as it is.
+type MediaUpdate struct {
+	Alt  *string
+	Kept *bool
+}
+
+// UpdateMedia changes a media item's alt text or whether it is kept; the
+// file never changes.
+func (s *Service) UpdateMedia(ctx context.Context, a Actor, mediaID uuid.UUID, in MediaUpdate) (*model.Media, error) {
 	if err := a.require(PermPostsWrite); err != nil {
 		return nil, err
 	}
-	alt = strings.TrimSpace(alt)
-	if utf8.RuneCountInString(alt) > media.MaxAlt {
-		return nil, apperr.Invalid("alt_too_long", "alt", "Alt text is limited to %d characters.", media.MaxAlt)
+	var alt string
+	if in.Alt != nil {
+		alt = strings.TrimSpace(*in.Alt)
+		if utf8.RuneCountInString(alt) > media.MaxAlt {
+			return nil, apperr.Invalid("alt_too_long", "alt", "Alt text is limited to %d characters.", media.MaxAlt)
+		}
 	}
 	m, err := s.visibleMedia(ctx, a, mediaID)
 	if err != nil {
 		return nil, err
 	}
 	err = s.store.InTx(ctx, func(tx *store.Store) error {
-		if err := tx.SetMediaAlt(ctx, a.OrgID, m.ID, alt); err != nil {
-			return err
+		if in.Alt != nil {
+			if err := tx.SetMediaAlt(ctx, a.OrgID, m.ID, alt); err != nil {
+				return err
+			}
+		}
+		if in.Kept != nil {
+			if err := tx.SetMediaKept(ctx, a.OrgID, m.ID, *in.Kept); err != nil {
+				return err
+			}
 		}
 		return s.audit(ctx, tx, a, "media.update", id.Format(id.Media, m.ID), nil)
 	})
 	if err != nil {
 		return nil, err
 	}
-	m.Alt = alt
+	if in.Alt != nil {
+		m.Alt = alt
+	}
+	if in.Kept != nil {
+		m.Kept = *in.Kept
+	}
 	return m, nil
+}
+
+// MediaUses counts what uses media.
+type MediaUses = store.MediaUses
+
+// MediaUsage counts the posts, issues and email themes that use one of the
+// actor's media items, which keep it from being deleted.
+func (s *Service) MediaUsage(ctx context.Context, a Actor, mediaID uuid.UUID) (MediaUses, error) {
+	m, err := s.Media(ctx, a, mediaID)
+	if err != nil {
+		return MediaUses{}, err
+	}
+	return s.store.MediaUsage(ctx, a.OrgID, m.ID)
 }
 
 // DeleteMedia deletes media no post uses.
@@ -298,7 +338,7 @@ func (s *Service) DeleteMedia(ctx context.Context, a Actor, mediaID uuid.UUID) e
 		return s.audit(ctx, tx, a, "media.delete", id.Format(id.Media, m.ID), nil)
 	})
 	if errors.Is(err, store.ErrReferenced) {
-		return apperr.Conflict("media_in_use", "A post uses this media, so it is kept as long as the post is.")
+		return apperr.Conflict("media_in_use", "A post, newsletter issue or email theme uses this media, so it is kept as long as they do.")
 	}
 	if err != nil {
 		return notFound(err, "media")

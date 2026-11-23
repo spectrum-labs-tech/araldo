@@ -74,6 +74,7 @@ func (h *Handler) createMedia(w http.ResponseWriter, r *http.Request) error {
 			Brand string `json:"brand"`
 			URL   string `json:"url"`
 			Alt   string `json:"alt"`
+			Keep  bool   `json:"keep"`
 		}
 		if err := decode(r, &body); err != nil {
 			return err
@@ -85,7 +86,7 @@ func (h *Handler) createMedia(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if m, err = h.svc.ImportMedia(r.Context(), a, b.ID, body.URL, body.Alt); err != nil {
+		if m, err = h.svc.ImportMedia(r.Context(), a, b.ID, body.URL, body.Alt, body.Keep); err != nil {
 			return err
 		}
 	}
@@ -95,6 +96,7 @@ func (h *Handler) createMedia(w http.ResponseWriter, r *http.Request) error {
 
 type upload struct {
 	brand, alt, filename string
+	keep                 bool
 	// data is an image, read in memory; video is a video, streamed into
 	// storage as it arrived (ADR 0027).
 	data  []byte
@@ -108,14 +110,14 @@ func (h *Handler) finishUpload(r *http.Request, a core.Actor, up upload) (*model
 		return nil, err
 	}
 	if up.video != nil {
-		return h.svc.CreateVideo(r.Context(), a, up.video, b.ID, up.alt)
+		return h.svc.CreateVideo(r.Context(), a, up.video, b.ID, up.alt, up.keep)
 	}
-	return h.svc.CreateMedia(r.Context(), a, core.MediaInput{BrandID: b.ID, Data: up.data, Filename: up.filename, Alt: up.alt})
+	return h.svc.CreateMedia(r.Context(), a, core.MediaInput{BrandID: b.ID, Data: up.data, Filename: up.filename, Alt: up.alt, Keep: up.keep})
 }
 
 // readUpload reads an upload form part by part: the file in "file" (an
-// image in memory, a video streamed to storage), and the fields "brand"
-// and "alt", in any order. Nothing goes to temporary files (the
+// image in memory, a video streamed to storage), and the fields "brand",
+// "alt" and "keep", in any order. Nothing goes to temporary files (the
 // container's file system is read-only). On an error, a staged video is
 // discarded.
 func (h *Handler) readUpload(r *http.Request, a core.Actor) (up upload, err error) {
@@ -151,16 +153,21 @@ func (h *Handler) readUpload(r *http.Request, a core.Actor) (up upload, err erro
 				up.data, err = io.ReadAll(io.LimitReader(br, media.MaxBytes+1))
 			}
 			up.filename, gotFile = part.FileName(), true
-		case "brand", "alt":
+		case "brand", "alt", "keep":
 			var v []byte
 			v, err = io.ReadAll(io.LimitReader(part, maxFormField+1))
 			if err == nil && len(v) > maxFormField {
 				return up, badRequest("parameter_invalid", name, "%s is too long.", name)
 			}
-			if name == "brand" {
+			switch name {
+			case "brand":
 				up.brand = string(v)
-			} else {
+			case "alt":
 				up.alt = string(v)
+			default:
+				if up.keep, err = strconv.ParseBool(string(v)); err != nil {
+					return up, badRequest("parameter_invalid", "keep", "keep is true or false.")
+				}
 			}
 		default:
 			return up, badRequest("parameter_unknown", name, "Unknown parameter %q.", name)
@@ -229,15 +236,16 @@ func (h *Handler) updateMedia(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var body struct {
-		Alt *string `json:"alt"`
+		Alt  *string `json:"alt"`
+		Kept *bool   `json:"kept"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
 	}
-	if body.Alt == nil {
-		return badRequest("parameter_missing", "alt", "Send the new alt text; it is the only thing about media that can change.")
+	if body.Alt == nil && body.Kept == nil {
+		return badRequest("parameter_missing", "alt", "Send the new alt text or kept; the file itself never changes.")
 	}
-	m, err := h.svc.UpdateMediaAlt(r.Context(), actor(r), mid, *body.Alt)
+	m, err := h.svc.UpdateMedia(r.Context(), actor(r), mid, core.MediaUpdate{Alt: body.Alt, Kept: body.Kept})
 	if err != nil {
 		return err
 	}

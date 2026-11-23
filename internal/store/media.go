@@ -14,14 +14,14 @@ import (
 
 const mediaCols = `m.id, m.org_id, m.brand_id, m.livemode, m.content_type, m.size_bytes, m.width, m.height, m.sha256, m.alt, m.filename,
 	m.storage, m.storage_key, m.created_by_user, m.created_by_key, m.created_at, m.transparent, m.duration_ms, m.frame_rate, m.video_codec,
-	m.audio_codec`
+	m.audio_codec, m.kept`
 
 // scanMedia reads mediaCols, then any extra columns into extra.
 func scanMedia(r pgx.Row, extra ...any) (*model.Media, error) {
 	var m model.Media
 	dest := append([]any{&m.ID, &m.OrgID, &m.BrandID, &m.Livemode, &m.ContentType, &m.Size, &m.Width, &m.Height, &m.SHA256, &m.Alt,
 		&m.Filename, &m.Storage, &m.StorageKey, &m.CreatedByUser, &m.CreatedByKey, &m.CreatedAt, &m.Transparent, &m.DurationMS, &m.FrameRate,
-		&m.VideoCodec, &m.AudioCodec}, extra...)
+		&m.VideoCodec, &m.AudioCodec, &m.Kept}, extra...)
 	if err := r.Scan(dest...); err != nil {
 		return nil, mapErr(err)
 	}
@@ -32,10 +32,10 @@ func scanMedia(r pgx.Row, extra ...any) (*model.Media, error) {
 // Postgres (data is ignored otherwise).
 func (s *Store) CreateMedia(ctx context.Context, m *model.Media, data []byte) error {
 	_, err := s.q.Exec(ctx, `INSERT INTO media (id, org_id, brand_id, livemode, content_type, size_bytes, width, height, sha256, alt, filename,
-		storage, storage_key, created_by_user, created_by_key, transparent, duration_ms, frame_rate, video_codec, audio_codec)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+		storage, storage_key, created_by_user, created_by_key, transparent, duration_ms, frame_rate, video_codec, audio_codec, kept)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
 		m.ID, m.OrgID, m.BrandID, m.Livemode, m.ContentType, m.Size, m.Width, m.Height, m.SHA256, m.Alt, m.Filename,
-		m.Storage, m.StorageKey, m.CreatedByUser, m.CreatedByKey, m.Transparent, m.DurationMS, m.FrameRate, m.VideoCodec, m.AudioCodec)
+		m.Storage, m.StorageKey, m.CreatedByUser, m.CreatedByKey, m.Transparent, m.DurationMS, m.FrameRate, m.VideoCodec, m.AudioCodec, m.Kept)
 	if err != nil {
 		return mapErr(err)
 	}
@@ -101,6 +101,31 @@ func (s *Store) SetMediaAlt(ctx context.Context, orgID, id uuid.UUID, alt string
 	return s.execOne(ctx, `UPDATE media SET alt = $3 WHERE org_id = $1 AND id = $2`, orgID, id, alt)
 }
 
+// SetMediaKept keeps media in the library, or lets it be pruned once
+// unused.
+func (s *Store) SetMediaKept(ctx context.Context, orgID, id uuid.UUID, kept bool) error {
+	return s.execOne(ctx, `UPDATE media SET kept = $3 WHERE org_id = $1 AND id = $2`, orgID, id, kept)
+}
+
+// MediaUses counts what uses a media item: posts, newsletter issues and
+// brands' email themes.
+type MediaUses struct {
+	Posts, Issues, Logos int
+}
+
+// Total is every use.
+func (u MediaUses) Total() int { return u.Posts + u.Issues + u.Logos }
+
+// MediaUsage counts what uses media item id.
+func (s *Store) MediaUsage(ctx context.Context, orgID, id uuid.UUID) (MediaUses, error) {
+	var u MediaUses
+	err := s.q.QueryRow(ctx, `SELECT
+		(SELECT count(DISTINCT pm.post_id) FROM post_media pm JOIN media m ON m.id = pm.media_id WHERE m.org_id = $1 AND pm.media_id = $2),
+		(SELECT count(DISTINCT nm.issue_id) FROM newsletter_media nm JOIN media m ON m.id = nm.media_id WHERE m.org_id = $1 AND nm.media_id = $2),
+		(SELECT count(*) FROM brands b WHERE b.org_id = $1 AND b.email_logo_media_id = $2)`, orgID, id).Scan(&u.Posts, &u.Issues, &u.Logos)
+	return u, mapErr(err)
+}
+
 // DeleteMedia deletes a media row (and its Postgres file). It fails with
 // ErrReferenced while a post, a newsletter issue or a brand's email theme
 // uses it.
@@ -108,11 +133,11 @@ func (s *Store) DeleteMedia(ctx context.Context, orgID, id uuid.UUID) error {
 	return s.execOne(ctx, `DELETE FROM media WHERE org_id = $1 AND id = $2`, orgID, id)
 }
 
-// UnusedMedia lists media created before cutoff that no post, issue or
-// email theme uses, oldest first, in one org or (orgID nil) every org, for
-// pruning.
+// UnusedMedia lists media created before cutoff that is not kept and that
+// no post, issue or email theme uses, oldest first, in one org or (orgID
+// nil) every org, for pruning.
 func (s *Store) UnusedMedia(ctx context.Context, orgID *uuid.UUID, cutoff time.Time, limit int) ([]*model.Media, error) {
-	rows, err := s.q.Query(ctx, `SELECT `+mediaCols+` FROM media m WHERE m.created_at < $1 AND ($3::uuid IS NULL OR m.org_id = $3)
+	rows, err := s.q.Query(ctx, `SELECT `+mediaCols+` FROM media m WHERE m.created_at < $1 AND ($3::uuid IS NULL OR m.org_id = $3) AND NOT m.kept
 		AND NOT EXISTS (SELECT 1 FROM post_media pm WHERE pm.media_id = m.id)
 		AND NOT EXISTS (SELECT 1 FROM newsletter_media nm WHERE nm.media_id = m.id)
 		AND NOT EXISTS (SELECT 1 FROM brands b WHERE b.org_id = m.org_id AND b.email_logo_media_id = m.id) ORDER BY m.id LIMIT $2`, cutoff, limit, orgID)

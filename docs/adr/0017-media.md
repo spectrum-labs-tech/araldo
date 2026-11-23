@@ -1,6 +1,6 @@
 # ADR 0017: Images are uploaded once, checked against every platform's rules, and stored in Postgres unless S3 is configured
 
-- Status: accepted; built; extended by [ADR 0027](0027-video-and-resizing.md)
+- Status: accepted; built; extended by [ADR 0027](0027-video-and-resizing.md); decision 7 amended 2026-11-23 (a kept media library)
 - Date: 2026-10-02
 
 ## Context
@@ -56,6 +56,17 @@ S3 breaks "one binary and a Postgres" ([ADR 0002](0002-layout-and-storage.md)).
 7. **A media object that no post uses is deleted after 24 hours**, by an
    `opsched` task. One that a post uses cannot be deleted (409
    `media_in_use`) and is kept as long as the post is.
+
+   *Amended 2026-11-23:* media can be **kept**. Newsletters and email
+   themes use media that no post attaches (a logo, an image a template
+   links as `![alt](media_…)`), and a template's reference cannot be
+   tracked the way a post's can. Kept media is never pruned; it stays in
+   the brand's media library until someone deletes it, and like any
+   media it cannot be deleted while a post, issue or email theme uses it.
+   Uploads from the dashboard's media library and its logo upload are
+   kept; `POST /v1/media` takes `keep`, `POST /v1/media/{id}` changes
+   `kept`. Uploads made for a post are not kept, so a post abandoned
+   before it is created leaves nothing behind for long.
 
 ## Alternatives considered
 

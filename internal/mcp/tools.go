@@ -225,16 +225,21 @@ func tools(api *Client) []Tool {
 			Name: "upload_media_from_url", Title: "Add an image or video",
 			Description: "Fetches a JPEG, PNG, GIF or WebP image (up to 16 MiB), or an MP4 or QuickTime video (where the server " +
 				"stores media in S3; up to its size limit), from a public URL and stores it for posts to attach. Returns its " +
-				"media ID. preview_post checks it against each platform's limits.",
+				"media ID. preview_post checks it against each platform's limits. Media nothing uses is deleted after a day " +
+				"unless kept (keep: true), as for a logo or an image a newsletter template links.",
 			Input: object([]string{"brand", "url"}, map[string]any{
 				"brand": str(brandDesc),
 				"url":   str("The image's or video's public http(s) URL."),
 				"alt":   str("Alt text describing it, for people who cannot see it (up to 1,000 characters). Please give it."),
+				"keep":  map[string]any{"type": "boolean", "description": "Keep it in the brand's media library until deleted, used or not."},
 			}),
 			Run: func(ctx context.Context, args map[string]any) (json.RawMessage, error) {
 				body := map[string]any{"brand": argString(args, "brand"), "url": argString(args, "url")}
 				if alt := argString(args, "alt"); alt != "" {
 					body["alt"] = alt
+				}
+				if keep, ok := args["keep"].(bool); ok && keep {
+					body["keep"] = true
 				}
 				return api.Do(ctx, http.MethodPost, "/v1/media", nil, body, "")
 			},

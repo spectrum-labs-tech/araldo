@@ -528,7 +528,7 @@ func (s *Server) postFormMedia(c *reqCtx, d *newPostData, brandID uuid.UUID) err
 			continue // deleted meanwhile
 		}
 		if alt, ok := f["alt_"+ref]; ok && strings.TrimSpace(alt[0]) != m.Alt {
-			if m, err = s.svc.UpdateMediaAlt(c.ctx(), c.actor, mid, alt[0]); err != nil {
+			if m, err = s.svc.UpdateMedia(c.ctx(), c.actor, mid, core.MediaUpdate{Alt: &alt[0]}); err != nil {
 				return err
 			}
 		}
@@ -552,7 +552,7 @@ func (s *Server) postFormMedia(c *reqCtx, d *newPostData, brandID uuid.UUID) err
 		d.Media = append(d.Media, m)
 	}
 	if ref := strings.TrimSpace(f.Get("media_url")); ref != "" {
-		m, err := s.svc.ImportMedia(c.ctx(), c.actor, brandID, ref, f.Get("new_alt"))
+		m, err := s.svc.ImportMedia(c.ctx(), c.actor, brandID, ref, f.Get("new_alt"), false)
 		if err != nil {
 			d.Form["media_url"] = ref
 			return err

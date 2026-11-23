@@ -322,6 +322,8 @@ type MediaView struct {
 	Alt      string `json:"alt"`
 	Filename string `json:"filename,omitempty"`
 	SHA256   string `json:"sha256"`
+	// Kept media stays in the library until deleted (ADR 0017).
+	Kept bool `json:"kept"`
 	// Video, for a video: its length, frame rate and codecs.
 	Video     *MediaVideoView `json:"video,omitempty"`
 	CreatedAt time.Time       `json:"created_at"`
@@ -339,7 +341,7 @@ type MediaVideoView struct {
 func ViewMedia(m *model.Media) MediaView {
 	v := MediaView{ID: id.Format(id.Media, m.ID), Object: "media", Brand: id.Format(id.Brand, m.BrandID), Livemode: m.Livemode,
 		Type: m.ContentType, Size: m.Size, Width: m.Width, Height: m.Height, Alt: m.Alt, Filename: m.Filename,
-		SHA256: hex.EncodeToString(m.SHA256), CreatedAt: m.CreatedAt.UTC()}
+		SHA256: hex.EncodeToString(m.SHA256), Kept: m.Kept, CreatedAt: m.CreatedAt.UTC()}
 	if m.VideoCodec != "" {
 		v.Video = &MediaVideoView{DurationMS: m.DurationMS, FrameRate: m.FrameRate, VideoCodec: m.VideoCodec, AudioCodec: m.AudioCodec}
 	}

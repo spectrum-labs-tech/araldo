@@ -38,7 +38,7 @@ func TestNewslettersInTheDashboard(t *testing.T) {
 		}
 		return rec.Body.String()
 	}
-	if got := get("/newsletters"); !strings.Contains(got, "No mail accounts are connected.") || !strings.Contains(got, `href="/mail-accounts/new"`) ||
+	if got := get("/newsletters"); !strings.Contains(got, "No senders yet.") || !strings.Contains(got, `href="/mail-accounts/new"`) ||
 		strings.Contains(got, `<li class="done">`) || !strings.Contains(got, `<a class="btn btn-primary" href="/newsletters/new`) {
 		t.Fatalf("an empty page offers to connect an account and a new issue, nothing done:\n%s", got)
 	}
@@ -218,5 +218,88 @@ func TestOverdueApprovalWarns(t *testing.T) {
 	}
 	for _, issue := range a11yIssues(got, true) {
 		t.Errorf("%s (overdue): %s", path, issue)
+	}
+}
+
+// A second sender takes the connection the first one made, chosen on the
+// form; the connection's page lists both, renames it, replaces its key,
+// and refuses deletion until its senders are gone.
+func TestMailConnectionsInTheDashboard(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	post := func(path string, form url.Values) *httptest.ResponseRecorder {
+		t.Helper()
+		form.Set("csrf", d.login.Session.CSRFToken)
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return d.send(r)
+	}
+	get := func(path string) string {
+		t.Helper()
+		rec := d.send(httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: %d", path, rec.Code)
+		}
+		return rec.Body.String()
+	}
+	brand := id.Format(id.Brand, d.brand.ID)
+
+	// With no connection, the sender form connects a provider account too.
+	if got := get("/mail-accounts/new"); !strings.Contains(got, `name="connection" value="new"`) || strings.Contains(got, `<select name="connection"`) {
+		t.Fatalf("the first sender's form:\n%s", got)
+	}
+	if rec := post("/mail-accounts", url.Values{"connection": {"new"}, "provider": {"sandbox"}, "brand": {brand}, "from_name": {"News"},
+		"from_email": {"news@dash.example"}}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("the first sender: %d\n%s", rec.Code, rec.Body)
+	}
+	conns, err := d.s.MailConnections(t.Context(), d.owner)
+	if err != nil || len(conns) != 1 {
+		t.Fatalf("connections: %v, %v", conns, err)
+	}
+	conn := id.Format(id.MailConnection, conns[0].ID)
+
+	// Then it offers that connection, and the key is not asked for.
+	got := get("/mail-accounts/new?connection=" + conn)
+	if !strings.Contains(got, `<select name="connection"`) || !strings.Contains(got, `value="`+conn+`" selected`) || strings.Contains(got, `name="provider"`) {
+		t.Fatalf("the second sender's form:\n%s", got)
+	}
+	if rec := post("/mail-accounts", url.Values{"connection": {conn}, "brand": {brand}, "from_name": {"Updates"},
+		"from_email": {"updates@dash.example"}}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("the second sender: %d\n%s", rec.Code, rec.Body)
+	}
+	if got := get("/newsletters"); !strings.Contains(got, `href="/mail-connections/`+conn+`"`) || !strings.Contains(got, `href="/mail-connections/new"`) {
+		t.Fatalf("the newsletters page lists the connection:\n%s", got)
+	}
+
+	connPath := "/mail-connections/" + conn
+	got = get(connPath)
+	if !strings.Contains(got, "news@dash.example") || !strings.Contains(got, "updates@dash.example") || !strings.Contains(got, "Remove its senders first") {
+		t.Fatalf("the connection's page:\n%s", got)
+	}
+	if rec := post(connPath, url.Values{"action": {"rename"}, "name": {"Dash sandbox"}}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("rename: %d\n%s", rec.Code, rec.Body)
+	}
+	if rec := post(connPath, url.Values{"action": {"rename"}, "name": {""}}); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("an empty name: %d", rec.Code)
+	}
+	if rec := post(connPath, url.Values{"action": {"replace"}, "field_simulate": {""}}); rec.Code != http.StatusSeeOther ||
+		!strings.Contains(noticeOf(rec), "Every sender") {
+		t.Fatalf("replace the key: %d %q\n%s", rec.Code, noticeOf(rec), rec.Body)
+	}
+	if rec := post(connPath+"/delete", url.Values{}); rec.Code == http.StatusSeeOther {
+		t.Fatal("deleted a connection in use")
+	}
+	if got := get(connPath); !strings.Contains(got, "<h1>Dash sandbox</h1>") {
+		t.Fatalf("after renaming:\n%s", got)
+	}
+
+	// A connection made on its own leads to adding a sender through it.
+	rec := post("/mail-connections", url.Values{"provider": {"sandbox"}, "name": {"Spare"}})
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/mail-accounts/new?connection=mailconn_") {
+		t.Fatalf("create: %d %q\n%s", rec.Code, loc, rec.Body)
+	}
+	spare := strings.TrimPrefix(rec.Header().Get("Location"), "/mail-accounts/new?connection=")
+	if rec := post("/mail-connections/"+spare+"/delete", url.Values{}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("delete an unused connection: %d\n%s", rec.Code, rec.Body)
 	}
 }

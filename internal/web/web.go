@@ -720,6 +720,7 @@ var funcs = template.FuncMap{
 	"adAccountID":       func(u uuid.UUID) string { return id.Format(id.AdAccount, u) },
 	"analyticsSourceID": func(u uuid.UUID) string { return id.Format(id.AnalyticsSource, u) },
 	"mailAccountID":     func(u uuid.UUID) string { return id.Format(id.MailAccount, u) },
+	"mailConnID":        func(u uuid.UUID) string { return id.Format(id.MailConnection, u) },
 	"issueID":           func(u uuid.UUID) string { return id.Format(id.Issue, u) },
 	"appID":             func(u uuid.UUID) string { return id.Format(id.ProviderApp, u) },
 	"notificationID":    func(u uuid.UUID) string { return id.Format(id.Notification, u) },

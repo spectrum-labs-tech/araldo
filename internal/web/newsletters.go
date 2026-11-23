@@ -30,6 +30,15 @@ type newslettersData struct {
 	Issues    []*model.Issue
 	More      bool
 	Accounts  []*model.MailAccount
+	// Connections are the org's mail connections, which senders use, and
+	// ConnectionName their names by ID.
+	Connections    []*model.MailConnection
+	ConnectionName map[string]string
+	// NewConnection: the sender form connects a provider account too,
+	// rather than choosing one of Connections; Connection is the one
+	// chosen.
+	NewConnection bool
+	Connection    string
 	// CanWrite shows "New issue"; CanConnect the account forms.
 	CanWrite   bool
 	CanConnect bool
@@ -89,6 +98,17 @@ func (s *Server) newslettersData(c *reqCtx) (*newslettersData, error) {
 	for _, a := range d.Accounts {
 		d.HasDefaults = d.HasDefaults || len(a.DefaultAudiences) > 0
 	}
+	if d.Connections, err = s.svc.MailConnections(c.ctx(), c.actor); err != nil {
+		return nil, err
+	}
+	d.ConnectionName = map[string]string{}
+	for _, mc := range d.Connections {
+		d.ConnectionName[id.Format(id.MailConnection, mc.ID)] = mc.Name
+	}
+	d.NewConnection = len(d.Connections) == 0 || q.Get("connection") == "new"
+	if !d.NewConnection {
+		d.Connection = q.Get("connection")
+	}
 	return d, nil
 }
 
@@ -105,14 +125,19 @@ func (s *Server) newMailAccount(c *reqCtx) error {
 	return s.page(c, "mail_account_new", "newsletters", "Connect a mail account", d)
 }
 
+// connectMailAccount adds a sender, through the connection chosen or
+// through a new one made from the provider fields.
 func (s *Server) connectMailAccount(c *reqCtx) error {
 	f := c.r.PostForm
-	in := core.MailAccountInput{Provider: email.Provider(f.Get("provider")), FromName: f.Get("from_name"), FromEmail: f.Get("from_email"),
-		ReplyTo: f.Get("reply_to")}
+	in := core.MailAccountInput{FromName: f.Get("from_name"), FromEmail: f.Get("from_email"), ReplyTo: f.Get("reply_to")}
 	var values map[string]string
-	for _, p := range s.svc.MailProviders(c.actor.Livemode) {
-		if p.Provider == in.Provider {
-			in.Fields, values = providerFields(f, p.Fields)
+	conn := f.Get("connection")
+	if conn == "" || conn == "new" {
+		in.Provider = email.Provider(f.Get("provider"))
+		for _, p := range s.svc.MailProviders(c.actor.Livemode) {
+			if p.Provider == in.Provider {
+				in.Fields, values = providerFields(f, p.Fields)
+			}
 		}
 	}
 	// The page's data is loaded only to show the form again.
@@ -123,6 +148,7 @@ func (s *Server) connectMailAccount(c *reqCtx) error {
 		}
 		maps.Copy(d.Values, values)
 		d.Values["from_name"], d.Values["from_email"], d.Values["reply_to"] = in.FromName, in.FromEmail, in.ReplyTo
+		d.NewConnection, d.Connection = len(d.Connections) == 0 || conn == "" || conn == "new", conn
 		for i := range d.Providers {
 			if d.Providers[i].Provider == in.Provider {
 				d.Provider = &d.Providers[i]
@@ -135,17 +161,26 @@ func (s *Server) connectMailAccount(c *reqCtx) error {
 		return fail(chooseBrand(err))
 	}
 	in.BrandID = b.ID
+	if conn != "" && conn != "new" {
+		cid, err := id.Parse(id.MailConnection, conn)
+		if err != nil {
+			return fail(apperr.Invalid("connection_unknown", "connection", "Choose a mail connection."))
+		}
+		in.ConnectionID = &cid
+	}
 	ma, err := s.svc.ConnectMailAccount(c.ctx(), c.actor, in)
 	if err != nil {
 		return fail(err)
 	}
-	return redirect(c, "/mail-accounts/"+id.Format(id.MailAccount, ma.ID), "Connected "+ma.Name+". Now choose the audiences new issues go to.")
+	return redirect(c, "/mail-accounts/"+id.Format(id.MailAccount, ma.ID), "Added "+ma.FromEmail+". Choose default audiences if issues should go to some unless they name their own.")
 }
 
 type mailAccountData struct {
-	Account   *model.MailAccount
-	BrandName string
-	Audiences []email.Audience
+	Account *model.MailAccount
+	// Connection is the one it sends through.
+	Connection *model.MailConnection
+	BrandName  string
+	Audiences  []email.Audience
 	// AudienceErr says why the provider's audiences could not be read.
 	AudienceErr string
 	CanWrite    bool
@@ -166,6 +201,9 @@ func (s *Server) mailAccountData(c *reqCtx) (*mailAccountData, error) {
 	if b, err := s.svc.Brand(c.ctx(), c.actor, ma.BrandID); err == nil {
 		d.BrandName = b.Name
 	}
+	if ma.ConnectionID != nil {
+		d.Connection, _ = s.svc.MailConnection(c.ctx(), c.actor, *ma.ConnectionID)
+	}
 	if d.Audiences, err = s.svc.MailAudiences(c.ctx(), c.actor, aid); err != nil {
 		d.AudienceErr = apperr.As(err).Message
 	}
@@ -177,7 +215,7 @@ func (s *Server) mailAccountPage(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	return s.page(c, "newsletter_account", "newsletters", d.Account.Name, d)
+	return s.page(c, "newsletter_account", "newsletters", d.Account.FromEmail, d)
 }
 
 func (s *Server) saveMailAccount(c *reqCtx) error {
@@ -189,9 +227,9 @@ func (s *Server) saveMailAccount(c *reqCtx) error {
 	d.Form = core.MailAccountUpdate{FromName: f.Get("from_name"), FromEmail: f.Get("from_email"), ReplyTo: f.Get("reply_to"),
 		DefaultAudiences: f["audience"]}
 	if _, err := s.svc.UpdateMailAccount(c.ctx(), c.actor, d.Account.ID, d.Form); err != nil {
-		return s.formErr(c, "newsletter_account", "newsletters", d.Account.Name, d, err)
+		return s.formErr(c, "newsletter_account", "newsletters", d.Account.FromEmail, d, err)
 	}
-	return redirect(c, "/newsletters", "Saved "+d.Account.Name+".")
+	return redirect(c, "/newsletters", "Saved "+d.Account.FromEmail+".")
 }
 
 func (s *Server) deleteMailAccount(c *reqCtx) error {
@@ -202,7 +240,7 @@ func (s *Server) deleteMailAccount(c *reqCtx) error {
 	if err := s.svc.DeleteMailAccount(c.ctx(), c.actor, aid); err != nil {
 		return err
 	}
-	return redirect(c, "/newsletters", "Disconnected.")
+	return redirect(c, "/newsletters", "Removed the sender.")
 }
 
 // issueData is the editor: an issue (nil for a new one), the form, and

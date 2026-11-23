@@ -1,0 +1,21 @@
+{{define "content"}}
+{{$d := .Data}}
+<p class="crumbs"><a href="/newsletters">Newsletters</a></p>
+<h1>Connect a provider account</h1>
+{{if not $d.Provider}}
+<p class="text-muted">This install sends through no email providers in live mode yet.</p>
+{{else}}
+{{if gt (len $d.Providers) 1}}<nav class="choices" aria-label="Provider">{{range $d.Providers}}<a class="chip" href="/mail-connections/new?provider={{.Provider}}" {{if eq .Provider $d.Provider.Provider}}aria-current="true"{{end}}>{{.Name}}</a>{{end}}</nav>{{end}}
+<form method="post" action="/mail-connections" class="form-stack">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <input type="hidden" name="provider" value="{{$d.Provider.Provider}}">
+  <label><span>Name <span class="hint">(optional)</span></span> <input name="name" value="{{index $d.Values "name"}}" maxlength="100" placeholder="{{$d.Provider.Name}}">
+    <span class="hint">How senders' forms list it, such as the account's owner.</span></label>
+  {{range $d.Provider.Fields}}{{template "providerField" (fieldInput . $d.Values)}}{{end}}
+  <p class="text-sm text-muted">Araldo checks the key by reading the account's audiences, and stores it encrypted. Every sender you add through this connection shares it.</p>
+  <div class="controls"><button class="btn-primary">Connect</button> <a class="btn" href="/newsletters">Cancel</a></div>
+</form>
+{{end}}
+{{end}}
+
+{{define "guide"}}{{template "newslettersGuide" .}}{{end}}

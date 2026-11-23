@@ -57,6 +57,14 @@ func (s *Server) openNotification(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
+	// An org's notification is about its live data (core.notifyOrg sends
+	// none in test mode), so its link opens in that org, live. A person
+	// no longer in the org just follows the link.
+	if n.OrgID != nil && (c.member == nil || c.member.OrgID != *n.OrgID || !c.session.Livemode) {
+		if err := s.svc.SwitchContext(c.ctx(), c.session, *n.OrgID, true); err != nil && apperr.As(err).Kind != apperr.KindNotFound {
+			return err
+		}
+	}
 	to := "/notifications"
 	if n.Link != "" {
 		to = safeNext(n.Link)

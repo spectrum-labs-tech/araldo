@@ -8,12 +8,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
+	"github.com/spectrum-labs-tech/araldo/internal/model"
 )
 
 // TestNotificationsInTheDashboard checks the inbox: the header's count,
@@ -72,5 +76,45 @@ func TestNotificationsInTheDashboard(t *testing.T) {
 		if c.InApp != wantInApp || c.Email != wantEmail {
 			t.Errorf("%s: in app %v email %v", c.Key, c.InApp, c.Email)
 		}
+	}
+}
+
+// An org's notification is about its live data, so opening it from a
+// session in test mode switches the session to that org, live, before
+// following the link; otherwise the page it links to is not found.
+func TestNotificationOpensLive(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	const banner = "Test mode · posts go to sandbox channels only"
+	if page := d.send(httptest.NewRequest(http.MethodGet, "/", nil)).Body.String(); !strings.Contains(page, banner) {
+		t.Fatal("the dashboard starts in test mode")
+	}
+
+	// Someone joins: owners get a notification about the org.
+	email := "joiner-" + uuid.NewString()[:8] + "@example.com"
+	link, _, err := d.s.InviteMember(ctx, d.owner, d.login.Session, email, model.RoleEditor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := d.s.CreateUser(ctx, email, "Joiner", "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.s.AcceptInvitation(ctx, path.Base(link), u, "req_test"); err != nil {
+		t.Fatal(err)
+	}
+	page := d.send(httptest.NewRequest(http.MethodGet, "/notifications", nil)).Body.String()
+	m := regexp.MustCompile(`href="/notifications/(ntf_[0-9a-z]+)"[^>]*>(?:<span class="sr-only">Unread: </span>)?` + regexp.QuoteMeta(email) + ` joined`).FindStringSubmatch(page)
+	if m == nil {
+		t.Fatalf("no joined notification in the inbox:\n%s", page)
+	}
+
+	rec := d.send(httptest.NewRequest(http.MethodGet, "/notifications/"+m[1], nil))
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/org/members/"+id.Format(id.User, u.ID) {
+		t.Fatalf("opening it: %d to %q", rec.Code, rec.Header().Get("Location"))
+	}
+	if page := d.send(httptest.NewRequest(http.MethodGet, "/", nil)).Body.String(); strings.Contains(page, banner) {
+		t.Fatal("still in test mode after opening an org's notification")
 	}
 }

@@ -1,7 +1,10 @@
 {{define "content"}}
 {{$f := .Data}}
-<p class="crumbs"><a href="/brands">Brands</a>{{if $f.Brand}} / <code>{{brandID $f.Brand.ID}}</code>{{end}}</p>
-<h1>{{if $f.Brand}}{{$f.Brand.Name}}{{else}}New brand{{end}}</h1>
+{{if $f.Brand}}<p class="crumbs"><a href="/brands">Brands</a> / <a href="/brands/{{brandID $f.Brand.ID}}">{{$f.Brand.Name}}</a></p>
+{{template "brandTabs" $.BrandNav}}
+<h1>Settings</h1>
+{{else}}<p class="crumbs"><a href="/brands">Brands</a></p>
+<h1>New brand</h1>{{end}}
 <form method="post" action="{{if $f.Brand}}/brands/{{brandID $f.Brand.ID}}{{else}}/brands{{end}}" class="form-stack">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label>Name <input name="name" value="{{$f.Name}}" required maxlength="100" placeholder="Open B00KS"></label>
@@ -23,26 +26,6 @@
     <textarea name="slots" rows="8" class="font-mono">{{$f.Slots}}</textarea></label>
   <p class="text-sm text-muted"><code>"publish_at": "next_slot"</code> takes the earliest free slot.</p>
   {{end}}
-  <div><button class="btn-primary">{{if $f.Brand}}Save{{else}}Create brand{{end}}</button></div>
+  <div class="controls"><button class="btn-primary">{{if $f.Brand}}Save{{else}}Create brand{{end}}</button> <a class="btn" href="{{if $f.Brand}}/brands/{{brandID $f.Brand.ID}}{{else}}/brands{{end}}">Cancel</a></div>
 </form>
-{{if $f.Brand}}
-<section class="card max-w-xl">
-  <h2>Email theme</h2>
-  <p class="text-sm text-muted">How this brand's newsletters look. Every issue carries the postal address, which anti-spam laws require; an issue cannot be scheduled without it.</p>
-  <form method="post" action="/brands/{{brandID $f.Brand.ID}}/email_theme" enctype="multipart/form-data" class="flex flex-col gap-4">
-    <input type="hidden" name="csrf" value="{{$.CSRF}}">
-    <label>Logo
-      <select name="logo"><option value="">None: the brand's name</option>{{range $f.Theme.Images}}{{if not .VideoCodec}}<option value="{{mediaID .ID}}" {{if eq $f.Theme.Logo (mediaID .ID)}}selected{{end}}>{{if .Filename}}{{.Filename}}{{else}}{{mediaID .ID}}{{end}}{{if .Alt}}: {{.Alt}}{{end}}</option>{{end}}{{end}}</select>
-      <span class="hint">From the brand's <a href="/media?brand={{brandID $f.Brand.ID}}">media library</a>; shown 40 pixels tall.</span></label>
-    <label><span>Or upload a new logo <span class="hint">(optional)</span></span>
-      <input type="file" name="logo_file" accept="image/jpeg,image/png,image/gif,image/webp">
-      <span class="hint">A PNG with a transparent background works on light and dark mail; it is kept in the media library and chosen as the logo.</span></label>
-    <label>Accent color <input type="color" name="accent" value="{{$f.Theme.Accent}}">
-      <span class="hint">Links and buttons; dark enough to read on white.</span></label>
-    <label>Postal address <textarea name="postal_address" rows="3" maxlength="300" placeholder="1 Main St&#10;Denver, CO 80202">{{$f.Theme.PostalAddress}}</textarea></label>
-    <label><span>Footer line <span class="hint">(optional)</span></span> <input name="footer" value="{{$f.Theme.Footer}}" maxlength="300" placeholder="You signed up at example.com."></label>
-    <div><button class="btn-primary">Save theme</button></div>
-  </form>
-</section>
-{{end}}
 {{end}}

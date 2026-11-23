@@ -253,6 +253,9 @@ type view struct {
 	MailEnabled bool
 	// Unread counts the person's unread notifications.
 	Unread int
+	// BrandNav lists a brand's pages under Brands in the sidebar, while
+	// one of them is shown.
+	BrandNav *brandNav
 	// Back is where the org and mode switch returns to: the page shown, if
 	// it was asked for with GET (a form's POST address may have no page).
 	// The path only: a query can carry what must not be echoed (a device
@@ -773,7 +776,8 @@ var funcs = template.FuncMap{
 		}
 		return t.In(loc).Format("Jan 2, 2006 15:04 MST") + " (" + t.UTC().Format("15:04 UTC") + ")"
 	},
-	"costPer": core.CostPer,
+	"costPer":    core.CostPer,
+	"brandPages": func() any { return brandPages },
 	"rowID": func(group string, u *uuid.UUID) string {
 		return core.EngagementRowID(core.EngagementGroup(group), u)
 	},

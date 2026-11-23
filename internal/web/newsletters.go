@@ -49,6 +49,10 @@ type newslettersData struct {
 	HasDefaults bool
 	HasAddress  bool
 	HasSent     bool
+	// ThemePath is the email theme page the guide points to: the first
+	// shown brand without a postal address, else the first shown brand.
+	ThemePath         string
+	themeNeedsAddress bool
 }
 
 func (s *Server) newslettersPage(c *reqCtx) error {
@@ -77,6 +81,9 @@ func (s *Server) newslettersData(c *reqCtx) (*newslettersData, error) {
 		d.BrandName[id.Format(id.Brand, b.ID)] = b.Name
 		if d.Brand == "" || d.Brand == id.Format(id.Brand, b.ID) || d.Brand == b.Slug {
 			d.HasAddress = d.HasAddress || b.EmailTheme.PostalAddress != ""
+			if path := "/brands/" + id.Format(id.Brand, b.ID) + "/email-theme"; d.ThemePath == "" || b.EmailTheme.PostalAddress == "" && !d.themeNeedsAddress {
+				d.ThemePath, d.themeNeedsAddress = path, b.EmailTheme.PostalAddress == ""
+			}
 		}
 	}
 	if d.Brand != "" {
@@ -636,25 +643,20 @@ type themeForm struct {
 }
 
 func (s *Server) saveEmailTheme(c *reqCtx) error {
-	bid, err := pathUUID(c, id.Brand, "brand")
+	b, err := s.pathBrand(c)
 	if err != nil {
 		return err
 	}
 	f := c.r.PostForm
-	in := core.EmailThemeInput{Accent: f.Get("accent"), PostalAddress: f.Get("postal_address"), Footer: f.Get("footer")}
 	logo := f.Get("logo")
 	fail := func(err error) error {
-		b, berr := s.svc.Brand(c.ctx(), c.actor, bid)
-		if berr != nil {
-			return berr
-		}
 		bf, ferr := s.brandForm(c, b)
 		if ferr != nil {
 			return ferr
 		}
-		bf.Theme = themeForm{Logo: logo, Accent: f.Get("accent"), PostalAddress: in.PostalAddress, Footer: in.Footer,
+		bf.Theme = themeForm{Logo: logo, Accent: f.Get("accent"), PostalAddress: f.Get("postal_address"), Footer: f.Get("footer"),
 			Images: bf.Theme.Images}
-		return s.formErr(c, "brand_edit", "brands", b.Name, bf, err)
+		return s.renderBrand(c, "brand_theme", b.Name+": email theme", bf, b, "theme", err)
 	}
 	// A new logo uploaded here goes to the media library, kept, and is
 	// chosen; shown again with a problem, the form has it chosen already.
@@ -663,28 +665,19 @@ func (s *Server) saveEmailTheme(c *reqCtx) error {
 		if err != nil {
 			return fail(err)
 		}
-		alt := "Logo"
-		if b, err := s.svc.Brand(c.ctx(), c.actor, bid); err == nil {
-			alt = b.Name
-		}
-		m, err := s.svc.CreateMedia(c.ctx(), c.actor, core.MediaInput{BrandID: bid, Data: data, Filename: fh.Filename, Alt: alt, Keep: true})
+		m, err := s.svc.CreateMedia(c.ctx(), c.actor, core.MediaInput{BrandID: b.ID, Data: data, Filename: fh.Filename, Alt: b.Name, Keep: true})
 		if err != nil {
 			return fail(err)
 		}
 		logo = id.Format(id.Media, m.ID)
+		f.Set("logo", logo)
 	}
-	if logo != "" {
-		mid, err := id.Parse(id.Media, logo)
-		if err != nil {
-			return apperr.Invalid("logo_unknown", "logo", "Choose one of the brand's images.")
-		}
-		in.LogoMediaID = &mid
-	}
-	if in.Accent == newsletter.DefaultAccent {
-		in.Accent = ""
-	}
-	if _, err := s.svc.SetEmailTheme(c.ctx(), c.actor, bid, in); err != nil {
+	in, err := themeInput(c)
+	if err != nil {
 		return fail(err)
 	}
-	return redirect(c, "/brands/"+c.r.PathValue("id"), "Saved the email theme.")
+	if _, err := s.svc.SetEmailTheme(c.ctx(), c.actor, b.ID, in); err != nil {
+		return fail(err)
+	}
+	return redirect(c, "/brands/"+c.r.PathValue("id")+"/email-theme", "Saved the email theme.")
 }

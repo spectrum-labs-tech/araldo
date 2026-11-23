@@ -106,8 +106,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /brands", s.app("brands", s.brands))
 	s.mux.HandleFunc("GET /brands/new", s.app("brands", s.newBrand))
 	s.mux.HandleFunc("POST /brands", s.app("brands", s.createBrand))
-	s.mux.HandleFunc("GET /brands/{id}", s.app("brands", s.brandDetail))
+	s.mux.HandleFunc("GET /brands/{id}", s.app("brands", s.brandOverview))
+	s.mux.HandleFunc("GET /brands/{id}/settings", s.app("brands", s.brandSettings))
 	s.mux.HandleFunc("POST /brands/{id}", s.app("brands", s.saveBrand))
+	s.mux.HandleFunc("GET /brands/{id}/email-theme", s.app("brands", s.brandTheme))
+	s.mux.HandleFunc("GET /brands/{id}/email-theme/preview", s.app("brands", s.savedThemePreview))
+	s.mux.HandleFunc("POST /brands/{id}/email-theme/preview", s.app("brands", s.themePreview))
 
 	s.mux.HandleFunc("GET /cli", s.app("keys", s.cliPage))
 	s.mux.HandleFunc("POST /cli", s.app("keys", s.cliCreateKey))
@@ -1611,22 +1615,6 @@ func (s *Server) createBrand(c *reqCtx) error {
 	return redirect(c, "/channels/new?brand="+id.Format(id.Brand, b.ID), "Brand created. Connect a channel to it.")
 }
 
-func (s *Server) brandDetail(c *reqCtx) error {
-	bid, err := pathUUID(c, id.Brand, "brand")
-	if err != nil {
-		return err
-	}
-	b, err := s.svc.Brand(c.ctx(), c.actor, bid)
-	if err != nil {
-		return err
-	}
-	f, err := s.brandForm(c, b)
-	if err != nil {
-		return err
-	}
-	return s.page(c, "brand_edit", "brands", b.Name, f)
-}
-
 // brandForm is a brand's edit forms, filled from the brand.
 func (s *Server) brandForm(c *reqCtx, b *model.Brand) (brandForm, error) {
 	slots, err := s.svc.Slots(c.ctx(), c.actor, b.ID)
@@ -1663,14 +1651,14 @@ func (s *Server) saveBrand(c *reqCtx) error {
 		Policy: c.r.PostFormValue("approval_policy"), Slots: c.r.PostFormValue("slots"), UTMDomains: c.r.PostFormValue("utm_domains"), Zones: zoneGroups}
 	slots, err := parseSlots(f.Slots)
 	if err != nil {
-		return s.formErr(c, "brand_edit", "brands", b.Name, f, err)
+		return s.renderBrand(c, "brand_edit", b.Name+": settings", f, b, "settings", err)
 	}
 	// One save: the settings and the slots change together or not at all.
 	if _, err := s.svc.UpdateBrand(c.ctx(), c.actor, bid, core.BrandInput{Name: f.Name, Slug: f.Slug, Timezone: f.Timezone, ApprovalPolicy: model.ApprovalPolicy(f.Policy),
 		UTMDomains: splitDomains(f.UTMDomains), Slots: &slots}); err != nil {
-		return s.formErr(c, "brand_edit", "brands", b.Name, f, err)
+		return s.renderBrand(c, "brand_edit", b.Name+": settings", f, b, "settings", err)
 	}
-	return redirect(c, "/brands/"+c.r.PathValue("id"), "Saved.")
+	return redirect(c, "/brands/"+c.r.PathValue("id")+"/settings", "Saved.")
 }
 
 // splitDomains reads the brand form's domain list: separated by spaces,

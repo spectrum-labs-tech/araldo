@@ -140,7 +140,7 @@ func TestEmailThemeLogoUpload(t *testing.T) {
 	d := newDash(t)
 	ctx := t.Context()
 	brandPath := "/brands/" + id.Format(id.Brand, d.brand.ID)
-	page := d.send(httptest.NewRequest(http.MethodGet, brandPath, nil)).Body.String()
+	page := d.send(httptest.NewRequest(http.MethodGet, brandPath+"/email-theme", nil)).Body.String()
 	if !strings.Contains(page, `name="logo_file"`) || !strings.Contains(page, `action="`+brandPath+`/email_theme" enctype="multipart/form-data"`) {
 		t.Fatalf("the theme form takes no upload:\n%s", page)
 	}

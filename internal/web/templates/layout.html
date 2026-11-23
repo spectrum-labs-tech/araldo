@@ -49,7 +49,11 @@
     <a href="/templates" {{if eq .Nav "templates"}}class="active" aria-current="page"{{end}}>Templates</a>
     <a href="/media" {{if eq .Nav "media"}}class="active" aria-current="page"{{end}}>Media</a>
     <a href="/channels" {{if eq .Nav "channels"}}class="active" aria-current="page"{{end}}>Channels</a>
-    <a href="/brands" {{if eq .Nav "brands"}}class="active" aria-current="page"{{end}}>Brands</a>
+    <a href="/brands" {{if .BrandNav}}aria-current="true"{{else if eq .Nav "brands"}}class="active" aria-current="page"{{end}}>Brands</a>
+    {{with .BrandNav}}<div class="side-sub" role="group" aria-label="{{.Name}}">
+      <span class="side-sub-head" aria-hidden="true">{{.Name}}</span>
+      {{range brandPages}}<a href="/brands/{{$.BrandNav.ID}}{{.Suffix}}" {{if eq .Key $.BrandNav.Current}}class="active" aria-current="page"{{end}}>{{.Label}}</a>{{end}}
+    </div>{{end}}
     <div class="side-head">Developers</div>
     <a href="/keys" {{if eq .Nav "keys"}}class="active" aria-current="page"{{end}}>API keys</a>
     <a href="/webhooks" {{if eq .Nav "webhooks"}}class="active" aria-current="page"{{end}}>Webhooks</a>

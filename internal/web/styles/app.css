@@ -235,6 +235,18 @@
   .side-nav a.active {
     @apply bg-accent-soft font-semibold text-accent;
   }
+  /* A brand's pages, under Brands while one is shown. On a phone the
+     sidebar is one scrolling row, so the page shows them instead
+     (brandTabs). */
+  .side-sub {
+    @apply ml-3 hidden flex-col gap-0.5 border-l border-line pl-2 md:flex;
+  }
+  .side-sub-head {
+    @apply truncate px-2.5 pt-1 text-xs font-semibold text-muted;
+  }
+  .side-nav a[aria-current="true"] {
+    @apply font-semibold;
+  }
   .side-head {
     @apply mx-2.5 mt-4 mb-1 hidden text-xs tracking-wider text-muted uppercase md:block;
   }
@@ -362,6 +374,10 @@
     @apply text-bad;
   }
   /* Newsletter previews: the email in a frame of its own. */
+  /* The email theme's form, and its preview beside it on wide screens. */
+  .theme-grid {
+    @apply grid items-start gap-6 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)];
+  }
   .preview-frame {
     @apply block h-[36rem] w-full rounded-md border border-line bg-panel;
   }
@@ -457,6 +473,7 @@
     @apply rounded-full bg-subtle px-1.5 text-xs font-normal text-muted;
   }
   .chip[aria-current="true"],
+  .chip[aria-current="page"],
   .chip[aria-pressed="true"] {
     @apply border-accent bg-accent-soft text-accent;
   }

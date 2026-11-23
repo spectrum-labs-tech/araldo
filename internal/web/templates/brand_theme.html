@@ -1,0 +1,30 @@
+{{define "content"}}
+{{$f := .Data}}
+<p class="crumbs"><a href="/brands">Brands</a> / <a href="/brands/{{brandID $f.Brand.ID}}">{{$f.Brand.Name}}</a></p>
+{{template "brandTabs" $.BrandNav}}
+<h1>Email theme</h1>
+<p class="mb-4 max-w-3xl text-muted">How {{$f.Brand.Name}}'s newsletters look. Every issue carries the postal address, which anti-spam laws require; an issue cannot be scheduled without it.</p>
+<div class="theme-grid">
+<form method="post" action="/brands/{{brandID $f.Brand.ID}}/email_theme" enctype="multipart/form-data" class="flex min-w-0 flex-col gap-4">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <label>Logo
+    <select name="logo"><option value="">None: the brand's name</option>{{range $f.Theme.Images}}{{if not .VideoCodec}}<option value="{{mediaID .ID}}" {{if eq $f.Theme.Logo (mediaID .ID)}}selected{{end}}>{{if .Filename}}{{.Filename}}{{else}}{{mediaID .ID}}{{end}}{{if .Alt}}: {{.Alt}}{{end}}</option>{{end}}{{end}}</select>
+    <span class="hint">From the brand's <a href="/media?brand={{brandID $f.Brand.ID}}">media library</a>; shown 40 pixels tall.</span></label>
+  <label><span>Or upload a new logo <span class="hint">(optional)</span></span>
+    <input type="file" name="logo_file" accept="image/jpeg,image/png,image/gif,image/webp" data-no-live-preview>
+    <span class="hint">A PNG with a transparent background works on light and dark mail. It is kept in the media library and chosen as the logo when you save; the preview shows it after that.</span></label>
+  <label>Accent color <input type="color" name="accent" value="{{$f.Theme.Accent}}">
+    <span class="hint">Links, buttons and quotes; dark enough to read on white.</span></label>
+  <label>Postal address <textarea name="postal_address" rows="3" maxlength="300" placeholder="1 Main St&#10;Denver, CO 80202">{{$f.Theme.PostalAddress}}</textarea></label>
+  <label><span>Footer line <span class="hint">(optional)</span></span> <input name="footer" value="{{$f.Theme.Footer}}" maxlength="300" placeholder="You signed up at example.com."></label>
+  <div class="controls"><button class="btn-primary">Save theme</button>
+    <button formaction="/brands/{{brandID $f.Brand.ID}}/email-theme/preview" formtarget="theme-preview" formnovalidate data-live-preview>Preview</button>
+    <a class="btn" href="/brands/{{brandID $f.Brand.ID}}">Cancel</a></div>
+</form>
+<section class="min-w-0 rounded-lg border border-line bg-panel p-4 lg:sticky lg:top-4" aria-labelledby="preview-heading">
+  <h2 id="preview-heading" class="mb-1">Preview</h2>
+  <p class="mb-3 text-sm text-muted">A sample issue with every kind of block, in this theme. It follows the form (or press “Preview”); nothing is saved until you save the theme.</p>
+  <iframe name="theme-preview" src="/brands/{{brandID $f.Brand.ID}}/email-theme/preview" title="Preview of a sample issue in this theme" class="preview-frame"></iframe>
+</section>
+</div>
+{{end}}

@@ -830,7 +830,9 @@ stores no subscriber address.
    connection and its key. Then choose the sender's default audiences, if
    issues should go to some without naming their own (an app that names
    its audience on every issue leaves them empty).
-3. **Set the brand's email theme** on its page or with
+3. **Set the brand's email theme** on its Email theme page (Brands →
+   the brand → Email theme, which previews a sample issue in the theme as
+   you change it) or with
    `POST /v1/brands/{id}/email_theme`: logo, accent color and the postal
    address anti-spam laws require. An issue cannot be scheduled without
    the address.

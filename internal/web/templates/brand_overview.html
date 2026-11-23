@@ -1,0 +1,43 @@
+{{define "content"}}
+{{$d := .Data}}{{$b := $d.Brand}}{{$bid := brandID $b.ID}}
+<p class="crumbs"><a href="/brands">Brands</a> / <code>{{$bid}}</code></p>
+{{template "brandTabs" $.BrandNav}}
+<h1>{{$b.Name}}</h1>
+<p class="text-muted"><code>{{$b.Slug}}</code> · {{$b.Timezone}} · {{if eq $b.ApprovalPolicy "none"}}posts go out as scheduled{{else if eq $b.ApprovalPolicy "required_for_all"}}every post needs approval{{else}}posts by editors and API keys need approval{{end}} · <a href="/brands/{{$bid}}/settings">Settings</a></p>
+
+<div class="stats">
+  <a class="stat flex flex-col no-underline" href="/channels"><span class="stat-label">Channels</span><span class="stat-value">{{len $d.Channels}}</span></a>
+  {{if $d.CanIssues}}<a class="stat flex flex-col no-underline" href="/newsletters"><span class="stat-label">Newsletter senders</span><span class="stat-value">{{len $d.Senders}}</span></a>{{end}}
+  <a class="stat flex flex-col no-underline" href="/templates"><span class="stat-label">Templates</span><span class="stat-value">{{$d.PostTemplates}} <span class="text-sm font-normal text-muted">for posts</span></span>
+    <span class="text-sm text-muted">{{$d.IssueTemplates}} for newsletter issues</span></a>
+  {{if $d.CanMedia}}<a class="stat flex flex-col no-underline" href="/media?brand={{$bid}}"><span class="stat-label">Media</span><span class="stat-value">{{$d.Media}}{{if $d.MediaMore}}+{{end}}</span></a>{{end}}
+</div>
+
+<section class="card">
+  <div class="page-head"><h2 class="mb-0">Channels</h2>{{if $d.CanConnect}}<a class="btn" href="/channels/new?brand={{$bid}}">Connect a channel</a>{{end}}</div>
+  {{if $d.Channels}}<ul class="flex flex-col gap-1.5">{{range $d.Channels}}
+    <li class="flex flex-wrap items-center gap-2">{{icon (or .Emulates .Provider)}} <strong>{{.DisplayName}}</strong>{{if .Handle}} <span class="text-muted">{{.Handle}}</span>{{end}}
+      <span class="pill {{statusClass .Status}}">{{.Status}}</span></li>{{end}}
+  </ul>{{else}}<p class="text-sm text-muted">No channels yet: posts have nowhere to go.</p>{{end}}
+</section>
+
+{{if $d.CanPosts}}<section class="card">
+  <div class="page-head"><h2 class="mb-0">Recent posts</h2><a class="btn" href="/posts?brand={{$bid}}">All posts</a></div>
+  {{if $d.Posts}}<div class="overflow-x-auto"><table class="text-sm">
+    <thead><tr><th>Post</th><th>Status</th><th>Publish at</th></tr></thead>
+    <tbody>{{range $d.Posts}}<tr><td>{{template "postLink" .}}</td><td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td><td>{{template "postWhen" .}}</td></tr>{{end}}</tbody>
+  </table></div>{{else}}<p class="text-sm text-muted">No posts yet.</p>{{end}}
+</section>{{end}}
+
+{{if $d.CanIssues}}<section class="card">
+  <div class="page-head"><h2 class="mb-0">Newsletters</h2><a class="btn" href="/newsletters?brand={{$bid}}">All issues</a></div>
+  {{if $d.Senders}}<p class="text-sm">Sends as {{range $i, $s := $d.Senders}}{{if $i}}, {{end}}<a href="/mail-accounts/{{mailAccountID $s.ID}}">{{$s.FromName}} &lt;{{$s.FromEmail}}&gt;</a>{{end}}.</p>
+  {{else}}<p class="text-sm text-muted">No sender yet{{if $d.CanConnectMail}}: <a href="/mail-accounts/new">add one</a> to send newsletters{{end}}.</p>{{end}}
+  {{if not $d.ThemeReady}}<p class="callout text-sm">The <a href="/brands/{{$bid}}/email-theme">email theme</a> has no postal address yet; issues cannot be scheduled without it.</p>{{end}}
+  {{if $d.Issues}}<div class="overflow-x-auto"><table class="text-sm">
+    <thead><tr><th>Issue</th><th>Status</th><th>Sends</th></tr></thead>
+    <tbody>{{range $d.Issues}}<tr><td><a href="/newsletters/{{issueID .ID}}">{{.Subject}}</a></td><td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
+      <td>{{if .SendAt}}{{fmtTime .SendAt}}{{else}}—{{end}}</td></tr>{{end}}</tbody>
+  </table></div>{{else}}<p class="text-sm text-muted">No issues yet.</p>{{end}}
+</section>{{end}}
+{{end}}

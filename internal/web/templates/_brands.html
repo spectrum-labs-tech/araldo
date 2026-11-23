@@ -1,0 +1,6 @@
+{{/* A brand's pages. Wide screens list them in the sidebar, under
+   Brands; a phone's sidebar is one scrolling row, so there they are here,
+   above the page. */}}
+{{define "brandTabs"}}{{with .}}<nav class="choices md:hidden" aria-label="{{.Name}}">
+  {{range brandPages}}<a class="chip{{if eq .Key $.Current}} active{{end}}" href="/brands/{{$.ID}}{{.Suffix}}" {{if eq .Key $.Current}}aria-current="page"{{end}}>{{.Label}}</a>{{end}}
+</nav>{{end}}{{end}}

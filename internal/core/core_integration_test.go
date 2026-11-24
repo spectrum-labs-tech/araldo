@@ -393,6 +393,13 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	if q, err := b.s.QueueStats(ctx, b.owner); err != nil || q.Due+q.Publishing+q.NeedsAttention != 0 {
 		t.Errorf("another org's queue stats: %+v, %v; want empty", q, err)
 	}
+	// So is the overview (TestOverview has the rest).
+	if up, err := b.s.UpcomingPosts(ctx, b.owner); err != nil || len(up) != 0 {
+		t.Errorf("another org's upcoming posts: %d, %v; want none", len(up), err)
+	}
+	if att, err := b.s.PostsNeedingAttention(ctx, b.owner); err != nil || len(att) != 0 {
+		t.Errorf("another org's posts needing attention: %d, %v; want none", len(att), err)
+	}
 	// A channel from another org cannot be named as a target either.
 	_, err = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: b.brand.ID, Content: &model.Content{Body: "x"}, Channels: []uuid.UUID{a.channel.ID}})
 	if kind(err) != apperr.KindInvalid {

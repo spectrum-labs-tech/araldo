@@ -230,12 +230,62 @@ func pathUUID(c *reqCtx, p id.Prefix, what string) (uuid.UUID, error) {
 type homeData struct {
 	Brands   []*model.Brand
 	Channels []*model.Channel
-	Posts    []*model.Post
-	Keys     int
-	Queue    core.QueueStats
-	Steps    []step
+	// Steps are getting started's, shown while any is not done; NoMFA
+	// asks for two-factor authentication on its own.
+	Steps []step
+	NoMFA bool
+	// What the viewer may see and do besides posts.
+	CanReadIssues, CanWriteIssues bool
+	// Needs you: what someone has to act on, each linking where.
+	CanApprove      bool
+	PendingPosts    []*model.Post
+	PendingIssues   []*model.Issue
+	AttentionPosts  []*model.Post
+	AttentionIssues []*model.Issue
+	Reauth          []*model.Channel
+	Senders         []*model.MailAccount
+	Expiring        []*model.APIKey
 	// Disabled are webhook endpoints turned off after failing for days.
 	Disabled []*model.WebhookEndpoint
+	// Coming up: posts and issues in the next week, soonest first.
+	Upcoming []upcoming
+	// The last week.
+	Activity core.Activity
+	TopPost  *core.EngagementRow
+	// BrandRows is each brand with what it has.
+	BrandRows []brandRow
+}
+
+// Needs reports whether anything needs the viewer.
+func (d homeData) Needs() bool {
+	return len(d.PendingPosts)+len(d.PendingIssues)+len(d.AttentionPosts)+len(d.AttentionIssues)+len(d.Reauth)+len(d.Senders)+
+		len(d.Expiring)+len(d.Disabled) > 0
+}
+
+// StepsOpen reports whether getting started has a step not done.
+func (d homeData) StepsOpen() bool {
+	for _, st := range d.Steps {
+		if !st.Done {
+			return true
+		}
+	}
+	return false
+}
+
+// upcoming is a post or an issue due within the week.
+type upcoming struct {
+	At     *time.Time
+	Brand  *model.Brand
+	Post   *model.Post
+	Issue  *model.Issue
+	Status string
+}
+
+// brandRow is a brand on the overview, with its channel and sender counts.
+type brandRow struct {
+	Brand    *model.Brand
+	Channels int
+	Senders  int
 }
 
 type step struct {
@@ -243,34 +293,107 @@ type step struct {
 	Done        bool
 }
 
+// expiringKeyWindow is how soon a key's expiry puts it on the overview.
+const expiringKeyWindow = 14 * 24 * time.Hour
+
+// mergeUpcoming merges posts and issues into one list by time, soonest
+// first, with their brands.
+func mergeUpcoming(posts []*model.Post, issues []*model.Issue, brands map[uuid.UUID]*model.Brand) []upcoming {
+	out := make([]upcoming, 0, len(posts)+len(issues))
+	for _, p := range posts {
+		out = append(out, upcoming{At: p.PublishAt, Brand: brands[p.BrandID], Post: p, Status: string(p.Status)})
+	}
+	for _, is := range issues {
+		out = append(out, upcoming{At: is.SendAt, Brand: brands[is.BrandID], Issue: is, Status: string(is.Status)})
+	}
+	slices.SortStableFunc(out, func(a, b upcoming) int {
+		switch {
+		case a.At == nil && b.At == nil:
+			return 0
+		case a.At == nil:
+			return 1
+		case b.At == nil:
+			return -1
+		}
+		return a.At.Compare(*b.At)
+	})
+	return out
+}
+
 func (s *Server) home(c *reqCtx) error {
-	d := homeData{}
+	ctx, a := c.ctx(), c.actor
+	d := homeData{CanApprove: a.Can(core.PermPostsApprove), CanReadIssues: a.Can(core.PermNewslettersRead), CanWriteIssues: a.Can(core.PermNewslettersWrite)}
 	var err error
-	if d.Brands, err = s.svc.Brands(c.ctx(), c.actor); err != nil {
+	if d.Brands, err = s.svc.Brands(ctx, a); err != nil {
 		return err
 	}
-	if d.Channels, err = s.svc.Channels(c.ctx(), c.actor, nil); err != nil {
+	brands := make(map[uuid.UUID]*model.Brand, len(d.Brands))
+	for _, b := range d.Brands {
+		brands[b.ID] = b
+	}
+	if d.Channels, err = s.svc.Channels(ctx, a, nil); err != nil {
 		return err
 	}
-	if d.Posts, _, err = s.svc.Posts(c.ctx(), c.actor, core.PostFilter{}, core.Page{Limit: 8}); err != nil {
+	for _, ch := range d.Channels {
+		if ch.Status != model.ChannelActive {
+			d.Reauth = append(d.Reauth, ch)
+		}
+	}
+	anyPost, _, err := s.svc.Posts(ctx, a, core.PostFilter{}, core.Page{Limit: 1})
+	if err != nil {
 		return err
 	}
-	if c.actor.Can(core.PermKeysWrite) {
-		keys, err := s.svc.APIKeysInMode(c.ctx(), c.actor)
+	if d.CanApprove {
+		if d.PendingPosts, _, err = s.svc.Posts(ctx, a, core.PostFilter{Status: string(model.PostPendingApproval)}, core.Page{Limit: 10}); err != nil {
+			return err
+		}
+	}
+	if d.AttentionPosts, err = s.svc.PostsNeedingAttention(ctx, a); err != nil {
+		return err
+	}
+	news := a.Can(core.PermNewslettersRead)
+	var senders []*model.MailAccount
+	var upIssues []*model.Issue
+	if news {
+		if d.CanApprove {
+			if d.PendingIssues, _, err = s.svc.Issues(ctx, a, core.IssueFilter{Status: model.IssuePendingApproval}, core.Page{Limit: 10}); err != nil {
+				return err
+			}
+		}
+		if d.AttentionIssues, err = s.svc.IssuesNeedingAttention(ctx, a); err != nil {
+			return err
+		}
+		if senders, err = s.svc.MailAccounts(ctx, a, nil); err != nil {
+			return err
+		}
+		for _, ma := range senders {
+			if ma.Status != model.ConnectionActive {
+				d.Senders = append(d.Senders, ma)
+			}
+		}
+		if upIssues, err = s.svc.UpcomingIssues(ctx, a); err != nil {
+			return err
+		}
+	}
+	keys := 0
+	if a.Can(core.PermKeysWrite) {
+		ks, err := s.svc.APIKeysInMode(ctx, a)
 		if err != nil {
 			return err
 		}
-		for _, k := range keys {
-			if k.RevokedAt == nil {
-				d.Keys++
+		soon := s.svc.Now().Add(expiringKeyWindow)
+		for _, k := range ks {
+			if !k.Active(s.svc.Now()) {
+				continue
+			}
+			keys++
+			if k.ExpiresAt != nil && k.ExpiresAt.Before(soon) {
+				d.Expiring = append(d.Expiring, k)
 			}
 		}
 	}
-	if d.Queue, err = s.svc.QueueStats(c.ctx(), c.actor); err != nil {
-		return err
-	}
-	if c.actor.Can(core.PermWebhooksRead) {
-		eps, err := s.svc.Endpoints(c.ctx(), c.actor)
+	if a.Can(core.PermWebhooksRead) {
+		eps, err := s.svc.Endpoints(ctx, a)
 		if err != nil {
 			return err
 		}
@@ -280,17 +403,45 @@ func (s *Server) home(c *reqCtx) error {
 			}
 		}
 	}
+	upPosts, err := s.svc.UpcomingPosts(ctx, a)
+	if err != nil {
+		return err
+	}
+	d.Upcoming = mergeUpcoming(upPosts, upIssues, brands)
+	if d.Activity, err = s.svc.RecentActivity(ctx, a); err != nil {
+		return err
+	}
+	now := s.svc.Now()
+	if top, err := s.svc.EngagementSummary(ctx, a, core.EngagementFilter{Since: now.Add(-core.OverviewRecent), Until: now, Limit: 1}); err != nil {
+		return err
+	} else if len(top) > 0 && top[0].ID != nil {
+		d.TopPost = &top[0]
+	}
+	for _, b := range d.Brands {
+		row := brandRow{Brand: b}
+		for _, ch := range d.Channels {
+			if ch.BrandID == b.ID {
+				row.Channels++
+			}
+		}
+		for _, ma := range senders {
+			if ma.BrandID == b.ID {
+				row.Senders++
+			}
+		}
+		d.BrandRows = append(d.BrandRows, row)
+	}
 	mode := "test"
-	if c.actor.Livemode {
+	if a.Livemode {
 		mode = "live"
 	}
 	d.Steps = []step{
 		{"Create a brand", "/brands/new", len(d.Brands) > 0},
 		{"Connect a " + mode + "-mode channel", "/channels/new", len(d.Channels) > 0},
-		{"Create a " + mode + " API key", "/keys/new", d.Keys > 0},
-		{"Publish your first post", "/posts/new", len(d.Posts) > 0},
-		{"Turn on two-factor authentication", "/account", c.user.SecondFactor()},
+		{"Create a " + mode + " API key", "/keys/new", keys > 0 || !a.Can(core.PermKeysWrite)},
+		{"Publish your first post", "/posts/new", len(anyPost) > 0},
 	}
+	d.NoMFA = !c.user.SecondFactor()
 	return s.page(c, "home", "home", "Overview", d)
 }
 

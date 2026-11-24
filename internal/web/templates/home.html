@@ -1,56 +1,105 @@
 {{define "content"}}
+{{$d := .Data}}
+{{$mode := "test"}}{{if .Livemode}}{{$mode = "live"}}{{end}}
 <div class="page-head">
   <h1>Overview</h1>
-  <a class="btn btn-primary" href="/posts/new">New post</a>
+  <div class="flex flex-wrap gap-2">
+    {{if $d.CanWriteIssues}}<a class="btn" href="/newsletters/new">New issue</a>{{end}}
+    <a class="btn btn-primary" href="/posts/new">New post</a>
+  </div>
 </div>
 
-{{with .Data.Disabled}}
-<section class="card attention" role="status">
-  <h2>Webhooks stopped</h2>
-  <p class="mb-2">Araldo turned these endpoints off after every delivery to them failed for 3 days. Fix the receiver, then enable it again; deliveries missed meanwhile can be resent from its log.</p>
-  <ul class="list-disc pl-5">{{range .}}<li><a href="/webhooks/{{endpointID .ID}}"><code>{{.URL}}</code></a></li>{{end}}</ul>
-</section>
-{{end}}
+{{if $d.NoMFA}}<p class="callout">Your account has no second factor. <a href="/account">Turn on two-factor authentication</a> so a stolen password is not enough to sign in.</p>{{end}}
 
-{{$open := false}}{{range .Data.Steps}}{{if not .Done}}{{$open = true}}{{end}}{{end}}
-{{if $open}}
-<section class="card">
-  <h2>Get started</h2>
-  <ol class="list-decimal space-y-1 pl-5">
-    {{range .Data.Steps}}<li>{{if .Done}}<span class="sr-only">Done:</span> {{end}}<a href="{{.Href}}" class="{{if .Done}}text-muted line-through{{end}}">{{.Label}}</a>{{if .Done}} <span class="font-bold text-good" aria-hidden="true">✓</span>{{end}}</li>{{end}}
+{{if $d.StepsOpen}}
+<section class="card" aria-labelledby="start-heading">
+  <h2 id="start-heading">Get started</h2>
+  <ol class="m-0 flex list-none flex-wrap gap-x-6 gap-y-1 p-0">
+    {{range $i, $s := $d.Steps}}<li>{{if $s.Done}}<span class="sr-only">Done:</span> <span class="font-bold text-good" aria-hidden="true">✓</span> <span class="text-muted">{{$s.Label}}</span>{{else}}<span class="text-muted">{{inc $i}}.</span> <a href="{{$s.Href}}">{{$s.Label}}</a>{{end}}</li>{{end}}
   </ol>
 </section>
 {{end}}
 
-<div class="grid gap-4 sm:grid-cols-3">
-  <section class="card my-0 text-center"><div class="text-3xl font-bold">{{.Data.Queue.Due}}</div><div class="text-muted">due now</div></section>
-  <section class="card my-0 text-center"><div class="text-3xl font-bold">{{.Data.Queue.Publishing}}</div><div class="text-muted">publishing</div></section>
-  <section class="card my-0 text-center {{if .Data.Queue.NeedsAttention}}attention{{end}}"><div class="text-3xl font-bold">{{.Data.Queue.NeedsAttention}}</div><div class="text-muted">need attention</div></section>
-</div>
+<section class="card {{if $d.Needs}}attention{{end}}" aria-labelledby="needs-heading">
+  <h2 id="needs-heading">Needs you</h2>
+  {{if not $d.Needs}}<p class="m-0 text-muted">Nothing needs you.</p>{{else}}
+  <div class="grid gap-x-8 gap-y-4 md:grid-cols-2">
+    {{if or $d.PendingPosts $d.PendingIssues}}<div>
+      <h3>Waiting for your approval</h3>
+      <ul class="needs-list">
+        {{range $d.PendingPosts}}<li><span class="text-muted">Post:</span> {{template "postLink" .}}</li>{{end}}
+        {{range $d.PendingIssues}}<li><span class="text-muted">Newsletter:</span> <a href="/newsletters/{{issueID .ID}}">{{.Subject}}</a></li>{{end}}
+      </ul>
+    </div>{{end}}
+    {{with $d.AttentionPosts}}<div>
+      <h3>Posts that did not publish</h3>
+      <ul class="needs-list">{{range .}}<li>{{template "postLink" .}} <span class="pill {{statusClass .Status}}">{{.Status}}</span></li>{{end}}</ul>
+    </div>{{end}}
+    {{with $d.AttentionIssues}}<div>
+      <h3>Newsletters that did not send</h3>
+      <ul class="needs-list">{{range .}}<li><a href="/newsletters/{{issueID .ID}}">{{.Subject}}</a> <span class="pill {{statusClass .Status}}">{{.Status}}</span></li>{{end}}</ul>
+    </div>{{end}}
+    {{with $d.Reauth}}<div>
+      <h3>Channels to reconnect</h3>
+      <ul class="needs-list">{{range .}}<li>{{icon (or .Emulates .Provider)}} <a href="/channels/{{chanID .ID}}/reconnect">{{.DisplayName}}</a> <span class="pill {{statusClass .Status}}">{{.Status}}</span></li>{{end}}</ul>
+    </div>{{end}}
+    {{with $d.Senders}}<div>
+      <h3>Newsletter senders not working</h3>
+      <ul class="needs-list">{{range .}}<li><a href="/mail-accounts/{{mailAccountID .ID}}">{{.FromName}} &lt;{{.FromEmail}}&gt;</a> <span class="pill {{statusClass .Status}}">{{.Status}}</span></li>{{end}}</ul>
+    </div>{{end}}
+    {{with $d.Expiring}}<div>
+      <h3>API keys expiring</h3>
+      <ul class="needs-list">{{range .}}<li><a href="/keys/{{keyID .ID}}">{{.Name}}</a> <span class="text-muted">expires {{fmtTime .ExpiresAt}}</span></li>{{end}}</ul>
+    </div>{{end}}
+    {{with $d.Disabled}}<div>
+      <h3>Webhooks stopped</h3>
+      <p class="mb-1 text-sm text-muted">Turned off after every delivery failed for 3 days. Fix the receiver, then enable it again.</p>
+      <ul class="needs-list">{{range .}}<li><a href="/webhooks/{{endpointID .ID}}"><code>{{.URL}}</code></a></li>{{end}}</ul>
+    </div>{{end}}
+  </div>
+  {{end}}
+</section>
 
-<section class="card">
-  <div class="mb-2 flex items-center justify-between gap-4"><h2 class="mb-0">Recent posts</h2><a href="/posts">All posts</a></div>
-  {{if .Data.Posts}}
-  <table>
-    <thead><tr><th>Post</th><th>Status</th><th>Publish at</th><th>Channels</th></tr></thead>
+<section class="card" aria-labelledby="upcoming-heading">
+  <div class="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1"><h2 id="upcoming-heading" class="mb-0">Coming up</h2>
+    <span class="flex gap-4"><a href="/posts?status=scheduled">All posts</a>{{if $d.CanReadIssues}}<a href="/newsletters">All issues</a>{{end}}</span></div>
+  {{if $d.Upcoming}}
+  <table aria-label="Posts and newsletter issues in the next 7 days">
+    <thead><tr><th>When</th><th>What</th><th>Brand</th><th>Status</th></tr></thead>
     <tbody>
-    {{range .Data.Posts}}
+    {{range $d.Upcoming}}
       <tr>
-        <td>{{template "postLink" .}}</td>
+        <td>{{if .Brand}}{{fmtIn .At .Brand.Timezone}}{{else}}{{fmtTime .At}}{{end}}</td>
+        <td>{{if .Post}}<span class="text-muted">Post:</span> {{template "postLink" .Post}}{{else}}<span class="text-muted">Newsletter:</span> <a href="/newsletters/{{issueID .Issue.ID}}">{{.Issue.Subject}}</a>{{end}}</td>
+        <td>{{if .Brand}}{{.Brand.Name}}{{end}}</td>
         <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
-        <td>{{template "postWhen" .}}</td>
-        <td>{{len .Targets}}</td>
       </tr>
     {{end}}
     </tbody>
   </table>
-  {{else}}<p class="text-muted">No posts yet in {{if .Livemode}}live{{else}}test{{end}} mode.</p>{{end}}
+  {{else}}<p class="m-0 text-muted">Nothing scheduled in the next 7 days in {{$mode}} mode.</p>{{end}}
 </section>
 
-<section class="card">
-  <div class="mb-2 flex items-center justify-between gap-4"><h2 class="mb-0">Channels</h2><a href="/channels/new">Connect</a></div>
-  {{if .Data.Channels}}
-  <ul class="m-0 flex list-none flex-wrap gap-x-4 gap-y-2 p-0">{{range .Data.Channels}}<li class="inline-flex items-center gap-1.5">{{icon (or .Emulates .Provider)}} {{.DisplayName}} <span class="pill {{statusClass .Status}}">{{.Provider}}{{if .Emulates}} → {{.Emulates}}{{end}}</span></li>{{end}}</ul>
-  {{else}}<p class="text-muted">No channels in {{if .Livemode}}live{{else}}test{{end}} mode yet.</p>{{end}}
+<section class="card" aria-labelledby="week-heading">
+  <div class="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1"><h2 id="week-heading" class="mb-0">Last 7 days</h2>
+    <span class="flex gap-4"><a href="/performance">Performance</a><a href="/reports">Reports</a></span></div>
+  <div class="stats">
+    <div class="stat flex flex-col"><span class="stat-label">Posts published</span><span class="stat-value">{{$d.Activity.PostsPublished}}</span></div>
+    {{if $d.CanReadIssues}}
+    <div class="stat flex flex-col"><span class="stat-label">Newsletters sent</span><span class="stat-value">{{$d.Activity.IssuesSent}}</span></div>
+    <div class="stat flex flex-col"><span class="stat-label">Emails delivered</span><span class="stat-value">{{$d.Activity.Delivered}}</span></div>
+    <div class="stat flex flex-col"><span class="stat-label">Email clicks</span><span class="stat-value">{{$d.Activity.Clicks}}</span></div>
+    {{end}}
+  </div>
+  {{with $d.TopPost}}<p class="m-0">Most engaging post: <a href="/posts/{{postID (derefUUID .ID)}}">{{printf "%.90s" .Label}}</a>
+    <span class="text-muted">· {{.Counts.Total}} likes, reposts, replies and quotes</span></p>{{end}}
+</section>
+
+<section class="card" aria-labelledby="brands-heading">
+  <div class="mb-2 flex items-center justify-between gap-4"><h2 id="brands-heading" class="mb-0">Brands</h2><a href="/brands">All brands</a></div>
+  {{if $d.BrandRows}}
+  <ul class="needs-list">{{range $d.BrandRows}}<li><a href="/brands/{{brandID .Brand.ID}}">{{.Brand.Name}}</a>
+    <span class="text-muted">· {{.Channels}} channel{{if ne .Channels 1}}s{{end}}{{if $d.CanReadIssues}} · {{.Senders}} newsletter sender{{if ne .Senders 1}}s{{end}}{{end}}</span></li>{{end}}</ul>
+  {{else}}<p class="m-0 text-muted">No brands yet. <a href="/brands/new">Create one</a>.</p>{{end}}
 </section>
 {{end}}

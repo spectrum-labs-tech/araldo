@@ -333,6 +333,10 @@
   .guide-tips {
     @apply m-0 flex list-disc flex-col gap-1.5 pl-5;
   }
+  /* A short list of links, one per line, as the overview's. */
+  .needs-list {
+    @apply m-0 list-none space-y-1 p-0;
+  }
   .card.attention {
     @apply border-warn bg-warn-bg;
   }

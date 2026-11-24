@@ -615,3 +615,70 @@ func TestNewsletterCancelStoppedPartWay(t *testing.T) {
 		t.Fatalf("after a cancel stopped part way: %v, want the removed campaign canceled and the stuck one handed off", st)
 	}
 }
+
+// TestFailedIssueBackToDraft checks a failed issue that sent nothing (the
+// provider refused the campaign) goes back to draft and is scheduled
+// again, with its delivery as new; one that left a campaign does not.
+func TestFailedIssueBackToDraft(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	ctx := t.Context()
+	setTheme(t, w)
+	connectSandboxMail(t, w, "news@araldo.dev", nil)
+	st := open(t)
+	fail := func(campaign string) *model.Issue {
+		t.Helper()
+		is, err := w.s.CreateIssue(ctx, w.owner, core.IssueInput{BrandID: w.brand.ID, Subject: "Today's offers", Body: "Hello"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sendAt := time.Now().Add(72 * time.Hour).Truncate(time.Second)
+		if is, err = w.s.ScheduleIssue(ctx, w.owner, is.ID, sendAt); err != nil {
+			t.Fatal(err)
+		}
+		d, owner := is.Deliveries[0], id.New().String()
+		if got, err := st.ClaimDueHandoffs(ctx, &w.org.ID, owner, []string{d.Provider}, sendAt, time.Minute, 10); err != nil || len(got) == 0 {
+			t.Fatalf("claim: %v, %v", got, err)
+		}
+		if campaign != "" {
+			if err := st.DeliveryHandedOff(ctx, w.org.ID, d.ID, owner, campaign, sendAt, sendAt); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.ClaimDueHandoffs(ctx, &w.org.ID, owner, []string{d.Provider}, sendAt, time.Minute, 10); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := st.EndDelivery(ctx, w.org.ID, d.ID, owner, model.DeliveryFailed, "The provider refused the campaign: name too long"); err != nil && campaign == "" {
+			t.Fatal(err)
+		}
+		if err := st.SetIssueStatus(ctx, w.org.ID, is.ID, model.IssueFailed); err != nil {
+			t.Fatal(err)
+		}
+		got, err := w.s.Issue(ctx, w.owner, is.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	refused := fail("")
+	if !core.Retryable(refused) {
+		t.Fatalf("a refused issue is not retryable: %+v", refused.Deliveries)
+	}
+	if _, err := w.s.CancelIssue(ctx, w.owner, refused.ID); apperr.As(err).Code != "issue_not_cancelable" {
+		t.Errorf("canceling a failed issue: %v", err)
+	}
+	back, err := w.s.UnscheduleIssue(ctx, w.owner, refused.ID)
+	if err != nil || back.Status != model.IssueDraft || back.Deliveries[0].Status != model.DeliveryDraft || back.Deliveries[0].LastError != "" {
+		t.Fatalf("back to draft: %v, %+v", err, back)
+	}
+	if again, err := w.s.ScheduleIssue(ctx, w.owner, back.ID, time.Now().Add(48*time.Hour)); err != nil || again.Status != model.IssueScheduled ||
+		again.Deliveries[0].Status != model.DeliveryQueued {
+		t.Fatalf("scheduled again: %v, %+v", err, again)
+	}
+
+	left := fail("sbx_left")
+	if core.Retryable(left) && left.Deliveries[0].CampaignID != "" {
+		t.Error("an issue that left a campaign is retryable")
+	}
+}

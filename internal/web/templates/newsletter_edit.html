@@ -127,6 +127,18 @@
 </section>
 {{end}}
 
+{{if and $d.CanWrite $d.Retryable}}
+<section class="card">
+  <h2>Send it again</h2>
+  <p class="text-sm text-muted">Nothing went out: no copy was sent and no provider kept a campaign. Back to draft, fix what the delivery's error says if it is in the issue, then schedule it again.</p>
+  <form method="post" action="/newsletters/{{issueID $is.ID}}/action">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="action" value="unschedule">
+    <button class="btn-primary">Back to draft</button>
+  </form>
+</section>
+{{end}}
+
 {{if and $d.CanReview (eq $is.Status "pending_approval")}}
 <section class="card">
   <h2>Review</h2>
@@ -213,7 +225,8 @@
 {{else if $is}}
 <h2>This issue</h2>
 <ul class="guide-tips">
-  <li><strong>It will not send.</strong> A canceled or failed issue stays here for the record; write a new one to send again.</li>
+  {{if $d.Retryable}}<li><strong>Nothing went out.</strong> Read the delivery's error above, then “Back to draft” to fix it and schedule it again.</li>
+  {{else}}<li><strong>It will not send.</strong> A canceled or failed issue stays here for the record; write a new one to send again.</li>{{end}}
 </ul>
 {{end}}
 {{end}}

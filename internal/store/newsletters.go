@@ -434,7 +434,7 @@ func deliveryStatuses(ss []model.DeliveryStatus) []string {
 func (s *Store) ResetDeliveries(ctx context.Context, orgID, issueID uuid.UUID) error {
 	_, err := s.q.Exec(ctx, `UPDATE newsletter_deliveries SET status = 'draft', handoff_at = NULL, lease_owner = NULL, lease_until = NULL, attempts = 0,
 		campaign_id = '', last_error = '', next_read_at = NULL, updated_at = now()
-		WHERE org_id = $1 AND issue_id = $2 AND status IN ('draft', 'held', 'queued', 'handed_off')`, orgID, issueID)
+		WHERE org_id = $1 AND issue_id = $2 AND (status IN ('draft', 'held', 'queued', 'handed_off') OR (status = 'failed' AND campaign_id = ''))`, orgID, issueID)
 	return err
 }
 

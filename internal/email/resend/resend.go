@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/spectrum-labs-tech/araldo/internal/email"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
@@ -216,12 +217,30 @@ func sender(a email.Address) string {
 	return (&mail.Address{Name: a.Name, Address: a.Email}).String()
 }
 
-// name is a broadcast's name: the message's, ending with its tag for Find.
+// maxName is the longest broadcast name Resend takes, in characters (its
+// create refuses more: "The `name` field must not have more than 70
+// characters").
+const maxName = 70
+
+// name is a broadcast's name: the message's, cut to fit Resend's limit,
+// ending with its tag for Find, which is kept whole.
 func name(msg email.Message) string {
 	if msg.Name == "" {
 		return msg.Tag
 	}
-	return msg.Name + " · " + msg.Tag
+	room := maxName - utf8.RuneCountInString(msg.Tag) - utf8.RuneCountInString(" · ")
+	n := strings.TrimSpace(msg.Name)
+	if r := []rune(n); len(r) > room {
+		if room < 2 {
+			return msg.Tag
+		}
+		cut := string(r[:room-1])
+		if i := strings.LastIndex(cut, " "); i > len(cut)/2 {
+			cut = cut[:i] // at a word, unless that loses most of it
+		}
+		n = strings.TrimRight(cut, " ,;:·-–—") + "…"
+	}
+	return n + " · " + msg.Tag
 }
 
 type broadcast struct {

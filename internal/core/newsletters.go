@@ -1232,6 +1232,13 @@ func (s *Service) stopIssue(ctx context.Context, a Actor, issueID uuid.UUID, can
 		if !cancel {
 			return nil, apperr.Conflict("issue_not_scheduled", "The issue is not scheduled.")
 		}
+	case model.IssueFailed:
+		// Back to draft, to fix and send again, when nothing went out: no
+		// copy sent and no campaign left at a provider (a refused hand-off
+		// makes none).
+		if cancel || !retryable(cur) {
+			return nil, apperr.Conflict("issue_not_cancelable", "A failed issue that reached a provider cannot be stopped or sent again.")
+		}
 	default:
 		return nil, apperr.Conflict("issue_not_cancelable", "A %s issue cannot be stopped.", strings.ReplaceAll(string(cur.Status), "_", " "))
 	}
@@ -1606,7 +1613,7 @@ func (s *Service) handOff(ctx context.Context, d *model.IssueDelivery, owner str
 		if earliest := now.Add(MinSendDelay); at.Before(earliest) {
 			at = earliest
 		}
-		msg := email.Message{Name: is.Subject + " · " + id.Format(id.Issue, is.ID), Subject: is.Subject, PreviewText: is.PreviewText,
+		msg := email.Message{Name: is.Subject, Subject: is.Subject, PreviewText: is.PreviewText,
 			HTML: r.HTML, Text: r.Text, From: email.Address{Name: ma.FromName, Email: ma.FromEmail}, ReplyTo: ma.ReplyTo, Tag: tag}
 		if campaignID, err = m.Schedule(ctx, creds, msg, audienceIDs(d.Audiences), at); err != nil {
 			return s.retryHandoff(ctx, d, is, owner, now, err)
@@ -1638,6 +1645,17 @@ func (s *Service) handOff(ctx context.Context, d *model.IssueDelivery, owner str
 
 // uncertainPrefix marks a hand-off whose result was unknown.
 const uncertainPrefix = "unknown: "
+
+// retryable says a failed issue can go back to draft: none of its
+// deliveries was sent or left a campaign at its provider.
+func retryable(is *model.Issue) bool {
+	return is.Status == model.IssueFailed && !slices.ContainsFunc(is.Deliveries, func(d model.IssueDelivery) bool {
+		return d.Status == model.DeliverySent || d.CampaignID != ""
+	})
+}
+
+// Retryable says a failed issue can go back to draft (UnscheduleIssue).
+func Retryable(is *model.Issue) bool { return retryable(is) }
 
 // retryHandoff records a failed hand-off: a refused key or request ends
 // the delivery; anything else is tried again, backing off, until well

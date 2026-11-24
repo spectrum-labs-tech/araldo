@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/spectrum-labs-tech/araldo/internal/email"
 	"github.com/spectrum-labs-tech/araldo/internal/platform"
@@ -416,5 +417,28 @@ func TestSendTest(t *testing.T) {
 	}
 	if err := m.SendTest(t.Context(), c, msg, make([]string, 51)); kindOf(err) != platform.Rejected {
 		t.Fatalf("51 addresses: %v", err)
+	}
+}
+
+// A broadcast's name fits Resend's 70 characters, a long subject cut with
+// an ellipsis, and always ends with the whole tag, which Find looks for.
+func TestBroadcastNameFitsResendsLimit(t *testing.T) {
+	t.Parallel()
+	tag := "nldel_01m87c12m7fbf9zvbz0r1z8z3w"
+	for _, n := range []string{"", "Short", "Today's deals: PSA Dagger Compact 9mm Pistol and three more from Palmetto State Armory",
+		strings.Repeat("é", 200)} {
+		got := name(email.Message{Name: n, Tag: tag})
+		if c := utf8.RuneCountInString(got); c > maxName {
+			t.Errorf("name(%q) is %d characters: %q", n, c, got)
+		}
+		if !strings.HasSuffix(got, tag) {
+			t.Errorf("name(%q) = %q lost its tag", n, got)
+		}
+	}
+	if got := name(email.Message{Name: "Short", Tag: tag}); got != "Short · "+tag {
+		t.Errorf("a short name was changed: %q", got)
+	}
+	if got := name(email.Message{Name: strings.Repeat("x", 100), Tag: tag}); !strings.Contains(got, "… · ") {
+		t.Errorf("a cut name has no ellipsis: %q", got)
 	}
 }

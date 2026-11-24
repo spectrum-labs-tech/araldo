@@ -275,6 +275,8 @@ type issueData struct {
 	// FromTemplate is the newsletter template that rendered the text,
 	// while the text is as rendered.
 	FromTemplate *model.Template
+	// Retryable: it failed with nothing sent, so it can go back to draft.
+	Retryable bool
 	// Overdue: it waits for approval past its send time (overdueAt), by
 	// Late ("9h"; empty in the minute around it).
 	Overdue bool
@@ -322,6 +324,7 @@ func (a accountChoice) Field() string { return "audience_" + id.Format(id.MailAc
 
 func (s *Server) issueData(c *reqCtx, is *model.Issue, brandRef string) (*issueData, error) {
 	d := &issueData{Issue: is, CanWrite: c.actor.Can(core.PermNewslettersWrite), CanReview: c.actor.Can(core.PermPostsApprove), TopDays: 7, TopCount: 3}
+	d.Retryable = is != nil && core.Retryable(is)
 	if now := s.svc.Now(); d.overdueAt(now) {
 		d.Overdue = true
 		if late := now.Sub(*is.SendAt); late >= time.Minute {

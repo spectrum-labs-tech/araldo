@@ -9,12 +9,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/id"
 	"github.com/spectrum-labs-tech/araldo/internal/model"
+	"github.com/spectrum-labs-tech/araldo/internal/tmpl"
 )
 
 // TestNewsletterTemplatesInTheDashboard checks a newsletter template is
@@ -104,5 +109,74 @@ func TestNewsletterTemplatesInTheDashboard(t *testing.T) {
 	if page := get("/newsletters/" + id.Format(id.Issue, is.ID)); !strings.Contains(page, `Made from the template <a href="`+tplPath+`"><code>weekly</code></a>, version 1.`) ||
 		!strings.Contains(page, `value="Week of May 11"`) {
 		t.Fatalf("the issue page names its template:\n%s", page)
+	}
+}
+
+// TestTemplatesListFilters checks the templates list: sorted by brand,
+// then key, and narrowed by brand, kind and a search of key and name,
+// with a way back to all of them.
+func TestTemplatesListFilters(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	// A brand named to sort before the dashboard's own ("Araldo").
+	other, err := d.s.CreateBrand(ctx, d.owner, core.BrandInput{Name: "AAA Open B00KS " + id.New().String()[:6]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(brand uuid.UUID, key, name string, kind model.TemplateKind) {
+		t.Helper()
+		src := tmpl.Source{Body: "Shipped {{.version}}", Examples: []json.RawMessage{json.RawMessage(`{"version":"1.0"}`)}}
+		if kind == model.TemplateNewsletter {
+			src = tmpl.Source{Subject: "Week of {{.week}}", Body: "# Week of {{md .week}}", Examples: []json.RawMessage{json.RawMessage(`{"week":"May 4"}`)}}
+		}
+		if _, _, err := d.s.CreateTemplate(ctx, d.owner, core.TemplateInput{BrandID: brand, Key: key, Name: name, Kind: kind, Source: src}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk(d.brand.ID, "zeta-release", "Release notes", model.TemplatePost)
+	mk(d.brand.ID, "alpha-weekly", "Weekly digest", model.TemplateNewsletter)
+	mk(other.ID, "omega-launch", "Launch", model.TemplatePost)
+
+	list := func(query string) []string {
+		t.Helper()
+		rec := d.send(httptest.NewRequest(http.MethodGet, "/templates"+query, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /templates%s: %d", query, rec.Code)
+		}
+		var keys []string
+		for _, m := range regexp.MustCompile(`<a href="/templates/tmpl_[0-9a-z]+"><code>([^<]+)</code>`).FindAllStringSubmatch(rec.Body.String(), -1) {
+			keys = append(keys, m[1])
+		}
+		return keys
+	}
+	tests := []struct {
+		query string
+		want  []string
+	}{
+		{"", []string{"omega-launch", "alpha-weekly", "zeta-release"}}, // the other brand first, then by key
+		{"?brand=" + id.Format(id.Brand, d.brand.ID), []string{"alpha-weekly", "zeta-release"}},
+		{"?brand=" + other.Slug, []string{"omega-launch"}},
+		{"?kind=newsletter", []string{"alpha-weekly"}},
+		{"?kind=post&brand=" + d.brand.Slug, []string{"zeta-release"}},
+		{"?q=DIGEST", []string{"alpha-weekly"}}, // by name, ignoring case
+		{"?q=launch", []string{"omega-launch"}}, // by key
+		{"?kind=bogus", []string{"omega-launch", "alpha-weekly", "zeta-release"}},
+		{"?q=nothing-like-it", nil},
+	}
+	for _, tt := range tests {
+		if got := list(tt.query); !slices.Equal(got, tt.want) {
+			t.Errorf("%q: %v, want %v", tt.query, got, tt.want)
+		}
+	}
+	page := d.send(httptest.NewRequest(http.MethodGet, "/templates?q=nothing-like-it", nil)).Body.String()
+	if !strings.Contains(page, "No templates match.") || !strings.Contains(page, `<a class="btn" href="/templates">Clear</a>`) {
+		t.Errorf("no match:\n%s", page)
+	}
+	for _, issue := range a11yIssues(page, true) {
+		t.Errorf("/templates (filtered): %s", issue)
+	}
+	if rec := d.send(httptest.NewRequest(http.MethodGet, "/templates?brand=brand_nope", nil)); rec.Code != http.StatusNotFound {
+		t.Errorf("an unknown brand: %d", rec.Code)
 	}
 }

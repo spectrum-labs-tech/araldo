@@ -1023,6 +1023,38 @@ func (s *Server) sandboxPost(c *reqCtx) error {
 type templatesData struct {
 	Templates []*model.Template
 	Brands    map[uuid.UUID]string
+	// BrandList, Brand, Kind and Query are the filter's choices and values;
+	// Total is how many templates there are before filtering.
+	BrandList []*model.Brand
+	Brand     string
+	Kind      string
+	Query     string
+	Total     int
+}
+
+// filterTemplates keeps the templates of brand (an ID, or every brand when
+// nil) and kind ("" for both) whose key or name contains q, ignoring case,
+// sorted by brand name, then key. An org's templates are few, so the page
+// filters the whole list rather than asking the store.
+func filterTemplates(ts []*model.Template, names map[uuid.UUID]string, brand *uuid.UUID, kind, q string) []*model.Template {
+	q = strings.ToLower(strings.TrimSpace(q))
+	out := make([]*model.Template, 0, len(ts))
+	for _, t := range ts {
+		switch {
+		case brand != nil && t.BrandID != *brand:
+		case kind != "" && string(t.Kind) != kind:
+		case q != "" && !strings.Contains(strings.ToLower(t.Key), q) && !strings.Contains(strings.ToLower(t.Name), q):
+		default:
+			out = append(out, t)
+		}
+	}
+	slices.SortStableFunc(out, func(a, b *model.Template) int {
+		if c := strings.Compare(strings.ToLower(names[a.BrandID]), strings.ToLower(names[b.BrandID])); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Key, b.Key)
+	})
+	return out
 }
 
 func (s *Server) brandNames(c *reqCtx) (map[uuid.UUID]string, []*model.Brand, error) {
@@ -1042,11 +1074,25 @@ func (s *Server) templates(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	names, _, err := s.brandNames(c)
+	names, brands, err := s.brandNames(c)
 	if err != nil {
 		return err
 	}
-	return s.page(c, "templates", "templates", "Templates", templatesData{Templates: ts, Brands: names})
+	q := c.r.URL.Query()
+	d := templatesData{Brands: names, BrandList: brands, Brand: q.Get("brand"), Kind: q.Get("kind"), Query: q.Get("q"), Total: len(ts)}
+	if d.Kind != string(model.TemplatePost) && d.Kind != string(model.TemplateNewsletter) {
+		d.Kind = ""
+	}
+	var brand *uuid.UUID
+	if d.Brand != "" {
+		b, err := s.svc.ResolveBrand(c.ctx(), c.actor, d.Brand)
+		if err != nil {
+			return err
+		}
+		brand = &b.ID
+	}
+	d.Templates = filterTemplates(ts, names, brand, d.Kind, d.Query)
+	return s.page(c, "templates", "templates", "Templates", d)
 }
 
 type templateForm struct {

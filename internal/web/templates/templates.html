@@ -4,6 +4,23 @@
   <a class="btn btn-primary" href="/templates/new">New template</a>
 </div>
 <p class="mb-4 text-muted">Templates turn your product's data into posts and newsletter issues. Your code sends <code>{"template": "featured-build", "data": {…}}</code>; the wording lives here, and changes without a deploy.</p>
+{{$d := .Data}}
+{{if $d.Total}}
+<form method="get" action="/templates" class="mb-4 flex flex-wrap items-end gap-3" role="search">
+  <label class="min-w-0 grow">Search
+    <input type="search" name="q" value="{{$d.Query}}" maxlength="200" placeholder="Key or name"></label>
+  <label>Brand
+    {{template "brandSelect" (brandOptions $d.BrandList $d.Brand "All brands")}}</label>
+  <label>For
+    <select name="kind">
+      <option value="">Posts and newsletters</option>
+      <option value="post" {{if eq $d.Kind "post"}}selected{{end}}>Posts</option>
+      <option value="newsletter" {{if eq $d.Kind "newsletter"}}selected{{end}}>Newsletter issues</option>
+    </select></label>
+  <button>Filter</button>
+  {{if or $d.Query $d.Brand $d.Kind}}<a class="btn" href="/templates">Clear</a>{{end}}
+</form>
+{{end}}
 {{if .Data.Templates}}
 <table>
   <thead><tr><th>Key</th><th>Name</th><th>For</th><th>Brand</th><th>Version</th><th>Updated</th><th><span class="sr-only">Actions</span></th></tr></thead>
@@ -21,5 +38,6 @@
   {{end}}
   </tbody>
 </table>
+{{else if $d.Total}}<p class="text-muted">No templates match. <a href="/templates">Show them all</a>.</p>
 {{else}}<p class="text-muted">No templates yet.</p>{{end}}
 {{end}}

@@ -100,6 +100,9 @@ func TestNewslettersInTheDashboard(t *testing.T) {
 	if err != nil || len(is.Deliveries) != 1 || len(is.Deliveries[0].Audiences) != 1 || is.Deliveries[0].Audiences[0].ID != "list-2" {
 		t.Fatalf("created %+v, %v", is, err)
 	}
+	if got := get(issuePath); !strings.Contains(got, "<h2>Writing</h2>") {
+		t.Fatalf("a draft's guide is about writing:\n%s", got)
+	}
 	if got := get(issuePath); !strings.Contains(got, `src="`+issuePath+`/preview"`) || !strings.Contains(got, "Unsubscribe: #unsubscribe") {
 		t.Fatalf("the issue page frames its preview and shows the plain text:\n%s", got)
 	}
@@ -217,6 +220,10 @@ func TestOverdueApprovalWarns(t *testing.T) {
 	const warning = "Approving sends it now."
 	if got := page(); strings.Contains(got, warning) || !strings.Contains(got, `value="approve"`) {
 		t.Fatalf("before its send time:\n%s", got)
+	}
+	// Its guide is about reviewing, not writing: the text cannot change here.
+	if got := page(); !strings.Contains(got, "<h2>Reviewing</h2>") || strings.Contains(got, "<h2>Writing</h2>") {
+		t.Fatalf("the guide of an issue waiting for approval:\n%s", got)
 	}
 
 	d.s.Now = func() time.Time { return sendAt.Add(9 * time.Hour) }

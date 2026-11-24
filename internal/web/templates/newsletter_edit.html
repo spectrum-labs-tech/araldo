@@ -166,6 +166,8 @@
 {{end}}
 
 {{define "guide"}}
+{{$d := .Data}}{{$is := $d.Issue}}
+{{if $d.Editable}}
 <h2>Writing</h2>
 <ul class="guide-tips">
   <li><code># Heading</code>, <code>## Smaller</code></li>
@@ -183,4 +185,35 @@
   <li><strong>Send yourself a test</strong> and read it on a phone before scheduling.</li>
   <li><strong>Moving is safe</strong> until a copy is sent: Araldo moves it at each provider too.</li>
 </ul>
+{{else if and $is (eq $is.Status "pending_approval")}}
+<h2>Reviewing</h2>
+<ul class="guide-tips">
+  <li><strong>Read the preview</strong> as subscribers will: light, then “In dark mode”, then “At phone width”.</li>
+  <li><strong>Send yourself a test</strong> to see it in a real inbox before approving.</li>
+  <li><strong>Check the subject and the first lines</strong>: they are all most people read before deciding to open it.</li>
+  <li><strong>Approve</strong> and it sends at its time; past its time, it sends within minutes.</li>
+  <li><strong>Reject</strong> to send it back to draft, with a note saying what to change.</li>
+  {{if $d.FromTemplate}}<li><strong>Made from a template</strong>: to change every issue like it, edit <a href="/templates/{{tmplID $d.FromTemplate.ID}}"><code>{{$d.FromTemplate.Key}}</code></a>.</li>{{end}}
+</ul>
+{{else if and $is (or (eq $is.Status "scheduled") (eq $is.Status "sending"))}}
+<h2>What happens next</h2>
+<ul class="guide-tips">
+  <li><strong>A day before its time</strong>, Araldo hands each copy to its provider, scheduled to send then.</li>
+  <li><strong>Moving or canceling is safe</strong> until a copy is sent: Araldo changes it at each provider too.</li>
+  <li><strong>To change the text</strong>, take it back to draft; it then needs approval again.</li>
+  <li><strong>Send yourself a test</strong> meanwhile if you have not.</li>
+</ul>
+{{else if and $is (or (eq $is.Status "sent") (eq $is.Status "partially_sent"))}}
+<h2>Results</h2>
+<ul class="guide-tips">
+  <li><strong>Araldo reads them from each provider</strong> an hour after sending, then after 1, 3, 7 and 30 days.</li>
+  <li><strong>Clicks are the signal to watch.</strong> Opens are inflated by mail apps that load images on their own.</li>
+  <li><strong>Unsubscribes</strong> are handled by the provider; Araldo only counts them.</li>
+</ul>
+{{else if $is}}
+<h2>This issue</h2>
+<ul class="guide-tips">
+  <li><strong>It will not send.</strong> A canceled or failed issue stays here for the record; write a new one to send again.</li>
+</ul>
+{{end}}
 {{end}}

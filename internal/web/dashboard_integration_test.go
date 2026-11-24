@@ -984,3 +984,44 @@ func TestNewKeyConfirmsFirst(t *testing.T) {
 		t.Errorf("scopes listed %v, admin scopes %v: want each in order", scopes, admin)
 	}
 }
+
+// The audit log pages 100 at a time, Older and Newer by cursor, so every
+// event can be reached.
+func TestAuditLogPages(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	for i := range 105 {
+		if err := d.st.RecordAudit(ctx, &model.AuditEvent{ID: id.New(), OrgID: &d.owner.OrgID, Action: "test.page", Target: fmt.Sprintf("thing_%03d", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows := func(page string) int { return strings.Count(page, "<code>test.page</code>") }
+	get := func(path string) string {
+		t.Helper()
+		rec := d.send(httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: %d", path, rec.Code)
+		}
+		return rec.Body.String()
+	}
+	first := get("/org/audit")
+	older := regexp.MustCompile(`href="(/org/audit\?after=audit_[0-9a-z]+)" rel="next"`).FindStringSubmatch(first)
+	if older == nil || strings.Contains(first, `rel="prev"`) || !strings.Contains(first, "thing_104") {
+		t.Fatalf("the first page has no Older link, or a Newer one:\n%s", first)
+	}
+	second := get(older[1])
+	newer := regexp.MustCompile(`href="(/org/audit\?before=audit_[0-9a-z]+)" rel="prev"`).FindStringSubmatch(second)
+	if !strings.Contains(second, "thing_000") || newer == nil {
+		t.Fatalf("the second page: %d of ours, newer %v", rows(second), newer)
+	}
+	if rows(first)+rows(second) < 105 {
+		t.Errorf("the pages hold %d + %d of 105 events", rows(first), rows(second))
+	}
+	if back := get(newer[1]); !strings.Contains(back, "thing_104") || strings.Contains(back, `rel="prev"`) {
+		t.Error("Newer does not lead back to the first page")
+	}
+	for _, issue := range a11yIssues(second, true) {
+		t.Errorf("/org/audit (second page): %s", issue)
+	}
+}

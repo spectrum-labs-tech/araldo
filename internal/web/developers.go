@@ -618,16 +618,40 @@ func ownerErr(c *reqCtx, err error, what string) error {
 	return err
 }
 
+// auditData is a page of the audit log, with its neighbors' URLs.
+type auditData struct {
+	Events       []model.AuditEvent
+	Older, Newer string
+}
+
+// auditPageSize is how many audit events a page shows.
+const auditPageSize = 100
+
+// audit is the audit log, newest first, paged by cursor: ?after= an
+// event for older ones, ?before= for newer.
 func (s *Server) audit(c *reqCtx) error {
-	pg := core.Page{Limit: 100}
-	if u, err := id.Parse(id.Event, c.r.URL.Query().Get("after")); err == nil {
+	pg := core.Page{Limit: auditPageSize}
+	q := c.r.URL.Query()
+	if u, err := id.Parse(id.AuditEvent, q.Get("after")); err == nil {
 		pg.StartingAfter = u
+	} else if u, err := id.Parse(id.AuditEvent, q.Get("before")); err == nil {
+		pg.EndingBefore = u
 	}
-	evs, _, err := s.svc.AuditEvents(c.ctx(), c.actor, pg)
+	evs, more, err := s.svc.AuditEvents(c.ctx(), c.actor, pg)
 	if err != nil {
 		return err
 	}
-	return s.page(c, "audit", "org", "Audit log", evs)
+	d := auditData{Events: evs}
+	if n := len(evs); n > 0 {
+		backward := pg.EndingBefore != uuid.Nil
+		if backward && more || !backward && pg.StartingAfter != uuid.Nil {
+			d.Newer = "/org/audit?before=" + id.Format(id.AuditEvent, evs[0].ID)
+		}
+		if backward || more {
+			d.Older = "/org/audit?after=" + id.Format(id.AuditEvent, evs[n-1].ID)
+		}
+	}
+	return s.page(c, "audit", "org", "Audit log", d)
 }
 
 func (s *Server) tasks(c *reqCtx) error {

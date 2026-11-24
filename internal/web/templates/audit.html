@@ -1,11 +1,12 @@
 {{define "content"}}
 <p class="crumbs"><a href="/org">Organization</a></p>
 <h1>Audit log</h1>
-{{if .Data}}
+{{$d := .Data}}
+{{if $d.Events}}
 <table class="text-sm" tabindex="0" aria-label="Audit log">
   <thead><tr><th>When</th><th>Action</th><th>Target</th><th>Actor</th><th>Request</th></tr></thead>
   <tbody>
-  {{range .Data}}
+  {{range $d.Events}}
   <tr>
     <td>{{fmtTime .CreatedAt}}</td>
     <td><code>{{.Action}}</code>{{if ne .Outcome "ok"}} <span class="pill bad">{{.Outcome}}</span>{{end}}</td>
@@ -16,5 +17,11 @@
   {{end}}
   </tbody>
 </table>
+{{if or $d.Newer $d.Older}}
+<nav class="pager" aria-label="Pages">
+  <span>{{if $d.Newer}}<a class="btn" href="{{$d.Newer}}" rel="prev">← Newer</a>{{end}}</span>
+  <span>{{if $d.Older}}<a class="btn" href="{{$d.Older}}" rel="next">Older →</a>{{end}}</span>
+</nav>
+{{end}}
 {{else}}<p class="text-muted">Nothing yet.</p>{{end}}
 {{end}}

@@ -902,7 +902,26 @@ func (s *Service) Issues(ctx context.Context, a Actor, f IssueFilter, page store
 	if a.BrandID != nil {
 		f.BrandID = a.BrandID
 	}
+	if len(f.Query) > 200 {
+		return nil, false, apperr.Invalid("query_too_long", "q", "Search for at most 200 characters.")
+	}
 	return s.store.Issues(ctx, a.OrgID, a.Livemode, f, page)
+}
+
+// IssueCountCap is the most issues IssueStatusCounts counts: past it, the
+// counts are of the newest.
+const IssueCountCap = store.IssueCountCap
+
+// IssueStatusCounts counts the issues f matches, ignoring its status, by
+// status (of the newest IssueCountCap+1).
+func (s *Service) IssueStatusCounts(ctx context.Context, a Actor, f IssueFilter) (map[model.IssueStatus]int, error) {
+	if err := a.require(PermNewslettersRead); err != nil {
+		return nil, err
+	}
+	if a.BrandID != nil {
+		f.BrandID = a.BrandID
+	}
+	return s.store.IssueStatusCounts(ctx, a.OrgID, a.Livemode, f)
 }
 
 func (s *Service) lockIssue(ctx context.Context, tx *store.Store, a Actor, issueID uuid.UUID) (*model.Issue, error) {

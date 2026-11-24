@@ -5,12 +5,18 @@
 package web_test
 
 import (
+	"fmt"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/spectrum-labs-tech/araldo/internal/core"
 	"github.com/spectrum-labs-tech/araldo/internal/email"
@@ -316,5 +322,110 @@ func TestMailConnectionsInTheDashboard(t *testing.T) {
 	spare := strings.TrimPrefix(rec.Header().Get("Location"), "/mail-accounts/new?connection=")
 	if rec := post("/mail-connections/"+spare+"/delete", url.Values{}); rec.Code != http.StatusSeeOther {
 		t.Fatalf("delete an unused connection: %d\n%s", rec.Code, rec.Body)
+	}
+}
+
+// TestIssuesListFilters checks the newsletters page's issues: paged 25 at
+// a time, filtered by status (with counts), brand and a search of the
+// subject, the filters kept from page to page.
+func TestIssuesListFilters(t *testing.T) {
+	t.Parallel()
+	d := newDash(t)
+	ctx := t.Context()
+	if _, err := d.s.ConnectMailAccount(ctx, d.owner, core.MailAccountInput{BrandID: d.brand.ID, Provider: email.Sandbox, FromName: "News",
+		FromEmail: "news@araldo.dev", DefaultAudiences: []string{"list-1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.s.SetEmailTheme(ctx, d.owner, d.brand.ID, core.EmailThemeInput{PostalAddress: "1 Main St"}); err != nil {
+		t.Fatal(err)
+	}
+	other, err := d.s.CreateBrand(ctx, d.owner, core.BrandInput{Name: "Open B00KS " + id.New().String()[:6]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(brand uuid.UUID, subject string) *model.Issue {
+		t.Helper()
+		is, err := d.s.CreateIssue(ctx, d.owner, core.IssueInput{BrandID: brand, Subject: subject, Body: "Hello"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return is
+	}
+	for i := range 26 {
+		mk(d.brand.ID, fmt.Sprintf("Week %02d", i+1))
+	}
+	sched := mk(d.brand.ID, "Launch day: 100% done")
+	if _, err := d.s.ScheduleIssue(ctx, d.owner, sched.ID, time.Now().Add(72*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	mk(other.ID, "Reading list")
+
+	subjects := func(page string) []string {
+		var out []string
+		for _, m := range regexp.MustCompile(`<td><a href="/newsletters/nl_[0-9a-z]+">([^<]+)</a></td>`).FindAllStringSubmatch(page, -1) {
+			out = append(out, html.UnescapeString(m[1]))
+		}
+		return out
+	}
+	get := func(path string) string {
+		t.Helper()
+		rec := d.send(httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: %d", path, rec.Code)
+		}
+		return rec.Body.String()
+	}
+
+	first := get("/newsletters")
+	if got := subjects(first); len(got) != 25 || got[0] != "Reading list" {
+		t.Fatalf("the first page: %d issues, %v", len(got), got)
+	}
+	if !strings.Contains(first, `All <span class="chip-count">28</span>`) || !strings.Contains(first, `draft <span class="chip-count">27</span>`) ||
+		!strings.Contains(first, `scheduled <span class="chip-count">1</span>`) {
+		t.Errorf("status counts:\n%s", first)
+	}
+	older := regexp.MustCompile(`href="(/newsletters\?starting_after=nl_[0-9a-z]+)" rel="next"`).FindStringSubmatch(first)
+	if older == nil {
+		t.Fatalf("no Older link:\n%s", first)
+	}
+	second := get(html.UnescapeString(older[1]))
+	if got := subjects(second); len(got) != 3 || got[2] != "Week 01" || !strings.Contains(second, `rel="prev"`) {
+		t.Errorf("the second page: %v", got)
+	}
+
+	tests := []struct {
+		query string
+		want  []string
+	}{
+		{"?status=scheduled", []string{"Launch day: 100% done"}},
+		{"?brand=" + other.Slug, []string{"Reading list"}},
+		{"?q=launch", []string{"Launch day: 100% done"}},
+		{"?q=100%25", []string{"Launch day: 100% done"}}, // % matches itself
+		{"?q=%25", []string{"Launch day: 100% done"}},
+		{"?q=week+2&brand=" + d.brand.Slug, []string{"Week 26", "Week 25", "Week 24", "Week 23", "Week 22", "Week 21", "Week 20"}},
+		{"?q=nothing-like-it", nil},
+	}
+	for _, tt := range tests {
+		if got := subjects(get("/newsletters" + tt.query)); !slices.Equal(got, tt.want) {
+			t.Errorf("%s: %v, want %v", tt.query, got, tt.want)
+		}
+	}
+	// A status chip keeps the search and brand (counts follow them: no
+	// scheduled issue says "week"); the search form keeps the status.
+	page := get("/newsletters?q=week&status=draft&brand=" + d.brand.Slug)
+	if !strings.Contains(page, `<input type="hidden" name="status" value="draft">`) ||
+		!strings.Contains(page, html.EscapeString("/newsletters?brand="+d.brand.Slug+"&q=week&status=draft")) {
+		t.Errorf("filters are not kept:\n%s", page)
+	}
+	if older := regexp.MustCompile(`href="([^"]+)" rel="next"`).FindStringSubmatch(page); older == nil ||
+		!strings.Contains(html.UnescapeString(older[1]), "q=week") || !strings.Contains(html.UnescapeString(older[1]), "status=draft") {
+		t.Errorf("paging drops the filters: %v", older)
+	}
+	none := get("/newsletters?q=nothing-like-it")
+	if !strings.Contains(none, "No issues match.") {
+		t.Error("no note when nothing matches")
+	}
+	for _, issue := range a11yIssues(page, true) {
+		t.Errorf("/newsletters (filtered): %s", issue)
 	}
 }

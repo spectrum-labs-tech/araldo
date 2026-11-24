@@ -393,12 +393,28 @@ func TestOtherOrgsSeeNothing(t *testing.T) {
 	if q, err := b.s.QueueStats(ctx, b.owner); err != nil || q.Due+q.Publishing+q.NeedsAttention != 0 {
 		t.Errorf("another org's queue stats: %+v, %v; want empty", q, err)
 	}
-	// So is the overview (TestOverview has the rest).
-	if up, err := b.s.UpcomingPosts(ctx, b.owner); err != nil || len(up) != 0 {
-		t.Errorf("another org's upcoming posts: %d, %v; want none", len(up), err)
+	// So is the overview (TestOverview has the rest): none of a's posts.
+	up, err := b.s.UpcomingPosts(ctx, b.owner)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if att, err := b.s.PostsNeedingAttention(ctx, b.owner); err != nil || len(att) != 0 {
-		t.Errorf("another org's posts needing attention: %d, %v; want none", len(att), err)
+	att, err := b.s.PostsNeedingAttention(ctx, b.owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range append(up, att...) {
+		if p.OrgID != b.org.ID {
+			t.Errorf("the overview shows another org's post %s", p.ID)
+		}
+	}
+	if _, err := a.s.CreateIssue(ctx, a.owner, core.IssueInput{BrandID: a.brand.ID, Subject: "Theirs", Body: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if counts, err := b.s.IssueStatusCounts(ctx, b.owner, core.IssueFilter{}); err != nil || len(counts) != 0 {
+		t.Errorf("another org's issue counts: %v, %v; want none", counts, err)
+	}
+	if got, _, err := b.s.Issues(ctx, b.owner, core.IssueFilter{Query: "Theirs"}, core.Page{}); err != nil || len(got) != 0 {
+		t.Errorf("another org's issues by search: %d, %v; want none", len(got), err)
 	}
 	// A channel from another org cannot be named as a target either.
 	_, err = b.s.CreatePost(ctx, b.owner, core.PostInput{BrandID: b.brand.ID, Content: &model.Content{Body: "x"}, Channels: []uuid.UUID{a.channel.ID}})

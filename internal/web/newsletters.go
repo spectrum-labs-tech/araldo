@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"maps"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,8 +29,17 @@ type newslettersData struct {
 	BrandName map[string]string
 	Brand     string
 	Issues    []*model.Issue
-	More      bool
-	Accounts  []*model.MailAccount
+	// The issue filters, as the URL has them, and each status's count
+	// (Total and CountLabels as countLabels shows them).
+	Status      string
+	Query       string
+	Statuses    []model.IssueStatus
+	Counts      map[model.IssueStatus]int
+	Total       string
+	CountLabels map[model.IssueStatus]string
+	// Older and Newer are the neighboring pages of issues, if any.
+	Older, Newer string
+	Accounts     []*model.MailAccount
 	// Connections are the org's mail connections, which senders use, and
 	// ConnectionName their names by ID.
 	Connections    []*model.MailConnection
@@ -63,9 +73,34 @@ func (s *Server) newslettersPage(c *reqCtx) error {
 	return s.page(c, "newsletters", "newsletters", "Newsletters", d)
 }
 
+// issuesPageSize is how many issues the newsletters page lists at once.
+const issuesPageSize = 25
+
+// link is the newsletters page's URL with these filters and a page cursor.
+func (d *newslettersData) link(status, cursor, ref string) string {
+	v := url.Values{}
+	for k, val := range map[string]string{"status": status, "brand": d.Brand, "q": d.Query, cursor: ref} {
+		if k != "" && val != "" {
+			v.Set(k, val)
+		}
+	}
+	if len(v) == 0 {
+		return "/newsletters"
+	}
+	return "/newsletters?" + v.Encode()
+}
+
+// StatusLink is the URL for an issue status filter, keeping the others.
+func (d *newslettersData) StatusLink(status string) string { return d.link(status, "", "") }
+
+// Filtered says the issues are narrowed by the URL.
+func (d *newslettersData) Filtered() bool { return d.Status != "" || d.Query != "" || d.Brand != "" }
+
 func (s *Server) newslettersData(c *reqCtx) (*newslettersData, error) {
 	q := c.r.URL.Query()
-	d := &newslettersData{Brand: q.Get("brand"), BrandName: map[string]string{}, CanWrite: c.actor.Can(core.PermNewslettersWrite),
+	d := &newslettersData{Brand: q.Get("brand"), Status: q.Get("status"), Query: strings.TrimSpace(q.Get("q")), BrandName: map[string]string{},
+		Statuses: []model.IssueStatus{model.IssueDraft, model.IssuePendingApproval, model.IssueScheduled, model.IssueSending, model.IssueSent,
+			model.IssuePartiallySent, model.IssueCanceled, model.IssueFailed}, CanWrite: c.actor.Can(core.PermNewslettersWrite),
 		CanConnect: c.actor.Can(core.PermChannelsWrite), Providers: s.svc.MailProviders(c.actor.Livemode), Values: map[string]string{}}
 	for i := range d.Providers {
 		if string(d.Providers[i].Provider) == q.Get("provider") || d.Provider == nil {
@@ -93,9 +128,31 @@ func (s *Server) newslettersData(c *reqCtx) (*newslettersData, error) {
 		}
 		f.BrandID = &b.ID
 	}
-	if d.Issues, d.More, err = s.svc.Issues(c.ctx(), c.actor, f, core.Page{Limit: 50}); err != nil {
+	f.Status, f.Query = model.IssueStatus(d.Status), d.Query
+	pg := core.Page{Limit: issuesPageSize}
+	if u, err := id.Parse(id.Issue, q.Get("starting_after")); err == nil {
+		pg.StartingAfter = u
+	} else if u, err := id.Parse(id.Issue, q.Get("ending_before")); err == nil {
+		pg.EndingBefore = u
+	}
+	var more bool
+	if d.Issues, more, err = s.svc.Issues(c.ctx(), c.actor, f, pg); err != nil {
 		return nil, err
 	}
+	if n := len(d.Issues); n > 0 {
+		first, last := id.Format(id.Issue, d.Issues[0].ID), id.Format(id.Issue, d.Issues[n-1].ID)
+		backward := pg.EndingBefore != uuid.Nil
+		if backward && more || !backward && pg.StartingAfter != uuid.Nil {
+			d.Newer = d.link(d.Status, "ending_before", first)
+		}
+		if backward || more {
+			d.Older = d.link(d.Status, "starting_after", last)
+		}
+	}
+	if d.Counts, err = s.svc.IssueStatusCounts(c.ctx(), c.actor, f); err != nil {
+		return nil, err
+	}
+	d.Total, d.CountLabels = countLabels(d.Counts)
 	for _, is := range d.Issues {
 		d.HasSent = d.HasSent || is.Status != model.IssueDraft
 	}

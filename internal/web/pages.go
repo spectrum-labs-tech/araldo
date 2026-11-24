@@ -465,13 +465,13 @@ type postsData struct {
 // countLabels shows status counts: as they are, or, past
 // core.PostCountCap posts in all, as floors ("12+") under a total of
 // "1000+", since then only the newest posts were counted.
-func countLabels(counts map[model.PostStatus]int) (string, map[model.PostStatus]string) {
+func countLabels[S ~string](counts map[S]int) (string, map[S]string) {
 	total := 0
 	for _, n := range counts {
 		total += n
 	}
 	over := total > core.PostCountCap
-	labels := make(map[model.PostStatus]string, len(counts))
+	labels := make(map[S]string, len(counts))
 	for st, n := range counts {
 		labels[st] = strconv.Itoa(min(n, core.PostCountCap))
 		if over {

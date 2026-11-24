@@ -4,6 +4,8 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -333,6 +335,49 @@ func (s *Store) LockIssue(ctx context.Context, orgID, id uuid.UUID) (*model.Issu
 type IssueFilter struct {
 	BrandID *uuid.UUID
 	Status  model.IssueStatus
+	// Query keeps issues whose subject contains it (case insensitive).
+	Query string
+}
+
+// issueWhere is the condition for f, its arguments from $3 ($1 is the org
+// and $2 the mode). withStatus false leaves the status out, for counting
+// by status.
+func issueWhere(f IssueFilter, withStatus bool) (string, []any) {
+	status := ""
+	if withStatus {
+		status = string(f.Status)
+	}
+	pattern := ""
+	if q := strings.TrimSpace(f.Query); q != "" {
+		pattern = "%" + likeEscaper.Replace(q) + "%"
+	}
+	return ` WHERE org_id = $1 AND livemode = $2 AND ($3::uuid IS NULL OR brand_id = $3) AND ($4 = '' OR status = $4)
+		AND ($5 = '' OR subject ILIKE $5)`, []any{f.BrandID, status, pattern}
+}
+
+// IssueCountCap is the most issues IssueStatusCounts counts.
+const IssueCountCap = PostCountCap
+
+// IssueStatusCounts counts the issues f matches, ignoring its status, by
+// status: of the newest IssueCountCap+1 at most, so the count stays cheap.
+func (s *Store) IssueStatusCounts(ctx context.Context, orgID uuid.UUID, livemode bool, f IssueFilter) (map[model.IssueStatus]int, error) {
+	cond, fargs := issueWhere(f, false)
+	rows, err := s.q.Query(ctx, `SELECT status, count(*) FROM (SELECT status FROM newsletter_issues`+cond+
+		fmt.Sprintf(` ORDER BY id DESC LIMIT %d) m GROUP BY status`, IssueCountCap+1), append([]any{orgID, livemode}, fargs...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[model.IssueStatus]int{}
+	for rows.Next() {
+		var st model.IssueStatus
+		var n int
+		if err := rows.Scan(&st, &n); err != nil {
+			return nil, err
+		}
+		out[st] = n
+	}
+	return out, rows.Err()
 }
 
 // Issues lists issues newest first.
@@ -340,10 +385,10 @@ func (s *Store) Issues(ctx context.Context, orgID uuid.UUID, livemode bool, f Is
 	var out []*model.Issue
 	var more bool
 	err := s.snapshot(ctx, func(tx *Store) error {
-		where, order, extra := pageClause(page, "id", 5)
-		rows, err := tx.q.Query(ctx, `SELECT `+issueCols+` FROM newsletter_issues WHERE org_id = $1 AND livemode = $2
-			AND ($3::uuid IS NULL OR brand_id = $3) AND ($4 = '' OR status = $4)`+where+order,
-			append([]any{orgID, livemode, f.BrandID, string(f.Status)}, extra...)...)
+		cond, fargs := issueWhere(f, true)
+		where, order, extra := pageClause(page, "id", 3+len(fargs))
+		rows, err := tx.q.Query(ctx, `SELECT `+issueCols+` FROM newsletter_issues`+cond+where+order,
+			append(append([]any{orgID, livemode}, fargs...), extra...)...)
 		if err != nil {
 			return err
 		}

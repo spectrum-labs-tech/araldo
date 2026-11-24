@@ -6,15 +6,23 @@
 </div>
 <p class="text-muted">Write issues here, approve them like posts, and schedule them; each sender's provider sends them and keeps the subscribers, unsubscribes and bounces. Araldo never stores an address.{{if not .Livemode}} In test mode the sandbox sends nothing and invents results.{{end}}</p>
 
-<form method="get" action="/newsletters" class="my-4 flex flex-wrap items-end gap-3">
-  <label>Brand
-    {{template "brandSelect" (brandOptions $d.Brands $d.Brand "All brands")}}
-  </label>
-  <button>Show</button>
-</form>
-
-<section class="card">
-  <h2>Issues</h2>
+<section class="card" aria-labelledby="issues-heading">
+  <h2 id="issues-heading">Issues</h2>
+  <form method="get" action="/newsletters" class="mb-3 flex flex-wrap items-end gap-3" role="search">
+    {{if $d.Status}}<input type="hidden" name="status" value="{{$d.Status}}">{{end}}
+    <label class="min-w-0 grow">Search
+      <input type="search" name="q" value="{{$d.Query}}" maxlength="200" placeholder="Words in the subject"></label>
+    <label>Brand
+      {{template "brandSelect" (brandOptions $d.Brands $d.Brand "All brands")}}</label>
+    <button>Filter</button>
+    {{if $d.Filtered}}<a class="btn" href="/newsletters">Clear</a>{{end}}
+  </form>
+  <nav class="choices mb-3" aria-label="Filter issues by status">
+    <a href="{{$d.StatusLink ""}}" class="chip" {{if eq $d.Status ""}}aria-current="true"{{end}}>All <span class="chip-count">{{$d.Total}}</span></a>
+    {{range $s := $d.Statuses}}{{with index $d.Counts $s}}
+    <a href="{{$d.StatusLink (printf "%s" $s)}}" class="chip" {{if eq $d.Status (printf "%s" $s)}}aria-current="true"{{end}}>{{$s}} <span class="chip-count">{{index $d.CountLabels $s}}</span></a>
+    {{end}}{{end}}
+  </nav>
   {{if $d.Issues}}
   <table class="text-sm">
     <thead><tr><th>Subject</th><th>Brand</th><th>Status</th><th>Sends</th><th class="text-right">Delivered</th><th class="text-right">Clicks</th></tr></thead>
@@ -27,8 +35,13 @@
       <td class="text-right">{{if $r.Delivered}}{{$r.Clicks}} <span class="text-muted">({{percent $r.Clicks $r.Delivered}})</span>{{else}}—{{end}}</td>
     </tr>{{end}}</tbody>
   </table>
-  {{if $d.More}}<p class="text-sm text-muted">Showing the latest 50.</p>{{end}}
-  {{else}}<p class="text-muted">No issues yet.</p>{{end}}
+  {{if or $d.Newer $d.Older}}
+  <nav class="pager" aria-label="Pages of issues">
+    <span>{{if $d.Newer}}<a class="btn" href="{{$d.Newer}}" rel="prev">← Newer</a>{{end}}</span>
+    <span>{{if $d.Older}}<a class="btn" href="{{$d.Older}}" rel="next">Older →</a>{{end}}</span>
+  </nav>
+  {{end}}
+  {{else}}<p class="text-muted">{{if $d.Filtered}}No issues match. <a href="/newsletters">Clear the filters</a>.{{else}}No issues yet.{{end}}</p>{{end}}
 </section>
 
 <section class="card">
